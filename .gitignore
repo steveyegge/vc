@@ -1,0 +1,34 @@
+# Binaries
+vc
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+*.out
+
+# Go workspace file
+go.work
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VC runtime
+.vc/
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+logs/
