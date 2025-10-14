@@ -90,4 +90,20 @@ WHERE i.status IN ('open', 'in_progress', 'blocked')
   AND d.type = 'blocks'
   AND blocker.status IN ('open', 'in_progress', 'blocked')
 GROUP BY i.id;
+
+-- Executor instances table
+-- Tracks running executor instances for multi-executor coordination
+CREATE TABLE IF NOT EXISTS executor_instances (
+    instance_id TEXT PRIMARY KEY,
+    hostname TEXT NOT NULL,
+    pid INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running', 'stopped')),
+    started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_heartbeat DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    version TEXT NOT NULL DEFAULT '',
+    metadata TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_executor_instances_status ON executor_instances(status);
+CREATE INDEX IF NOT EXISTS idx_executor_instances_heartbeat ON executor_instances(last_heartbeat);
 `

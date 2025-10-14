@@ -40,6 +40,12 @@ type Storage interface {
 	// Statistics
 	GetStatistics(ctx context.Context) (*types.Statistics, error)
 
+	// Executor Instances
+	RegisterInstance(ctx context.Context, instance *types.ExecutorInstance) error
+	UpdateHeartbeat(ctx context.Context, instanceID string) error
+	GetActiveInstances(ctx context.Context) ([]*types.ExecutorInstance, error)
+	CleanupStaleInstances(ctx context.Context, staleThreshold int) (int, error)
+
 	// Lifecycle
 	Close() error
 }

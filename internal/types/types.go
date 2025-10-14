@@ -194,3 +194,15 @@ type WorkFilter struct {
 	Assignee *string
 	Limit    int
 }
+
+// ExecutorInstance represents a running executor instance
+type ExecutorInstance struct {
+	InstanceID    string    `json:"instance_id"`
+	Hostname      string    `json:"hostname"`
+	PID           int       `json:"pid"`
+	Status        string    `json:"status"` // "running" or "stopped"
+	StartedAt     time.Time `json:"started_at"`
+	LastHeartbeat time.Time `json:"last_heartbeat"`
+	Version       string    `json:"version"`
+	Metadata      string    `json:"metadata"` // JSON string
+}
