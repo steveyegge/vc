@@ -125,11 +125,11 @@ func (s *PostgresStorage) GetExecutionState(ctx context.Context, issueID string)
 }
 
 // UpdateExecutionState updates the state field of an execution state
-// This enforces state transitions in the state machine
-func (s *PostgresStorage) UpdateExecutionState(ctx context.Context, issueID string, state types.ExecutionState) error {
+// This enforces state transitions in the state machine atomically
+func (s *PostgresStorage) UpdateExecutionState(ctx context.Context, issueID string, newState types.ExecutionState) error {
 	// Validate the new state
-	if !state.IsValid() {
-		return fmt.Errorf("invalid execution state: %s", state)
+	if !newState.IsValid() {
+		return fmt.Errorf("invalid execution state: %s", newState)
 	}
 
 	// Get current state to validate transition
@@ -142,25 +142,36 @@ func (s *PostgresStorage) UpdateExecutionState(ctx context.Context, issueID stri
 	}
 
 	// Validate state transition
-	if !isValidStateTransition(currentState.State, state) {
-		return fmt.Errorf("invalid state transition from %s to %s", currentState.State, state)
+	if !isValidStateTransition(currentState.State, newState) {
+		return fmt.Errorf("invalid state transition from %s to %s", currentState.State, newState)
 	}
 
-	// Update the state
+	// Atomically update the state with WHERE clause checking current state
+	// This prevents race conditions where another transaction modifies state between our read and write
 	query := `
 		UPDATE issue_execution_state
 		SET state = $1, updated_at = $2
-		WHERE issue_id = $3
+		WHERE issue_id = $3 AND state = $4
 	`
 
-	result, err := s.pool.Exec(ctx, query, state, time.Now(), issueID)
+	result, err := s.pool.Exec(ctx, query, newState, time.Now(), issueID, currentState.State)
 	if err != nil {
 		return fmt.Errorf("failed to update execution state: %w", err)
 	}
 
 	rows := result.RowsAffected()
 	if rows == 0 {
-		return fmt.Errorf("execution state not found for issue: %s", issueID)
+		// Either the issue doesn't exist OR the state was modified concurrently
+		// Check which case it is by re-reading the state
+		checkState, err := s.GetExecutionState(ctx, issueID)
+		if err != nil {
+			return fmt.Errorf("failed to verify execution state: %w", err)
+		}
+		if checkState == nil {
+			return fmt.Errorf("execution state not found for issue: %s", issueID)
+		}
+		// State changed concurrently - this is a conflict
+		return fmt.Errorf("concurrent state modification detected: expected %s but found %s", currentState.State, checkState.State)
 	}
 
 	return nil
