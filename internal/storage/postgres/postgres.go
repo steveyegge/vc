@@ -171,6 +171,10 @@ var allowedUpdateFields = map[string]bool{
 	"estimated_minutes":   true,
 }
 
+// MaxEventsLimit is the maximum number of events that can be returned by GetEvents
+// to prevent DoS attacks from excessively large queries
+const MaxEventsLimit = 10000
+
 // Close closes the connection pool and releases all resources
 func (s *PostgresStorage) Close() error {
 	if s.pool != nil {
@@ -499,6 +503,14 @@ func (s *PostgresStorage) SearchIssues(ctx context.Context, query string, filter
 
 // AddDependency adds a dependency between issues with cycle prevention
 func (s *PostgresStorage) AddDependency(ctx context.Context, dep *types.Dependency, actor string) error {
+	// Validate issue IDs are not empty (check first for more specific error messages)
+	if dep.IssueID == "" {
+		return fmt.Errorf("issue ID cannot be empty")
+	}
+	if dep.DependsOnID == "" {
+		return fmt.Errorf("dependency target ID cannot be empty")
+	}
+
 	// Prevent self-dependency
 	if dep.IssueID == dep.DependsOnID {
 		return fmt.Errorf("issue cannot depend on itself")
@@ -1060,7 +1072,18 @@ func (s *PostgresStorage) AddComment(ctx context.Context, issueID, actor, commen
 }
 
 // GetEvents returns the event history for an issue
+// limit: 0 means no limit, positive values are capped at MaxEventsLimit, negative values return an error
 func (s *PostgresStorage) GetEvents(ctx context.Context, issueID string, limit int) ([]*types.Event, error) {
+	// Validate limit parameter
+	if limit < 0 {
+		return nil, fmt.Errorf("limit must be non-negative (got %d)", limit)
+	}
+
+	// Cap maximum limit to prevent DoS
+	if limit > MaxEventsLimit {
+		limit = MaxEventsLimit
+	}
+
 	limitSQL := ""
 	if limit > 0 {
 		limitSQL = fmt.Sprintf(" LIMIT %d", limit)
