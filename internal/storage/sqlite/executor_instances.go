@@ -10,6 +10,11 @@ import (
 
 // RegisterInstance registers a new executor instance
 func (s *SQLiteStorage) RegisterInstance(ctx context.Context, instance *types.ExecutorInstance) error {
+	// Validate the instance before inserting
+	if err := instance.Validate(); err != nil {
+		return fmt.Errorf("invalid executor instance: %w", err)
+	}
+
 	query := `
 		INSERT INTO executor_instances (
 			instance_id, hostname, pid, status, started_at, last_heartbeat, version, metadata

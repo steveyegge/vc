@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,7 +21,7 @@ func TestRegisterInstance(t *testing.T) {
 		InstanceID:    "test-instance-1",
 		Hostname:      "test-host",
 		PID:           12345,
-		Status:        "running",
+		Status:        types.ExecutorStatusRunning,
 		StartedAt:     now,
 		LastHeartbeat: now,
 		Version:       "0.1.0",
@@ -65,7 +66,7 @@ func TestRegisterInstanceUpsert(t *testing.T) {
 		InstanceID:    "test-instance-1",
 		Hostname:      "test-host-1",
 		PID:           12345,
-		Status:        "running",
+		Status:        types.ExecutorStatusRunning,
 		StartedAt:     now,
 		LastHeartbeat: now,
 		Version:       "0.1.0",
@@ -115,7 +116,7 @@ func TestUpdateHeartbeat(t *testing.T) {
 		InstanceID:    "test-instance-1",
 		Hostname:      "test-host",
 		PID:           12345,
-		Status:        "running",
+		Status:        types.ExecutorStatusRunning,
 		StartedAt:     now,
 		LastHeartbeat: now.Add(-5 * time.Minute), // Old heartbeat
 		Version:       "0.1.0",
@@ -178,7 +179,7 @@ func TestGetActiveInstances(t *testing.T) {
 			InstanceID:    "instance-1",
 			Hostname:      "host-1",
 			PID:           100,
-			Status:        "running",
+			Status:        types.ExecutorStatusRunning,
 			StartedAt:     now,
 			LastHeartbeat: now,
 			Version:       "0.1.0",
@@ -188,7 +189,7 @@ func TestGetActiveInstances(t *testing.T) {
 			InstanceID:    "instance-2",
 			Hostname:      "host-2",
 			PID:           200,
-			Status:        "running",
+			Status:        types.ExecutorStatusRunning,
 			StartedAt:     now,
 			LastHeartbeat: now,
 			Version:       "0.1.0",
@@ -198,7 +199,7 @@ func TestGetActiveInstances(t *testing.T) {
 			InstanceID:    "instance-3",
 			Hostname:      "host-3",
 			PID:           300,
-			Status:        "stopped", // Not running
+			Status:        types.ExecutorStatusStopped, // Not running
 			StartedAt:     now,
 			LastHeartbeat: now,
 			Version:       "0.1.0",
@@ -244,7 +245,7 @@ func TestCleanupStaleInstances(t *testing.T) {
 			InstanceID:    "fresh-instance",
 			Hostname:      "host-1",
 			PID:           100,
-			Status:        "running",
+			Status:        types.ExecutorStatusRunning,
 			StartedAt:     now,
 			LastHeartbeat: now, // Fresh
 			Version:       "0.1.0",
@@ -254,7 +255,7 @@ func TestCleanupStaleInstances(t *testing.T) {
 			InstanceID:    "stale-instance",
 			Hostname:      "host-2",
 			PID:           200,
-			Status:        "running",
+			Status:        types.ExecutorStatusRunning,
 			StartedAt:     now.Add(-10 * time.Minute),
 			LastHeartbeat: now.Add(-10 * time.Minute), // Stale (10 minutes old)
 			Version:       "0.1.0",
@@ -305,7 +306,7 @@ func TestCleanupStaleInstancesNoneStale(t *testing.T) {
 		InstanceID:    "fresh-instance",
 		Hostname:      "host-1",
 		PID:           100,
-		Status:        "running",
+		Status:        types.ExecutorStatusRunning,
 		StartedAt:     now,
 		LastHeartbeat: now,
 		Version:       "0.1.0",
@@ -325,6 +326,132 @@ func TestCleanupStaleInstancesNoneStale(t *testing.T) {
 
 	if cleaned != 0 {
 		t.Errorf("Expected to cleanup 0 instances, cleaned %d", cleaned)
+	}
+}
+
+func TestRegisterInstanceValidation(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	now := time.Now()
+
+	tests := []struct {
+		name     string
+		instance *types.ExecutorInstance
+		wantErr  bool
+		errMsg   string
+	}{
+		{
+			name: "empty instance_id",
+			instance: &types.ExecutorInstance{
+				InstanceID:    "",
+				Hostname:      "test-host",
+				PID:           12345,
+				Status:        types.ExecutorStatusRunning,
+				StartedAt:     now,
+				LastHeartbeat: now,
+			},
+			wantErr: true,
+			errMsg:  "instance_id is required",
+		},
+		{
+			name: "empty hostname",
+			instance: &types.ExecutorInstance{
+				InstanceID:    "test-1",
+				Hostname:      "",
+				PID:           12345,
+				Status:        types.ExecutorStatusRunning,
+				StartedAt:     now,
+				LastHeartbeat: now,
+			},
+			wantErr: true,
+			errMsg:  "hostname is required",
+		},
+		{
+			name: "negative PID",
+			instance: &types.ExecutorInstance{
+				InstanceID:    "test-1",
+				Hostname:      "test-host",
+				PID:           -1,
+				Status:        types.ExecutorStatusRunning,
+				StartedAt:     now,
+				LastHeartbeat: now,
+			},
+			wantErr: true,
+			errMsg:  "pid must be positive",
+		},
+		{
+			name: "zero PID",
+			instance: &types.ExecutorInstance{
+				InstanceID:    "test-1",
+				Hostname:      "test-host",
+				PID:           0,
+				Status:        types.ExecutorStatusRunning,
+				StartedAt:     now,
+				LastHeartbeat: now,
+			},
+			wantErr: true,
+			errMsg:  "pid must be positive",
+		},
+		{
+			name: "invalid status",
+			instance: &types.ExecutorInstance{
+				InstanceID:    "test-1",
+				Hostname:      "test-host",
+				PID:           12345,
+				Status:        types.ExecutorStatus("invalid"),
+				StartedAt:     now,
+				LastHeartbeat: now,
+			},
+			wantErr: true,
+			errMsg:  "invalid status",
+		},
+		{
+			name: "invalid JSON metadata",
+			instance: &types.ExecutorInstance{
+				InstanceID:    "test-1",
+				Hostname:      "test-host",
+				PID:           12345,
+				Status:        types.ExecutorStatusRunning,
+				StartedAt:     now,
+				LastHeartbeat: now,
+				Metadata:      `{invalid json}`,
+			},
+			wantErr: true,
+			errMsg:  "metadata must be valid JSON",
+		},
+		{
+			name: "valid instance",
+			instance: &types.ExecutorInstance{
+				InstanceID:    "test-1",
+				Hostname:      "test-host",
+				PID:           12345,
+				Status:        types.ExecutorStatusRunning,
+				StartedAt:     now,
+				LastHeartbeat: now,
+				Version:       "0.1.0",
+				Metadata:      `{"key":"value"}`,
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := db.RegisterInstance(ctx, tt.instance)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Expected error containing %q, got nil", tt.errMsg)
+				} else if tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("Expected error containing %q, got %q", tt.errMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error, got %v", err)
+				}
+			}
+		})
 	}
 }
 

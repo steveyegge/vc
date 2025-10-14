@@ -1,6 +1,7 @@
 package types
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -195,14 +196,51 @@ type WorkFilter struct {
 	Limit    int
 }
 
+// ExecutorStatus represents the state of an executor instance
+type ExecutorStatus string
+
+const (
+	ExecutorStatusRunning ExecutorStatus = "running"
+	ExecutorStatusStopped ExecutorStatus = "stopped"
+)
+
+// IsValid checks if the executor status value is valid
+func (s ExecutorStatus) IsValid() bool {
+	return s == ExecutorStatusRunning || s == ExecutorStatusStopped
+}
+
 // ExecutorInstance represents a running executor instance
 type ExecutorInstance struct {
-	InstanceID    string    `json:"instance_id"`
-	Hostname      string    `json:"hostname"`
-	PID           int       `json:"pid"`
-	Status        string    `json:"status"` // "running" or "stopped"
-	StartedAt     time.Time `json:"started_at"`
-	LastHeartbeat time.Time `json:"last_heartbeat"`
-	Version       string    `json:"version"`
-	Metadata      string    `json:"metadata"` // JSON string
+	InstanceID    string         `json:"instance_id"`
+	Hostname      string         `json:"hostname"`
+	PID           int            `json:"pid"`
+	Status        ExecutorStatus `json:"status"`
+	StartedAt     time.Time      `json:"started_at"`
+	LastHeartbeat time.Time      `json:"last_heartbeat"`
+	Version       string         `json:"version"`
+	Metadata      string         `json:"metadata"` // JSON string (must be valid JSON)
+}
+
+// Validate checks if the executor instance has valid field values
+func (e *ExecutorInstance) Validate() error {
+	if e.InstanceID == "" {
+		return fmt.Errorf("instance_id is required")
+	}
+	if e.Hostname == "" {
+		return fmt.Errorf("hostname is required")
+	}
+	if e.PID <= 0 {
+		return fmt.Errorf("pid must be positive (got %d)", e.PID)
+	}
+	if !e.Status.IsValid() {
+		return fmt.Errorf("invalid status: %s", e.Status)
+	}
+	// Validate metadata is valid JSON
+	if e.Metadata != "" {
+		var v interface{}
+		if err := json.Unmarshal([]byte(e.Metadata), &v); err != nil {
+			return fmt.Errorf("metadata must be valid JSON: %w", err)
+		}
+	}
+	return nil
 }
