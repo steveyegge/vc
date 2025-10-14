@@ -11,6 +11,12 @@
 
 Ensure `bd` is in your PATH or use the full path to your beads installation.
 
+**AI Supervision Requirements:**
+- **`ANTHROPIC_API_KEY`**: Required for AI supervision (assessment and analysis)
+- Export the environment variable: `export ANTHROPIC_API_KEY=your-key-here`
+- Without this key, the executor will run without AI supervision (warnings will be logged)
+- AI supervision can be explicitly disabled via config: `EnableAISupervision: false`
+
 When starting a new session:
 
 ```bash
@@ -304,6 +310,7 @@ store, err := storage.NewStorage(ctx, cfg)
 - **Always export before committing** - Keep JSONL in sync
 - **Beads path is `.beads/vc.db`** - Not `.vc/vc.db` (README is outdated)
 - **Bootstrap first** - Don't jump ahead to advanced features
+- **Set `ANTHROPIC_API_KEY`** - Required for AI supervision features (assessment, analysis, discovered issues)
 
 ---
 
