@@ -1,5 +1,0 @@
-{"id":"bd-1","title":"Critical bug","description":"","status":"open","priority":0,"issue_type":"bug","created_at":"2025-10-11T19:23:10.646212-07:00","updated_at":"2025-10-11T19:23:10.646212-07:00"}
-{"id":"bd-2","title":"High priority feature","description":"","status":"open","priority":1,"issue_type":"feature","created_at":"2025-10-11T19:23:10.800343-07:00","updated_at":"2025-10-11T19:23:10.800343-07:00","dependencies":[{"issue_id":"bd-2","depends_on_id":"bd-1","type":"blocks","created_at":"2025-10-11T19:23:16.427388-07:00","created_by":"stevey"}]}
-{"id":"bd-3","title":"Normal task","description":"","status":"open","priority":2,"issue_type":"task","created_at":"2025-10-11T19:23:10.945915-07:00","updated_at":"2025-10-11T19:23:10.945915-07:00"}
-{"id":"bd-4","title":"Low priority chore","description":"","status":"open","priority":4,"issue_type":"chore","created_at":"2025-10-11T19:23:11.094301-07:00","updated_at":"2025-10-11T19:23:11.094301-07:00"}
-{"id":"bd-5","title":"Test issue","description":"Testing prefix","status":"open","priority":2,"issue_type":"task","created_at":"2025-10-12T00:19:15.407647-07:00","updated_at":"2025-10-12T00:19:15.407647-07:00"}

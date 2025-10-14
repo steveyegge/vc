@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -822,53 +824,73 @@ func (s *PostgresStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, e
 		issueIDList = append(issueIDList, id)
 	}
 
-	// Build parameterized query: SELECT ... WHERE id IN ($1, $2, ..., $N)
-	params := make([]interface{}, len(issueIDList))
-	placeholders := make([]string, len(issueIDList))
-	for i, id := range issueIDList {
-		params[i] = id
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
-	}
-
-	bulkQuery := fmt.Sprintf(`
-		SELECT id, title, description, design, acceptance_criteria, notes,
-		       status, priority, issue_type, assignee, estimated_minutes,
-		       created_at, updated_at, closed_at
-		FROM issues
-		WHERE id IN (%s)
-	`, strings.Join(placeholders, ", "))
-
-	issueRows, err := s.pool.Query(ctx, bulkQuery, params...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch cycle issues: %w", err)
-	}
-	defer issueRows.Close()
+	// Sort for deterministic ordering (improves debugging and test consistency)
+	sort.Strings(issueIDList)
 
 	// Build issue map for fast lookup
+	// Use batching to avoid exceeding PostgreSQL's 65535 parameter limit
+	const maxBatchSize = 1000
 	issueMap := make(map[string]*types.Issue)
-	for issueRows.Next() {
-		var issue types.Issue
-		var closedAt *time.Time
-		var estimatedMinutes *int
-		var assignee *string
 
-		err := issueRows.Scan(
-			&issue.ID, &issue.Title, &issue.Description, &issue.Design,
-			&issue.AcceptanceCriteria, &issue.Notes, &issue.Status,
-			&issue.Priority, &issue.IssueType, &assignee, &estimatedMinutes,
-			&issue.CreatedAt, &issue.UpdatedAt, &closedAt,
-		)
+	for i := 0; i < len(issueIDList); i += maxBatchSize {
+		end := i + maxBatchSize
+		if end > len(issueIDList) {
+			end = len(issueIDList)
+		}
+		batch := issueIDList[i:end]
+
+		// Build parameterized query for this batch: SELECT ... WHERE id IN ($1, $2, ..., $N)
+		params := make([]interface{}, len(batch))
+		placeholders := make([]string, len(batch))
+		for j, id := range batch {
+			params[j] = id
+			placeholders[j] = fmt.Sprintf("$%d", j+1)
+		}
+
+		bulkQuery := fmt.Sprintf(`
+			SELECT id, title, description, design, acceptance_criteria, notes,
+			       status, priority, issue_type, assignee, estimated_minutes,
+			       created_at, updated_at, closed_at
+			FROM issues
+			WHERE id IN (%s)
+		`, strings.Join(placeholders, ", "))
+
+		issueRows, err := s.pool.Query(ctx, bulkQuery, params...)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan issue: %w", err)
+			return nil, fmt.Errorf("failed to fetch cycle issues: %w", err)
+		}
+		defer issueRows.Close()
+
+		// Process this batch and add to issueMap
+		for issueRows.Next() {
+			var issue types.Issue
+			var closedAt *time.Time
+			var estimatedMinutes *int
+			var assignee *string
+
+			err := issueRows.Scan(
+				&issue.ID, &issue.Title, &issue.Description, &issue.Design,
+				&issue.AcceptanceCriteria, &issue.Notes, &issue.Status,
+				&issue.Priority, &issue.IssueType, &assignee, &estimatedMinutes,
+				&issue.CreatedAt, &issue.UpdatedAt, &closedAt,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to scan issue: %w", err)
+			}
+
+			issue.ClosedAt = closedAt
+			issue.EstimatedMinutes = estimatedMinutes
+			if assignee != nil {
+				issue.Assignee = *assignee
+			}
+
+			issueMap[issue.ID] = &issue
 		}
 
-		issue.ClosedAt = closedAt
-		issue.EstimatedMinutes = estimatedMinutes
-		if assignee != nil {
-			issue.Assignee = *assignee
+		// Check for errors during iteration
+		if err := issueRows.Err(); err != nil {
+			return nil, fmt.Errorf("error iterating batch results: %w", err)
 		}
-
-		issueMap[issue.ID] = &issue
 	}
 
 	if err := issueRows.Err(); err != nil {
@@ -882,6 +904,9 @@ func (s *PostgresStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, e
 		for _, issueID := range cp.issueIDs {
 			if issue, exists := issueMap[issueID]; exists {
 				cycleIssues = append(cycleIssues, issue)
+			} else {
+				// Data integrity issue: issue in cycle path not found in database
+				fmt.Fprintf(os.Stderr, "WARNING: issue %s in cycle path not found in database (path: %s)\n", issueID, cp.path)
 			}
 		}
 		if len(cycleIssues) > 0 {
