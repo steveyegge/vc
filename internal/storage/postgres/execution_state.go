@@ -22,16 +22,6 @@ func (s *PostgresStorage) ClaimIssue(ctx context.Context, issueID, executorInsta
 	}
 	defer tx.Rollback(ctx)
 
-	// Check if issue is already claimed
-	var existingExecutor string
-	err = tx.QueryRow(ctx, "SELECT executor_instance_id FROM issue_execution_state WHERE issue_id = $1", issueID).Scan(&existingExecutor)
-	if err != nil && err != pgx.ErrNoRows {
-		return fmt.Errorf("failed to check execution state: %w", err)
-	}
-	if err == nil {
-		return fmt.Errorf("issue %s is already claimed by another executor", issueID)
-	}
-
 	// Verify the issue exists and is in 'open' status
 	var issueStatus string
 	err = tx.QueryRow(ctx, "SELECT status FROM issues WHERE id = $1", issueID).Scan(&issueStatus)

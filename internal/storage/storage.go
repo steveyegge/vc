@@ -102,6 +102,12 @@ func DefaultConfig() *Config {
 }
 
 // NewStorage creates a new storage backend based on configuration
+//
+// Note: There is a known API inconsistency between the backend constructors:
+// - sqlite.New(path string) does not accept a context parameter
+// - postgres.New(ctx context.Context, cfg *Config) accepts a context parameter
+// This means SQLite initialization cannot respect context cancellation, while PostgreSQL can.
+// The ctx parameter is only used for PostgreSQL initialization.
 func NewStorage(ctx context.Context, cfg *Config) (Storage, error) {
 	if cfg == nil {
 		cfg = DefaultConfig()
@@ -131,39 +137,32 @@ func NewStorage(ctx context.Context, cfg *Config) (Storage, error) {
 			return nil, fmt.Errorf("postgres backend requires User to be set")
 		}
 
-		// Build postgres config
-		pgCfg := &postgres.Config{
-			Host:            cfg.Host,
-			Port:            cfg.Port,
-			Database:        cfg.Database,
-			User:            cfg.User,
-			Password:        cfg.Password,
-			SSLMode:         cfg.SSLMode,
-			MaxConns:        cfg.MaxConns,
-			MinConns:        cfg.MinConns,
-			MaxConnLifetime: cfg.MaxConnLifetime,
-			MaxConnIdleTime: cfg.MaxConnIdleTime,
-			HealthCheck:     cfg.HealthCheck,
-		}
+		// Start with postgres defaults and override with user-provided values
+		pgCfg := postgres.DefaultConfig()
+		pgCfg.Host = cfg.Host
+		pgCfg.Port = cfg.Port
+		pgCfg.Database = cfg.Database
+		pgCfg.User = cfg.User
+		pgCfg.Password = cfg.Password
 
-		// Apply defaults if not set
-		if pgCfg.SSLMode == "" {
-			pgCfg.SSLMode = "prefer"
+		// Override pool settings only if explicitly set (non-zero)
+		if cfg.SSLMode != "" {
+			pgCfg.SSLMode = cfg.SSLMode
 		}
-		if pgCfg.MaxConns == 0 {
-			pgCfg.MaxConns = 25
+		if cfg.MaxConns != 0 {
+			pgCfg.MaxConns = cfg.MaxConns
 		}
-		if pgCfg.MinConns == 0 {
-			pgCfg.MinConns = 5
+		if cfg.MinConns != 0 {
+			pgCfg.MinConns = cfg.MinConns
 		}
-		if pgCfg.MaxConnLifetime == 0 {
-			pgCfg.MaxConnLifetime = 1 * time.Hour
+		if cfg.MaxConnLifetime != 0 {
+			pgCfg.MaxConnLifetime = cfg.MaxConnLifetime
 		}
-		if pgCfg.MaxConnIdleTime == 0 {
-			pgCfg.MaxConnIdleTime = 30 * time.Minute
+		if cfg.MaxConnIdleTime != 0 {
+			pgCfg.MaxConnIdleTime = cfg.MaxConnIdleTime
 		}
-		if pgCfg.HealthCheck == 0 {
-			pgCfg.HealthCheck = 1 * time.Minute
+		if cfg.HealthCheck != 0 {
+			pgCfg.HealthCheck = cfg.HealthCheck
 		}
 
 		return postgres.New(ctx, pgCfg)
