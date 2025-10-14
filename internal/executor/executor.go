@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/ai"
+	"github.com/steveyegge/vc/internal/gates"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -27,9 +28,11 @@ type Executor struct {
 	doneCh chan struct{}
 
 	// Configuration
-	pollInterval       time.Duration
-	heartbeatTicker    *time.Ticker
+	pollInterval        time.Duration
+	heartbeatTicker     *time.Ticker
 	enableAISupervision bool
+	enableQualityGates  bool
+	workingDir          string
 
 	// State
 	mu      sync.RWMutex
@@ -43,6 +46,8 @@ type Config struct {
 	PollInterval        time.Duration
 	HeartbeatPeriod     time.Duration
 	EnableAISupervision bool // Enable AI assessment and analysis (default: true)
+	EnableQualityGates  bool // Enable quality gates enforcement (default: true)
+	WorkingDir          string // Working directory for quality gates (default: ".")
 }
 
 // DefaultConfig returns default executor configuration
@@ -52,6 +57,8 @@ func DefaultConfig() *Config {
 		PollInterval:        5 * time.Second,
 		HeartbeatPeriod:     30 * time.Second,
 		EnableAISupervision: true,
+		EnableQualityGates:  true,
+		WorkingDir:          ".",
 	}
 }
 
@@ -66,6 +73,12 @@ func New(cfg *Config) (*Executor, error) {
 		return nil, fmt.Errorf("failed to get hostname: %w", err)
 	}
 
+	// Set default working directory if not specified
+	workingDir := cfg.WorkingDir
+	if workingDir == "" {
+		workingDir = "."
+	}
+
 	e := &Executor{
 		store:               cfg.Store,
 		instanceID:          uuid.New().String(),
@@ -74,6 +87,8 @@ func New(cfg *Config) (*Executor, error) {
 		version:             cfg.Version,
 		pollInterval:        cfg.PollInterval,
 		enableAISupervision: cfg.EnableAISupervision,
+		enableQualityGates:  cfg.EnableQualityGates,
+		workingDir:          workingDir,
 		stopCh:              make(chan struct{}),
 		doneCh:              make(chan struct{}),
 	}
@@ -328,8 +343,43 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		}
 	}
 
+	// Phase 3.5: Quality Gates (if enabled and agent succeeded)
+	gatesPassed := true
+	if result.Success && e.enableQualityGates {
+		// Update execution state to gates
+		if err := e.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateGates); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
+		}
+
+		// Run quality gates
+		gateRunner, err := gates.NewRunner(&gates.Config{
+			Store:      e.store,
+			WorkingDir: e.workingDir,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to create quality gate runner: %v (skipping gates)\n", err)
+		} else {
+			results, allPassed := gateRunner.RunAll(ctx)
+			gatesPassed = allPassed
+
+			// Handle gate results (creates blocking issues on failure)
+			if err := gateRunner.HandleGateResults(ctx, issue, results, allPassed); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to handle gate results: %v\n", err)
+			}
+
+			if !allPassed {
+				fmt.Printf("Quality gates failed for issue %s - issue marked as blocked\n", issue.ID)
+				// Release the issue execution state since it's now blocked
+				if err := e.store.ReleaseIssue(ctx, issue.ID); err != nil {
+					return fmt.Errorf("failed to release blocked issue: %w", err)
+				}
+				return nil
+			}
+		}
+	}
+
 	// Phase 4: Process the result
-	if result.Success {
+	if result.Success && gatesPassed {
 		fmt.Printf("Agent completed successfully for issue %s\n", issue.ID)
 
 		// Determine if we should close the issue based on AI analysis
