@@ -50,9 +50,9 @@ Loop {
 
 **Phase**: Early bootstrap (porting from TypeScript vibecoder)
 
-**Tracker**: Beads (SQLite) - see `.vc/vc.db`
+**Tracker**: Beads (SQLite) - see `.beads/vc.db`
 
-**Next**: Phase 1 - Integrate Beads with VC-specific fields
+**Next**: Check ready work with `/workspace/beads/bd ready`
 
 ## Quick Start
 
