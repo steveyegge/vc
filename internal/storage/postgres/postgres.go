@@ -905,10 +905,6 @@ func (s *PostgresStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, e
 		}
 	}
 
-	if err := issueRows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating cycle issue rows: %w", err)
-	}
-
 	// Third pass: assemble cycles from issue map
 	var cycles [][]*types.Issue
 	for _, cp := range cyclePaths {
