@@ -2,7 +2,11 @@ package storage
 
 import (
 	"context"
+	"fmt"
+	"time"
 
+	"github.com/steveyegge/vc/internal/storage/postgres"
+	"github.com/steveyegge/vc/internal/storage/sqlite"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -66,10 +70,105 @@ type Config struct {
 	Path string // database file path
 
 	// PostgreSQL config
-	Host     string
-	Port     int
-	Database string
-	User     string
-	Password string
-	SSLMode  string
+	Host            string
+	Port            int
+	Database        string
+	User            string
+	Password        string
+	SSLMode         string
+	MaxConns        int32
+	MinConns        int32
+	MaxConnLifetime time.Duration
+	MaxConnIdleTime time.Duration
+	HealthCheck     time.Duration
+}
+
+// DefaultConfig returns a config with sensible defaults
+func DefaultConfig() *Config {
+	return &Config{
+		Backend:         "sqlite",
+		Path:            ".beads/vc.db",
+		Host:            "localhost",
+		Port:            5432,
+		Database:        "vc",
+		User:            "vc",
+		SSLMode:         "prefer",
+		MaxConns:        25,
+		MinConns:        5,
+		MaxConnLifetime: 1 * time.Hour,
+		MaxConnIdleTime: 30 * time.Minute,
+		HealthCheck:     1 * time.Minute,
+	}
+}
+
+// NewStorage creates a new storage backend based on configuration
+func NewStorage(ctx context.Context, cfg *Config) (Storage, error) {
+	if cfg == nil {
+		cfg = DefaultConfig()
+	}
+
+	// Validate backend type
+	switch cfg.Backend {
+	case "sqlite":
+		// Validate SQLite config
+		if cfg.Path == "" {
+			return nil, fmt.Errorf("sqlite backend requires Path to be set")
+		}
+		return sqlite.New(cfg.Path)
+
+	case "postgres":
+		// Validate PostgreSQL config
+		if cfg.Host == "" {
+			return nil, fmt.Errorf("postgres backend requires Host to be set")
+		}
+		if cfg.Port == 0 {
+			return nil, fmt.Errorf("postgres backend requires Port to be set")
+		}
+		if cfg.Database == "" {
+			return nil, fmt.Errorf("postgres backend requires Database to be set")
+		}
+		if cfg.User == "" {
+			return nil, fmt.Errorf("postgres backend requires User to be set")
+		}
+
+		// Build postgres config
+		pgCfg := &postgres.Config{
+			Host:            cfg.Host,
+			Port:            cfg.Port,
+			Database:        cfg.Database,
+			User:            cfg.User,
+			Password:        cfg.Password,
+			SSLMode:         cfg.SSLMode,
+			MaxConns:        cfg.MaxConns,
+			MinConns:        cfg.MinConns,
+			MaxConnLifetime: cfg.MaxConnLifetime,
+			MaxConnIdleTime: cfg.MaxConnIdleTime,
+			HealthCheck:     cfg.HealthCheck,
+		}
+
+		// Apply defaults if not set
+		if pgCfg.SSLMode == "" {
+			pgCfg.SSLMode = "prefer"
+		}
+		if pgCfg.MaxConns == 0 {
+			pgCfg.MaxConns = 25
+		}
+		if pgCfg.MinConns == 0 {
+			pgCfg.MinConns = 5
+		}
+		if pgCfg.MaxConnLifetime == 0 {
+			pgCfg.MaxConnLifetime = 1 * time.Hour
+		}
+		if pgCfg.MaxConnIdleTime == 0 {
+			pgCfg.MaxConnIdleTime = 30 * time.Minute
+		}
+		if pgCfg.HealthCheck == 0 {
+			pgCfg.HealthCheck = 1 * time.Minute
+		}
+
+		return postgres.New(ctx, pgCfg)
+
+	default:
+		return nil, fmt.Errorf("unsupported backend: %s (must be 'sqlite' or 'postgres')", cfg.Backend)
+	}
 }
