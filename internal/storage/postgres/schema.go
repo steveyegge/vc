@@ -1,6 +1,17 @@
 package postgres
 
 const schema = `
+-- Issue ID sequence
+-- Used to generate unique sequential IDs for issues
+CREATE SEQUENCE IF NOT EXISTS issue_id_seq START WITH 1;
+
+-- Function to generate issue IDs with 'vc-' prefix
+CREATE OR REPLACE FUNCTION next_issue_id() RETURNS TEXT AS $$
+BEGIN
+    RETURN 'vc-' || nextval('issue_id_seq')::TEXT;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Issues table
 CREATE TABLE IF NOT EXISTS issues (
     id TEXT PRIMARY KEY,

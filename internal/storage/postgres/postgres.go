@@ -8,7 +8,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -19,9 +18,7 @@ import (
 
 // PostgresStorage implements the Storage interface using PostgreSQL
 type PostgresStorage struct {
-	pool   *pgxpool.Pool
-	nextID int
-	idMu   sync.Mutex // Protects nextID from concurrent access
+	pool *pgxpool.Pool
 }
 
 // Config holds PostgreSQL connection configuration
@@ -103,16 +100,8 @@ func New(ctx context.Context, cfg *Config) (*PostgresStorage, error) {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
-	// Get next ID
-	nextID, err := getNextID(ctx, pool)
-	if err != nil {
-		pool.Close()
-		return nil, err
-	}
-
 	return &PostgresStorage{
-		pool:   pool,
-		nextID: nextID,
+		pool: pool,
 	}, nil
 }
 
@@ -129,32 +118,6 @@ func initializeSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	return nil
-}
-
-// getNextID determines the next issue ID to use
-func getNextID(ctx context.Context, pool *pgxpool.Pool) (int, error) {
-	var maxID *string
-	err := pool.QueryRow(ctx, "SELECT MAX(id) FROM issues").Scan(&maxID)
-	if err != nil && err != pgx.ErrNoRows {
-		return 1, nil // Start from 1 if table is empty
-	}
-
-	if maxID == nil || *maxID == "" {
-		return 1, nil
-	}
-
-	// Parse "bd-123" to get 123
-	parts := strings.Split(*maxID, "-")
-	if len(parts) != 2 {
-		return 1, nil
-	}
-
-	var num int
-	if _, err := fmt.Sscanf(parts[1], "%d", &num); err != nil {
-		return 1, nil
-	}
-
-	return num + 1, nil
 }
 
 // Allowed fields for update to prevent SQL injection
@@ -190,12 +153,12 @@ func (s *PostgresStorage) CreateIssue(ctx context.Context, issue *types.Issue, a
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
-	// Generate ID if not set (thread-safe)
+	// Generate ID if not set using PostgreSQL sequence
 	if issue.ID == "" {
-		s.idMu.Lock()
-		issue.ID = fmt.Sprintf("bd-%d", s.nextID)
-		s.nextID++
-		s.idMu.Unlock()
+		err := s.pool.QueryRow(ctx, "SELECT next_issue_id()").Scan(&issue.ID)
+		if err != nil {
+			return fmt.Errorf("failed to generate issue ID: %w", err)
+		}
 	}
 
 	// Set timestamps
