@@ -4,20 +4,27 @@
 
 **VC uses Beads for issue tracking.** All work is tracked in the `.beads/vc.db` SQLite database.
 
+### Environment Setup
+
+- **GCE VM (claude-code-dev-vm)**: Beads is at `/workspace/beads/bd`
+- **Local development**: Beads is typically at `~/src/beads/bd`
+
+Ensure `bd` is in your PATH or use the full path to your beads installation.
+
 When starting a new session:
 
 ```bash
 # 1. Check for ready work (no blockers)
-/workspace/beads/bd ready
+bd ready
 
 # 2. View issue details
-/workspace/beads/bd show vc-X
+bd show vc-X
 
 # 3. Start working on it
-/workspace/beads/bd update vc-X --status in_progress
+bd update vc-X --status in_progress
 ```
 
-**Important**: Use the `bd` command from `/workspace/beads/bd` - the VC binary doesn't exist yet (that's what we're building!).
+**Important**: Use the `bd` command from your beads installation - the VC binary doesn't exist yet (that's what we're building!).
 
 ---
 
@@ -27,13 +34,13 @@ VC is in **bootstrap phase**. We're building the AI-supervised issue workflow fr
 
 **Check ready work**:
 ```bash
-/workspace/beads/bd ready --limit 5
+bd ready --limit 5
 ```
 
 **View dependency chain**:
 ```bash
-/workspace/beads/bd list
-/workspace/beads/bd dep tree vc-5
+bd list
+bd dep tree vc-5
 ```
 
 ---
@@ -62,30 +69,30 @@ vc/
 
 ```bash
 # Ready work (no blockers)
-/workspace/beads/bd ready
+bd ready
 
 # All open issues
-/workspace/beads/bd list --status open
+bd list --status open
 
 # Show specific issue with dependencies
-/workspace/beads/bd show vc-X
+bd show vc-X
 ```
 
 ### Claiming Work
 
 ```bash
 # Mark as in progress
-/workspace/beads/bd update vc-X --status in_progress --actor "your-name"
+bd update vc-X --status in_progress --actor "your-name"
 
 # Add notes as you work
-/workspace/beads/bd update vc-X --notes "Working on executor loop..."
+bd update vc-X --notes "Working on executor loop..."
 ```
 
 ### Creating Issues
 
 ```bash
 # Create child issue
-/workspace/beads/bd create \
+bd create \
   "Issue title" \
   -t task \
   -p 2 \
@@ -94,7 +101,7 @@ vc/
   --acceptance "Success criteria"
 
 # Add dependency (if needed)
-/workspace/beads/bd dep add vc-NEW vc-PARENT --type blocks
+bd dep add vc-NEW vc-PARENT --type blocks
 ```
 
 ### Completing Work
@@ -106,14 +113,14 @@ vc/
 # - Code documented
 
 # Close issue
-/workspace/beads/bd close vc-X --reason "Completed all acceptance criteria"
+bd close vc-X --reason "Completed all acceptance criteria"
 ```
 
 ### Export to Git
 
 **Always export before committing**:
 ```bash
-/workspace/beads/bd export -o .beads/issues.jsonl
+bd export -o .beads/issues.jsonl
 git add .beads/issues.jsonl
 ```
 
@@ -187,7 +194,7 @@ The workflow:
 - **README.md** - Project vision and architecture
 - **BOOTSTRAP.md** - Original roadmap (now in beads as vc-5 through vc-9)
 - **Issue tracker** - Use `bd show vc-X` to read full issue details
-- **/workspace/vibecoder/** - The 350k LOC TypeScript prototype (reference)
+- **TypeScript prototype** - The 350k LOC reference implementation at `../zoey/vc/`
 
 ---
 
@@ -221,21 +228,21 @@ The workflow:
 
 ```bash
 # === Finding work ===
-/workspace/beads/bd ready                    # Show ready work
-/workspace/beads/bd list --status open       # All open issues
-/workspace/beads/bd show vc-X                # Issue details
+bd ready                    # Show ready work
+bd list --status open       # All open issues
+bd show vc-X                # Issue details
 
 # === Managing issues ===
-/workspace/beads/bd update vc-X --status in_progress
-/workspace/beads/bd update vc-X --notes "Progress update"
-/workspace/beads/bd close vc-X --reason "Done"
+bd update vc-X --status in_progress
+bd update vc-X --notes "Progress update"
+bd close vc-X --reason "Done"
 
 # === Dependencies ===
-/workspace/beads/bd dep tree vc-X            # Show dependency tree
-/workspace/beads/bd dep add vc-A vc-B        # A depends on B
+bd dep tree vc-X            # Show dependency tree
+bd dep add vc-A vc-B        # A depends on B
 
 # === Export ===
-/workspace/beads/bd export -o .beads/issues.jsonl
+bd export -o .beads/issues.jsonl
 ```
 
 ---
@@ -244,8 +251,8 @@ The workflow:
 
 1. Read this file (CLAUDE.md)
 2. Read README.md for vision
-3. Run `/workspace/beads/bd ready` to see what's ready
-4. Run `/workspace/beads/bd show vc-5` to see first epic
+3. Run `bd ready` to see what's ready
+4. Run `bd show vc-5` to see first epic
 5. Start working on vc-5 or break it down into child issues
 6. Export to JSONL before committing
 
