@@ -190,6 +190,8 @@ func (a *Agent) captureOutput() {
 			// Only append if we haven't reached the limit
 			if len(a.result.Output) < maxOutputLines {
 				a.result.Output = append(a.result.Output, line)
+				// Print inside mutex to ensure ordering matches captured output
+				fmt.Println(line)
 			} else if len(a.result.Output) == maxOutputLines {
 				// Add truncation marker once
 				a.result.Output = append(a.result.Output, "[... output truncated: limit reached ...]")
@@ -203,9 +205,6 @@ func (a *Agent) captureOutput() {
 				}
 			}
 			a.mu.Unlock()
-
-			// Also print to console for visibility
-			fmt.Println(line)
 		}
 	}()
 
@@ -220,14 +219,13 @@ func (a *Agent) captureOutput() {
 			// Only append if we haven't reached the limit
 			if len(a.result.Errors) < maxOutputLines {
 				a.result.Errors = append(a.result.Errors, line)
+				// Print inside mutex to ensure ordering matches captured output
+				fmt.Fprintln(os.Stderr, line)
 			} else if len(a.result.Errors) == maxOutputLines {
 				// Add truncation marker once
 				a.result.Errors = append(a.result.Errors, "[... error output truncated: limit reached ...]")
 			}
 			a.mu.Unlock()
-
-			// Print errors to stderr
-			fmt.Fprintln(os.Stderr, line)
 		}
 	}()
 
