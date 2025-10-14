@@ -94,19 +94,25 @@ type Dependency struct {
 	CreatedBy   string         `json:"created_by"`
 }
 
-// DependencyType categorizes the relationship
+// DependencyType categorizes the relationship between issues
 type DependencyType string
 
 const (
-	DepBlocks      DependencyType = "blocks"
-	DepRelated     DependencyType = "related"
+	// DepBlocks indicates the issue is blocked by another issue
+	DepBlocks DependencyType = "blocks"
+	// DepRelated indicates the issue is related to another issue
+	DepRelated DependencyType = "related"
+	// DepParentChild indicates a parent-child relationship (epic to tasks)
 	DepParentChild DependencyType = "parent-child"
+	// DepDiscoveredFrom indicates the issue was discovered during work on another issue
+	// Used by AI analysis to track punted work, discovered bugs, and quality issues
+	DepDiscoveredFrom DependencyType = "discovered-from"
 )
 
 // IsValid checks if the dependency type value is valid
 func (d DependencyType) IsValid() bool {
 	switch d {
-	case DepBlocks, DepRelated, DepParentChild:
+	case DepBlocks, DepRelated, DepParentChild, DepDiscoveredFrom:
 		return true
 	}
 	return false
