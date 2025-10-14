@@ -721,6 +721,10 @@ func (s *PostgresStorage) GetDependencyTree(ctx context.Context, issueID string,
 		nodes = append(nodes, &node)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating dependency tree rows: %w", err)
+	}
+
 	return nodes, nil
 }
 
@@ -802,6 +806,10 @@ func (s *PostgresStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, e
 		}
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating cycle path rows: %w", err)
+	}
+
 	// If no cycles found, return early
 	if len(cyclePaths) == 0 {
 		return nil, nil
@@ -863,6 +871,10 @@ func (s *PostgresStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, e
 		issueMap[issue.ID] = &issue
 	}
 
+	if err := issueRows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating cycle issue rows: %w", err)
+	}
+
 	// Third pass: assemble cycles from issue map
 	var cycles [][]*types.Issue
 	for _, cp := range cyclePaths {
@@ -888,7 +900,7 @@ func (s *PostgresStorage) AddLabel(ctx context.Context, issueID, label, actor st
 	}
 	defer tx.Rollback(ctx)
 
-	_, err = tx.Exec(ctx, `
+	result, err := tx.Exec(ctx, `
 		INSERT INTO labels (issue_id, label)
 		VALUES ($1, $2)
 		ON CONFLICT (issue_id, label) DO NOTHING
@@ -897,12 +909,16 @@ func (s *PostgresStorage) AddLabel(ctx context.Context, issueID, label, actor st
 		return fmt.Errorf("failed to add label: %w", err)
 	}
 
-	_, err = tx.Exec(ctx, `
-		INSERT INTO events (issue_id, event_type, actor, comment)
-		VALUES ($1, $2, $3, $4)
-	`, issueID, types.EventLabelAdded, actor, fmt.Sprintf("Added label: %s", label))
-	if err != nil {
-		return fmt.Errorf("failed to record event: %w", err)
+	// Only record event if label was actually added (not a no-op)
+	rowsAffected := result.RowsAffected()
+	if rowsAffected > 0 {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO events (issue_id, event_type, actor, comment)
+			VALUES ($1, $2, $3, $4)
+		`, issueID, types.EventLabelAdded, actor, fmt.Sprintf("Added label: %s", label))
+		if err != nil {
+			return fmt.Errorf("failed to record event: %w", err)
+		}
 	}
 
 	return tx.Commit(ctx)
@@ -916,19 +932,23 @@ func (s *PostgresStorage) RemoveLabel(ctx context.Context, issueID, label, actor
 	}
 	defer tx.Rollback(ctx)
 
-	_, err = tx.Exec(ctx, `
+	result, err := tx.Exec(ctx, `
 		DELETE FROM labels WHERE issue_id = $1 AND label = $2
 	`, issueID, label)
 	if err != nil {
 		return fmt.Errorf("failed to remove label: %w", err)
 	}
 
-	_, err = tx.Exec(ctx, `
-		INSERT INTO events (issue_id, event_type, actor, comment)
-		VALUES ($1, $2, $3, $4)
-	`, issueID, types.EventLabelRemoved, actor, fmt.Sprintf("Removed label: %s", label))
-	if err != nil {
-		return fmt.Errorf("failed to record event: %w", err)
+	// Only record event if label was actually removed (not a no-op)
+	rowsAffected := result.RowsAffected()
+	if rowsAffected > 0 {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO events (issue_id, event_type, actor, comment)
+			VALUES ($1, $2, $3, $4)
+		`, issueID, types.EventLabelRemoved, actor, fmt.Sprintf("Removed label: %s", label))
+		if err != nil {
+			return fmt.Errorf("failed to record event: %w", err)
+		}
 	}
 
 	return tx.Commit(ctx)
@@ -951,6 +971,10 @@ func (s *PostgresStorage) GetLabels(ctx context.Context, issueID string) ([]stri
 			return nil, err
 		}
 		labels = append(labels, label)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating label rows: %w", err)
 	}
 
 	return labels, nil
@@ -1051,6 +1075,10 @@ func (s *PostgresStorage) GetEvents(ctx context.Context, issueID string, limit i
 		events = append(events, &event)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating event rows: %w", err)
+	}
+
 	return events, nil
 }
 
@@ -1124,6 +1152,10 @@ func scanIssues(rows pgx.Rows) ([]*types.Issue, error) {
 		}
 
 		issues = append(issues, &issue)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating issue rows: %w", err)
 	}
 
 	return issues, nil
