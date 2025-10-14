@@ -214,6 +214,89 @@ The workflow:
 
 ---
 
+## 💾 Database Bootstrap and Migrations
+
+### Automatic Initialization
+
+**The database schema is created automatically** when you first connect to a new database. You don't need to run initialization scripts manually - just start using the storage layer and it will set everything up.
+
+Both SQLite and PostgreSQL backends automatically:
+1. Create all tables (issues, dependencies, labels, events, executor_instances, issue_execution_state)
+2. Create indexes for performance
+3. Create views for ready work and blocked issues
+4. Set up foreign key constraints
+
+### Manual Initialization (Optional)
+
+If you want to pre-initialize a database, use the provided script:
+
+```bash
+# Initialize SQLite database (default: .beads/vc.db)
+./scripts/init-db.sh sqlite
+
+# Initialize SQLite at custom location
+VC_DB_PATH=/path/to/db.sqlite ./scripts/init-db.sh sqlite
+
+# Initialize PostgreSQL database
+VC_PG_HOST=localhost VC_PG_DATABASE=vc ./scripts/init-db.sh postgres
+```
+
+See `./scripts/init-db.sh --help` for all options.
+
+### Schema Migrations
+
+The migration framework is in `internal/storage/migrations/`. It provides:
+
+- **Version tracking**: `schema_version` table tracks applied migrations
+- **Up/down migrations**: Forward and rollback support
+- **Ordered execution**: Migrations applied in version order
+- **Transaction safety**: Each migration runs in a transaction
+
+Example migration:
+
+```go
+import "github.com/steveyegge/vc/internal/storage/migrations"
+
+manager := migrations.NewManager()
+manager.Register(migrations.Migration{
+    Version:     1,
+    Description: "Add new feature table",
+    Up:          "CREATE TABLE ...",
+    Down:        "DROP TABLE ...",
+})
+
+// Apply migrations
+err := manager.ApplySQLite(db)
+// or
+err := manager.ApplyPostgreSQL(ctx, pool)
+```
+
+### Backend Configuration
+
+Choose between SQLite and PostgreSQL via the storage configuration:
+
+```go
+import "github.com/steveyegge/vc/internal/storage"
+
+// SQLite (default)
+cfg := storage.DefaultConfig()
+cfg.Backend = "sqlite"
+cfg.Path = ".beads/vc.db"
+store, err := storage.NewStorage(ctx, cfg)
+
+// PostgreSQL
+cfg := storage.DefaultConfig()
+cfg.Backend = "postgres"
+cfg.Host = "localhost"
+cfg.Port = 5432
+cfg.Database = "vc"
+cfg.User = "vc"
+cfg.Password = "secret"
+store, err := storage.NewStorage(ctx, cfg)
+```
+
+---
+
 ## ⚠️ Important Notes
 
 - **Don't use markdown TODOs** - Everything goes in beads
