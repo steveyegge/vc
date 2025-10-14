@@ -46,6 +46,14 @@ type Storage interface {
 	GetActiveInstances(ctx context.Context) ([]*types.ExecutorInstance, error)
 	CleanupStaleInstances(ctx context.Context, staleThreshold int) (int, error)
 
+	// Issue Execution State (Checkpoint/Resume)
+	ClaimIssue(ctx context.Context, issueID, executorInstanceID string) error
+	GetExecutionState(ctx context.Context, issueID string) (*types.IssueExecutionState, error)
+	UpdateExecutionState(ctx context.Context, issueID string, state types.ExecutionState) error
+	SaveCheckpoint(ctx context.Context, issueID string, checkpointData interface{}) error
+	GetCheckpoint(ctx context.Context, issueID string) (string, error)
+	ReleaseIssue(ctx context.Context, issueID string) error
+
 	// Lifecycle
 	Close() error
 }

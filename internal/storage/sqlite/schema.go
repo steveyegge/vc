@@ -106,4 +106,22 @@ CREATE TABLE IF NOT EXISTS executor_instances (
 
 CREATE INDEX IF NOT EXISTS idx_executor_instances_status ON executor_instances(status);
 CREATE INDEX IF NOT EXISTS idx_executor_instances_heartbeat ON executor_instances(last_heartbeat);
+
+-- Issue execution state table
+-- Tracks the execution state of issues being processed by executors
+-- Enables checkpoint/resume functionality and prevents double-claiming
+CREATE TABLE IF NOT EXISTS issue_execution_state (
+    issue_id TEXT PRIMARY KEY,
+    executor_instance_id TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'claimed' CHECK(state IN ('claimed', 'assessing', 'executing', 'analyzing', 'gates', 'completed')),
+    checkpoint_data TEXT NOT NULL DEFAULT '{}',
+    started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+    FOREIGN KEY (executor_instance_id) REFERENCES executor_instances(instance_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_execution_state_executor ON issue_execution_state(executor_instance_id);
+CREATE INDEX IF NOT EXISTS idx_execution_state_state ON issue_execution_state(state);
+CREATE INDEX IF NOT EXISTS idx_execution_state_updated ON issue_execution_state(updated_at);
 `

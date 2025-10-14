@@ -244,3 +244,56 @@ func (e *ExecutorInstance) Validate() error {
 	}
 	return nil
 }
+
+// ExecutionState represents the state of issue execution
+type ExecutionState string
+
+const (
+	ExecutionStateClaimed   ExecutionState = "claimed"
+	ExecutionStateAssessing ExecutionState = "assessing"
+	ExecutionStateExecuting ExecutionState = "executing"
+	ExecutionStateAnalyzing ExecutionState = "analyzing"
+	ExecutionStateGates     ExecutionState = "gates"
+	ExecutionStateCompleted ExecutionState = "completed"
+)
+
+// IsValid checks if the execution state value is valid
+func (s ExecutionState) IsValid() bool {
+	switch s {
+	case ExecutionStateClaimed, ExecutionStateAssessing, ExecutionStateExecuting,
+		ExecutionStateAnalyzing, ExecutionStateGates, ExecutionStateCompleted:
+		return true
+	}
+	return false
+}
+
+// IssueExecutionState tracks the execution state of an issue being processed by an executor
+type IssueExecutionState struct {
+	IssueID            string         `json:"issue_id"`
+	ExecutorInstanceID string         `json:"executor_instance_id"`
+	State              ExecutionState `json:"state"`
+	CheckpointData     string         `json:"checkpoint_data"` // JSON string (must be valid JSON)
+	StartedAt          time.Time      `json:"started_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+}
+
+// Validate checks if the issue execution state has valid field values
+func (s *IssueExecutionState) Validate() error {
+	if s.IssueID == "" {
+		return fmt.Errorf("issue_id is required")
+	}
+	if s.ExecutorInstanceID == "" {
+		return fmt.Errorf("executor_instance_id is required")
+	}
+	if !s.State.IsValid() {
+		return fmt.Errorf("invalid state: %s", s.State)
+	}
+	// Validate checkpoint_data is valid JSON
+	if s.CheckpointData != "" {
+		var v interface{}
+		if err := json.Unmarshal([]byte(s.CheckpointData), &v); err != nil {
+			return fmt.Errorf("checkpoint_data must be valid JSON: %w", err)
+		}
+	}
+	return nil
+}
