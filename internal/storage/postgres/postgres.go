@@ -1130,20 +1130,128 @@ func (s *PostgresStorage) GetStatistics(ctx context.Context) (*types.Statistics,
 	return nil, fmt.Errorf("not implemented")
 }
 
+// RegisterInstance registers a new executor instance using PostgreSQL upsert
 func (s *PostgresStorage) RegisterInstance(ctx context.Context, instance *types.ExecutorInstance) error {
-	return fmt.Errorf("not implemented")
+	// Validate the instance before inserting
+	if err := instance.Validate(); err != nil {
+		return fmt.Errorf("invalid executor instance: %w", err)
+	}
+
+	query := `
+		INSERT INTO executor_instances (
+			instance_id, hostname, pid, status, started_at, last_heartbeat, version, metadata
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT(instance_id) DO UPDATE SET
+			hostname = EXCLUDED.hostname,
+			pid = EXCLUDED.pid,
+			status = EXCLUDED.status,
+			last_heartbeat = EXCLUDED.last_heartbeat,
+			version = EXCLUDED.version,
+			metadata = EXCLUDED.metadata
+	`
+
+	_, err := s.pool.Exec(ctx, query,
+		instance.InstanceID,
+		instance.Hostname,
+		instance.PID,
+		instance.Status,
+		instance.StartedAt,
+		instance.LastHeartbeat,
+		instance.Version,
+		instance.Metadata,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to register executor instance: %w", err)
+	}
+
+	return nil
 }
 
+// UpdateHeartbeat updates the last_heartbeat timestamp for an executor instance
 func (s *PostgresStorage) UpdateHeartbeat(ctx context.Context, instanceID string) error {
-	return fmt.Errorf("not implemented")
+	query := `
+		UPDATE executor_instances
+		SET last_heartbeat = $1
+		WHERE instance_id = $2
+	`
+
+	result, err := s.pool.Exec(ctx, query, time.Now(), instanceID)
+	if err != nil {
+		return fmt.Errorf("failed to update heartbeat: %w", err)
+	}
+
+	rows := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("executor instance not found: %s", instanceID)
+	}
+
+	return nil
 }
 
+// GetActiveInstances returns all executor instances with status='running'
 func (s *PostgresStorage) GetActiveInstances(ctx context.Context) ([]*types.ExecutorInstance, error) {
-	return nil, fmt.Errorf("not implemented")
+	query := `
+		SELECT instance_id, hostname, pid, status, started_at, last_heartbeat, version, metadata
+		FROM executor_instances
+		WHERE status = 'running'
+		ORDER BY last_heartbeat DESC
+	`
+
+	rows, err := s.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query active instances: %w", err)
+	}
+	defer rows.Close()
+
+	var instances []*types.ExecutorInstance
+	for rows.Next() {
+		instance := &types.ExecutorInstance{}
+
+		err := rows.Scan(
+			&instance.InstanceID,
+			&instance.Hostname,
+			&instance.PID,
+			&instance.Status,
+			&instance.StartedAt,
+			&instance.LastHeartbeat,
+			&instance.Version,
+			&instance.Metadata,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan executor instance: %w", err)
+		}
+
+		instances = append(instances, instance)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating executor instances: %w", err)
+	}
+
+	return instances, nil
 }
 
+// CleanupStaleInstances marks instances as 'stopped' if their last_heartbeat
+// is older than staleThreshold seconds. Returns the number of instances cleaned up.
 func (s *PostgresStorage) CleanupStaleInstances(ctx context.Context, staleThreshold int) (int, error) {
-	return 0, fmt.Errorf("not implemented")
+	// Calculate the cutoff time in Go, then compare
+	cutoffTime := time.Now().Add(-time.Duration(staleThreshold) * time.Second)
+
+	query := `
+		UPDATE executor_instances
+		SET status = 'stopped'
+		WHERE status = 'running'
+		  AND last_heartbeat < $1
+	`
+
+	result, err := s.pool.Exec(ctx, query, cutoffTime)
+	if err != nil {
+		return 0, fmt.Errorf("failed to cleanup stale instances: %w", err)
+	}
+
+	rows := result.RowsAffected()
+	return int(rows), nil
 }
 
 func (s *PostgresStorage) ClaimIssue(ctx context.Context, issueID, executorInstanceID string) error {
