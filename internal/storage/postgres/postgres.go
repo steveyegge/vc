@@ -1032,13 +1032,7 @@ func (s *PostgresStorage) GetIssuesByLabel(ctx context.Context, label string) ([
 	return scanIssues(rows)
 }
 
-func (s *PostgresStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) ([]*types.Issue, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (s *PostgresStorage) GetBlockedIssues(ctx context.Context) ([]*types.BlockedIssue, error) {
-	return nil, fmt.Errorf("not implemented")
-}
+// Ready work methods are implemented in ready.go
 
 // AddComment adds a comment to an issue
 func (s *PostgresStorage) AddComment(ctx context.Context, issueID, actor, comment string) error {
@@ -1126,9 +1120,7 @@ func (s *PostgresStorage) GetEvents(ctx context.Context, issueID string, limit i
 	return events, nil
 }
 
-func (s *PostgresStorage) GetStatistics(ctx context.Context) (*types.Statistics, error) {
-	return nil, fmt.Errorf("not implemented")
-}
+// GetStatistics is implemented in ready.go
 
 // RegisterInstance registers a new executor instance using PostgreSQL upsert
 func (s *PostgresStorage) RegisterInstance(ctx context.Context, instance *types.ExecutorInstance) error {
@@ -1254,29 +1246,7 @@ func (s *PostgresStorage) CleanupStaleInstances(ctx context.Context, staleThresh
 	return int(rows), nil
 }
 
-func (s *PostgresStorage) ClaimIssue(ctx context.Context, issueID, executorInstanceID string) error {
-	return fmt.Errorf("not implemented")
-}
-
-func (s *PostgresStorage) GetExecutionState(ctx context.Context, issueID string) (*types.IssueExecutionState, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (s *PostgresStorage) UpdateExecutionState(ctx context.Context, issueID string, state types.ExecutionState) error {
-	return fmt.Errorf("not implemented")
-}
-
-func (s *PostgresStorage) SaveCheckpoint(ctx context.Context, issueID string, checkpointData interface{}) error {
-	return fmt.Errorf("not implemented")
-}
-
-func (s *PostgresStorage) GetCheckpoint(ctx context.Context, issueID string) (string, error) {
-	return "", fmt.Errorf("not implemented")
-}
-
-func (s *PostgresStorage) ReleaseIssue(ctx context.Context, issueID string) error {
-	return fmt.Errorf("not implemented")
-}
+// Execution state methods are implemented in execution_state.go
 
 // Helper function to scan issues from rows
 func scanIssues(rows pgx.Rows) ([]*types.Issue, error) {
