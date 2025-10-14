@@ -859,6 +859,7 @@ func (s *PostgresStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, e
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch cycle issues: %w", err)
 		}
+		defer issueRows.Close()
 
 		// Process this batch and add to issueMap
 		for issueRows.Next() {
@@ -874,7 +875,6 @@ func (s *PostgresStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, e
 				&issue.CreatedAt, &issue.UpdatedAt, &closedAt,
 			)
 			if err != nil {
-				issueRows.Close()
 				return nil, fmt.Errorf("failed to scan issue: %w", err)
 			}
 
@@ -886,7 +886,11 @@ func (s *PostgresStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, e
 
 			issueMap[issue.ID] = &issue
 		}
-		issueRows.Close()
+
+		// Check for errors during iteration
+		if err := issueRows.Err(); err != nil {
+			return nil, fmt.Errorf("error iterating batch results: %w", err)
+		}
 	}
 
 	if err := issueRows.Err(); err != nil {
