@@ -693,7 +693,9 @@ func (s *PostgresStorage) GetDependencyTree(ctx context.Context, issueID string,
 			node.Assignee = *assignee
 		}
 
-		node.Truncated = node.Depth == maxDepth
+		// Nodes at depth maxDepth-1 are the deepest returned, so they're truncated
+		// (their children aren't shown due to the WHERE t.depth < maxDepth clause)
+		node.Truncated = node.Depth >= maxDepth-1
 
 		nodes = append(nodes, &node)
 	}
@@ -960,7 +962,7 @@ func (s *PostgresStorage) GetLabels(ctx context.Context, issueID string) ([]stri
 	}
 	defer rows.Close()
 
-	var labels []string
+	labels := []string{}
 	for rows.Next() {
 		var label string
 		if err := rows.Scan(&label); err != nil {

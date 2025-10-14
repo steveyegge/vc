@@ -113,6 +113,11 @@ func NewStorage(ctx context.Context, cfg *Config) (Storage, error) {
 		cfg = DefaultConfig()
 	}
 
+	// Default to sqlite if backend not specified
+	if cfg.Backend == "" {
+		cfg.Backend = "sqlite"
+	}
+
 	// Validate backend type
 	switch cfg.Backend {
 	case "sqlite":
