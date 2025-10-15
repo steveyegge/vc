@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -428,7 +429,7 @@ func makePhases(count int) []types.PlannedPhase {
 	for i := 0; i < count; i++ {
 		phases[i] = types.PlannedPhase{
 			PhaseNumber:     i + 1,
-			Title:           "Phase " + string(rune('A'+i)),
+			Title:           fmt.Sprintf("Phase %d", i+1),
 			Description:     "Test phase",
 			Strategy:        "Test strategy",
 			Tasks:           []string{"Task 1"},

@@ -521,6 +521,10 @@ func truncateString(s string, maxLen int) string {
 // GeneratePlan generates a phased implementation plan for a mission
 // This is the core of the middle loop: breaking high-level missions into executable phases
 func (s *Supervisor) GeneratePlan(ctx context.Context, planningCtx *types.PlanningContext) (*types.MissionPlan, error) {
+	// Add overall timeout to prevent indefinite retries
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
 	startTime := time.Now()
 
 	// Validate input
@@ -566,6 +570,8 @@ func (s *Supervisor) GeneratePlan(ctx context.Context, planningCtx *types.Planni
 		LogErrors: true,
 	})
 	if !parseResult.Success {
+		// Log full response for debugging, but truncate in error message
+		fmt.Fprintf(os.Stderr, "Full AI planning response: %s\n", responseText)
 		return nil, fmt.Errorf("failed to parse mission plan response: %s (response: %s)", parseResult.Error, truncateString(responseText, 500))
 	}
 	plan := parseResult.Data
@@ -596,6 +602,10 @@ func (s *Supervisor) GeneratePlan(ctx context.Context, planningCtx *types.Planni
 // RefinePhase breaks a phase down into granular tasks
 // This is called when a phase is ready to execute
 func (s *Supervisor) RefinePhase(ctx context.Context, phase *types.Phase, missionCtx *types.PlanningContext) ([]types.PlannedTask, error) {
+	// Add overall timeout to prevent indefinite retries
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
 	startTime := time.Now()
 
 	// Validate inputs
@@ -652,6 +662,8 @@ func (s *Supervisor) RefinePhase(ctx context.Context, phase *types.Phase, missio
 		LogErrors: true,
 	})
 	if !parseResult.Success {
+		// Log full response for debugging, but truncate in error message
+		fmt.Fprintf(os.Stderr, "Full AI refinement response: %s\n", responseText)
 		return nil, fmt.Errorf("failed to parse refinement response: %s (response: %s)", parseResult.Error, truncateString(responseText, 500))
 	}
 	tasks := parseResult.Data.Tasks
