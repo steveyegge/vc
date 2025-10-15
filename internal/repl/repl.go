@@ -115,82 +115,81 @@ func (r *REPL) Run(ctx context.Context) error {
 
 // processInput processes a single line of input
 func (r *REPL) processInput(line string) error {
-	parts := strings.Fields(line)
-	if len(parts) == 0 {
-		return nil
+	// Check if it's a slash command
+	if strings.HasPrefix(line, "/") {
+		parts := strings.Fields(line)
+		if len(parts) == 0 {
+			return nil
+		}
+
+		command := parts[0]
+		args := parts[1:]
+
+		// Check if it's a registered command
+		if handler, ok := r.commands[command]; ok {
+			return handler(args)
+		}
+
+		// Unknown slash command
+		red := color.New(color.FgRed).SprintFunc()
+		return fmt.Errorf("%s: unknown command. Type /help for available commands", red(command))
 	}
 
-	command := parts[0]
-	args := parts[1:]
-
-	// Check if it's a registered command
-	if handler, ok := r.commands[command]; ok {
-		return handler(args)
-	}
-
-	// If not a command, treat as natural language (to be implemented later)
+	// Not a slash command - treat as natural language (to be implemented later)
 	yellow := color.New(color.FgYellow).SprintFunc()
-	fmt.Printf("%s Natural language processing not yet implemented. Use 'help' for available commands.\n", yellow("Note:"))
+	fmt.Printf("%s Natural language processing not yet implemented.\n", yellow("Note:"))
 	return nil
 }
 
 // registerCommands registers all built-in commands
 func (r *REPL) registerCommands() {
-	r.commands["help"] = r.cmdHelp
-	r.commands["?"] = r.cmdHelp
-	r.commands["exit"] = r.cmdExit
-	r.commands["quit"] = r.cmdExit
+	r.commands["/help"] = r.cmdHelp
+	r.commands["/?"] = r.cmdHelp
+	r.commands["/exit"] = r.cmdExit
+	r.commands["/quit"] = r.cmdExit
+	r.commands["/status"] = r.cmdStatus
+	r.commands["/ready"] = r.cmdReady
+	r.commands["/blocked"] = r.cmdBlocked
 }
 
 // printWelcome prints the welcome message
 func (r *REPL) printWelcome() {
 	cyan := color.New(color.FgCyan, color.Bold).SprintFunc()
+	gray := color.New(color.FgHiBlack).SprintFunc()
 	fmt.Printf("\n%s\n", cyan("Welcome to VC - VibeCoder v2"))
 	fmt.Println("AI-orchestrated coding agent colony")
 	fmt.Println()
-	fmt.Println("Type 'help' for available commands, 'exit' to quit")
+	fmt.Printf("Slash commands start with %s (type %s for list)\n", gray("/"), cyan("/help"))
+	fmt.Println("Everything else is sent to AI for natural language processing")
 	fmt.Println()
 }
 
 // cmdHelp shows help information
 func (r *REPL) cmdHelp(args []string) error {
 	cyan := color.New(color.FgCyan, color.Bold).SprintFunc()
-	fmt.Printf("\n%s\n", cyan("Available Commands:"))
+	green := color.New(color.FgGreen).SprintFunc()
+	gray := color.New(color.FgHiBlack).SprintFunc()
+
+	fmt.Printf("\n%s\n", cyan("VC REPL Commands"))
+	fmt.Println()
+	fmt.Printf("%s\n", cyan("Slash Commands:"))
+	fmt.Printf("  %s          Show this help\n", green("/help"))
+	fmt.Printf("  %s        Show project status\n", green("/status"))
+	fmt.Printf("  %s         Show ready work\n", green("/ready"))
+	fmt.Printf("  %s       Show blocked issues\n", green("/blocked"))
+	fmt.Printf("  %s    Exit the REPL\n", green("/exit"))
 	fmt.Println()
 
-	commands := []struct {
-		name string
-		desc string
-	}{
-		{"help, ?", "Show this help message"},
-		{"exit, quit", "Exit the REPL"},
-		{"", ""},
-		{"Coming soon:", ""},
-		{"  continue", "Resume execution from tracker state"},
-		{"  status", "Show project status (ready/blocked/in-progress)"},
-		{"  ready", "Show ready work"},
-		{"  blocked", "Show blocked issues"},
-	}
-
-	for _, cmd := range commands {
-		if cmd.name == "" {
-			fmt.Println(cmd.desc)
-		} else if strings.HasPrefix(cmd.desc, "Coming soon") {
-			yellow := color.New(color.FgYellow).SprintFunc()
-			fmt.Printf("  %s\n", yellow(cmd.desc))
-		} else if strings.HasPrefix(cmd.name, " ") {
-			fmt.Printf("  %s  %s\n", cmd.name, cmd.desc)
-		} else {
-			green := color.New(color.FgGreen).SprintFunc()
-			fmt.Printf("  %s  %s\n", green(cmd.name), cmd.desc)
-		}
-	}
-
+	fmt.Printf("%s\n", cyan("Natural Language:"))
+	fmt.Println("  Type anything without a / to talk to the AI")
+	fmt.Printf("  %s\n", gray("Examples:"))
+	fmt.Printf("    %s\n", gray("Add a login page"))
+	fmt.Printf("    %s\n", gray("What issues are blocked?"))
+	fmt.Printf("    %s\n", gray("Fix the authentication bug"))
 	fmt.Println()
-	fmt.Println("Natural language input (coming soon):")
-	fmt.Println("  'Add a login page'")
-	fmt.Println("  'Fix the bug in auth.go'")
-	fmt.Println("  'Build authentication system'")
+
+	fmt.Printf("%s\n", cyan("Coming Soon:"))
+	fmt.Printf("  %s    Resume execution ('let's continue')\n", gray("/continue"))
 	fmt.Println()
 
 	return nil
