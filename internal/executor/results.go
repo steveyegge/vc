@@ -8,6 +8,7 @@ import (
 
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/gates"
+	"github.com/steveyegge/vc/internal/git"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -16,7 +17,10 @@ import (
 type ResultsProcessor struct {
 	store              storage.Storage
 	supervisor         *ai.Supervisor
+	gitOps             git.GitOperations
+	messageGen         *git.MessageGenerator
 	enableQualityGates bool
+	enableAutoCommit   bool
 	workingDir         string
 	actor              string // The actor performing the update (e.g., "repl", "executor-instance-id")
 }
@@ -24,8 +28,11 @@ type ResultsProcessor struct {
 // ResultsProcessorConfig holds configuration for the results processor
 type ResultsProcessorConfig struct {
 	Store              storage.Storage
-	Supervisor         *ai.Supervisor // Can be nil to disable AI analysis
+	Supervisor         *ai.Supervisor      // Can be nil to disable AI analysis
+	GitOps             git.GitOperations   // Can be nil to disable auto-commit
+	MessageGen         *git.MessageGenerator // Can be nil to disable auto-commit
 	EnableQualityGates bool
+	EnableAutoCommit   bool
 	WorkingDir         string
 	Actor              string // Actor ID for tracking who made the changes
 }
@@ -35,6 +42,7 @@ type ProcessingResult struct {
 	Completed        bool     // Was the issue marked as completed?
 	DiscoveredIssues []string // IDs of discovered issues created
 	GatesPassed      bool     // Did quality gates pass?
+	CommitHash       string   // Git commit hash (if auto-commit succeeded)
 	Summary          string   // Human-readable summary
 	AIAnalysis       *ai.Analysis // The AI analysis result (if available)
 }
@@ -54,7 +62,10 @@ func NewResultsProcessor(cfg *ResultsProcessorConfig) (*ResultsProcessor, error)
 	return &ResultsProcessor{
 		store:              cfg.Store,
 		supervisor:         cfg.Supervisor,
+		gitOps:             cfg.GitOps,
+		messageGen:         cfg.MessageGen,
 		enableQualityGates: cfg.EnableQualityGates,
+		enableAutoCommit:   cfg.EnableAutoCommit,
 		workingDir:         cfg.WorkingDir,
 		actor:              cfg.Actor,
 	}, nil
@@ -153,6 +164,29 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 
 				result.Summary = "Quality gates failed - issue blocked"
 				return result, nil
+			}
+		}
+	}
+
+	// Step 3.5: Auto-commit changes (if enabled, agent succeeded, and gates passed)
+	if agentResult.Success && result.GatesPassed && rp.enableAutoCommit && rp.gitOps != nil && rp.messageGen != nil {
+		// Update execution state to committing
+		if err := rp.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateCommitting); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to update execution state to committing: %v\n", err)
+		}
+
+		commitHash, err := rp.autoCommit(ctx, issue)
+		if err != nil {
+			// Don't fail - just log and continue
+			fmt.Fprintf(os.Stderr, "Warning: auto-commit failed: %v (continuing without commit)\n", err)
+		} else if commitHash != "" {
+			result.CommitHash = commitHash
+			fmt.Printf("\n✓ Changes committed: %s\n", commitHash[:8])
+
+			// Add comment with commit hash
+			commitComment := fmt.Sprintf("Auto-committed changes: %s", commitHash)
+			if err := rp.store.AddComment(ctx, issue.ID, rp.actor, commitComment); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to add commit comment: %v\n", err)
 			}
 		}
 	}
@@ -338,5 +372,87 @@ func (rp *ResultsProcessor) buildSummary(issue *types.Issue, agentResult *AgentR
 		summary.WriteString("\n✗ Quality gates failed - issue blocked\n")
 	}
 
+	if procResult.CommitHash != "" {
+		summary.WriteString(fmt.Sprintf("\n✓ Auto-committed: %s\n", procResult.CommitHash[:8]))
+	}
+
 	return summary.String()
+}
+
+// autoCommit performs auto-commit with AI-generated message.
+// Returns the commit hash if successful, empty string if no changes to commit.
+func (rp *ResultsProcessor) autoCommit(ctx context.Context, issue *types.Issue) (string, error) {
+	fmt.Printf("\n=== Auto-commit ===\n")
+
+	// Step 1: Check if there are uncommitted changes
+	hasChanges, err := rp.gitOps.HasUncommittedChanges(ctx, rp.workingDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to check for uncommitted changes: %w", err)
+	}
+
+	if !hasChanges {
+		fmt.Printf("No uncommitted changes detected - skipping commit\n")
+		return "", nil
+	}
+
+	// Step 2: Get git status to determine changed files
+	status, err := rp.gitOps.GetStatus(ctx, rp.workingDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to get git status: %w", err)
+	}
+
+	// Collect all changed files
+	changedFiles := append([]string{}, status.Modified...)
+	changedFiles = append(changedFiles, status.Added...)
+	changedFiles = append(changedFiles, status.Deleted...)
+	changedFiles = append(changedFiles, status.Renamed...)
+	changedFiles = append(changedFiles, status.Untracked...)
+
+	fmt.Printf("Found %d changed files\n", len(changedFiles))
+
+	// Step 3: Generate commit message using AI
+	req := git.CommitMessageRequest{
+		IssueID:          issue.ID,
+		IssueTitle:       issue.Title,
+		IssueDescription: issue.Description,
+		ChangedFiles:     changedFiles,
+		// Note: We're skipping diff for now to keep prompt size manageable
+		// Could add: Diff: getDiff() if needed for better messages
+	}
+
+	fmt.Printf("Generating commit message via AI...\n")
+	msgResponse, err := rp.messageGen.GenerateCommitMessage(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate commit message: %w", err)
+	}
+
+	// Validate commit message
+	if msgResponse.Subject == "" {
+		return "", fmt.Errorf("AI generated empty commit subject")
+	}
+
+	// Build full commit message
+	commitMessage := msgResponse.Subject
+	if msgResponse.Body != "" {
+		commitMessage += "\n\n" + msgResponse.Body
+	}
+
+	fmt.Printf("Generated message:\n  Subject: %s\n", msgResponse.Subject)
+
+	// Step 4: Commit the changes
+	commitOpts := git.CommitOptions{
+		Message: commitMessage,
+		CoAuthors: []string{
+			"Claude <noreply@anthropic.com>",
+		},
+		AddAll:     true, // Stage all changes
+		AllowEmpty: false,
+	}
+
+	commitHash, err := rp.gitOps.CommitChanges(ctx, rp.workingDir, commitOpts)
+	if err != nil {
+		return "", fmt.Errorf("failed to commit changes: %w", err)
+	}
+
+	return commitHash, nil
 }

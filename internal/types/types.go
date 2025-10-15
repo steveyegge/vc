@@ -249,19 +249,21 @@ func (e *ExecutorInstance) Validate() error {
 type ExecutionState string
 
 const (
-	ExecutionStateClaimed   ExecutionState = "claimed"
-	ExecutionStateAssessing ExecutionState = "assessing"
-	ExecutionStateExecuting ExecutionState = "executing"
-	ExecutionStateAnalyzing ExecutionState = "analyzing"
-	ExecutionStateGates     ExecutionState = "gates"
-	ExecutionStateCompleted ExecutionState = "completed"
+	ExecutionStateClaimed    ExecutionState = "claimed"
+	ExecutionStateAssessing  ExecutionState = "assessing"
+	ExecutionStateExecuting  ExecutionState = "executing"
+	ExecutionStateAnalyzing  ExecutionState = "analyzing"
+	ExecutionStateGates      ExecutionState = "gates"
+	ExecutionStateCommitting ExecutionState = "committing"
+	ExecutionStateCompleted  ExecutionState = "completed"
 )
 
 // IsValid checks if the execution state value is valid
 func (s ExecutionState) IsValid() bool {
 	switch s {
 	case ExecutionStateClaimed, ExecutionStateAssessing, ExecutionStateExecuting,
-		ExecutionStateAnalyzing, ExecutionStateGates, ExecutionStateCompleted:
+		ExecutionStateAnalyzing, ExecutionStateGates, ExecutionStateCommitting,
+		ExecutionStateCompleted:
 		return true
 	}
 	return false
