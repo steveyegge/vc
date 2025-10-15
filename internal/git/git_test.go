@@ -726,7 +726,10 @@ their change
 >>>>>>> main
 line 3`
 
-		conflicts := git.parseConflictMarkers(conflictContent)
+		conflicts, err := git.parseConflictMarkers(conflictContent)
+		if err != nil {
+			t.Fatalf("parseConflictMarkers failed: %v", err)
+		}
 
 		if len(conflicts) != 1 {
 			t.Fatalf("Expected 1 conflict, got %d", len(conflicts))
@@ -771,7 +774,10 @@ second our
 second their
 >>>>>>> feature`
 
-		conflicts := git.parseConflictMarkers(conflictContent)
+		conflicts, err := git.parseConflictMarkers(conflictContent)
+		if err != nil {
+			t.Fatalf("parseConflictMarkers failed: %v", err)
+		}
 
 		if len(conflicts) != 2 {
 			t.Fatalf("Expected 2 conflicts, got %d", len(conflicts))
@@ -796,7 +802,10 @@ their line 1
 their line 2
 >>>>>>> main`
 
-		conflicts := git.parseConflictMarkers(conflictContent)
+		conflicts, err := git.parseConflictMarkers(conflictContent)
+		if err != nil {
+			t.Fatalf("parseConflictMarkers failed: %v", err)
+		}
 
 		if len(conflicts) != 1 {
 			t.Fatalf("Expected 1 conflict, got %d", len(conflicts))
@@ -928,7 +937,10 @@ no markers here`
 =======
 >>>>>>> main`
 
-		conflicts := git.parseConflictMarkers(conflictContent)
+		conflicts, err := git.parseConflictMarkers(conflictContent)
+		if err != nil {
+			t.Fatalf("parseConflictMarkers failed: %v", err)
+		}
 
 		if len(conflicts) != 1 {
 			t.Fatalf("Expected 1 conflict, got %d", len(conflicts))
@@ -939,6 +951,72 @@ no markers here`
 		}
 		if len(conflicts[0].TheirsContent) != 0 {
 			t.Errorf("Expected empty TheirsContent, got %v", conflicts[0].TheirsContent)
+		}
+	})
+
+	// Test 9: Incomplete conflict marker (missing end)
+	t.Run("IncompleteConflictMarker", func(t *testing.T) {
+		conflictContent := `normal line
+<<<<<<< HEAD
+our content
+=======
+their content
+// Missing >>>>>>> marker`
+
+		_, err := git.parseConflictMarkers(conflictContent)
+		if err == nil {
+			t.Error("Expected error for incomplete conflict marker")
+		}
+		if err != nil && !strings.Contains(err.Error(), "incomplete conflict marker") {
+			t.Errorf("Expected 'incomplete conflict marker' error, got: %v", err)
+		}
+	})
+
+	// Test 10: Nested conflict marker (malformed)
+	t.Run("NestedConflictMarker", func(t *testing.T) {
+		conflictContent := `<<<<<<< HEAD
+content 1
+<<<<<<< HEAD
+nested marker
+=======
+content 2
+>>>>>>> main`
+
+		_, err := git.parseConflictMarkers(conflictContent)
+		if err == nil {
+			t.Error("Expected error for nested/malformed conflict marker")
+		}
+		if err != nil && !strings.Contains(err.Error(), "malformed conflict marker") {
+			t.Errorf("Expected 'malformed conflict marker' error, got: %v", err)
+		}
+	})
+
+	// Test 11: Path traversal prevention in GetConflictDetails
+	t.Run("PathTraversalPrevention", func(t *testing.T) {
+		req := ConflictResolutionRequest{
+			RepoPath:        tmpDir,
+			ConflictedFiles: []string{"../../../etc/passwd"},
+			BaseBranch:      "main",
+			CurrentBranch:   "feature",
+		}
+
+		_, err := git.GetConflictDetails(ctx, req)
+		if err == nil {
+			t.Error("Expected error for path traversal attempt")
+		}
+		if err != nil && !strings.Contains(err.Error(), "outside repository") {
+			t.Errorf("Expected 'outside repository' error, got: %v", err)
+		}
+	})
+
+	// Test 12: Path traversal prevention in ValidateConflictResolution
+	t.Run("PathTraversalPreventionValidate", func(t *testing.T) {
+		_, err := git.ValidateConflictResolution(ctx, tmpDir, []string{"../../../etc/passwd"})
+		if err == nil {
+			t.Error("Expected error for path traversal attempt")
+		}
+		if err != nil && !strings.Contains(err.Error(), "outside repository") {
+			t.Errorf("Expected 'outside repository' error, got: %v", err)
 		}
 	})
 }

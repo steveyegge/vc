@@ -6,7 +6,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+)
+
+// Conflict marker constants
+const (
+	conflictMarkerStart  = "<<<<<<<"
+	conflictMarkerMiddle = "======="
+	conflictMarkerEnd    = ">>>>>>>"
 )
 
 // Git implements GitOperations using the git CLI.
@@ -317,8 +325,25 @@ func (g *Git) GetConflictDetails(ctx context.Context, req ConflictResolutionRequ
 		FileConflicts: make(map[string]*FileConflict),
 	}
 
+	// Validate and resolve repository path
+	absRepo, err := filepath.Abs(req.RepoPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve repository path: %w", err)
+	}
+
 	for _, filePath := range req.ConflictedFiles {
-		fullPath := fmt.Sprintf("%s/%s", req.RepoPath, filePath)
+		// Use filepath.Join for safe path construction
+		fullPath := filepath.Join(req.RepoPath, filePath)
+
+		// Validate the file path is within the repository (prevent path traversal)
+		absFile, err := filepath.Abs(fullPath)
+		if err != nil {
+			result.ErrorMessage = fmt.Sprintf("failed to resolve file path %s: %v", filePath, err)
+			return result, fmt.Errorf("failed to resolve file path %s: %w", filePath, err)
+		}
+		if !strings.HasPrefix(absFile, absRepo) {
+			return result, fmt.Errorf("file path %s is outside repository", filePath)
+		}
 
 		// Read the file content
 		content, err := os.ReadFile(fullPath)
@@ -334,7 +359,11 @@ func (g *Git) GetConflictDetails(ctx context.Context, req ConflictResolutionRequ
 			Conflicts:   []ConflictMarker{},
 		}
 
-		conflicts := g.parseConflictMarkers(string(content))
+		conflicts, err := g.parseConflictMarkers(string(content))
+		if err != nil {
+			result.ErrorMessage = fmt.Sprintf("failed to parse conflicts in %s: %v", filePath, err)
+			return result, fmt.Errorf("failed to parse conflicts in %s: %w", filePath, err)
+		}
 		fileConflict.Conflicts = conflicts
 		result.TotalConflicts += len(conflicts)
 		result.FileConflicts[filePath] = fileConflict
@@ -344,7 +373,8 @@ func (g *Git) GetConflictDetails(ctx context.Context, req ConflictResolutionRequ
 }
 
 // parseConflictMarkers parses conflict markers in file content and returns the conflicts.
-func (g *Git) parseConflictMarkers(content string) []ConflictMarker {
+// Returns an error if incomplete conflict markers are detected.
+func (g *Git) parseConflictMarkers(content string) ([]ConflictMarker, error) {
 	lines := strings.Split(content, "\n")
 	var conflicts []ConflictMarker
 	var currentConflict *ConflictMarker
@@ -352,14 +382,14 @@ func (g *Git) parseConflictMarkers(content string) []ConflictMarker {
 
 	for lineNum, line := range lines {
 		// Check for start of conflict marker
-		if strings.HasPrefix(line, "<<<<<<<") {
+		if strings.HasPrefix(line, conflictMarkerStart) {
 			if currentConflict != nil {
-				// Nested or malformed conflict marker, skip
-				continue
+				// Nested or malformed conflict marker - this is an error
+				return nil, fmt.Errorf("malformed conflict marker at line %d: nested start marker", lineNum+1)
 			}
 			currentConflict = &ConflictMarker{
-				StartLine:   lineNum + 1, // 1-indexed
-				OursContent: []string{},
+				StartLine:     lineNum + 1, // 1-indexed
+				OursContent:   []string{},
 				TheirsContent: []string{},
 			}
 			// Extract label (e.g., "HEAD" from "<<<<<<< HEAD")
@@ -372,14 +402,14 @@ func (g *Git) parseConflictMarkers(content string) []ConflictMarker {
 		}
 
 		// Check for middle separator
-		if strings.HasPrefix(line, "=======") && currentConflict != nil {
+		if strings.HasPrefix(line, conflictMarkerMiddle) && currentConflict != nil {
 			currentConflict.MiddleLine = lineNum + 1
 			inOurSection = false
 			continue
 		}
 
 		// Check for end of conflict marker
-		if strings.HasPrefix(line, ">>>>>>>") && currentConflict != nil {
+		if strings.HasPrefix(line, conflictMarkerEnd) && currentConflict != nil {
 			currentConflict.EndLine = lineNum + 1
 			// Extract label (e.g., "main" from ">>>>>>> main")
 			parts := strings.Fields(line)
@@ -402,26 +432,47 @@ func (g *Git) parseConflictMarkers(content string) []ConflictMarker {
 		}
 	}
 
-	return conflicts
+	// Check for incomplete conflict marker
+	if currentConflict != nil {
+		return nil, fmt.Errorf("incomplete conflict marker starting at line %d: missing end marker", currentConflict.StartLine)
+	}
+
+	return conflicts, nil
 }
 
 // ValidateConflictResolution checks if conflicts have been properly resolved.
 // Returns true if no conflict markers remain in the specified files.
 // SECURITY: repoPath must be a validated, trusted path.
 func (g *Git) ValidateConflictResolution(ctx context.Context, repoPath string, files []string) (bool, error) {
+	// Validate and resolve repository path
+	absRepo, err := filepath.Abs(repoPath)
+	if err != nil {
+		return false, fmt.Errorf("failed to resolve repository path: %w", err)
+	}
+
 	for _, filePath := range files {
-		fullPath := fmt.Sprintf("%s/%s", repoPath, filePath)
+		// Use filepath.Join for safe path construction
+		fullPath := filepath.Join(repoPath, filePath)
+
+		// Validate the file path is within the repository (prevent path traversal)
+		absFile, err := filepath.Abs(fullPath)
+		if err != nil {
+			return false, fmt.Errorf("failed to resolve file path %s: %w", filePath, err)
+		}
+		if !strings.HasPrefix(absFile, absRepo) {
+			return false, fmt.Errorf("file path %s is outside repository", filePath)
+		}
 
 		content, err := os.ReadFile(fullPath)
 		if err != nil {
 			return false, fmt.Errorf("failed to read file %s: %w", filePath, err)
 		}
 
-		// Check for any remaining conflict markers
+		// Check for any remaining conflict markers using constants
 		contentStr := string(content)
-		if strings.Contains(contentStr, "<<<<<<<") ||
-		   strings.Contains(contentStr, "=======") ||
-		   strings.Contains(contentStr, ">>>>>>>") {
+		if strings.Contains(contentStr, conflictMarkerStart) ||
+		   strings.Contains(contentStr, conflictMarkerMiddle) ||
+		   strings.Contains(contentStr, conflictMarkerEnd) {
 			return false, nil
 		}
 	}
