@@ -7,17 +7,24 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/executor"
 	"github.com/steveyegge/vc/internal/types"
 )
 
-// cmdContinue resumes execution by claiming ready work and spawning a worker
+// cmdContinue finds ready work and spawns a worker to execute it
+// This implements vc-75 and uses vc-76's ResultsProcessor
 func (r *REPL) cmdContinue(args []string) error {
 	ctx := r.ctx
 
-	// Get one piece of ready work (highest priority first)
-	// NOTE: For MVP, claim is not atomic with this query - race possible in multi-executor scenario.
-	// See vc-87 for atomic claiming implementation.
+	cyan := color.New(color.FgCyan, color.Bold).SprintFunc()
+	green := color.New(color.FgGreen).SprintFunc()
+	yellow := color.New(color.FgYellow).SprintFunc()
+	red := color.New(color.FgRed).SprintFunc()
+
+	fmt.Printf("\n%s\n", cyan("Finding ready work..."))
+
+	// Step 1: Get ready work (limit 1)
 	issues, err := r.store.GetReadyWork(ctx, types.WorkFilter{
 		Status: types.StatusOpen,
 		Limit:  1,
@@ -27,155 +34,161 @@ func (r *REPL) cmdContinue(args []string) error {
 	}
 
 	if len(issues) == 0 {
-		yellow := color.New(color.FgYellow).SprintFunc()
-		fmt.Printf("\n%s No ready work found.\n", yellow("ℹ"))
-		fmt.Println("All issues are either blocked or already in progress.")
-		fmt.Println()
+		fmt.Printf("\n%s No ready work found. All issues are either completed or blocked.\n\n", yellow("ℹ"))
 		return nil
 	}
 
 	issue := issues[0]
 
-	// Show what we're about to work on
-	cyan := color.New(color.FgCyan, color.Bold).SprintFunc()
-	green := color.New(color.FgGreen).SprintFunc()
-	gray := color.New(color.FgHiBlack).SprintFunc()
-
-	fmt.Printf("\n%s\n", cyan("Next Task"))
-	fmt.Println()
+	// Step 2: Show user what will be executed
+	fmt.Printf("\n%s\n", cyan("Next Issue:"))
 	fmt.Printf("  ID: %s\n", green(issue.ID))
-	fmt.Printf("  Priority: P%d\n", issue.Priority)
 	fmt.Printf("  Title: %s\n", issue.Title)
+	fmt.Printf("  Priority: P%d\n", issue.Priority)
+	fmt.Printf("  Type: %s\n", issue.IssueType)
+
 	if issue.Description != "" {
-		fmt.Printf("  Description: %s\n", gray(truncate(issue.Description, 80)))
-	}
-	fmt.Println()
-
-	// Update issue status to in_progress and claim it
-	updates := map[string]interface{}{
-		"status": types.StatusInProgress,
-	}
-	if err := r.store.UpdateIssue(ctx, issue.ID, updates, r.actor); err != nil {
-		return fmt.Errorf("failed to update issue status: %w", err)
-	}
-	issue.Status = types.StatusInProgress // Update local copy
-
-	fmt.Printf("%s Claimed %s and starting worker...\n\n", green("✓"), issue.ID)
-
-	// Get working directory (current directory)
-	workingDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get working directory: %w", err)
-	}
-
-	// Spawn the worker agent
-	result, err := r.spawnWorkerForIssue(ctx, issue, workingDir)
-	if err != nil {
-		// Worker spawn failed - update issue with error note
-		errNote := fmt.Sprintf("\n\n[%s] Worker spawn failed: %v", time.Now().Format(time.RFC3339), err)
-		noteUpdates := map[string]interface{}{
-			"notes": issue.Notes + errNote,
+		fmt.Printf("\n  Description:\n")
+		// Indent description
+		for _, line := range splitLines(issue.Description, 70) {
+			fmt.Printf("    %s\n", line)
 		}
-		if updateErr := r.store.UpdateIssue(ctx, issue.ID, noteUpdates, r.actor); updateErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to update issue notes: %v\n", updateErr)
-		}
-		return fmt.Errorf("worker spawn failed: %w", err)
 	}
 
 	fmt.Println()
 
-	// Display results
-	if result.Success {
-		fmt.Printf("%s Worker completed successfully in %v\n", green("✓"), result.Duration.Round(time.Second))
-		fmt.Printf("   Exit code: %d\n", result.ExitCode)
-		fmt.Printf("   Output lines: %d\n", len(result.Output))
-		if len(result.Errors) > 0 {
-			fmt.Printf("   Error lines: %d\n", len(result.Errors))
-		}
+	// Step 3: Claim the issue
+	// For REPL, we use a simple instance ID (could improve this later)
+	instanceID := fmt.Sprintf("repl-%s", r.actor)
+	if err := r.store.ClaimIssue(ctx, issue.ID, instanceID); err != nil {
+		return fmt.Errorf("failed to claim issue %s: %w", issue.ID, err)
+	}
+
+	fmt.Printf("%s Claimed issue %s\n\n", green("✓"), issue.ID)
+
+	// Update execution state to executing
+	if err := r.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateExecuting); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
+	}
+
+	// Step 4: Spawn Claude Code worker
+	fmt.Printf("%s Spawning Claude Code worker...\n\n", cyan("⚙"))
+
+	agentCfg := executor.AgentConfig{
+		Type:       executor.AgentTypeClaudeCode,
+		WorkingDir: ".",
+		Issue:      issue,
+		StreamJSON: false,
+		Timeout:    30 * time.Minute,
+	}
+
+	agent, err := executor.SpawnAgent(ctx, agentCfg)
+	if err != nil {
+		r.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to spawn agent: %v", err))
+		return fmt.Errorf("failed to spawn agent: %w", err)
+	}
+
+	fmt.Println(cyan("=== Worker Output ==="))
+	fmt.Println()
+
+	// Step 5: Wait for completion (output is streamed in real-time by agent.go)
+	result, err := agent.Wait(ctx)
+	if err != nil {
+		r.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Agent execution failed: %v", err))
+		return fmt.Errorf("agent execution failed: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println(cyan("=== Worker Completed ==="))
+	fmt.Println()
+
+	// Step 6: Process results using ResultsProcessor (vc-76 implementation)
+	supervisor, err := ai.NewSupervisor(&ai.Config{
+		Store: r.store,
+	})
+	if err != nil {
+		// Continue without AI supervision
+		fmt.Fprintf(os.Stderr, "Warning: AI supervisor not available: %v (continuing without AI analysis)\n", err)
+		supervisor = nil
+	}
+
+	processor, err := executor.NewResultsProcessor(&executor.ResultsProcessorConfig{
+		Store:              r.store,
+		Supervisor:         supervisor,
+		EnableQualityGates: true, // Enable quality gates for REPL execution
+		WorkingDir:         ".",
+		Actor:              instanceID,
+	})
+	if err != nil {
+		r.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to create results processor: %v", err))
+		return fmt.Errorf("failed to create results processor: %w", err)
+	}
+
+	procResult, err := processor.ProcessAgentResult(ctx, issue, result)
+	if err != nil {
+		r.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to process results: %v", err))
+		return fmt.Errorf("failed to process results: %w", err)
+	}
+
+	// Step 7: Show summary to user
+	fmt.Println()
+	if procResult.Completed {
+		fmt.Printf("%s Issue %s completed successfully!\n", green("✓"), issue.ID)
+	} else if !procResult.GatesPassed {
+		fmt.Printf("%s Issue %s blocked by quality gates\n", red("✗"), issue.ID)
+	} else if !result.Success {
+		fmt.Printf("%s Worker failed for issue %s\n", red("✗"), issue.ID)
 	} else {
-		red := color.New(color.FgRed).SprintFunc()
-		fmt.Printf("%s Worker failed after %v\n", red("✗"), result.Duration.Round(time.Second))
-		fmt.Printf("   Exit code: %d\n", result.ExitCode)
-		if len(result.Errors) > 0 {
-			fmt.Printf("   Error lines: %d\n", len(result.Errors))
-			fmt.Println()
-			fmt.Println(red("Recent errors:"))
-			// Show last 5 error lines
-			start := len(result.Errors) - 5
-			if start < 0 {
-				start = 0
-			}
-			for _, line := range result.Errors[start:] {
-				fmt.Printf("   %s\n", gray(line))
-			}
-		}
+		fmt.Printf("%s Issue %s partially complete (left open)\n", yellow("⚡"), issue.ID)
 	}
 
-	// Add result to issue notes
-	// NOTE: Notes are concatenated without bounds checking - could grow large over many executions.
-	// Future: Move execution history to separate table or implement note rotation.
-	resultNote := fmt.Sprintf("\n\n[%s] Worker execution:\n- Duration: %v\n- Exit code: %d\n- Success: %t",
-		time.Now().Format(time.RFC3339),
-		result.Duration.Round(time.Second),
-		result.ExitCode,
-		result.Success,
-	)
-
-	// Update issue with results
-	// For MVP: keep status as in_progress - let user decide when to close
-	// Future: AI analysis will determine if task is complete
-	resultUpdates := map[string]interface{}{
-		"notes": issue.Notes + resultNote,
-	}
-	if err := r.store.UpdateIssue(ctx, issue.ID, resultUpdates, r.actor); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to update issue with results: %v\n", err)
+	if len(procResult.DiscoveredIssues) > 0 {
+		fmt.Printf("%s Created %d follow-on issues: %v\n",
+			green("✓"), len(procResult.DiscoveredIssues), procResult.DiscoveredIssues)
 	}
 
-	fmt.Println()
-	yellow := color.New(color.FgYellow).SprintFunc()
-	fmt.Printf("Issue %s remains %s\n", green(issue.ID), yellow("in progress"))
-	fmt.Println("Use 'bd show <id>' to see full details and decide next steps")
 	fmt.Println()
 
 	return nil
 }
 
-// spawnWorkerForIssue spawns a Claude Code worker subprocess for the given issue.
-// It builds a prompt from the issue context, spawns the agent, streams output in real-time,
-// and waits for completion with the configured timeout (default 30 minutes).
-// Returns the execution result including stdout, stderr, exit code, and duration.
-//
-// NOTE: Context cancellation (Ctrl+C) is not fully handled - subprocess may continue running.
-// See vc-88 for graceful cancellation implementation.
-func (r *REPL) spawnWorkerForIssue(ctx context.Context, issue *types.Issue, workingDir string) (*executor.AgentResult, error) {
-	// Configure the agent
-	cfg := executor.AgentConfig{
-		Type:       executor.AgentTypeClaudeCode,
-		WorkingDir: workingDir,
-		Issue:      issue,
-		StreamJSON: false, // Don't need JSON parsing for MVP
-		Timeout:    30 * time.Minute,
+// releaseIssueWithError releases an issue and adds an error comment
+func (r *REPL) releaseIssueWithError(ctx context.Context, issueID, actor, errMsg string) {
+	// Add error comment
+	if err := r.store.AddComment(ctx, issueID, actor, errMsg); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to add error comment: %v\n", err)
 	}
 
-	// Spawn the agent
-	agent, err := executor.SpawnAgent(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to spawn agent: %w", err)
+	// Release the execution state
+	if err := r.store.ReleaseIssue(ctx, issueID); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to release issue: %v\n", err)
 	}
-
-	// Wait for completion (output is streamed in real-time by agent.go)
-	result, err := agent.Wait(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("agent execution failed: %w", err)
-	}
-
-	return result, nil
 }
 
-// truncate truncates a string to maxLen characters, adding "..." if truncated
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
+// splitLines splits text into lines with max width
+func splitLines(text string, maxWidth int) []string {
+	// Simple implementation - can be improved
+	var lines []string
+	currentLine := ""
+
+	words := []rune(text)
+	for i := 0; i < len(words); i++ {
+		if words[i] == '\n' {
+			lines = append(lines, currentLine)
+			currentLine = ""
+			continue
+		}
+
+		currentLine += string(words[i])
+		if len(currentLine) >= maxWidth {
+			lines = append(lines, currentLine)
+			currentLine = ""
+		}
 	}
-	return s[:maxLen-3] + "..."
+
+	if currentLine != "" {
+		lines = append(lines, currentLine)
+	}
+
+	return lines
 }

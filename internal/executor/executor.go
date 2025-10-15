@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/ai"
-	"github.com/steveyegge/vc/internal/gates"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -324,143 +323,28 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		return fmt.Errorf("agent execution failed: %w", err)
 	}
 
-	// Extract agent output summary once for reuse
-	agentOutput := e.extractSummary(result)
-
-	// Phase 3: AI Analysis (if enabled)
-	var analysis *ai.Analysis
-	if e.enableAISupervision && e.supervisor != nil {
-		// Update execution state to analyzing
-		if err := e.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateAnalyzing); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
-		}
-
-		var err error
-		analysis, err = e.supervisor.AnalyzeExecutionResult(ctx, issue, agentOutput, result.Success)
-		if err != nil {
-			// Don't fail execution - just log and continue
-			fmt.Fprintf(os.Stderr, "Warning: AI analysis failed: %v (continuing without analysis)\n", err)
-		}
+	// Phase 3: Process results using ResultsProcessor
+	// This handles AI analysis, quality gates, discovered issues, and tracker updates
+	processor, err := NewResultsProcessor(&ResultsProcessorConfig{
+		Store:              e.store,
+		Supervisor:         e.supervisor,
+		EnableQualityGates: e.enableQualityGates,
+		WorkingDir:         e.workingDir,
+		Actor:              e.instanceID,
+	})
+	if err != nil {
+		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to create results processor: %v", err))
+		return fmt.Errorf("failed to create results processor: %w", err)
 	}
 
-	// Phase 3.5: Quality Gates (if enabled and agent succeeded)
-	gatesPassed := true
-	if result.Success && e.enableQualityGates {
-		// Update execution state to gates
-		if err := e.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateGates); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
-		}
-
-		// Run quality gates
-		gateRunner, err := gates.NewRunner(&gates.Config{
-			Store:      e.store,
-			WorkingDir: e.workingDir,
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to create quality gate runner: %v (skipping gates)\n", err)
-		} else {
-			results, allPassed := gateRunner.RunAll(ctx)
-			gatesPassed = allPassed
-
-			// Handle gate results (creates blocking issues on failure)
-			if err := gateRunner.HandleGateResults(ctx, issue, results, allPassed); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to handle gate results: %v\n", err)
-			}
-
-			if !allPassed {
-				fmt.Printf("Quality gates failed for issue %s - issue marked as blocked\n", issue.ID)
-				// Release the issue execution state since it's now blocked
-				if err := e.store.ReleaseIssue(ctx, issue.ID); err != nil {
-					return fmt.Errorf("failed to release blocked issue: %w", err)
-				}
-				return nil
-			}
-		}
+	procResult, err := processor.ProcessAgentResult(ctx, issue, result)
+	if err != nil {
+		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to process results: %v", err))
+		return fmt.Errorf("failed to process agent result: %w", err)
 	}
 
-	// Phase 4: Process the result
-	if result.Success && gatesPassed {
-		fmt.Printf("Agent completed successfully for issue %s\n", issue.ID)
-
-		// Determine if we should close the issue based on AI analysis
-		shouldClose := true
-		if analysis != nil && !analysis.Completed {
-			shouldClose = false
-			fmt.Printf("AI analysis indicates issue %s is not fully complete\n", issue.ID)
-		}
-
-		// Update issue status
-		if shouldClose {
-			updates := map[string]interface{}{
-				"status": types.StatusClosed,
-			}
-			if err := e.store.UpdateIssue(ctx, issue.ID, updates, e.instanceID); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: failed to close issue: %v\n", err)
-			}
-		}
-
-		// Add completion comment
-		summary := agentOutput
-		if err := e.store.AddComment(ctx, issue.ID, e.instanceID, summary); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to add comment: %v\n", err)
-		}
-
-		// Add AI analysis comment if available
-		if analysis != nil {
-			analysisComment := fmt.Sprintf("**AI Analysis**\n\nCompleted: %v\n\nSummary: %s\n\n", analysis.Completed, analysis.Summary)
-			if len(analysis.PuntedItems) > 0 {
-				analysisComment += "Punted Work:\n"
-				for _, item := range analysis.PuntedItems {
-					analysisComment += fmt.Sprintf("- %s\n", item)
-				}
-			}
-			if len(analysis.QualityIssues) > 0 {
-				analysisComment += "\nQuality Issues:\n"
-				for _, issue := range analysis.QualityIssues {
-					analysisComment += fmt.Sprintf("- %s\n", issue)
-				}
-			}
-			if err := e.store.AddComment(ctx, issue.ID, "ai-supervisor", analysisComment); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: failed to add analysis comment: %v\n", err)
-			}
-
-			// Create discovered issues
-			if len(analysis.DiscoveredIssues) > 0 {
-				createdIDs, err := e.supervisor.CreateDiscoveredIssues(ctx, issue, analysis.DiscoveredIssues)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "warning: failed to create discovered issues: %v\n", err)
-				} else if len(createdIDs) > 0 {
-					discoveredComment := fmt.Sprintf("Discovered %d new issues: %v", len(createdIDs), createdIDs)
-					if err := e.store.AddComment(ctx, issue.ID, "ai-supervisor", discoveredComment); err != nil {
-						fmt.Fprintf(os.Stderr, "warning: failed to add discovered issues comment: %v\n", err)
-					}
-				}
-			}
-		}
-
-		// Check if parent epic is now complete
-		if shouldClose {
-			if err := checkEpicCompletion(ctx, e.store, issue.ID); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: failed to check epic completion: %v\n", err)
-			}
-		}
-
-		// Update execution state to completed
-		if err := e.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateCompleted); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
-		}
-
-		// Release the execution state (success path)
-		if err := e.store.ReleaseIssue(ctx, issue.ID); err != nil {
-			return fmt.Errorf("failed to release issue: %w", err)
-		}
-	} else {
-		fmt.Printf("Agent failed for issue %s (exit code: %d)\n", issue.ID, result.ExitCode)
-
-		// Leave issue in in_progress state but release execution lock
-		// Note: releaseIssueWithError already calls ReleaseIssue, so we don't call it again
-		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Agent failed with exit code %d", result.ExitCode))
-	}
+	// Print summary
+	fmt.Println(procResult.Summary)
 
 	return nil
 }
@@ -476,25 +360,4 @@ func (e *Executor) releaseIssueWithError(ctx context.Context, issueID, errMsg st
 	if err := e.store.ReleaseIssue(ctx, issueID); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to release issue: %v\n", err)
 	}
-}
-
-// extractSummary extracts a summary from agent output
-func (e *Executor) extractSummary(result *AgentResult) string {
-	// For now, just return the last few lines of output
-	if len(result.Output) == 0 {
-		return "Agent completed with no output"
-	}
-
-	// Get last 10 lines or all if less
-	start := len(result.Output) - 10
-	if start < 0 {
-		start = 0
-	}
-
-	summary := "Agent execution completed:\n\n"
-	for _, line := range result.Output[start:] {
-		summary += line + "\n"
-	}
-
-	return summary
 }
