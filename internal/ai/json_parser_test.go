@@ -189,6 +189,41 @@ func TestParse_UnquotedKeys(t *testing.T) {
 	}
 }
 
+func TestParse_ApostrophesInStrings(t *testing.T) {
+	// Regression test for P0 bug: single quote replacement broke valid JSON with apostrophes
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "apostrophe in message",
+			input: `{"message": "I'm a valid string"}`,
+		},
+		{
+			name:  "contraction",
+			input: `{"text": "don't break this"}`,
+		},
+		{
+			name:  "possessive",
+			input: `{"user": "Alice's data"}`,
+		},
+		{
+			name:  "multiple apostrophes",
+			input: `{"message": "It's Alice's car, and it's working"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Parse[map[string]any](tt.input)
+
+			if !result.Success {
+				t.Fatalf("Valid JSON with apostrophes should parse successfully, got error: %s", result.Error)
+			}
+		})
+	}
+}
+
 func TestParse_MixedContent(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -561,6 +596,49 @@ func TestParse_WithContext(t *testing.T) {
 
 	if !containsString(result.Error, "test operation") {
 		t.Errorf("Expected error to include context, got: %s", result.Error)
+	}
+}
+
+func TestParse_MaxInputSize(t *testing.T) {
+	// Create input larger than limit
+	largeInput := `{"data": "` + string(make([]byte, 2000)) + `"}`
+
+	result := Parse[map[string]any](largeInput, ParseOptions{
+		MaxInputSize: 1000, // 1KB limit
+		LogErrors:    false,
+	})
+
+	if result.Success {
+		t.Error("Expected parse to fail due to size limit")
+	}
+
+	if !containsString(result.Error, "exceeds size limit") {
+		t.Errorf("Expected 'exceeds size limit' error, got: %s", result.Error)
+	}
+
+	// Verify it works when size is under limit
+	smallInput := `{"test": "data"}`
+	result2 := Parse[map[string]any](smallInput, ParseOptions{
+		MaxInputSize: 1000,
+		LogErrors:    false,
+	})
+
+	if !result2.Success {
+		t.Errorf("Small input should parse successfully, got error: %s", result2.Error)
+	}
+
+	// Verify unlimited works (MaxInputSize = 0)
+	result3 := Parse[map[string]any](largeInput, ParseOptions{
+		MaxInputSize: 0, // Unlimited
+		LogErrors:    false,
+	})
+
+	if result3.Success {
+		t.Error("Expected parse to fail due to invalid JSON, not size limit")
+	}
+
+	if containsString(result3.Error, "exceeds size limit") {
+		t.Error("Should not have size limit error when MaxInputSize=0")
 	}
 }
 
