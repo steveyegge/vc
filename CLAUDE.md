@@ -56,8 +56,8 @@ bd dep tree vc-5
 ```
 vc/
 ├── .beads/
-│   ├── vc.db           # Issue tracker database (source of truth)
-│   └── issues.jsonl    # JSONL export (commit this to git)
+│   ├── vc.db           # Issue tracker database (derived from JSONL)
+│   └── issues.jsonl    # Source of truth (commit this to git)
 ├── internal/
 │   ├── types/          # Core data types
 │   └── storage/        # Storage layer (from beads)
@@ -124,11 +124,13 @@ bd close vc-X --reason "Completed all acceptance criteria"
 
 ### Export to Git
 
-**Always export before committing**:
+**CRITICAL - Always export before committing**:
 ```bash
 bd export -o .beads/issues.jsonl
 git add .beads/issues.jsonl
 ```
+
+**The `.beads/issues.jsonl` file is the source of truth**, not the database. The database is a local cache that gets rebuilt from the JSONL file.
 
 ---
 
@@ -320,9 +322,11 @@ Early issues (vc-5 through vc-9) had inverted dependencies, fixed in vc-90. All 
 
 ## ⚠️ Important Notes
 
+- **JSONL is source of truth** - `.beads/issues.jsonl` in git, NOT the database
+- **Import after pull/rebase** - Run `bd import .beads/issues.jsonl` to sync database
 - **Don't use markdown TODOs** - Everything goes in beads
 - **Don't create one-off scripts** - Use `bd` commands
-- **Always export before committing** - Keep JSONL in sync
+- **Always export before committing** - Keep JSONL in sync with database changes
 - **Beads path is `.beads/vc.db`** - Not `.vc/vc.db` (README is outdated)
 - **Bootstrap first** - Don't jump ahead to advanced features
 - **Set `ANTHROPIC_API_KEY`** - Required for AI supervision features (assessment, analysis, discovered issues)
@@ -347,8 +351,9 @@ bd close vc-X --reason "Done"
 bd dep tree vc-X            # Show dependency tree
 bd dep add vc-A vc-B        # A depends on B
 
-# === Export ===
-bd export -o .beads/issues.jsonl
+# === Sync with git ===
+bd import .beads/issues.jsonl   # Import JSONL to database (after pull)
+bd export -o .beads/issues.jsonl # Export database to JSONL (before commit)
 ```
 
 ---
@@ -364,4 +369,38 @@ bd export -o .beads/issues.jsonl
 
 ---
 
-**Remember**: The issue tracker is the source of truth. When in doubt, check `bd ready` to see what needs doing!
+## 🔄 Git Workflow & Source of Truth
+
+**CRITICAL**: The `.beads/issues.jsonl` file checked into git is the **source of truth**. The `.beads/vc.db` SQLite database is a **local cache** derived from the JSONL file.
+
+### After pulling/rebasing:
+
+```bash
+# The JSONL file from git is canonical
+# DO NOT re-export from your local database - it may be stale
+# If you made local changes, merge them carefully or discard them
+
+# To sync your database from git's JSONL:
+bd import .beads/issues.jsonl
+```
+
+### When merging conflicts:
+
+If `.beads/issues.jsonl` has merge conflicts, **never resolve by re-exporting from your local database**. Instead:
+1. Resolve conflicts in the JSONL file manually or take one side
+2. Import the resolved JSONL into your database: `bd import .beads/issues.jsonl`
+
+### Before committing your work:
+
+```bash
+# Export your changes to JSONL
+bd export -o .beads/issues.jsonl
+
+# Commit both code and issue changes together
+git add .beads/issues.jsonl
+git commit -m "your message"
+```
+
+---
+
+**Remember**: When in doubt, check `bd ready` to see what needs doing!
