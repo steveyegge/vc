@@ -149,6 +149,7 @@ func (r *REPL) registerCommands() {
 	r.commands["/status"] = r.cmdStatus
 	r.commands["/ready"] = r.cmdReady
 	r.commands["/blocked"] = r.cmdBlocked
+	r.commands["/continue"] = r.cmdContinue
 }
 
 // printWelcome prints the welcome message
@@ -176,7 +177,8 @@ func (r *REPL) cmdHelp(args []string) error {
 	fmt.Printf("  %s        Show project status\n", green("/status"))
 	fmt.Printf("  %s         Show ready work\n", green("/ready"))
 	fmt.Printf("  %s       Show blocked issues\n", green("/blocked"))
-	fmt.Printf("  %s    Exit the REPL\n", green("/exit"))
+	fmt.Printf("  %s      Resume execution - claim and execute ready work\n", green("/continue"))
+	fmt.Printf("  %s          Exit the REPL\n", green("/exit"))
 	fmt.Println()
 
 	fmt.Printf("%s\n", cyan("Natural Language:"))
@@ -185,10 +187,6 @@ func (r *REPL) cmdHelp(args []string) error {
 	fmt.Printf("    %s\n", gray("Add a login page"))
 	fmt.Printf("    %s\n", gray("What issues are blocked?"))
 	fmt.Printf("    %s\n", gray("Fix the authentication bug"))
-	fmt.Println()
-
-	fmt.Printf("%s\n", cyan("Coming Soon:"))
-	fmt.Printf("  %s    Resume execution ('let's continue')\n", gray("/continue"))
 	fmt.Println()
 
 	return nil
