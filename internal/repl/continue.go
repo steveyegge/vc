@@ -15,7 +15,9 @@ import (
 func (r *REPL) cmdContinue(args []string) error {
 	ctx := r.ctx
 
-	// Get one piece of ready work (highest priority)
+	// Get one piece of ready work (highest priority first)
+	// NOTE: For MVP, claim is not atomic with this query - race possible in multi-executor scenario.
+	// See vc-87 for atomic claiming implementation.
 	issues, err := r.store.GetReadyWork(ctx, types.WorkFilter{
 		Status: types.StatusOpen,
 		Limit:  1,
@@ -110,6 +112,8 @@ func (r *REPL) cmdContinue(args []string) error {
 	}
 
 	// Add result to issue notes
+	// NOTE: Notes are concatenated without bounds checking - could grow large over many executions.
+	// Future: Move execution history to separate table or implement note rotation.
 	resultNote := fmt.Sprintf("\n\n[%s] Worker execution:\n- Duration: %v\n- Exit code: %d\n- Success: %t",
 		time.Now().Format(time.RFC3339),
 		result.Duration.Round(time.Second),
@@ -136,7 +140,13 @@ func (r *REPL) cmdContinue(args []string) error {
 	return nil
 }
 
-// spawnWorkerForIssue spawns a Claude Code worker for the given issue
+// spawnWorkerForIssue spawns a Claude Code worker subprocess for the given issue.
+// It builds a prompt from the issue context, spawns the agent, streams output in real-time,
+// and waits for completion with the configured timeout (default 30 minutes).
+// Returns the execution result including stdout, stderr, exit code, and duration.
+//
+// NOTE: Context cancellation (Ctrl+C) is not fully handled - subprocess may continue running.
+// See vc-88 for graceful cancellation implementation.
 func (r *REPL) spawnWorkerForIssue(ctx context.Context, issue *types.Issue, workingDir string) (*executor.AgentResult, error) {
 	// Configure the agent
 	cfg := executor.AgentConfig{
