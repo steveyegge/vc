@@ -168,3 +168,143 @@ func (g *Git) GetDiff(ctx context.Context, repoPath string, staged bool) (string
 
 	return string(output), nil
 }
+
+// Rebase performs a git rebase operation.
+// SECURITY: repoPath must be a validated, trusted path. This function
+// does not perform path validation or sandboxing.
+func (g *Git) Rebase(ctx context.Context, repoPath string, opts RebaseOptions) (*RebaseResult, error) {
+	result := &RebaseResult{}
+
+	// Validate mutually exclusive options
+	exclusiveCount := 0
+	if opts.BaseBranch != "" {
+		exclusiveCount++
+	}
+	if opts.Abort {
+		exclusiveCount++
+	}
+	if opts.Continue {
+		exclusiveCount++
+	}
+	if exclusiveCount != 1 {
+		return nil, fmt.Errorf("exactly one of BaseBranch, Abort, or Continue must be specified")
+	}
+
+	// Get current branch name for result tracking
+	branchCmd := exec.CommandContext(ctx, g.gitPath, "-C", repoPath, "rev-parse", "--abbrev-ref", "HEAD")
+	branchOutput, err := branchCmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current branch: %w", err)
+	}
+	result.CurrentBranch = strings.TrimSpace(string(branchOutput))
+
+	// Handle abort case
+	if opts.Abort {
+		abortCmd := exec.CommandContext(ctx, g.gitPath, "-C", repoPath, "rebase", "--abort")
+		if err := abortCmd.Run(); err != nil {
+			result.ErrorMessage = fmt.Sprintf("rebase --abort failed: %v", err)
+			result.AbortedSuccessfully = false
+			return result, fmt.Errorf("git rebase --abort failed in %s: %w", repoPath, err)
+		}
+		result.Success = true
+		result.AbortedSuccessfully = true
+		return result, nil
+	}
+
+	// Handle continue case
+	if opts.Continue {
+		continueCmd := exec.CommandContext(ctx, g.gitPath, "-C", repoPath, "rebase", "--continue")
+		output, err := continueCmd.CombinedOutput()
+		if err != nil {
+			outputStr := string(output)
+
+			// Check if there's no rebase in progress
+			if strings.Contains(outputStr, "No rebase in progress") {
+				result.ErrorMessage = "No rebase in progress"
+				return result, fmt.Errorf("no rebase in progress in %s", repoPath)
+			}
+
+			// Check if there are still conflicts
+			hasConflicts, conflictErr := g.hasConflicts(ctx, repoPath)
+			if conflictErr == nil && hasConflicts {
+				result.HasConflicts = true
+				result.ConflictedFiles = g.getConflictedFiles(ctx, repoPath)
+				result.ErrorMessage = "Still has unresolved conflicts"
+				return result, nil // Not an error - expected state
+			}
+
+			// Some other error occurred
+			result.ErrorMessage = fmt.Sprintf("rebase --continue failed: %v\nOutput: %s", err, outputStr)
+			return result, fmt.Errorf("git rebase --continue failed in %s: %w", repoPath, err)
+		}
+		result.Success = true
+		return result, nil
+	}
+
+	// Handle normal rebase case
+	result.BaseBranch = opts.BaseBranch
+
+	// Perform the rebase
+	rebaseCmd := exec.CommandContext(ctx, g.gitPath, "-C", repoPath, "rebase", opts.BaseBranch)
+	output, err := rebaseCmd.CombinedOutput()
+
+	if err != nil {
+		// Rebase failed - check if it's due to conflicts
+		hasConflicts, conflictErr := g.hasConflicts(ctx, repoPath)
+		if conflictErr != nil {
+			result.ErrorMessage = fmt.Sprintf("rebase failed and conflict check failed: %v\nRebase output: %s", conflictErr, string(output))
+			return result, fmt.Errorf("git rebase failed in %s and conflict check failed: %w", repoPath, err)
+		}
+
+		// Check for merge conflicts
+		if hasConflicts {
+			result.HasConflicts = true
+			result.ConflictedFiles = g.getConflictedFiles(ctx, repoPath)
+			result.ErrorMessage = fmt.Sprintf("rebase failed with conflicts: %s", string(output))
+			return result, nil // Return nil error since conflicts are expected and handled
+		}
+
+		// Some other error occurred
+		result.ErrorMessage = fmt.Sprintf("rebase failed: %v\nOutput: %s", err, string(output))
+		return result, fmt.Errorf("git rebase failed in %s: %w", repoPath, err)
+	}
+
+	// Rebase succeeded
+	result.Success = true
+	return result, nil
+}
+
+// hasConflicts checks if there are unmerged files (merge conflicts).
+// This uses git diff --diff-filter=U which specifically checks for unmerged paths.
+func (g *Git) hasConflicts(ctx context.Context, repoPath string) (bool, error) {
+	// Use git diff to check for unmerged paths (conflicts)
+	cmd := exec.CommandContext(ctx, g.gitPath, "-C", repoPath, "diff", "--name-only", "--diff-filter=U")
+	output, err := cmd.Output()
+	if err != nil {
+		// If the command fails, it might be because we're not in a rebase
+		// In that case, there are no conflicts
+		return false, nil
+	}
+	return len(strings.TrimSpace(string(output))) > 0, nil
+}
+
+// getConflictedFiles returns a list of files with merge conflicts.
+func (g *Git) getConflictedFiles(ctx context.Context, repoPath string) []string {
+	// Use git diff --name-only --diff-filter=U to find unmerged files
+	cmd := exec.CommandContext(ctx, g.gitPath, "-C", repoPath, "diff", "--name-only", "--diff-filter=U")
+	output, err := cmd.Output()
+	if err != nil {
+		return []string{}
+	}
+
+	var files []string
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			files = append(files, line)
+		}
+	}
+
+	return files
+}
