@@ -2,7 +2,6 @@ package ai
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -111,11 +110,15 @@ func (s *Supervisor) AssessIssueState(ctx context.Context, issue *types.Issue) (
 		}
 	}
 
-	// Parse the response as JSON
-	var assessment Assessment
-	if err := json.Unmarshal([]byte(responseText), &assessment); err != nil {
-		return nil, fmt.Errorf("failed to parse assessment response: %w (response: %s)", err, responseText)
+	// Parse the response as JSON using resilient parser
+	parseResult := Parse[Assessment](responseText, ParseOptions{
+		Context:   "assessment response",
+		LogErrors: true,
+	})
+	if !parseResult.Success {
+		return nil, fmt.Errorf("failed to parse assessment response: %s (response: %s)", parseResult.Error, responseText)
 	}
+	assessment := parseResult.Data
 
 	// Log the assessment
 	duration := time.Since(startTime)
@@ -158,11 +161,15 @@ func (s *Supervisor) AnalyzeExecutionResult(ctx context.Context, issue *types.Is
 		}
 	}
 
-	// Parse the response as JSON
-	var analysis Analysis
-	if err := json.Unmarshal([]byte(responseText), &analysis); err != nil {
-		return nil, fmt.Errorf("failed to parse analysis response: %w (response: %s)", err, responseText)
+	// Parse the response as JSON using resilient parser
+	parseResult := Parse[Analysis](responseText, ParseOptions{
+		Context:   "analysis response",
+		LogErrors: true,
+	})
+	if !parseResult.Success {
+		return nil, fmt.Errorf("failed to parse analysis response: %s (response: %s)", parseResult.Error, responseText)
 	}
+	analysis := parseResult.Data
 
 	// Log the analysis
 	duration := time.Since(startTime)
