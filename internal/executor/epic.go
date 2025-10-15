@@ -20,16 +20,14 @@ func checkEpicCompletion(ctx context.Context, store storage.Storage, issueID str
 		return fmt.Errorf("issue not found: %s", issueID)
 	}
 
-	// Get parent epics (epics that depend on this issue)
-	// In the dependency model, epics depend on their children, so GetDependents
-	// returns issues that have this issue as a dependency (i.e., parent epics)
-	dependents, err := store.GetDependents(ctx, issueID)
+	// Get parent issues (issues this one depends on via parent-child relationship)
+	deps, err := store.GetDependencies(ctx, issueID)
 	if err != nil {
-		return fmt.Errorf("failed to get dependents: %w", err)
+		return fmt.Errorf("failed to get dependencies: %w", err)
 	}
 
 	// Find parent epic(s)
-	for _, dep := range dependents {
+	for _, dep := range deps {
 		if dep.IssueType == types.TypeEpic {
 			// Check if all children of this epic are closed
 			if err := checkAndCloseEpicIfComplete(ctx, store, dep.ID); err != nil {
@@ -58,10 +56,8 @@ func checkAndCloseEpicIfComplete(ctx context.Context, store storage.Storage, epi
 		return nil
 	}
 
-	// Get all issues that this epic depends on (its children)
-	// In the dependency model, epics depend on their children, so GetDependencies
-	// returns the child issues
-	children, err := store.GetDependencies(ctx, epicID)
+	// Get all issues that depend on this epic (its children)
+	children, err := store.GetDependents(ctx, epicID)
 	if err != nil {
 		return fmt.Errorf("failed to get epic children: %w", err)
 	}
