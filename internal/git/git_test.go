@@ -699,3 +699,246 @@ func checkoutBranch(t *testing.T, dir, branchName string) {
 		t.Fatalf("Failed to checkout branch %s: %v", branchName, err)
 	}
 }
+
+// TestConflictResolution tests conflict parsing and validation
+func TestConflictResolution(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "vc-git-conflict-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	git, err := NewGit(ctx)
+	if err != nil {
+		t.Fatalf("Failed to create Git instance: %v", err)
+	}
+
+	// Test 1: Parse single conflict marker
+	t.Run("ParseSingleConflict", func(t *testing.T) {
+		conflictContent := `line 1
+line 2
+<<<<<<< HEAD
+our change
+=======
+their change
+>>>>>>> main
+line 3`
+
+		conflicts := git.parseConflictMarkers(conflictContent)
+
+		if len(conflicts) != 1 {
+			t.Fatalf("Expected 1 conflict, got %d", len(conflicts))
+		}
+
+		conflict := conflicts[0]
+		if conflict.OursLabel != "HEAD" {
+			t.Errorf("Expected OursLabel 'HEAD', got '%s'", conflict.OursLabel)
+		}
+		if conflict.TheirsLabel != "main" {
+			t.Errorf("Expected TheirsLabel 'main', got '%s'", conflict.TheirsLabel)
+		}
+		if len(conflict.OursContent) != 1 || conflict.OursContent[0] != "our change" {
+			t.Errorf("Expected OursContent ['our change'], got %v", conflict.OursContent)
+		}
+		if len(conflict.TheirsContent) != 1 || conflict.TheirsContent[0] != "their change" {
+			t.Errorf("Expected TheirsContent ['their change'], got %v", conflict.TheirsContent)
+		}
+		if conflict.StartLine != 3 {
+			t.Errorf("Expected StartLine 3, got %d", conflict.StartLine)
+		}
+		if conflict.MiddleLine != 5 {
+			t.Errorf("Expected MiddleLine 5, got %d", conflict.MiddleLine)
+		}
+		if conflict.EndLine != 7 {
+			t.Errorf("Expected EndLine 7, got %d", conflict.EndLine)
+		}
+	})
+
+	// Test 2: Parse multiple conflicts
+	t.Run("ParseMultipleConflicts", func(t *testing.T) {
+		conflictContent := `line 1
+<<<<<<< HEAD
+first our
+=======
+first their
+>>>>>>> main
+middle line
+<<<<<<< HEAD
+second our
+=======
+second their
+>>>>>>> feature`
+
+		conflicts := git.parseConflictMarkers(conflictContent)
+
+		if len(conflicts) != 2 {
+			t.Fatalf("Expected 2 conflicts, got %d", len(conflicts))
+		}
+
+		if conflicts[0].OursContent[0] != "first our" {
+			t.Errorf("First conflict OursContent mismatch: %v", conflicts[0].OursContent)
+		}
+		if conflicts[1].TheirsLabel != "feature" {
+			t.Errorf("Second conflict TheirsLabel mismatch: %s", conflicts[1].TheirsLabel)
+		}
+	})
+
+	// Test 3: Parse multiline conflict content
+	t.Run("ParseMultilineContent", func(t *testing.T) {
+		conflictContent := `<<<<<<< HEAD
+our line 1
+our line 2
+our line 3
+=======
+their line 1
+their line 2
+>>>>>>> main`
+
+		conflicts := git.parseConflictMarkers(conflictContent)
+
+		if len(conflicts) != 1 {
+			t.Fatalf("Expected 1 conflict, got %d", len(conflicts))
+		}
+
+		if len(conflicts[0].OursContent) != 3 {
+			t.Errorf("Expected 3 lines in OursContent, got %d", len(conflicts[0].OursContent))
+		}
+		if len(conflicts[0].TheirsContent) != 2 {
+			t.Errorf("Expected 2 lines in TheirsContent, got %d", len(conflicts[0].TheirsContent))
+		}
+	})
+
+	// Test 4: GetConflictDetails with real file
+	t.Run("GetConflictDetailsFromFile", func(t *testing.T) {
+		// Create a file with conflict markers
+		conflictFile := filepath.Join(tmpDir, "conflict.txt")
+		conflictContent := `normal line
+<<<<<<< HEAD
+version from HEAD
+=======
+version from main
+>>>>>>> main
+another normal line`
+
+		err := os.WriteFile(conflictFile, []byte(conflictContent), 0644)
+		if err != nil {
+			t.Fatalf("Failed to create conflict file: %v", err)
+		}
+
+		req := ConflictResolutionRequest{
+			RepoPath:        tmpDir,
+			ConflictedFiles: []string{"conflict.txt"},
+			BaseBranch:      "main",
+			CurrentBranch:   "feature",
+		}
+
+		result, err := git.GetConflictDetails(ctx, req)
+		if err != nil {
+			t.Fatalf("GetConflictDetails failed: %v", err)
+		}
+
+		if result.TotalConflicts != 1 {
+			t.Errorf("Expected 1 total conflict, got %d", result.TotalConflicts)
+		}
+
+		fileConflict, exists := result.FileConflicts["conflict.txt"]
+		if !exists {
+			t.Fatal("Expected conflict.txt in FileConflicts")
+		}
+
+		if len(fileConflict.Conflicts) != 1 {
+			t.Errorf("Expected 1 conflict in file, got %d", len(fileConflict.Conflicts))
+		}
+
+		if fileConflict.FullContent != conflictContent {
+			t.Error("FullContent doesn't match original")
+		}
+	})
+
+	// Test 5: ValidateConflictResolution - with conflicts
+	t.Run("ValidateWithConflicts", func(t *testing.T) {
+		conflictFile := filepath.Join(tmpDir, "unresolved.txt")
+		conflictContent := `<<<<<<< HEAD
+conflict here
+=======
+still conflicted
+>>>>>>> main`
+
+		err := os.WriteFile(conflictFile, []byte(conflictContent), 0644)
+		if err != nil {
+			t.Fatalf("Failed to create conflict file: %v", err)
+		}
+
+		resolved, err := git.ValidateConflictResolution(ctx, tmpDir, []string{"unresolved.txt"})
+		if err != nil {
+			t.Fatalf("ValidateConflictResolution failed: %v", err)
+		}
+
+		if resolved {
+			t.Error("Expected validation to fail with unresolved conflicts")
+		}
+	})
+
+	// Test 6: ValidateConflictResolution - resolved
+	t.Run("ValidateResolved", func(t *testing.T) {
+		resolvedFile := filepath.Join(tmpDir, "resolved.txt")
+		resolvedContent := `this is
+completely
+resolved
+no markers here`
+
+		err := os.WriteFile(resolvedFile, []byte(resolvedContent), 0644)
+		if err != nil {
+			t.Fatalf("Failed to create resolved file: %v", err)
+		}
+
+		resolved, err := git.ValidateConflictResolution(ctx, tmpDir, []string{"resolved.txt"})
+		if err != nil {
+			t.Fatalf("ValidateConflictResolution failed: %v", err)
+		}
+
+		if !resolved {
+			t.Error("Expected validation to pass for resolved file")
+		}
+	})
+
+	// Test 7: Multiple files validation
+	t.Run("ValidateMultipleFiles", func(t *testing.T) {
+		file1 := filepath.Join(tmpDir, "file1.txt")
+		file2 := filepath.Join(tmpDir, "file2.txt")
+
+		os.WriteFile(file1, []byte("resolved content"), 0644)
+		os.WriteFile(file2, []byte("<<<<<<< conflict"), 0644)
+
+		resolved, err := git.ValidateConflictResolution(ctx, tmpDir, []string{"file1.txt", "file2.txt"})
+		if err != nil {
+			t.Fatalf("ValidateConflictResolution failed: %v", err)
+		}
+
+		if resolved {
+			t.Error("Expected validation to fail when any file has conflicts")
+		}
+	})
+
+	// Test 8: Empty conflict sections
+	t.Run("ParseEmptyConflictSections", func(t *testing.T) {
+		conflictContent := `<<<<<<< HEAD
+=======
+>>>>>>> main`
+
+		conflicts := git.parseConflictMarkers(conflictContent)
+
+		if len(conflicts) != 1 {
+			t.Fatalf("Expected 1 conflict, got %d", len(conflicts))
+		}
+
+		if len(conflicts[0].OursContent) != 0 {
+			t.Errorf("Expected empty OursContent, got %v", conflicts[0].OursContent)
+		}
+		if len(conflicts[0].TheirsContent) != 0 {
+			t.Errorf("Expected empty TheirsContent, got %v", conflicts[0].TheirsContent)
+		}
+	})
+}

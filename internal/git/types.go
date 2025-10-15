@@ -22,6 +22,14 @@ type GitOperations interface {
 	// Rebase performs a git rebase operation.
 	// Returns the result including conflict detection and status.
 	Rebase(ctx context.Context, repoPath string, opts RebaseOptions) (*RebaseResult, error)
+
+	// GetConflictDetails parses merge conflicts in files and returns detailed information.
+	// This is used to extract conflict markers and both sides of conflicts for resolution.
+	GetConflictDetails(ctx context.Context, req ConflictResolutionRequest) (*ConflictResolutionResult, error)
+
+	// ValidateConflictResolution checks if conflicts have been properly resolved.
+	// Returns true if no conflict markers remain in the specified files.
+	ValidateConflictResolution(ctx context.Context, repoPath string, files []string) (bool, error)
 }
 
 // Status represents the git status of a repository.
@@ -151,4 +159,70 @@ type RebaseCheckpoint struct {
 
 	// ErrorMessage contains any error from the rebase
 	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+// ConflictMarker represents a parsed conflict marker section in a file.
+type ConflictMarker struct {
+	// StartLine is the line number where the conflict starts (<<<<<<< marker)
+	StartLine int
+
+	// MiddleLine is the line number of the separator (======= marker)
+	MiddleLine int
+
+	// EndLine is the line number where the conflict ends (>>>>>>> marker)
+	EndLine int
+
+	// OursLabel is the label from the <<<<<<< line (e.g., "HEAD")
+	OursLabel string
+
+	// TheirsLabel is the label from the >>>>>>> line (e.g., "main")
+	TheirsLabel string
+
+	// OursContent is the content from our side (between <<<<<<< and =======)
+	OursContent []string
+
+	// TheirsContent is the content from their side (between ======= and >>>>>>>)
+	TheirsContent []string
+}
+
+// FileConflict represents all conflicts in a single file.
+type FileConflict struct {
+	// FilePath is the relative path to the conflicted file
+	FilePath string
+
+	// Conflicts is the list of conflict markers found in the file
+	Conflicts []ConflictMarker
+
+	// FullContent is the complete file content (optional, can be large)
+	FullContent string
+}
+
+// ConflictResolutionRequest contains information for resolving conflicts.
+type ConflictResolutionRequest struct {
+	// RepoPath is the path to the repository
+	RepoPath string
+
+	// ConflictedFiles is the list of files with conflicts
+	ConflictedFiles []string
+
+	// BaseBranch is the branch being rebased onto
+	BaseBranch string
+
+	// CurrentBranch is the branch being rebased
+	CurrentBranch string
+
+	// IssueID is the ID of the issue being worked on (optional)
+	IssueID string
+}
+
+// ConflictResolutionResult contains the parsed conflict details.
+type ConflictResolutionResult struct {
+	// FileConflicts maps file paths to their conflict details
+	FileConflicts map[string]*FileConflict
+
+	// TotalConflicts is the total number of conflict markers across all files
+	TotalConflicts int
+
+	// ErrorMessage contains any error that occurred during parsing
+	ErrorMessage string
 }

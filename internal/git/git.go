@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -307,4 +308,123 @@ func (g *Git) getConflictedFiles(ctx context.Context, repoPath string) []string 
 	}
 
 	return files
+}
+
+// GetConflictDetails parses merge conflicts in files and returns detailed information.
+// SECURITY: repoPath in the request must be a validated, trusted path.
+func (g *Git) GetConflictDetails(ctx context.Context, req ConflictResolutionRequest) (*ConflictResolutionResult, error) {
+	result := &ConflictResolutionResult{
+		FileConflicts: make(map[string]*FileConflict),
+	}
+
+	for _, filePath := range req.ConflictedFiles {
+		fullPath := fmt.Sprintf("%s/%s", req.RepoPath, filePath)
+
+		// Read the file content
+		content, err := os.ReadFile(fullPath)
+		if err != nil {
+			result.ErrorMessage = fmt.Sprintf("failed to read file %s: %v", filePath, err)
+			return result, fmt.Errorf("failed to read conflicted file %s: %w", filePath, err)
+		}
+
+		// Parse conflicts in the file
+		fileConflict := &FileConflict{
+			FilePath:    filePath,
+			FullContent: string(content),
+			Conflicts:   []ConflictMarker{},
+		}
+
+		conflicts := g.parseConflictMarkers(string(content))
+		fileConflict.Conflicts = conflicts
+		result.TotalConflicts += len(conflicts)
+		result.FileConflicts[filePath] = fileConflict
+	}
+
+	return result, nil
+}
+
+// parseConflictMarkers parses conflict markers in file content and returns the conflicts.
+func (g *Git) parseConflictMarkers(content string) []ConflictMarker {
+	lines := strings.Split(content, "\n")
+	var conflicts []ConflictMarker
+	var currentConflict *ConflictMarker
+	var inOurSection bool
+
+	for lineNum, line := range lines {
+		// Check for start of conflict marker
+		if strings.HasPrefix(line, "<<<<<<<") {
+			if currentConflict != nil {
+				// Nested or malformed conflict marker, skip
+				continue
+			}
+			currentConflict = &ConflictMarker{
+				StartLine:   lineNum + 1, // 1-indexed
+				OursContent: []string{},
+				TheirsContent: []string{},
+			}
+			// Extract label (e.g., "HEAD" from "<<<<<<< HEAD")
+			parts := strings.Fields(line)
+			if len(parts) > 1 {
+				currentConflict.OursLabel = parts[1]
+			}
+			inOurSection = true
+			continue
+		}
+
+		// Check for middle separator
+		if strings.HasPrefix(line, "=======") && currentConflict != nil {
+			currentConflict.MiddleLine = lineNum + 1
+			inOurSection = false
+			continue
+		}
+
+		// Check for end of conflict marker
+		if strings.HasPrefix(line, ">>>>>>>") && currentConflict != nil {
+			currentConflict.EndLine = lineNum + 1
+			// Extract label (e.g., "main" from ">>>>>>> main")
+			parts := strings.Fields(line)
+			if len(parts) > 1 {
+				currentConflict.TheirsLabel = parts[1]
+			}
+			conflicts = append(conflicts, *currentConflict)
+			currentConflict = nil
+			inOurSection = false
+			continue
+		}
+
+		// Add content to the appropriate section
+		if currentConflict != nil {
+			if inOurSection {
+				currentConflict.OursContent = append(currentConflict.OursContent, line)
+			} else {
+				currentConflict.TheirsContent = append(currentConflict.TheirsContent, line)
+			}
+		}
+	}
+
+	return conflicts
+}
+
+// ValidateConflictResolution checks if conflicts have been properly resolved.
+// Returns true if no conflict markers remain in the specified files.
+// SECURITY: repoPath must be a validated, trusted path.
+func (g *Git) ValidateConflictResolution(ctx context.Context, repoPath string, files []string) (bool, error) {
+	for _, filePath := range files {
+		fullPath := fmt.Sprintf("%s/%s", repoPath, filePath)
+
+		content, err := os.ReadFile(fullPath)
+		if err != nil {
+			return false, fmt.Errorf("failed to read file %s: %w", filePath, err)
+		}
+
+		// Check for any remaining conflict markers
+		contentStr := string(content)
+		if strings.Contains(contentStr, "<<<<<<<") ||
+		   strings.Contains(contentStr, "=======") ||
+		   strings.Contains(contentStr, ">>>>>>>") {
+			return false, nil
+		}
+	}
+
+	return true, nil
 }
