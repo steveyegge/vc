@@ -612,6 +612,133 @@ func TestCompleteExecutorWorkflow(t *testing.T) {
 	}
 }
 
+// TestEpicChildDependencyDirection tests that epic-child dependencies use the standard (child, parent) direction
+func TestEpicChildDependencyDirection(t *testing.T) {
+	backends := []string{"sqlite", "postgres"}
+
+	for _, backend := range backends {
+		t.Run(backend, func(t *testing.T) {
+			if backend == "postgres" && !isPostgresAvailable() {
+				t.Skip("PostgreSQL not available")
+			}
+
+			ctx := context.Background()
+			store := setupStorage(t, backend)
+			defer store.Close()
+
+			// Create an epic
+			epic := &types.Issue{
+				Title:              "Test Epic",
+				Description:        "Epic for testing child dependencies",
+				IssueType:          types.TypeEpic,
+				Status:             types.StatusOpen,
+				Priority:           0,
+				AcceptanceCriteria: "All children complete",
+				CreatedAt:          time.Now(),
+				UpdatedAt:          time.Now(),
+			}
+			if err := store.CreateIssue(ctx, epic, "test"); err != nil {
+				t.Fatalf("Failed to create epic: %v", err)
+			}
+
+			// Create 3 child tasks
+			children := make([]*types.Issue, 3)
+			for i := 0; i < 3; i++ {
+				child := &types.Issue{
+					Title:              fmt.Sprintf("Child Task %d", i+1),
+					Description:        fmt.Sprintf("Child task %d of epic", i+1),
+					IssueType:          types.TypeTask,
+					Status:             types.StatusOpen,
+					Priority:           1,
+					AcceptanceCriteria: fmt.Sprintf("Task %d complete", i+1),
+					CreatedAt:          time.Now(),
+					UpdatedAt:          time.Now(),
+				}
+				if err := store.CreateIssue(ctx, child, "test"); err != nil {
+					t.Fatalf("Failed to create child %d: %v", i, err)
+				}
+				children[i] = child
+
+				// Add dependency: child -> epic (standard direction)
+				dep := types.Dependency{
+					IssueID:     child.ID,
+					DependsOnID: epic.ID,
+					Type:        types.DepParentChild,
+					CreatedAt:   time.Now(),
+					CreatedBy:   "test",
+				}
+				if err := store.AddDependency(ctx, &dep, "test"); err != nil {
+					t.Fatalf("Failed to add dependency for child %d: %v", i, err)
+				}
+			}
+
+			// Test 1: GetDependencies(child) should return the epic parent
+			// This verifies child depends ON epic (child.ID -> epic.ID)
+			for i, child := range children {
+				deps, err := store.GetDependencies(ctx, child.ID)
+				if err != nil {
+					t.Fatalf("Failed to get dependencies for child %d: %v", i, err)
+				}
+				if len(deps) != 1 {
+					t.Errorf("Child %d: expected 1 dependency (the epic), got %d", i, len(deps))
+					continue
+				}
+				// deps[0] is the Issue that child depends on (should be the epic)
+				if deps[0].ID != epic.ID {
+					t.Errorf("Child %d: expected to depend on epic %s, got %s", i, epic.ID, deps[0].ID)
+				}
+				if deps[0].IssueType != types.TypeEpic {
+					t.Errorf("Child %d: dependency should be an epic, got %s", i, deps[0].IssueType)
+				}
+			}
+
+			// Test 2: GetDependents(epic) should return all children
+			// This verifies the query looks for issues that depend ON the epic
+			dependents, err := store.GetDependents(ctx, epic.ID)
+			if err != nil {
+				t.Fatalf("Failed to get dependents for epic: %v", err)
+			}
+			if len(dependents) != 3 {
+				t.Errorf("Epic: expected 3 dependents (children), got %d", len(dependents))
+			}
+
+			// Verify all children are in the dependents list
+			childIDs := make(map[string]bool)
+			for _, child := range children {
+				childIDs[child.ID] = true
+			}
+			for _, dependent := range dependents {
+				if !childIDs[dependent.ID] {
+					t.Errorf("Epic: unexpected dependent %s", dependent.ID)
+				}
+				if dependent.IssueType != types.TypeTask {
+					t.Errorf("Epic: dependent %s should be a task, got %s", dependent.ID, dependent.IssueType)
+				}
+			}
+
+			// Test 3: Verify there are NO old-style (epic, child) dependencies
+			// Old style would be: epic.ID as issue_id, child.ID as depends_on_id
+			// In old style, GetDependencies(epic) would return children
+			// In new style, GetDependencies(epic) should return nothing (or non-parent-child deps)
+			epicDeps, err := store.GetDependencies(ctx, epic.ID)
+			if err != nil {
+				t.Fatalf("Failed to get dependencies for epic: %v", err)
+			}
+			// Epic should not depend on its children - children depend on epic
+			for _, dep := range epicDeps {
+				if dep.IssueType == types.TypeTask {
+					// If epic "depends on" any of its children, that's old-style and wrong
+					for _, child := range children {
+						if dep.ID == child.ID {
+							t.Errorf("Found old-style dependency: epic depends on child %s (should be child -> epic)", child.ID)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
 // Helper functions
 
 func setupStorage(t *testing.T, backend string) Storage {

@@ -303,6 +303,21 @@ store, err := storage.NewStorage(ctx, cfg)
 
 ---
 
+## 📐 Dependency Direction Convention
+
+**CRITICAL**: Always use `(child, parent)` direction for parent-child dependencies.
+
+```bash
+bd dep add vc-10 vc-5 --type parent-child  # Child vc-10 depends ON parent vc-5
+```
+
+- `GetDependencies(child)` → returns parents
+- `GetDependents(parent)` → returns children
+
+Early issues (vc-5 through vc-9) had inverted dependencies, fixed in vc-90. All new code must use standard direction.
+
+---
+
 ## ⚠️ Important Notes
 
 - **Don't use markdown TODOs** - Everything goes in beads
@@ -311,6 +326,7 @@ store, err := storage.NewStorage(ctx, cfg)
 - **Beads path is `.beads/vc.db`** - Not `.vc/vc.db` (README is outdated)
 - **Bootstrap first** - Don't jump ahead to advanced features
 - **Set `ANTHROPIC_API_KEY`** - Required for AI supervision features (assessment, analysis, discovered issues)
+- **Use standard dependency direction** - Always `(child, parent)`, never `(parent, child)`
 
 ---
 
