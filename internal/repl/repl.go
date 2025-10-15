@@ -13,11 +13,12 @@ import (
 
 // REPL represents the interactive shell
 type REPL struct {
-	store    storage.Storage
-	rl       *readline.Instance
-	ctx      context.Context
-	actor    string
-	commands map[string]CommandHandler
+	store        storage.Storage
+	rl           *readline.Instance
+	ctx          context.Context
+	actor        string
+	commands     map[string]CommandHandler
+	conversation *ConversationHandler
 }
 
 // CommandHandler handles a specific command
@@ -135,10 +136,8 @@ func (r *REPL) processInput(line string) error {
 		return fmt.Errorf("%s: unknown command. Type /help for available commands", red(command))
 	}
 
-	// Not a slash command - treat as natural language (to be implemented later)
-	yellow := color.New(color.FgYellow).SprintFunc()
-	fmt.Printf("%s Natural language processing not yet implemented.\n", yellow("Note:"))
-	return nil
+	// Not a slash command - send to AI conversation handler
+	return r.processNaturalLanguage(line)
 }
 
 // registerCommands registers all built-in commands
