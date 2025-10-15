@@ -2,8 +2,10 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -17,6 +19,27 @@ type Supervisor struct {
 	client *anthropic.Client
 	store  storage.Storage
 	model  string
+	retry  RetryConfig
+}
+
+// RetryConfig holds retry configuration for API calls
+type RetryConfig struct {
+	MaxRetries      int           // Maximum number of retries (default: 3)
+	InitialBackoff  time.Duration // Initial backoff duration (default: 1s)
+	MaxBackoff      time.Duration // Maximum backoff duration (default: 30s)
+	BackoffMultiplier float64     // Backoff multiplier (default: 2.0)
+	Timeout         time.Duration // Per-request timeout (default: 60s)
+}
+
+// DefaultRetryConfig returns the default retry configuration
+func DefaultRetryConfig() RetryConfig {
+	return RetryConfig{
+		MaxRetries:        3,
+		InitialBackoff:    1 * time.Second,
+		MaxBackoff:        30 * time.Second,
+		BackoffMultiplier: 2.0,
+		Timeout:           60 * time.Second,
+	}
 }
 
 // Config holds supervisor configuration
@@ -24,6 +47,7 @@ type Config struct {
 	APIKey string // Anthropic API key (if empty, reads from ANTHROPIC_API_KEY env var)
 	Model  string // Model to use (default: claude-sonnet-4-5-20250929)
 	Store  storage.Storage
+	Retry  RetryConfig // Retry configuration (uses defaults if not specified)
 }
 
 // NewSupervisor creates a new AI supervisor
@@ -45,13 +69,129 @@ func NewSupervisor(cfg *Config) (*Supervisor, error) {
 		model = "claude-sonnet-4-5-20250929"
 	}
 
+	// Use default retry config if not specified
+	retry := cfg.Retry
+	if retry.MaxRetries == 0 {
+		retry = DefaultRetryConfig()
+	}
+
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 
 	return &Supervisor{
 		client: &client,
 		store:  cfg.Store,
 		model:  model,
+		retry:  retry,
 	}, nil
+}
+
+// retryWithBackoff executes an operation with exponential backoff retry logic
+func (s *Supervisor) retryWithBackoff(ctx context.Context, operation string, fn func(context.Context) error) error {
+	var lastErr error
+	backoff := s.retry.InitialBackoff
+
+	for attempt := 0; attempt <= s.retry.MaxRetries; attempt++ {
+		// Create timeout context for this attempt
+		attemptCtx, cancel := context.WithTimeout(ctx, s.retry.Timeout)
+
+		// Execute the operation
+		err := fn(attemptCtx)
+		cancel()
+
+		// Success!
+		if err == nil {
+			if attempt > 0 {
+				fmt.Printf("AI API %s succeeded after %d retries\n", operation, attempt)
+			}
+			return nil
+		}
+
+		lastErr = err
+
+		// Check if we should retry
+		if !isRetriableError(err) {
+			fmt.Fprintf(os.Stderr, "AI API %s failed with non-retriable error: %v\n", operation, err)
+			return err
+		}
+
+		// Don't retry if we've exhausted attempts
+		if attempt == s.retry.MaxRetries {
+			break
+		}
+
+		// Check if context is already cancelled
+		if ctx.Err() != nil {
+			return fmt.Errorf("%s failed: context cancelled: %w", operation, ctx.Err())
+		}
+
+		// Log the retry
+		fmt.Printf("AI API %s failed (attempt %d/%d), retrying in %v: %v\n",
+			operation, attempt+1, s.retry.MaxRetries+1, backoff, err)
+
+		// Sleep with exponential backoff
+		select {
+		case <-time.After(backoff):
+			// Calculate next backoff with exponential growth
+			backoff = time.Duration(float64(backoff) * s.retry.BackoffMultiplier)
+			if backoff > s.retry.MaxBackoff {
+				backoff = s.retry.MaxBackoff
+			}
+		case <-ctx.Done():
+			return fmt.Errorf("%s failed: context cancelled during backoff: %w", operation, ctx.Err())
+		}
+	}
+
+	return fmt.Errorf("%s failed after %d attempts: %w", operation, s.retry.MaxRetries+1, lastErr)
+}
+
+// isRetriableError determines if an error is retriable (transient)
+func isRetriableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Network errors and timeouts are retriable
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	// Check for HTTP status codes indicating transient errors
+	// Anthropic SDK should wrap these, but we check the error string
+	errStr := err.Error()
+
+	// Rate limits (429) are retriable
+	if strings.Contains(errStr, "429") || strings.Contains(errStr, "rate limit") {
+		return true
+	}
+
+	// Server errors (5xx) are retriable
+	if strings.Contains(errStr, "500") || strings.Contains(errStr, "502") ||
+	   strings.Contains(errStr, "503") || strings.Contains(errStr, "504") ||
+	   strings.Contains(errStr, "internal server error") ||
+	   strings.Contains(errStr, "bad gateway") ||
+	   strings.Contains(errStr, "service unavailable") ||
+	   strings.Contains(errStr, "gateway timeout") {
+		return true
+	}
+
+	// Network/connection errors are retriable
+	if strings.Contains(errStr, "connection refused") ||
+	   strings.Contains(errStr, "connection reset") ||
+	   strings.Contains(errStr, "timeout") ||
+	   strings.Contains(errStr, "temporary failure") ||
+	   strings.Contains(errStr, "network") {
+		return true
+	}
+
+	// 4xx client errors (except rate limits) are NOT retriable
+	// These indicate bad requests that won't succeed on retry
+	if strings.Contains(errStr, "400") || strings.Contains(errStr, "401") ||
+	   strings.Contains(errStr, "403") || strings.Contains(errStr, "404") {
+		return false
+	}
+
+	// Default to not retrying unknown errors
+	return false
 }
 
 // Assessment represents an AI assessment of an issue before execution
@@ -89,13 +229,21 @@ func (s *Supervisor) AssessIssueState(ctx context.Context, issue *types.Issue) (
 	// Build the prompt for assessment
 	prompt := s.buildAssessmentPrompt(issue)
 
-	// Call Anthropic API
-	response, err := s.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(s.model),
-		MaxTokens: 4096,
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-		},
+	// Call Anthropic API with retry logic
+	var response *anthropic.Message
+	err := s.retryWithBackoff(ctx, "assessment", func(attemptCtx context.Context) error {
+		resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(s.model),
+			MaxTokens: 4096,
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			},
+		})
+		if apiErr != nil {
+			return apiErr
+		}
+		response = resp
+		return nil
 	})
 
 	if err != nil {
@@ -140,13 +288,21 @@ func (s *Supervisor) AnalyzeExecutionResult(ctx context.Context, issue *types.Is
 	// Build the prompt for analysis
 	prompt := s.buildAnalysisPrompt(issue, agentOutput, success)
 
-	// Call Anthropic API
-	response, err := s.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(s.model),
-		MaxTokens: 4096,
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-		},
+	// Call Anthropic API with retry logic
+	var response *anthropic.Message
+	err := s.retryWithBackoff(ctx, "analysis", func(attemptCtx context.Context) error {
+		resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(s.model),
+			MaxTokens: 4096,
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			},
+		})
+		if apiErr != nil {
+			return apiErr
+		}
+		response = resp
+		return nil
 	})
 
 	if err != nil {
