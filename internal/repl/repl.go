@@ -19,14 +19,10 @@ type REPL struct {
 	rl           *readline.Instance
 	ctx          context.Context
 	actor        string
-	commands     map[string]CommandHandler
 	conversation *ConversationHandler
 	pendingPlans map[string]*types.MissionPlan // Mission plans awaiting approval
 	plansMu      sync.RWMutex                   // Protects pendingPlans map
 }
-
-// CommandHandler handles a specific command
-type CommandHandler func(args []string) error
 
 // Config holds REPL configuration
 type Config struct {
@@ -48,12 +44,8 @@ func New(cfg *Config) (*REPL, error) {
 	r := &REPL{
 		store:        cfg.Store,
 		actor:        actor,
-		commands:     make(map[string]CommandHandler),
 		pendingPlans: make(map[string]*types.MissionPlan),
 	}
-
-	// Register built-in commands
-	r.registerCommands()
 
 	return r, nil
 }
@@ -121,44 +113,13 @@ func (r *REPL) Run(ctx context.Context) error {
 
 // processInput processes a single line of input
 func (r *REPL) processInput(line string) error {
-	// Check if it's a slash command
-	if strings.HasPrefix(line, "/") {
-		parts := strings.Fields(line)
-		if len(parts) == 0 {
-			return nil
-		}
-
-		command := parts[0]
-		args := parts[1:]
-
-		// Check if it's a registered command
-		if handler, ok := r.commands[command]; ok {
-			return handler(args)
-		}
-
-		// Unknown slash command
-		red := color.New(color.FgRed).SprintFunc()
-		return fmt.Errorf("%s: unknown command. Type /help for available commands", red(command))
+	// Only intercept /quit and /exit - everything else goes to AI
+	if line == "/quit" || line == "/exit" {
+		return r.cmdExit(nil)
 	}
 
-	// Not a slash command - send to AI conversation handler
+	// Send everything else to AI conversation handler
 	return r.processNaturalLanguage(line)
-}
-
-// registerCommands registers all built-in commands
-func (r *REPL) registerCommands() {
-	r.commands["/help"] = r.cmdHelp
-	r.commands["/?"] = r.cmdHelp
-	r.commands["/exit"] = r.cmdExit
-	r.commands["/quit"] = r.cmdExit
-	r.commands["/status"] = r.cmdStatus
-	r.commands["/ready"] = r.cmdReady
-	r.commands["/blocked"] = r.cmdBlocked
-	r.commands["/continue"] = r.cmdContinue
-	// Mission approval commands
-	r.commands["/plan"] = r.cmdPlan
-	r.commands["/approve"] = r.cmdApprove
-	r.commands["/reject"] = r.cmdReject
 }
 
 // printWelcome prints the welcome message
@@ -168,43 +129,14 @@ func (r *REPL) printWelcome() {
 	fmt.Printf("\n%s\n", cyan("Welcome to VC - VibeCoder v2"))
 	fmt.Println("AI-orchestrated coding agent colony")
 	fmt.Println()
-	fmt.Printf("Slash commands start with %s (type %s for list)\n", gray("/"), cyan("/help"))
-	fmt.Println("Everything else is sent to AI for natural language processing")
+	fmt.Println("Talk to the AI naturally to manage work:")
+	fmt.Printf("  %s\n", gray("• \"What's ready to work on?\""))
+	fmt.Printf("  %s\n", gray("• \"Let's continue working\""))
+	fmt.Printf("  %s\n", gray("• \"Add a login feature\""))
+	fmt.Printf("  %s\n", gray("• \"Show me what's blocked\""))
 	fmt.Println()
-}
-
-// cmdHelp shows help information
-func (r *REPL) cmdHelp(args []string) error {
-	cyan := color.New(color.FgCyan, color.Bold).SprintFunc()
-	green := color.New(color.FgGreen).SprintFunc()
-	gray := color.New(color.FgHiBlack).SprintFunc()
-
-	fmt.Printf("\n%s\n", cyan("VC REPL Commands"))
+	fmt.Printf("Type %s to exit\n", cyan("/quit"))
 	fmt.Println()
-	fmt.Printf("%s\n", cyan("Slash Commands:"))
-	fmt.Printf("  %s          Show this help\n", green("/help"))
-	fmt.Printf("  %s        Show project status\n", green("/status"))
-	fmt.Printf("  %s         Show ready work\n", green("/ready"))
-	fmt.Printf("  %s       Show blocked issues\n", green("/blocked"))
-	fmt.Printf("  %s      Resume execution - claim and execute ready work\n", green("/continue"))
-	fmt.Println()
-	fmt.Printf("%s\n", cyan("Mission Planning:"))
-	fmt.Printf("  %s <id>      Show mission plan for review\n", green("/plan"))
-	fmt.Printf("  %s <id>   Approve mission plan and proceed\n", green("/approve"))
-	fmt.Printf("  %s <id>    Reject mission plan with optional reason\n", green("/reject"))
-	fmt.Println()
-	fmt.Printf("  %s          Exit the REPL\n", green("/exit"))
-	fmt.Println()
-
-	fmt.Printf("%s\n", cyan("Natural Language:"))
-	fmt.Println("  Type anything without a / to talk to the AI")
-	fmt.Printf("  %s\n", gray("Examples:"))
-	fmt.Printf("    %s\n", gray("Add a login page"))
-	fmt.Printf("    %s\n", gray("What issues are blocked?"))
-	fmt.Printf("    %s\n", gray("Fix the authentication bug"))
-	fmt.Println()
-
-	return nil
 }
 
 // cmdExit exits the REPL
