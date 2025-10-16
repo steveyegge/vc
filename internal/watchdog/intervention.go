@@ -232,6 +232,68 @@ func (ic *InterventionController) PauseExecutor(ctx context.Context, report *Ano
 	return result, nil
 }
 
+// notifyHuman creates an escalation issue without stopping execution
+// This is used for anomalies that need human attention but aren't critical
+func (ic *InterventionController) notifyHuman(ctx context.Context, report *AnomalyReport) (*InterventionResult, error) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+
+	result := &InterventionResult{
+		Success:          true,
+		InterventionType: InterventionPauseAgent, // Use pause as the type for notification
+		AnomalyReport:    report,
+		Message:          fmt.Sprintf("Notified human about %s anomaly in %s", report.AnomalyType, ic.currentIssueID),
+		Timestamp:        time.Now(),
+	}
+
+	currentIssueID := ic.currentIssueID
+	escalationID, err := ic.createEscalationIssue(ctx, report, InterventionPauseAgent, currentIssueID)
+	if err != nil {
+		result.Success = false
+		result.Message = fmt.Sprintf("Failed to create escalation issue: %v", err)
+		return result, err
+	}
+	result.EscalationIssueID = escalationID
+
+	if err := ic.emitWatchdogEvent(ctx, result); err != nil {
+		result.Message += fmt.Sprintf(" (warning: failed to emit event: %v)", err)
+	}
+
+	ic.addToHistoryLocked(result)
+	return result, nil
+}
+
+// flagForInvestigation creates an escalation issue for lower-priority anomalies
+// These are logged for investigation but don't require immediate intervention
+func (ic *InterventionController) flagForInvestigation(ctx context.Context, report *AnomalyReport) (*InterventionResult, error) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+
+	result := &InterventionResult{
+		Success:          true,
+		InterventionType: InterventionPauseAgent,
+		AnomalyReport:    report,
+		Message:          fmt.Sprintf("Flagged %s anomaly for investigation", report.AnomalyType),
+		Timestamp:        time.Now(),
+	}
+
+	currentIssueID := ic.currentIssueID
+	escalationID, err := ic.createEscalationIssue(ctx, report, InterventionPauseAgent, currentIssueID)
+	if err != nil {
+		result.Success = false
+		result.Message = fmt.Sprintf("Failed to create escalation issue: %v", err)
+		return result, err
+	}
+	result.EscalationIssueID = escalationID
+
+	if err := ic.emitWatchdogEvent(ctx, result); err != nil {
+		result.Message += fmt.Sprintf(" (warning: failed to emit event: %v)", err)
+	}
+
+	ic.addToHistoryLocked(result)
+	return result, nil
+}
+
 // Intervene analyzes an anomaly report and decides what intervention to take
 // This delegates the intervention decision to AI (ZFC compliant)
 func (ic *InterventionController) Intervene(ctx context.Context, report *AnomalyReport) (*InterventionResult, error) {
@@ -254,61 +316,11 @@ func (ic *InterventionController) Intervene(ctx context.Context, report *Anomaly
 		return ic.PauseAgent(ctx, report)
 	case ActionNotifyHuman:
 		// Just create the escalation issue without stopping execution
-		ic.mu.Lock()
-		defer ic.mu.Unlock()
-
-		result := &InterventionResult{
-			Success:          true,
-			InterventionType: InterventionPauseAgent, // Use pause as the type for notification
-			AnomalyReport:    report,
-			Message:          fmt.Sprintf("Notified human about %s anomaly in %s", report.AnomalyType, ic.currentIssueID),
-			Timestamp:        time.Now(),
-		}
-
-		currentIssueID := ic.currentIssueID
-		escalationID, err := ic.createEscalationIssue(ctx, report, InterventionPauseAgent, currentIssueID)
-		if err != nil {
-			result.Success = false
-			result.Message = fmt.Sprintf("Failed to create escalation issue: %v", err)
-			return result, err
-		}
-		result.EscalationIssueID = escalationID
-
-		if err := ic.emitWatchdogEvent(ctx, result); err != nil {
-			result.Message += fmt.Sprintf(" (warning: failed to emit event: %v)", err)
-		}
-
-		ic.addToHistoryLocked(result)
-		return result, nil
+		return ic.notifyHuman(ctx, report)
 
 	case ActionInvestigate, ActionMonitor:
 		// These are lower-priority actions - just log and create escalation
-		ic.mu.Lock()
-		defer ic.mu.Unlock()
-
-		result := &InterventionResult{
-			Success:          true,
-			InterventionType: InterventionPauseAgent,
-			AnomalyReport:    report,
-			Message:          fmt.Sprintf("Flagged %s anomaly for investigation", report.AnomalyType),
-			Timestamp:        time.Now(),
-		}
-
-		currentIssueID := ic.currentIssueID
-		escalationID, err := ic.createEscalationIssue(ctx, report, InterventionPauseAgent, currentIssueID)
-		if err != nil {
-			result.Success = false
-			result.Message = fmt.Sprintf("Failed to create escalation issue: %v", err)
-			return result, err
-		}
-		result.EscalationIssueID = escalationID
-
-		if err := ic.emitWatchdogEvent(ctx, result); err != nil {
-			result.Message += fmt.Sprintf(" (warning: failed to emit event: %v)", err)
-		}
-
-		ic.addToHistoryLocked(result)
-		return result, nil
+		return ic.flagForInvestigation(ctx, report)
 
 	default:
 		return nil, fmt.Errorf("unknown recommended action: %s", report.RecommendedAction)
