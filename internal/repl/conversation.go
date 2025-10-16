@@ -10,6 +10,8 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/fatih/color"
+	"github.com/steveyegge/vc/internal/ai"
+	"github.com/steveyegge/vc/internal/executor"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -55,13 +57,25 @@ You are having a conversation with a developer through the VC REPL. You can:
 2. Help plan and break down work
 3. Create issues, epics, and manage dependencies using function calling
 4. Query the issue tracker state
+5. Execute work by spawning coding agents
 
 You have access to these tools:
+
+Issue Creation:
 - create_issue: Create a new issue (bug, feature, task, chore)
 - create_epic: Create an epic (container for related issues)
 - add_child_to_epic: Add an issue as a child of an epic, optionally marking it as blocking
+
+Querying:
 - get_ready_work: Query issues ready to work on (no blockers)
 - get_issue: Get detailed information about an issue
+- get_status: Get overall project status and statistics
+- get_blocked_issues: List issues blocked by dependencies
+- get_recent_activity: View recent agent execution activity
+- search_issues: Search issues by text query
+
+Execution:
+- continue_execution: Execute the next ready issue or a specific issue (the VibeCoder Primitive)
 
 When users describe work, proactively create appropriate issues. Examples:
 - "Add Docker support" → Create feature issue
@@ -69,7 +83,9 @@ When users describe work, proactively create appropriate issues. Examples:
 - "Build auth system" → Create epic with child tasks
 - "Refactor the database layer" → Create chore issue
 
-Be helpful, concise, and action-oriented. Use tools to create issues immediately when the user describes work.`
+When users say things like "let's continue", "keep going", or "work on that", use continue_execution to spawn an agent.
+
+Be helpful, concise, and action-oriented. Use tools immediately when appropriate.`
 }
 
 // getTools returns the tool definitions for function calling
@@ -132,6 +148,54 @@ func (c *ConversationHandler) getTools() []anthropic.ToolUnionParam {
 					"issue_id": map[string]interface{}{"type": "string", "description": "Issue ID (required)"},
 				},
 				Required: []string{"issue_id"},
+			},
+		},
+		{
+			Name:        "get_status",
+			Description: anthropic.String("Get overall project status including open/in-progress/blocked counts and statistics."),
+			InputSchema: anthropic.ToolInputSchemaParam{
+				Properties: map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "get_blocked_issues",
+			Description: anthropic.String("Get list of issues blocked by dependencies. Returns issues that cannot be worked on because they depend on other incomplete work."),
+			InputSchema: anthropic.ToolInputSchemaParam{
+				Properties: map[string]interface{}{
+					"limit": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 50, "description": "Max results (default: 10)"},
+				},
+			},
+		},
+		{
+			Name:        "continue_execution",
+			Description: anthropic.String("Execute the next ready issue or a specific issue. This is the VibeCoder Primitive - it spawns an agent to work on the issue and processes results."),
+			InputSchema: anthropic.ToolInputSchemaParam{
+				Properties: map[string]interface{}{
+					"issue_id": map[string]interface{}{"type": "string", "description": "Specific issue ID to execute (optional - if not provided, picks next ready issue)"},
+					"async":    map[string]interface{}{"type": "boolean", "description": "Run execution asynchronously in background (default: false)"},
+				},
+			},
+		},
+		{
+			Name:        "get_recent_activity",
+			Description: anthropic.String("Get recent agent execution activity and events. Shows what agents have been doing."),
+			InputSchema: anthropic.ToolInputSchemaParam{
+				Properties: map[string]interface{}{
+					"limit":    map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 100, "description": "Max results (default: 20)"},
+					"issue_id": map[string]interface{}{"type": "string", "description": "Filter by specific issue ID (optional)"},
+				},
+			},
+		},
+		{
+			Name:        "search_issues",
+			Description: anthropic.String("Search issues by text query. Searches titles, descriptions, and other text fields."),
+			InputSchema: anthropic.ToolInputSchemaParam{
+				Properties: map[string]interface{}{
+					"query":  map[string]interface{}{"type": "string", "description": "Search query (required)"},
+					"status": map[string]interface{}{"type": "string", "enum": []string{"open", "in_progress", "blocked", "closed"}, "description": "Filter by status (optional)"},
+					"limit":  map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 50, "description": "Max results (default: 10)"},
+				},
+				Required: []string{"query"},
 			},
 		},
 	}
@@ -240,6 +304,16 @@ func (c *ConversationHandler) executeTool(ctx context.Context, name string, inpu
 		return c.toolGetReadyWork(ctx, inputMap)
 	case "get_issue":
 		return c.toolGetIssue(ctx, inputMap)
+	case "get_status":
+		return c.toolGetStatus(ctx, inputMap)
+	case "get_blocked_issues":
+		return c.toolGetBlockedIssues(ctx, inputMap)
+	case "continue_execution":
+		return c.toolContinueExecution(ctx, inputMap)
+	case "get_recent_activity":
+		return c.toolGetRecentActivity(ctx, inputMap)
+	case "search_issues":
+		return c.toolSearchIssues(ctx, inputMap)
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
@@ -416,6 +490,287 @@ func (c *ConversationHandler) toolGetIssue(ctx context.Context, input map[string
 	}
 
 	return string(data), nil
+}
+
+func (c *ConversationHandler) toolGetStatus(ctx context.Context, input map[string]interface{}) (string, error) {
+	stats, err := c.storage.GetStatistics(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get statistics: %w", err)
+	}
+
+	result := fmt.Sprintf(`Project Status:
+- Total Issues: %d
+- Open: %d
+- In Progress: %d
+- Blocked: %d
+- Closed: %d
+- Ready to Work: %d
+- Average Lead Time: %.1f hours`,
+		stats.TotalIssues,
+		stats.OpenIssues,
+		stats.InProgressIssues,
+		stats.BlockedIssues,
+		stats.ClosedIssues,
+		stats.ReadyIssues,
+		stats.AverageLeadTime,
+	)
+
+	return result, nil
+}
+
+func (c *ConversationHandler) toolGetBlockedIssues(ctx context.Context, input map[string]interface{}) (string, error) {
+	limit := 10
+	if l, ok := input["limit"].(float64); ok {
+		limit = int(l)
+	}
+
+	blockedIssues, err := c.storage.GetBlockedIssues(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get blocked issues: %w", err)
+	}
+
+	if len(blockedIssues) == 0 {
+		return "No blocked issues found", nil
+	}
+
+	// Apply limit
+	if limit < len(blockedIssues) {
+		blockedIssues = blockedIssues[:limit]
+	}
+
+	result := fmt.Sprintf("Found %d blocked issues:\n\n", len(blockedIssues))
+	for _, bi := range blockedIssues {
+		result += fmt.Sprintf("- %s [%s] %s (P%d)\n", bi.ID, bi.IssueType, bi.Title, bi.Priority)
+		result += fmt.Sprintf("  Blocked by %d issues: %v\n", bi.BlockedByCount, bi.BlockedBy)
+	}
+
+	return result, nil
+}
+
+func (c *ConversationHandler) toolGetRecentActivity(ctx context.Context, input map[string]interface{}) (string, error) {
+	limit := 20
+	if l, ok := input["limit"].(float64); ok {
+		limit = int(l)
+	}
+
+	issueID, _ := input["issue_id"].(string)
+
+	var events []*types.Event
+	var err error
+
+	if issueID != "" {
+		// Get events for specific issue
+		events, err = c.storage.GetEvents(ctx, issueID, limit)
+	} else {
+		// Get recent events across all issues
+		// Note: We're using GetEvents with empty issueID which may not be ideal
+		// but this matches the storage interface available
+		events, err = c.storage.GetEvents(ctx, "", limit)
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("failed to get recent activity: %w", err)
+	}
+
+	if len(events) == 0 {
+		return "No recent activity found", nil
+	}
+
+	result := fmt.Sprintf("Recent Activity (%d events):\n\n", len(events))
+	for _, event := range events {
+		timestamp := event.CreatedAt.Format("2006-01-02 15:04:05")
+		result += fmt.Sprintf("[%s] %s - %s", timestamp, event.IssueID, event.EventType)
+		if event.Actor != "" {
+			result += fmt.Sprintf(" by %s", event.Actor)
+		}
+		if event.Comment != nil {
+			result += fmt.Sprintf(": %s", *event.Comment)
+		}
+		result += "\n"
+	}
+
+	return result, nil
+}
+
+func (c *ConversationHandler) toolSearchIssues(ctx context.Context, input map[string]interface{}) (string, error) {
+	query, _ := input["query"].(string)
+	if query == "" {
+		return "", fmt.Errorf("query is required")
+	}
+
+	limit := 10
+	if l, ok := input["limit"].(float64); ok {
+		limit = int(l)
+	}
+
+	// Build filter
+	filter := types.IssueFilter{
+		Limit: limit,
+	}
+
+	if statusStr, ok := input["status"].(string); ok && statusStr != "" {
+		status := types.Status(statusStr)
+		filter.Status = &status
+	}
+
+	issues, err := c.storage.SearchIssues(ctx, query, filter)
+	if err != nil {
+		return "", fmt.Errorf("failed to search issues: %w", err)
+	}
+
+	if len(issues) == 0 {
+		return fmt.Sprintf("No issues found matching query: %s", query), nil
+	}
+
+	result := fmt.Sprintf("Found %d issues matching '%s':\n\n", len(issues), query)
+	for _, issue := range issues {
+		result += fmt.Sprintf("- %s [%s] %s (P%d, %s)\n", issue.ID, issue.IssueType, issue.Title, issue.Priority, issue.Status)
+		if issue.Description != "" && len(issue.Description) > 100 {
+			result += fmt.Sprintf("  %s...\n", issue.Description[:100])
+		} else if issue.Description != "" {
+			result += fmt.Sprintf("  %s\n", issue.Description)
+		}
+	}
+
+	return result, nil
+}
+
+func (c *ConversationHandler) toolContinueExecution(ctx context.Context, input map[string]interface{}) (string, error) {
+	issueID, _ := input["issue_id"].(string)
+	async := false
+	if a, ok := input["async"].(bool); ok {
+		async = a
+	}
+
+	// Note: async execution is not yet implemented
+	if async {
+		return "", fmt.Errorf("async execution not yet implemented")
+	}
+
+	var issue *types.Issue
+	var err error
+
+	// Get issue to execute
+	if issueID != "" {
+		// Execute specific issue
+		issue, err = c.storage.GetIssue(ctx, issueID)
+		if err != nil {
+			return "", fmt.Errorf("failed to get issue %s: %w", issueID, err)
+		}
+
+		// Check if issue is ready (not already in progress or closed)
+		if issue.Status == types.StatusClosed {
+			return fmt.Sprintf("Issue %s is already closed", issueID), nil
+		}
+	} else {
+		// Get next ready work
+		issues, err := c.storage.GetReadyWork(ctx, types.WorkFilter{
+			Status: types.StatusOpen,
+			Limit:  1,
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to get ready work: %w", err)
+		}
+
+		if len(issues) == 0 {
+			return "No ready work found. All issues are either completed or blocked.", nil
+		}
+
+		issue = issues[0]
+	}
+
+	// Claim the issue
+	instanceID := fmt.Sprintf("conversation-%s", AIActor)
+	if err := c.storage.ClaimIssue(ctx, issue.ID, instanceID); err != nil {
+		return "", fmt.Errorf("failed to claim issue %s: %w", issue.ID, err)
+	}
+
+	// Update execution state to executing
+	if err := c.storage.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateExecuting); err != nil {
+		// Log warning but continue
+		fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
+	}
+
+	// Spawn agent
+	agentCfg := executor.AgentConfig{
+		Type:       executor.AgentTypeClaudeCode,
+		WorkingDir: ".",
+		Issue:      issue,
+		StreamJSON: false,
+		Timeout:    30 * time.Minute,
+	}
+
+	agent, err := executor.SpawnAgent(ctx, agentCfg)
+	if err != nil {
+		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to spawn agent: %v", err))
+		return "", fmt.Errorf("failed to spawn agent: %w", err)
+	}
+
+	// Wait for completion
+	result, err := agent.Wait(ctx)
+	if err != nil {
+		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Agent execution failed: %v", err))
+		return "", fmt.Errorf("agent execution failed: %w", err)
+	}
+
+	// Process results using ResultsProcessor
+	supervisor, err := ai.NewSupervisor(&ai.Config{
+		Store: c.storage,
+	})
+	if err != nil {
+		// Continue without AI supervision
+		fmt.Fprintf(os.Stderr, "Warning: AI supervisor not available: %v (continuing without AI analysis)\n", err)
+		supervisor = nil
+	}
+
+	processor, err := executor.NewResultsProcessor(&executor.ResultsProcessorConfig{
+		Store:              c.storage,
+		Supervisor:         supervisor,
+		EnableQualityGates: true,
+		WorkingDir:         ".",
+		Actor:              instanceID,
+	})
+	if err != nil {
+		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to create results processor: %v", err))
+		return "", fmt.Errorf("failed to create results processor: %w", err)
+	}
+
+	procResult, err := processor.ProcessAgentResult(ctx, issue, result)
+	if err != nil {
+		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to process results: %v", err))
+		return "", fmt.Errorf("failed to process results: %w", err)
+	}
+
+	// Build response
+	var response string
+	if procResult.Completed {
+		response = fmt.Sprintf("✓ Issue %s completed successfully!\n", issue.ID)
+	} else if !procResult.GatesPassed {
+		response = fmt.Sprintf("✗ Issue %s blocked by quality gates\n", issue.ID)
+	} else if !result.Success {
+		response = fmt.Sprintf("✗ Worker failed for issue %s\n", issue.ID)
+	} else {
+		response = fmt.Sprintf("⚡ Issue %s partially complete (left open)\n", issue.ID)
+	}
+
+	if len(procResult.DiscoveredIssues) > 0 {
+		response += fmt.Sprintf("\nCreated %d follow-on issues: %v\n", len(procResult.DiscoveredIssues), procResult.DiscoveredIssues)
+	}
+
+	return response, nil
+}
+
+// releaseIssueWithError releases an issue and adds an error comment
+func (c *ConversationHandler) releaseIssueWithError(ctx context.Context, issueID, actor, errMsg string) {
+	// Add error comment
+	if err := c.storage.AddComment(ctx, issueID, actor, errMsg); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to add error comment: %v\n", err)
+	}
+
+	// Release the execution state
+	if err := c.storage.ReleaseIssue(ctx, issueID); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to release issue: %v\n", err)
+	}
 }
 
 // ClearHistory clears the conversation history
