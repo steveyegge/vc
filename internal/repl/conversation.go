@@ -11,6 +11,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/fatih/color"
 	"github.com/steveyegge/vc/internal/ai"
+	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/executor"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
@@ -493,6 +494,11 @@ func (c *ConversationHandler) toolGetIssue(ctx context.Context, input map[string
 }
 
 func (c *ConversationHandler) toolGetStatus(ctx context.Context, input map[string]interface{}) (string, error) {
+	// Validate no unexpected input parameters (tool takes no parameters)
+	if len(input) > 0 {
+		return "", fmt.Errorf("get_status takes no parameters, but received: %v", input)
+	}
+
 	stats, err := c.storage.GetStatistics(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get statistics: %w", err)
@@ -524,6 +530,10 @@ func (c *ConversationHandler) toolGetBlockedIssues(ctx context.Context, input ma
 		limit = int(l)
 	}
 
+	// Note: GetBlockedIssues() fetches all blocked issues from the database.
+	// We apply the limit in-memory afterward because the storage interface
+	// doesn't support limit parameters. This is inefficient for large datasets
+	// but acceptable given typical blocked issue counts.
 	blockedIssues, err := c.storage.GetBlockedIssues(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get blocked issues: %w", err)
@@ -533,7 +543,7 @@ func (c *ConversationHandler) toolGetBlockedIssues(ctx context.Context, input ma
 		return "No blocked issues found", nil
 	}
 
-	// Apply limit
+	// Apply limit in-memory
 	if limit < len(blockedIssues) {
 		blockedIssues = blockedIssues[:limit]
 	}
@@ -555,36 +565,38 @@ func (c *ConversationHandler) toolGetRecentActivity(ctx context.Context, input m
 
 	issueID, _ := input["issue_id"].(string)
 
-	var events []*types.Event
+	var agentEvents []*events.AgentEvent
 	var err error
 
 	if issueID != "" {
-		// Get events for specific issue
-		events, err = c.storage.GetEvents(ctx, issueID, limit)
+		// Get agent events for specific issue
+		agentEvents, err = c.storage.GetAgentEventsByIssue(ctx, issueID)
+		// Apply limit
+		if err == nil && len(agentEvents) > limit {
+			agentEvents = agentEvents[:limit]
+		}
 	} else {
-		// Get recent events across all issues
-		// Note: We're using GetEvents with empty issueID which may not be ideal
-		// but this matches the storage interface available
-		events, err = c.storage.GetEvents(ctx, "", limit)
+		// Get recent agent events across all issues
+		agentEvents, err = c.storage.GetRecentAgentEvents(ctx, limit)
 	}
 
 	if err != nil {
 		return "", fmt.Errorf("failed to get recent activity: %w", err)
 	}
 
-	if len(events) == 0 {
-		return "No recent activity found", nil
+	if len(agentEvents) == 0 {
+		return "No recent agent activity found", nil
 	}
 
-	result := fmt.Sprintf("Recent Activity (%d events):\n\n", len(events))
-	for _, event := range events {
-		timestamp := event.CreatedAt.Format("2006-01-02 15:04:05")
-		result += fmt.Sprintf("[%s] %s - %s", timestamp, event.IssueID, event.EventType)
-		if event.Actor != "" {
-			result += fmt.Sprintf(" by %s", event.Actor)
+	result := fmt.Sprintf("Recent Agent Activity (%d events):\n\n", len(agentEvents))
+	for _, event := range agentEvents {
+		timestamp := event.Timestamp.Format("2006-01-02 15:04:05")
+		result += fmt.Sprintf("[%s] %s - %s", timestamp, event.IssueID, event.Type)
+		if event.Severity != events.SeverityInfo {
+			result += fmt.Sprintf(" [%s]", event.Severity)
 		}
-		if event.Comment != nil {
-			result += fmt.Sprintf(": %s", *event.Comment)
+		if event.Message != "" {
+			result += fmt.Sprintf(": %s", event.Message)
 		}
 		result += "\n"
 	}
@@ -658,9 +670,27 @@ func (c *ConversationHandler) toolContinueExecution(ctx context.Context, input m
 			return "", fmt.Errorf("failed to get issue %s: %w", issueID, err)
 		}
 
-		// Check if issue is ready (not already in progress or closed)
-		if issue.Status == types.StatusClosed {
-			return fmt.Sprintf("Issue %s is already closed", issueID), nil
+		// Validate issue status
+		switch issue.Status {
+		case types.StatusClosed:
+			return fmt.Sprintf("Cannot execute issue %s: already closed", issueID), nil
+		case types.StatusInProgress:
+			return fmt.Sprintf("Cannot execute issue %s: already in progress (may be claimed by another executor)", issueID), nil
+		case types.StatusBlocked:
+			// Get dependencies to show what's blocking it
+			deps, depErr := c.storage.GetDependencies(ctx, issueID)
+			if depErr == nil && len(deps) > 0 {
+				var blockingIDs []string
+				for _, dep := range deps {
+					if dep.Status != types.StatusClosed {
+						blockingIDs = append(blockingIDs, dep.ID)
+					}
+				}
+				if len(blockingIDs) > 0 {
+					return fmt.Sprintf("Cannot execute issue %s: blocked by %v", issueID, blockingIDs), nil
+				}
+			}
+			return fmt.Sprintf("Cannot execute issue %s: currently blocked", issueID), nil
 		}
 	} else {
 		// Get next ready work
