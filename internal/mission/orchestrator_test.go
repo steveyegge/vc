@@ -102,10 +102,28 @@ func (m *MockStorage) SearchIssues(ctx context.Context, query string, filter typ
 	return nil, nil
 }
 func (m *MockStorage) GetDependencies(ctx context.Context, issueID string) ([]*types.Issue, error) {
-	return nil, nil
+	// Simple mock: if it's a phase, return the mission
+	// In reality, this would filter based on actual dependency records
+	var deps []*types.Issue
+	for _, dep := range m.dependencies {
+		if dep.IssueID == issueID {
+			if dependsOn, ok := m.issues[dep.DependsOnID]; ok {
+				deps = append(deps, dependsOn)
+			}
+		}
+	}
+	return deps, nil
 }
 func (m *MockStorage) GetDependents(ctx context.Context, issueID string) ([]*types.Issue, error) {
-	return nil, nil
+	// Return all issues that are in the store (simple implementation for testing)
+	// In real implementation, this would filter by dependency relationships
+	var dependents []*types.Issue
+	for _, issue := range m.issues {
+		if issue.ID != issueID {
+			dependents = append(dependents, issue)
+		}
+	}
+	return dependents, nil
 }
 func (m *MockStorage) GetDependencyTree(ctx context.Context, issueID string, maxDepth int) ([]*types.TreeNode, error) {
 	return nil, nil
@@ -428,6 +446,17 @@ func TestCreatePhasesFromPlan(t *testing.T) {
 
 	// Create mock dependencies
 	store := NewMockStorage()
+
+	// Add mission to store (required for priority inheritance)
+	mission := &types.Issue{
+		ID:        "mission-1",
+		Title:     "Test Mission",
+		IssueType: types.TypeEpic,
+		Status:    types.StatusOpen,
+		Priority:  2, // P2 mission
+	}
+	store.issues["mission-1"] = mission
+
 	planner := &MockPlanner{}
 	orchestrator, err := NewOrchestrator(&Config{
 		Store:   store,
@@ -477,9 +506,17 @@ func TestCreatePhasesFromPlan(t *testing.T) {
 		t.Errorf("Expected 2 phases, got %d", len(phaseIDs))
 	}
 
-	// Verify phases were stored
-	if len(store.issues) != 2 {
-		t.Errorf("Expected 2 issues in store, got %d", len(store.issues))
+	// Verify phases were stored (3 total: 1 mission + 2 phases)
+	if len(store.issues) != 3 {
+		t.Errorf("Expected 3 issues in store (1 mission + 2 phases), got %d", len(store.issues))
+	}
+
+	// Verify phases inherited mission priority
+	for _, phaseID := range phaseIDs {
+		phase := store.issues[phaseID]
+		if phase.Priority != 2 {
+			t.Errorf("Expected phase %s priority 2 (inherited from mission), got %d", phaseID, phase.Priority)
+		}
 	}
 
 	// Verify dependencies were created
@@ -530,5 +567,137 @@ func TestMissionIsApproved(t *testing.T) {
 				t.Errorf("IsApproved() = %v, want %v", result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestHandlePhaseCompletion(t *testing.T) {
+	ctx := context.Background()
+
+	// Create mock storage with mission and phases
+	store := NewMockStorage()
+
+	// Create mission
+	mission := &types.Issue{
+		ID:        "mission-1",
+		Title:     "Test Mission",
+		IssueType: types.TypeEpic,
+		Status:    types.StatusOpen,
+		Priority:  0,
+	}
+	store.issues["mission-1"] = mission
+
+	// Create 2 phases
+	phase1 := &types.Issue{
+		ID:        "phase-1",
+		Title:     "Phase 1",
+		IssueType: types.TypeEpic,
+		Status:    types.StatusClosed, // Already closed
+	}
+	phase2 := &types.Issue{
+		ID:        "phase-2",
+		Title:     "Phase 2",
+		IssueType: types.TypeEpic,
+		Status:    types.StatusOpen, // Still open
+	}
+	store.issues["phase-1"] = phase1
+	store.issues["phase-2"] = phase2
+
+	// Add dependencies: phases depend on mission
+	store.dependencies = []*types.Dependency{
+		{IssueID: "phase-1", DependsOnID: "mission-1", Type: types.DepParentChild},
+		{IssueID: "phase-2", DependsOnID: "mission-1", Type: types.DepParentChild},
+	}
+
+	planner := &MockPlanner{}
+	orchestrator, err := NewOrchestrator(&Config{
+		Store:   store,
+		Planner: planner,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create orchestrator: %v", err)
+	}
+
+	// Close phase 2
+	phase2.Status = types.StatusClosed
+	err = orchestrator.HandlePhaseCompletion(ctx, "phase-2", "test-user")
+	if err != nil {
+		t.Fatalf("HandlePhaseCompletion failed: %v", err)
+	}
+
+	// Verify mission was closed (both phases complete)
+	finalMission, _ := store.GetIssue(ctx, "mission-1")
+	if finalMission != nil && finalMission.Status == types.StatusOpen {
+		t.Error("Expected mission to be closed after all phases complete")
+	}
+
+	// Verify progress comment was added
+	if len(store.comments) == 0 {
+		t.Error("Expected progress comment to be added")
+	}
+}
+
+func TestCheckMissionCompletion_PartialProgress(t *testing.T) {
+	ctx := context.Background()
+
+	// Create mock storage
+	store := NewMockStorage()
+
+	// Create mission
+	mission := &types.Issue{
+		ID:        "mission-1",
+		Title:     "Test Mission",
+		IssueType: types.TypeEpic,
+		Status:    types.StatusOpen,
+		Priority:  0,
+	}
+	store.issues["mission-1"] = mission
+
+	// Create 3 phases: 2 closed, 1 open
+	phase1 := &types.Issue{
+		ID:        "phase-1",
+		Title:     "Phase 1",
+		IssueType: types.TypeEpic,
+		Status:    types.StatusClosed,
+	}
+	phase2 := &types.Issue{
+		ID:        "phase-2",
+		Title:     "Phase 2",
+		IssueType: types.TypeEpic,
+		Status:    types.StatusClosed,
+	}
+	phase3 := &types.Issue{
+		ID:        "phase-3",
+		Title:     "Phase 3",
+		IssueType: types.TypeEpic,
+		Status:    types.StatusOpen,
+	}
+	store.issues["phase-1"] = phase1
+	store.issues["phase-2"] = phase2
+	store.issues["phase-3"] = phase3
+
+	planner := &MockPlanner{}
+	orchestrator, err := NewOrchestrator(&Config{
+		Store:   store,
+		Planner: planner,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create orchestrator: %v", err)
+	}
+
+	// Check mission completion
+	err = orchestrator.CheckMissionCompletion(ctx, "mission-1", "test-user")
+	if err != nil {
+		t.Fatalf("CheckMissionCompletion failed: %v", err)
+	}
+
+	// Verify mission is still open
+	finalMission, _ := store.GetIssue(ctx, "mission-1")
+	if finalMission.Status != types.StatusOpen {
+		t.Error("Expected mission to remain open with incomplete phases")
+	}
+
+	// Verify progress comment was added
+	if len(store.comments) == 0 {
+		t.Error("Expected progress comment to be added")
 	}
 }

@@ -16,6 +16,16 @@ func TestCreatePhasesFromPlan_Rollback(t *testing.T) {
 	store := NewMockStorage()
 	store.failOnIssueID = "test-3" // Fail when creating 3rd phase
 
+	// Add mission to store (required for priority inheritance)
+	mission := &types.Issue{
+		ID:        "mission-1",
+		Title:     "Test Mission",
+		IssueType: types.TypeEpic,
+		Status:    types.StatusOpen,
+		Priority:  0,
+	}
+	store.issues["mission-1"] = mission
+
 	planner := &MockPlanner{}
 	orchestrator, err := NewOrchestrator(&Config{
 		Store:   store,
@@ -79,9 +89,9 @@ func TestCreatePhasesFromPlan_Rollback(t *testing.T) {
 		t.Errorf("Expected 2 phases to be closed during rollback, got %d: %v", len(store.closedIssues), store.closedIssues)
 	}
 
-	// Verify no open phases remain
-	if len(store.issues) != 0 {
-		t.Errorf("Expected 0 open issues after rollback, got %d", len(store.issues))
+	// Verify no open phases remain (only mission should be left)
+	if len(store.issues) != 1 {
+		t.Errorf("Expected 1 issue after rollback (mission only), got %d", len(store.issues))
 	}
 }
 
@@ -92,6 +102,16 @@ func TestCreatePhasesFromPlan_RollbackOnDependencyFailure(t *testing.T) {
 	// Create mock storage that will fail on 3rd AddDependency call
 	store := NewMockStorage()
 	store.failOnDepCount = 3 // Fail after 3 dependency calls
+
+	// Add mission to store (required for priority inheritance)
+	mission := &types.Issue{
+		ID:        "mission-1",
+		Title:     "Test Mission",
+		IssueType: types.TypeEpic,
+		Status:    types.StatusOpen,
+		Priority:  0,
+	}
+	store.issues["mission-1"] = mission
 
 	planner := &MockPlanner{}
 	orchestrator, err := NewOrchestrator(&Config{

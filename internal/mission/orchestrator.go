@@ -109,6 +109,12 @@ func (o *Orchestrator) RejectPlan(ctx context.Context, missionID string, rejecte
 func (o *Orchestrator) CreatePhasesFromPlan(ctx context.Context, missionID string, plan *types.MissionPlan, actor string) ([]string, error) {
 	var phaseIDs []string
 
+	// Get mission to inherit priority
+	mission, err := o.store.GetIssue(ctx, missionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mission: %w", err)
+	}
+
 	// Helper function to cleanup created phases on error
 	cleanup := func() {
 		for _, phaseID := range phaseIDs {
@@ -126,7 +132,7 @@ func (o *Orchestrator) CreatePhasesFromPlan(ctx context.Context, missionID strin
 			Description:        plannedPhase.Description,
 			IssueType:          types.TypeEpic,
 			Status:             types.StatusOpen,
-			Priority:           0, // Phases inherit mission priority
+			Priority:           mission.Priority, // Inherit from parent mission
 			Design:             fmt.Sprintf("Strategy: %s\n\nTasks:\n%s", plannedPhase.Strategy, joinTasks(plannedPhase.Tasks)),
 			AcceptanceCriteria: fmt.Sprintf("Complete all tasks for this phase:\n%s", joinTasks(plannedPhase.Tasks)),
 		}
@@ -155,10 +161,10 @@ func (o *Orchestrator) CreatePhasesFromPlan(ctx context.Context, missionID strin
 		// plannedPhase.Dependencies contains phase numbers (1-indexed)
 		// We need to convert to phase IDs
 		for _, depPhaseNum := range plannedPhase.Dependencies {
-			// depPhaseNum is 1-indexed, array is 0-indexed
-			if depPhaseNum < 1 || depPhaseNum > len(phaseIDs) {
+			// Validate: phases can only depend on earlier phases
+			if depPhaseNum < 1 || depPhaseNum >= plannedPhase.PhaseNumber {
 				cleanup()
-				return nil, fmt.Errorf("invalid phase dependency: phase %d depends on phase %d", plannedPhase.PhaseNumber, depPhaseNum)
+				return nil, fmt.Errorf("invalid phase dependency: phase %d depends on phase %d (must be < current phase)", plannedPhase.PhaseNumber, depPhaseNum)
 			}
 			depPhaseID := phaseIDs[depPhaseNum-1]
 
@@ -215,6 +221,114 @@ func (o *Orchestrator) ProcessMission(ctx context.Context, mission *types.Missio
 	}
 
 	return result, nil
+}
+
+// HandlePhaseCompletion is called when a phase epic is closed
+// It checks if the mission is complete and triggers any follow-up actions
+func (o *Orchestrator) HandlePhaseCompletion(ctx context.Context, phaseID string, actor string) error {
+	// Get the phase issue
+	phase, err := o.store.GetIssue(ctx, phaseID)
+	if err != nil {
+		return fmt.Errorf("failed to get phase: %w", err)
+	}
+
+	// Verify it's an epic (phase)
+	if phase.IssueType != types.TypeEpic {
+		// Not a phase, nothing to do
+		return nil
+	}
+
+	// Get parent mission from dependencies
+	deps, err := o.store.GetDependencies(ctx, phaseID)
+	if err != nil {
+		return fmt.Errorf("failed to get dependencies: %w", err)
+	}
+
+	// Find parent mission (parent-child dependency)
+	var missionID string
+	for _, dep := range deps {
+		if dep.IssueType == types.TypeEpic {
+			// Could be a mission - check if it's actually a mission by seeing if it has phases
+			children, err := o.store.GetDependents(ctx, dep.ID)
+			if err != nil {
+				continue
+			}
+			// If it has multiple epic children (phases), it's a mission
+			epicChildren := 0
+			for _, child := range children {
+				if child.IssueType == types.TypeEpic {
+					epicChildren++
+				}
+			}
+			if epicChildren > 1 {
+				missionID = dep.ID
+				break
+			}
+		}
+	}
+
+	if missionID == "" {
+		// No parent mission found, phase is standalone
+		return nil
+	}
+
+	// Check if mission is complete
+	return o.CheckMissionCompletion(ctx, missionID, actor)
+}
+
+// CheckMissionCompletion checks if all phases of a mission are complete
+// If so, it closes the mission
+func (o *Orchestrator) CheckMissionCompletion(ctx context.Context, missionID string, actor string) error {
+	// Get mission
+	_, err := o.store.GetIssue(ctx, missionID)
+	if err != nil {
+		return fmt.Errorf("failed to get mission: %w", err)
+	}
+
+	// Get all child phases
+	children, err := o.store.GetDependents(ctx, missionID)
+	if err != nil {
+		return fmt.Errorf("failed to get mission phases: %w", err)
+	}
+
+	// Check if all phase epics are closed
+	allPhasesClosed := true
+	totalPhases := 0
+	closedPhases := 0
+
+	for _, child := range children {
+		if child.IssueType == types.TypeEpic {
+			totalPhases++
+			if child.Status == types.StatusClosed {
+				closedPhases++
+			} else {
+				allPhasesClosed = false
+			}
+		}
+	}
+
+	// If no phases found, nothing to do
+	if totalPhases == 0 {
+		return nil
+	}
+
+	// Add progress comment
+	progressComment := fmt.Sprintf("Mission progress: %d/%d phases complete", closedPhases, totalPhases)
+	if err := o.store.AddComment(ctx, missionID, "mission-orchestrator", progressComment); err != nil {
+		// Non-fatal
+		fmt.Printf("Warning: failed to add progress comment: %v\n", err)
+	}
+
+	// If all phases are closed, close the mission
+	if allPhasesClosed {
+		reason := fmt.Sprintf("All %d phases completed successfully", totalPhases)
+		if err := o.store.CloseIssue(ctx, missionID, reason, actor); err != nil {
+			return fmt.Errorf("failed to close mission: %w", err)
+		}
+		fmt.Printf("Mission %s completed: all %d phases finished\n", missionID, totalPhases)
+	}
+
+	return nil
 }
 
 // DefaultOrchestrator creates an orchestrator with default configuration
