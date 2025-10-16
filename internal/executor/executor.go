@@ -12,12 +12,14 @@ import (
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
+	"github.com/steveyegge/vc/internal/watchdog"
 )
 
 // Executor manages the issue processing event loop
 type Executor struct {
 	store      storage.Storage
 	supervisor *ai.Supervisor
+	monitor    *watchdog.Monitor
 	instanceID string
 	hostname   string
 	pid        int
@@ -106,6 +108,9 @@ func New(cfg *Config) (*Executor, error) {
 			e.supervisor = supervisor
 		}
 	}
+
+	// Initialize watchdog monitor
+	e.monitor = watchdog.NewMonitor(watchdog.DefaultConfig())
 
 	return e, nil
 }
@@ -264,20 +269,27 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	fmt.Printf("Executing issue %s: %s\n", issue.ID, issue.Title)
 
+	// Start telemetry collection for this execution
+	e.monitor.StartExecution(issue.ID, e.instanceID)
+
 	// Log issue claimed event
 	e.logEvent(ctx, events.EventTypeIssueClaimed, events.SeverityInfo, issue.ID,
 		fmt.Sprintf("Issue %s claimed by executor %s", issue.ID, e.instanceID),
 		map[string]interface{}{
 			"issue_title": issue.Title,
 		})
+	e.monitor.RecordEvent(string(events.EventTypeIssueClaimed))
 
 	// Phase 1: AI Assessment (if enabled)
 	var assessment *ai.Assessment
+	var assessmentRan bool
 	if e.enableAISupervision && e.supervisor != nil {
+		assessmentRan = true
 		// Update execution state to assessing
 		if err := e.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateAssessing); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
 		}
+		e.monitor.RecordStateTransition(types.ExecutionStateClaimed, types.ExecutionStateAssessing)
 
 		// Log assessment started
 		e.logEvent(ctx, events.EventTypeAssessmentStarted, events.SeverityInfo, issue.ID,
@@ -332,6 +344,12 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	if err := e.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateExecuting); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
 	}
+	// Record state transition based on whether assessment actually ran
+	if assessmentRan {
+		e.monitor.RecordStateTransition(types.ExecutionStateAssessing, types.ExecutionStateExecuting)
+	} else {
+		e.monitor.RecordStateTransition(types.ExecutionStateClaimed, types.ExecutionStateExecuting)
+	}
 
 	agentCfg := AgentConfig{
 		Type:       AgentTypeClaudeCode, // Default to Claude Code for now
@@ -352,6 +370,8 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 				"error":      err.Error(),
 			})
 		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to spawn agent: %v", err))
+		// End telemetry collection on failure
+		e.monitor.EndExecution(false, false)
 		return fmt.Errorf("failed to spawn agent: %w", err)
 	}
 
@@ -374,6 +394,8 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 				"error":   err.Error(),
 			})
 		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Agent execution failed: %v", err))
+		// End telemetry collection on failure
+		e.monitor.EndExecution(false, false)
 		return fmt.Errorf("agent execution failed: %w", err)
 	}
 
@@ -411,6 +433,8 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 				"error":   err.Error(),
 			})
 		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to create results processor: %v", err))
+		// End telemetry collection on failure
+		e.monitor.EndExecution(false, false)
 		return fmt.Errorf("failed to create results processor: %w", err)
 	}
 
@@ -424,6 +448,8 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 				"error":   err.Error(),
 			})
 		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to process results: %v", err))
+		// End telemetry collection on failure
+		e.monitor.EndExecution(false, false)
 		return fmt.Errorf("failed to process agent result: %w", err)
 	}
 
@@ -440,6 +466,9 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 
 	// Print summary
 	fmt.Println(procResult.Summary)
+
+	// End telemetry collection
+	e.monitor.EndExecution(procResult.Completed && result.Success, procResult.GatesPassed)
 
 	return nil
 }
