@@ -28,11 +28,20 @@ type Result struct {
 	Error   error
 }
 
+// GateProvider is an interface for running quality gates
+// This allows for pluggable gate implementations (e.g., for testing or custom gates)
+type GateProvider interface {
+	// RunAll executes all quality gates in sequence
+	// Returns the results and whether all gates passed
+	RunAll(ctx context.Context) ([]*Result, bool)
+}
+
 // Runner executes quality gates for an issue
 type Runner struct {
 	store      storage.Storage
 	supervisor *ai.Supervisor // Optional: for AI-driven recovery strategies
 	workingDir string
+	provider   GateProvider // Optional: pluggable gate provider (defaults to built-in)
 }
 
 // Config holds quality gate runner configuration
@@ -40,6 +49,7 @@ type Config struct {
 	Store      storage.Storage
 	Supervisor *ai.Supervisor // Optional: enables AI-driven recovery strategies (ZFC)
 	WorkingDir string         // Directory where gate commands are executed
+	Provider   GateProvider   // Optional: pluggable gate provider (defaults to built-in)
 }
 
 // NewRunner creates a new quality gate runner
@@ -55,12 +65,19 @@ func NewRunner(cfg *Config) (*Runner, error) {
 		store:      cfg.Store,
 		supervisor: cfg.Supervisor,
 		workingDir: cfg.WorkingDir,
+		provider:   cfg.Provider, // Can be nil (defaults to built-in implementation)
 	}, nil
 }
 
 // RunAll executes all quality gates in sequence
 // Returns the results and whether all gates passed
 func (r *Runner) RunAll(ctx context.Context) ([]*Result, bool) {
+	// If a custom provider is configured, use it instead of built-in gates
+	if r.provider != nil {
+		return r.provider.RunAll(ctx)
+	}
+
+	// Default implementation: run built-in gates
 	var results []*Result
 	allPassed := true
 
