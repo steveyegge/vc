@@ -97,7 +97,66 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 	}
 
 	// Step 1: Extract agent output summary
-	agentOutput := rp.extractSummary(ctx, issue, agentResult)
+	agentOutput, err := rp.extractSummary(ctx, issue, agentResult)
+	if err != nil {
+		// AI summarization failed - this is a critical error (ZFC requires AI)
+		// Mark the issue as blocked and require human intervention
+		fmt.Fprintf(os.Stderr, "\n✗ AI summarization failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Marking issue %s as blocked - human intervention required\n", issue.ID)
+
+		// Add error comment explaining the failure
+		// Include last 100 lines of raw output so human can review it
+		outputSample := getOutputSample(agentResult.Output, 100)
+
+		errorComment := fmt.Sprintf("**AI Summarization Failed**\n\n"+
+			"The AI supervisor failed to summarize agent output after multiple retries.\n\n"+
+			"Error: %v\n\n"+
+			"This violates ZFC principles (no heuristic fallbacks). The issue has been marked as blocked.\n\n"+
+			"**Human Action Required:**\n"+
+			"1. Check ANTHROPIC_API_KEY is set and valid\n"+
+			"2. Check network connectivity to Anthropic API\n"+
+			"3. Review agent output below\n"+
+			"4. Resolve the underlying issue and retry\n\n"+
+			"**Agent Execution Details:**\n"+
+			"- Success: %v\n"+
+			"- Exit Code: %d\n"+
+			"- Duration: %v\n"+
+			"- Output Lines: %d\n\n"+
+			"**Raw Agent Output (last %d lines):**\n```\n%s\n```",
+			err, agentResult.Success, agentResult.ExitCode, agentResult.Duration, len(agentResult.Output),
+			len(outputSample), strings.Join(outputSample, "\n"))
+
+		if addErr := rp.store.AddComment(ctx, issue.ID, rp.actor, errorComment); addErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to add error comment: %v\n", addErr)
+		}
+
+		// Update issue to blocked status
+		updates := map[string]interface{}{
+			"status": types.StatusBlocked,
+		}
+		if updateErr := rp.store.UpdateIssue(ctx, issue.ID, updates, rp.actor); updateErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to update issue to blocked: %v\n", updateErr)
+		}
+
+		// Log the event
+		rp.logEvent(ctx, events.EventTypeError, events.SeverityError, issue.ID,
+			fmt.Sprintf("AI summarization failed for issue %s - marked as blocked", issue.ID),
+			map[string]interface{}{
+				"error":        err.Error(),
+				"error_type":   "ai_summarization_failed",
+				"exit_code":    agentResult.ExitCode,
+				"output_lines": len(agentResult.Output),
+			})
+
+		// Release the execution state
+		if releaseErr := rp.store.ReleaseIssue(ctx, issue.ID); releaseErr != nil {
+			return nil, fmt.Errorf("failed to release issue after summarization failure: %w", releaseErr)
+		}
+
+		result.Summary = fmt.Sprintf("AI summarization failed - issue blocked (ZFC compliance): %v", err)
+		return result, nil
+	}
+
 	fmt.Printf("\n=== Agent Execution Complete ===\n")
 	fmt.Printf("Success: %v\n", agentResult.Success)
 	fmt.Printf("Exit Code: %d\n", agentResult.ExitCode)
@@ -364,53 +423,31 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 	return result, nil
 }
 
-// extractSummary extracts a summary from agent output using AI
-func (rp *ResultsProcessor) extractSummary(ctx context.Context, issue *types.Issue, result *AgentResult) string {
+// extractSummary extracts a summary from agent output using AI.
+// Returns an error if AI summarization fails - no heuristic fallback (ZFC compliance).
+func (rp *ResultsProcessor) extractSummary(ctx context.Context, issue *types.Issue, result *AgentResult) (string, error) {
 	if len(result.Output) == 0 {
-		return "Agent completed with no output"
+		return "Agent completed with no output", nil
 	}
 
 	// Join output lines into full text
 	fullOutput := strings.Join(result.Output, "\n")
 
-	// Use AI summarization if supervisor is available
-	if rp.supervisor != nil {
-		// Target summary length: aim for ~2000 chars (enough for meaningful summary)
-		const maxSummaryLength = 2000
-
-		summary, err := rp.supervisor.SummarizeAgentOutput(ctx, issue, fullOutput, maxSummaryLength)
-		if err != nil {
-			// Fall back to heuristic-based summary if AI fails
-			fmt.Fprintf(os.Stderr, "Warning: AI summarization failed, using fallback: %v\n", err)
-			return rp.fallbackExtractSummary(result)
-		}
-		return summary
+	// AI supervisor is required for summarization (ZFC compliance)
+	if rp.supervisor == nil {
+		return "", fmt.Errorf("AI supervisor is required for output summarization (ZFC compliance - no heuristic fallbacks)")
 	}
 
-	// No supervisor available, use fallback
-	return rp.fallbackExtractSummary(result)
-}
+	// Target summary length: aim for ~2000 chars (enough for meaningful summary)
+	const maxSummaryLength = 2000
 
-// fallbackExtractSummary provides the old heuristic-based summary as a fallback
-func (rp *ResultsProcessor) fallbackExtractSummary(result *AgentResult) string {
-	if len(result.Output) == 0 {
-		return "Agent completed with no output"
+	summary, err := rp.supervisor.SummarizeAgentOutput(ctx, issue, fullOutput, maxSummaryLength)
+	if err != nil {
+		// Don't fall back to heuristics - return error (ZFC compliance)
+		return "", fmt.Errorf("AI summarization failed: %w", err)
 	}
 
-	// Get last 10 lines or all if less
-	start := len(result.Output) - 10
-	if start < 0 {
-		start = 0
-	}
-
-	var summary strings.Builder
-	summary.WriteString("Agent execution completed:\n\n")
-	for _, line := range result.Output[start:] {
-		summary.WriteString(line)
-		summary.WriteString("\n")
-	}
-
-	return summary.String()
+	return summary, nil
 }
 
 // buildAnalysisComment creates a formatted comment from AI analysis
@@ -507,6 +544,19 @@ func (rp *ResultsProcessor) logEvent(ctx context.Context, eventType events.Event
 		// Log error but don't fail execution
 		fmt.Fprintf(os.Stderr, "warning: failed to store agent event: %v\n", err)
 	}
+}
+
+// getOutputSample returns the last N lines of output, or all if fewer than N
+func getOutputSample(output []string, maxLines int) []string {
+	if len(output) == 0 {
+		return []string{"(no output)"}
+	}
+
+	if len(output) <= maxLines {
+		return output
+	}
+
+	return output[len(output)-maxLines:]
 }
 
 // autoCommit performs auto-commit with AI-generated message.

@@ -560,9 +560,8 @@ func (s *Supervisor) SummarizeAgentOutput(ctx context.Context, issue *types.Issu
 	})
 
 	if err != nil {
-		// Fall back to simple truncation if AI fails
-		fmt.Fprintf(os.Stderr, "Warning: AI summarization failed, using fallback: %v\n", err)
-		return fallbackSummary(fullOutput, maxLength), nil
+		// Don't fall back to heuristics - return the error (ZFC compliance)
+		return "", fmt.Errorf("AI summarization failed after %d retry attempts: %w", s.retry.MaxRetries+1, err)
 	}
 
 	// Extract the text content from the response
@@ -634,24 +633,6 @@ Focus on information that would be useful to someone reviewing this work later. 
 		maxLength)
 }
 
-// fallbackSummary provides a simple fallback when AI summarization fails
-func fallbackSummary(output string, maxLength int) string {
-	// Take last portion of output (likely most relevant)
-	if len(output) <= maxLength {
-		return output
-	}
-
-	// Try to find a good break point (newline)
-	start := len(output) - maxLength
-	for start < len(output) && output[start] != '\n' {
-		start++
-	}
-	if start < len(output) {
-		start++ // Skip the newline
-	}
-
-	return "... [output truncated] ...\n\n" + output[start:]
-}
 
 // GeneratePlan generates a phased implementation plan for a mission
 // This is the core of the middle loop: breaking high-level missions into executable phases

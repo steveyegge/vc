@@ -156,43 +156,45 @@ func TestSummarizeAgentOutput_LargeOutput(t *testing.T) {
 	t.Logf("Summary: %s", summary)
 }
 
-func TestFallbackSummary(t *testing.T) {
-	tests := []struct {
-		name      string
-		output    string
-		maxLength int
-	}{
-		{
-			name:      "short output",
-			output:    "Hello world",
-			maxLength: 100,
-		},
-		{
-			name:      "exact length",
-			output:    strings.Repeat("a", 100),
-			maxLength: 100,
-		},
-		{
-			name:      "needs truncation",
-			output:    strings.Repeat("test\n", 100),
-			maxLength: 100,
-		},
+// TestSummarizeAgentOutput_ErrorHandling tests that errors are properly returned
+// without falling back to heuristics (ZFC compliance)
+func TestSummarizeAgentOutput_ErrorHandling(t *testing.T) {
+	// Create supervisor with invalid API key to force errors
+	tmpDB := t.TempDir() + "/test.db"
+	store, err := sqlite.New(tmpDB)
+	if err != nil {
+		t.Fatalf("Failed to create test store: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	cfg := &Config{
+		Store:  store,
+		APIKey: "invalid-key-should-fail",
+		Retry:  DefaultRetryConfig(),
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			summary := fallbackSummary(tt.output, tt.maxLength)
+	supervisor, err := NewSupervisor(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create supervisor: %v", err)
+	}
 
-			// Should not be too long
-			if len(summary) > tt.maxLength+200 { // Allow for truncation message
-				t.Errorf("Fallback summary too long: got %d, max %d", len(summary), tt.maxLength)
-			}
+	issue := &types.Issue{
+		ID:          "vc-test-error",
+		Title:       "Error handling test",
+		Description: "Testing error handling",
+	}
 
-			// Should contain something
-			if len(summary) == 0 {
-				t.Error("Fallback summary is empty")
-			}
-		})
+	ctx := context.Background()
+	_, err = supervisor.SummarizeAgentOutput(ctx, issue, "test output", 1000)
+
+	// Should return an error, not fall back to heuristics
+	if err == nil {
+		t.Error("Expected error with invalid API key, got nil")
+	}
+
+	// Error should mention retry attempts (ZFC compliance)
+	if !strings.Contains(err.Error(), "retry") {
+		t.Errorf("Error should mention retry attempts, got: %v", err)
 	}
 }
 
