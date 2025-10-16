@@ -192,8 +192,17 @@ func (ic *InterventionController) KillAgent(ctx context.Context, report *Anomaly
 	return result, nil
 }
 
-// PauseExecutor pauses the entire executor (not just the current agent)
-// This is used for critical system-wide issues
+// PauseExecutor creates an escalation issue for critical system-wide issues
+//
+// NOTE: This method does NOT actually pause the executor - it only creates an escalation issue.
+// Full executor pause requires coordination with the executor's main loop, which needs:
+//   - A signal mechanism (channel, atomic flag, or context cancellation)
+//   - Graceful shutdown of the current agent
+//   - Cleanup of executor resources
+//   - State persistence for resumption
+//
+// TODO(vc-executor): Implement actual executor pause mechanism
+// For now, this creates a high-priority escalation issue that requires human intervention.
 func (ic *InterventionController) PauseExecutor(ctx context.Context, report *AnomalyReport) (*InterventionResult, error) {
 	ic.mu.Lock()
 	defer ic.mu.Unlock()
@@ -202,7 +211,7 @@ func (ic *InterventionController) PauseExecutor(ctx context.Context, report *Ano
 		Success:          true,
 		InterventionType: InterventionPauseExecutor,
 		AnomalyReport:    report,
-		Message:          fmt.Sprintf("Paused executor %s due to %s anomaly (severity: %s)", ic.executorInstanceID, report.AnomalyType, report.Severity),
+		Message:          fmt.Sprintf("Created escalation for executor %s pause due to %s anomaly (severity: %s)", ic.executorInstanceID, report.AnomalyType, report.Severity),
 		Timestamp:        time.Now(),
 	}
 
@@ -223,11 +232,11 @@ func (ic *InterventionController) PauseExecutor(ctx context.Context, report *Ano
 	// Add to history
 	ic.addToHistoryLocked(result)
 
-	// NOTE: Pausing the executor requires coordination with the executor's main loop
-	// The executor should monitor for escalation issues or other signals to stop
-	// For now, we just create the escalation issue and let the executor detect it
+	// NOTE: This does not actually pause the executor - just creates an escalation issue.
+	// The executor implementation needs to check for pause signals/escalations in its main loop.
+	// This is intentionally incomplete until the executor infrastructure is built.
 
-	fmt.Printf("Watchdog: Paused executor %s (escalation: %s)\n", ic.executorInstanceID, escalationID)
+	fmt.Printf("Watchdog: Created executor pause escalation %s for %s\n", escalationID, ic.executorInstanceID)
 
 	return result, nil
 }
