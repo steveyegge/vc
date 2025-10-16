@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -631,4 +632,494 @@ func TestToolContinueExecution(t *testing.T) {
 			t.Errorf("Expected async error, got: %v", err)
 		}
 	})
+}
+
+// TestToolCreateIssue tests the create_issue tool
+func TestToolCreateIssue(t *testing.T) {
+	t.Run("creates issue with required fields", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		result, err := handler.toolCreateIssue(ctx, map[string]interface{}{
+			"title": "Add authentication",
+		})
+		if err != nil {
+			t.Fatalf("toolCreateIssue failed: %v", err)
+		}
+
+		if !strings.Contains(result, "Created") {
+			t.Errorf("Expected success message, got: %s", result)
+		}
+		if !strings.Contains(result, "Add authentication") {
+			t.Errorf("Expected title in result, got: %s", result)
+		}
+	})
+
+	t.Run("creates issue with all fields", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		result, err := handler.toolCreateIssue(ctx, map[string]interface{}{
+			"title":       "Add authentication",
+			"description": "Implement OAuth2",
+			"type":        "feature",
+			"priority":    float64(1),
+			"design":      "Use OAuth2 flow",
+			"acceptance":  "Users can log in",
+		})
+		if err != nil {
+			t.Fatalf("toolCreateIssue failed: %v", err)
+		}
+
+		if !strings.Contains(result, "Created feature") {
+			t.Errorf("Expected 'Created feature', got: %s", result)
+		}
+	})
+
+	t.Run("requires title", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		_, err := handler.toolCreateIssue(ctx, map[string]interface{}{})
+		if err == nil {
+			t.Error("Expected error for missing title, got nil")
+		}
+		if !strings.Contains(err.Error(), "title is required") {
+			t.Errorf("Expected 'title is required' error, got: %v", err)
+		}
+	})
+
+	t.Run("validates issue type", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		_, err := handler.toolCreateIssue(ctx, map[string]interface{}{
+			"title": "Test",
+			"type":  "invalid",
+		})
+		if err == nil {
+			t.Error("Expected error for invalid type, got nil")
+		}
+		if !strings.Contains(err.Error(), "invalid issue type") {
+			t.Errorf("Expected 'invalid issue type' error, got: %v", err)
+		}
+	})
+
+	t.Run("defaults to task type", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		result, err := handler.toolCreateIssue(ctx, map[string]interface{}{
+			"title": "Test",
+		})
+		if err != nil {
+			t.Fatalf("toolCreateIssue failed: %v", err)
+		}
+
+		if !strings.Contains(result, "Created task") {
+			t.Errorf("Expected 'Created task', got: %s", result)
+		}
+	})
+
+	t.Run("defaults to priority 2", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		// We can't directly test priority in the result string,
+		// but we can verify no error occurs
+		_, err := handler.toolCreateIssue(ctx, map[string]interface{}{
+			"title": "Test",
+		})
+		if err != nil {
+			t.Fatalf("toolCreateIssue failed: %v", err)
+		}
+	})
+}
+
+// TestToolCreateEpic tests the create_epic tool
+func TestToolCreateEpic(t *testing.T) {
+	t.Run("creates epic with required fields", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		result, err := handler.toolCreateEpic(ctx, map[string]interface{}{
+			"title": "Payment System",
+		})
+		if err != nil {
+			t.Fatalf("toolCreateEpic failed: %v", err)
+		}
+
+		if !strings.Contains(result, "Created epic") {
+			t.Errorf("Expected 'Created epic', got: %s", result)
+		}
+		if !strings.Contains(result, "Payment System") {
+			t.Errorf("Expected title in result, got: %s", result)
+		}
+	})
+
+	t.Run("creates epic with all fields", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		result, err := handler.toolCreateEpic(ctx, map[string]interface{}{
+			"title":       "Payment System",
+			"description": "Build payment infrastructure",
+			"design":      "Use Stripe API",
+			"acceptance":  "Users can pay with credit cards",
+		})
+		if err != nil {
+			t.Fatalf("toolCreateEpic failed: %v", err)
+		}
+
+		if !strings.Contains(result, "Created epic") {
+			t.Errorf("Expected success message, got: %s", result)
+		}
+	})
+
+	t.Run("requires title", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		_, err := handler.toolCreateEpic(ctx, map[string]interface{}{})
+		if err == nil {
+			t.Error("Expected error for missing title, got nil")
+		}
+		if !strings.Contains(err.Error(), "title is required") {
+			t.Errorf("Expected 'title is required' error, got: %v", err)
+		}
+	})
+}
+
+// TestToolAddChildToEpic tests the add_child_to_epic tool
+func TestToolAddChildToEpic(t *testing.T) {
+	t.Run("adds child with default blocks=true", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		result, err := handler.toolAddChildToEpic(ctx, map[string]interface{}{
+			"epic_id":        "vc-1",
+			"child_issue_id": "vc-2",
+		})
+		if err != nil {
+			t.Fatalf("toolAddChildToEpic failed: %v", err)
+		}
+
+		if !strings.Contains(result, "Added vc-2 as child of epic vc-1") {
+			t.Errorf("Expected success message, got: %s", result)
+		}
+		if !strings.Contains(result, "blocks=true") {
+			t.Errorf("Expected blocks=true in result, got: %s", result)
+		}
+	})
+
+	t.Run("adds child with blocks=false", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		result, err := handler.toolAddChildToEpic(ctx, map[string]interface{}{
+			"epic_id":        "vc-1",
+			"child_issue_id": "vc-2",
+			"blocks":         false,
+		})
+		if err != nil {
+			t.Fatalf("toolAddChildToEpic failed: %v", err)
+		}
+
+		if !strings.Contains(result, "blocks=false") {
+			t.Errorf("Expected blocks=false in result, got: %s", result)
+		}
+	})
+
+	t.Run("requires epic_id", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		_, err := handler.toolAddChildToEpic(ctx, map[string]interface{}{
+			"child_issue_id": "vc-2",
+		})
+		if err == nil {
+			t.Error("Expected error for missing epic_id, got nil")
+		}
+		if !strings.Contains(err.Error(), "required") {
+			t.Errorf("Expected 'required' error, got: %v", err)
+		}
+	})
+
+	t.Run("requires child_issue_id", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		_, err := handler.toolAddChildToEpic(ctx, map[string]interface{}{
+			"epic_id": "vc-1",
+		})
+		if err == nil {
+			t.Error("Expected error for missing child_issue_id, got nil")
+		}
+		if !strings.Contains(err.Error(), "required") {
+			t.Errorf("Expected 'required' error, got: %v", err)
+		}
+	})
+}
+
+// TestToolGetReadyWork tests the get_ready_work tool
+func TestToolGetReadyWork(t *testing.T) {
+	t.Run("gets ready work with default limit", func(t *testing.T) {
+		mock := &mockStorage{
+			// GetReadyWork is called by the tool, needs to be implemented in mock
+		}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		// Mock will return empty list, which is fine for this test
+		result, err := handler.toolGetReadyWork(ctx, map[string]interface{}{})
+		if err != nil {
+			t.Fatalf("toolGetReadyWork failed: %v", err)
+		}
+
+		if result != "No ready work found" {
+			t.Errorf("Expected 'No ready work found', got: %s", result)
+		}
+	})
+
+	t.Run("applies limit parameter", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		// Just verify it doesn't error with limit param
+		_, err := handler.toolGetReadyWork(ctx, map[string]interface{}{
+			"limit": float64(10),
+		})
+		if err != nil {
+			t.Fatalf("toolGetReadyWork failed: %v", err)
+		}
+	})
+}
+
+// TestToolGetIssue tests the get_issue tool
+func TestToolGetIssue(t *testing.T) {
+	t.Run("gets issue successfully", func(t *testing.T) {
+		mock := &mockStorage{
+			issues: map[string]*types.Issue{
+				"vc-1": {
+					ID:          "vc-1",
+					Title:       "Test Issue",
+					Description: "Test description",
+					IssueType:   types.TypeTask,
+					Priority:    1,
+					Status:      types.StatusOpen,
+				},
+			},
+		}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		result, err := handler.toolGetIssue(ctx, map[string]interface{}{
+			"issue_id": "vc-1",
+		})
+		if err != nil {
+			t.Fatalf("toolGetIssue failed: %v", err)
+		}
+
+		if !strings.Contains(result, "vc-1") {
+			t.Errorf("Expected issue ID in result, got: %s", result)
+		}
+		if !strings.Contains(result, "Test Issue") {
+			t.Errorf("Expected title in result, got: %s", result)
+		}
+	})
+
+	t.Run("requires issue_id", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		_, err := handler.toolGetIssue(ctx, map[string]interface{}{})
+		if err == nil {
+			t.Error("Expected error for missing issue_id, got nil")
+		}
+		if !strings.Contains(err.Error(), "issue_id is required") {
+			t.Errorf("Expected 'issue_id is required' error, got: %v", err)
+		}
+	})
+
+	t.Run("handles issue not found", func(t *testing.T) {
+		mock := &mockStorage{
+			issues: map[string]*types.Issue{},
+		}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		_, err := handler.toolGetIssue(ctx, map[string]interface{}{
+			"issue_id": "vc-999",
+		})
+		if err == nil {
+			t.Error("Expected error for non-existent issue, got nil")
+		}
+	})
+}
+
+// TestExecuteTool tests the tool dispatcher
+func TestExecuteTool(t *testing.T) {
+	t.Run("dispatches to correct tool", func(t *testing.T) {
+		mock := &mockStorage{
+			statistics: &types.Statistics{
+				TotalIssues: 10,
+			},
+		}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		// Test dispatching to get_status
+		result, err := handler.executeTool(ctx, "get_status", map[string]interface{}{})
+		if err != nil {
+			t.Fatalf("executeTool failed: %v", err)
+		}
+		if !strings.Contains(result, "Project Status") {
+			t.Errorf("Expected status output, got: %s", result)
+		}
+
+		// Test dispatching to create_issue
+		result, err = handler.executeTool(ctx, "create_issue", map[string]interface{}{
+			"title": "Test",
+		})
+		if err != nil {
+			t.Fatalf("executeTool failed: %v", err)
+		}
+		if !strings.Contains(result, "Created") {
+			t.Errorf("Expected creation message, got: %s", result)
+		}
+	})
+
+	t.Run("returns error for unknown tool", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		_, err := handler.executeTool(ctx, "unknown_tool", map[string]interface{}{})
+		if err == nil {
+			t.Error("Expected error for unknown tool, got nil")
+		}
+		if !strings.Contains(err.Error(), "unknown tool") {
+			t.Errorf("Expected 'unknown tool' error, got: %v", err)
+		}
+	})
+
+	t.Run("returns error for invalid input format", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		_, err := handler.executeTool(ctx, "get_status", "invalid")
+		if err == nil {
+			t.Error("Expected error for invalid input, got nil")
+		}
+		if !strings.Contains(err.Error(), "invalid tool input") {
+			t.Errorf("Expected 'invalid tool input' error, got: %v", err)
+		}
+	})
+}
+
+// TestClearHistory tests conversation history clearing
+func TestClearHistory(t *testing.T) {
+	mock := &mockStorage{}
+	handler := &ConversationHandler{storage: mock}
+
+	// Add some history (using the proper type)
+	handler.history = append(handler.history,
+		anthropic.NewUserMessage(anthropic.NewTextBlock("test message")))
+
+	if len(handler.history) == 0 {
+		t.Error("Setup failed - history should not be empty before clearing")
+	}
+
+	handler.ClearHistory()
+
+	if len(handler.history) != 0 {
+		t.Errorf("Expected empty history, got %d items", len(handler.history))
+	}
+}
+
+// TestGetTools tests tool definition generation
+func TestGetTools(t *testing.T) {
+	mock := &mockStorage{}
+	handler := &ConversationHandler{storage: mock}
+
+	tools := handler.getTools()
+
+	// Should have 10 tools
+	expectedTools := 10
+	if len(tools) != expectedTools {
+		t.Errorf("Expected %d tools, got %d", expectedTools, len(tools))
+	}
+
+	// Verify all expected tools are present
+	expectedToolNames := []string{
+		"create_issue",
+		"create_epic",
+		"add_child_to_epic",
+		"get_ready_work",
+		"get_issue",
+		"get_status",
+		"get_blocked_issues",
+		"continue_execution",
+		"get_recent_activity",
+		"search_issues",
+	}
+
+	toolNames := make(map[string]bool)
+	for _, tool := range tools {
+		if tool.OfTool != nil {
+			toolNames[tool.OfTool.Name] = true
+		}
+	}
+
+	for _, expectedName := range expectedToolNames {
+		if !toolNames[expectedName] {
+			t.Errorf("Missing expected tool: %s", expectedName)
+		}
+	}
+}
+
+// TestSystemPrompt tests that system prompt is generated
+func TestSystemPrompt(t *testing.T) {
+	mock := &mockStorage{}
+	handler := &ConversationHandler{storage: mock}
+
+	prompt := handler.systemPrompt()
+
+	// Verify key sections are present
+	expectedSections := []string{
+		"VibeCoder",
+		"conversational tools",
+		"create_issue",
+		"continue_execution",
+		"get_ready_work",
+		"CONVERSATIONAL INTENT PATTERNS",
+		"BEHAVIORAL GUIDELINES",
+	}
+
+	for _, section := range expectedSections {
+		if !strings.Contains(prompt, section) {
+			t.Errorf("System prompt missing expected section: %s", section)
+		}
+	}
+
+	// Verify it's not empty
+	if len(prompt) < 1000 {
+		t.Errorf("System prompt seems too short: %d characters", len(prompt))
+	}
 }
