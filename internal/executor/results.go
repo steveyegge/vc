@@ -382,7 +382,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 
 		// Step 7: Check if parent epic is now complete
 		if shouldClose {
-			if err := checkEpicCompletion(ctx, rp.store, issue.ID); err != nil {
+			if err := checkEpicCompletion(ctx, rp.store, rp.supervisor, issue.ID); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to check epic completion: %v\n", err)
 			}
 		}

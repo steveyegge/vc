@@ -277,12 +277,17 @@ func (o *Orchestrator) HandlePhaseCompletion(ctx context.Context, phaseID string
 }
 
 // CheckMissionCompletion checks if all phases of a mission are complete
-// If so, it closes the mission
+// Uses AI to assess completion based on objectives, not just counting closed phases
 func (o *Orchestrator) CheckMissionCompletion(ctx context.Context, missionID string, actor string) error {
 	// Get mission
-	_, err := o.store.GetIssue(ctx, missionID)
+	mission, err := o.store.GetIssue(ctx, missionID)
 	if err != nil {
 		return fmt.Errorf("failed to get mission: %w", err)
+	}
+
+	// Skip if already closed
+	if mission.Status == types.StatusClosed {
+		return nil
 	}
 
 	// Get all child phases
@@ -291,25 +296,21 @@ func (o *Orchestrator) CheckMissionCompletion(ctx context.Context, missionID str
 		return fmt.Errorf("failed to get mission phases: %w", err)
 	}
 
-	// Check if all phase epics are closed
-	allPhasesClosed := true
+	// If no phases found, nothing to do
+	if len(children) == 0 {
+		return nil
+	}
+
+	// Count phase progress for progress comment
 	totalPhases := 0
 	closedPhases := 0
-
 	for _, child := range children {
 		if child.IssueType == types.TypeEpic {
 			totalPhases++
 			if child.Status == types.StatusClosed {
 				closedPhases++
-			} else {
-				allPhasesClosed = false
 			}
 		}
-	}
-
-	// If no phases found, nothing to do
-	if totalPhases == 0 {
-		return nil
 	}
 
 	// Add progress comment
@@ -319,13 +320,74 @@ func (o *Orchestrator) CheckMissionCompletion(ctx context.Context, missionID str
 		fmt.Printf("Warning: failed to add progress comment: %v\n", err)
 	}
 
+	// Use AI to assess completion if planner supports it
+	// The planner is typically an AI supervisor that implements AssessCompletion
+	if supervisor, ok := o.planner.(*ai.Supervisor); ok && supervisor != nil {
+		assessment, err := supervisor.AssessCompletion(ctx, mission, children)
+		if err != nil {
+			// If AI assessment fails, log but don't fail the check
+			// This maintains backward compatibility if AI is unavailable
+			fmt.Printf("Warning: AI completion assessment failed for %s: %v (skipping auto-close)\n", missionID, err)
+			return nil
+		}
+
+		// Log assessment reasoning
+		reasoningComment := fmt.Sprintf("**AI Completion Assessment**\n\n"+
+			"Should Close: %v\n"+
+			"Confidence: %.2f\n\n"+
+			"Reasoning: %s\n",
+			assessment.ShouldClose, assessment.Confidence, assessment.Reasoning)
+
+		if len(assessment.Caveats) > 0 {
+			reasoningComment += "\nCaveats:\n"
+			for _, caveat := range assessment.Caveats {
+				reasoningComment += fmt.Sprintf("- %s\n", caveat)
+			}
+		}
+
+		if err := o.store.AddComment(ctx, missionID, "ai-supervisor", reasoningComment); err != nil {
+			fmt.Printf("Warning: failed to add AI assessment comment: %v\n", err)
+		}
+
+		// Close mission if AI recommends it
+		if assessment.ShouldClose {
+			fmt.Printf("AI recommends closing mission %s (confidence: %.2f)\n", missionID, assessment.Confidence)
+
+			reason := fmt.Sprintf("AI assessment: objectives met (confidence: %.2f)", assessment.Confidence)
+			if err := o.store.CloseIssue(ctx, missionID, reason, "ai-supervisor"); err != nil {
+				return fmt.Errorf("failed to close mission: %w", err)
+			}
+
+			fmt.Printf("✓ Closed mission %s: %s\n", missionID, mission.Title)
+		} else {
+			fmt.Printf("AI recommends keeping mission %s open: %s\n", missionID, assessment.Reasoning)
+		}
+
+		return nil
+	}
+
+	// Fallback: No AI supervisor available, use simple heuristic
+	// (This path should rarely be taken in production)
+	fmt.Printf("Warning: No AI supervisor available for mission %s, using fallback logic\n", missionID)
+
+	// Check if all phase epics are closed
+	allPhasesClosed := true
+	for _, child := range children {
+		if child.IssueType == types.TypeEpic {
+			if child.Status != types.StatusClosed {
+				allPhasesClosed = false
+				break
+			}
+		}
+	}
+
 	// If all phases are closed, close the mission
 	if allPhasesClosed {
-		reason := fmt.Sprintf("All %d phases completed successfully", totalPhases)
+		reason := fmt.Sprintf("All %d phases completed successfully (fallback logic)", totalPhases)
 		if err := o.store.CloseIssue(ctx, missionID, reason, actor); err != nil {
 			return fmt.Errorf("failed to close mission: %w", err)
 		}
-		fmt.Printf("Mission %s completed: all %d phases finished\n", missionID, totalPhases)
+		fmt.Printf("✓ Closed mission %s: %s\n", missionID, mission.Title)
 	}
 
 	return nil

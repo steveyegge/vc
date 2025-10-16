@@ -13,7 +13,8 @@ import (
 // Compiling regexes on every parse is ~15x slower than using pre-compiled patterns.
 var (
 	// Code fence patterns
-	codeFenceStartRegex = regexp.MustCompile(`(?s)^` + "`" + `{3}(?:json|javascript|js)?\s*\n?([\s\S]*?)\n?` + "`" + `{3}\s*$`)
+	// Updated to require newlines after opening/before closing fences (spaces alone don't separate the fence from content)
+	codeFenceStartRegex = regexp.MustCompile(`(?s)^` + "`" + `{3}(?:json|javascript|js)?\s*\n([\s\S]*?)\n` + "`" + `{3}\s*$`)
 	codeFenceAnyRegex   = regexp.MustCompile(`(?s)` + "`" + `{3}(?:json|javascript|js)?\s*\n([\s\S]*?)\n` + "`" + `{3}`)
 
 	// JSON cleanup patterns

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -138,6 +139,20 @@ func (m *mockStorage) ReleaseIssue(ctx context.Context, issueID string) error {
 }
 func (m *mockStorage) Close() error {
 	return nil
+}
+
+// Agent Events methods
+func (m *mockStorage) StoreAgentEvent(ctx context.Context, event *events.AgentEvent) error {
+	return nil
+}
+func (m *mockStorage) GetAgentEvents(ctx context.Context, filter events.EventFilter) ([]*events.AgentEvent, error) {
+	return nil, nil
+}
+func (m *mockStorage) GetAgentEventsByIssue(ctx context.Context, issueID string) ([]*events.AgentEvent, error) {
+	return nil, nil
+}
+func (m *mockStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*events.AgentEvent, error) {
+	return nil, nil
 }
 
 func min(a, b int) int {
