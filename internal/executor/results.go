@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/ai"
+	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/gates"
 	"github.com/steveyegge/vc/internal/git"
 	"github.com/steveyegge/vc/internal/storage"
@@ -130,12 +133,27 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
 		}
 
+		// Log quality gates started
+		rp.logEvent(ctx, events.EventTypeQualityGatesStarted, events.SeverityInfo, issue.ID,
+			fmt.Sprintf("Starting quality gates evaluation for issue %s", issue.ID),
+			map[string]interface{}{
+				"issue_id": issue.ID,
+			})
+
 		gateRunner, err := gates.NewRunner(&gates.Config{
 			Store:      rp.store,
 			WorkingDir: rp.workingDir,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to create quality gate runner: %v (skipping gates)\n", err)
+			// Log quality gates error
+			rp.logEvent(ctx, events.EventTypeQualityGatesCompleted, events.SeverityWarning, issue.ID,
+				fmt.Sprintf("Quality gate runner creation failed: %v", err),
+				map[string]interface{}{
+					"issue_id": issue.ID,
+					"success":  false,
+					"error":    err.Error(),
+				})
 		} else {
 			gateResults, allPassed := gateRunner.RunAll(ctx)
 			result.GatesPassed = allPassed
@@ -144,6 +162,35 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			if err := gateRunner.HandleGateResults(ctx, issue, gateResults, allPassed); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to handle gate results: %v\n", err)
 			}
+
+			// Log quality gates completed
+			gateData := map[string]interface{}{
+				"issue_id":     issue.ID,
+				"all_passed":   allPassed,
+				"gates_run":    len(gateResults),
+			}
+
+			// Count passed and failed gates
+			passedCount := 0
+			failedCount := 0
+			for _, gateResult := range gateResults {
+				if gateResult.Passed {
+					passedCount++
+				} else {
+					failedCount++
+				}
+			}
+			gateData["passed_count"] = passedCount
+			gateData["failed_count"] = failedCount
+
+			severity := events.SeverityInfo
+			if !allPassed {
+				severity = events.SeverityWarning
+			}
+
+			rp.logEvent(ctx, events.EventTypeQualityGatesCompleted, severity, issue.ID,
+				fmt.Sprintf("Quality gates evaluation completed for issue %s (passed: %v)", issue.ID, allPassed),
+				gateData)
 
 			if !allPassed {
 				fmt.Printf("\n=== Quality Gates Failed ===\n")
@@ -377,6 +424,27 @@ func (rp *ResultsProcessor) buildSummary(issue *types.Issue, agentResult *AgentR
 	}
 
 	return summary.String()
+}
+
+// logEvent creates and stores an agent event for observability
+func (rp *ResultsProcessor) logEvent(ctx context.Context, eventType events.EventType, severity events.EventSeverity, issueID, message string, data map[string]interface{}) {
+	event := &events.AgentEvent{
+		ID:         uuid.New().String(),
+		Type:       eventType,
+		Timestamp:  time.Now(),
+		IssueID:    issueID,
+		ExecutorID: rp.actor,
+		AgentID:    "", // Populated later for agent-specific events
+		Severity:   severity,
+		Message:    message,
+		Data:       data,
+		SourceLine: 0, // Not applicable for executor-level events
+	}
+
+	if err := rp.store.StoreAgentEvent(ctx, event); err != nil {
+		// Log error but don't fail execution
+		fmt.Fprintf(os.Stderr, "warning: failed to store agent event: %v\n", err)
+	}
 }
 
 // autoCommit performs auto-commit with AI-generated message.

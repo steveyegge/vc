@@ -25,6 +25,26 @@ const (
 	EventTypeError EventType = "error"
 	// EventTypeWatchdog indicates a watchdog alert was triggered
 	EventTypeWatchdog EventType = "watchdog_alert"
+
+	// Executor-level events
+	// EventTypeIssueClaimed indicates an executor claimed an issue for processing
+	EventTypeIssueClaimed EventType = "issue_claimed"
+	// EventTypeAssessmentStarted indicates AI assessment phase started
+	EventTypeAssessmentStarted EventType = "assessment_started"
+	// EventTypeAssessmentCompleted indicates AI assessment phase completed
+	EventTypeAssessmentCompleted EventType = "assessment_completed"
+	// EventTypeAgentSpawned indicates a coding agent was spawned
+	EventTypeAgentSpawned EventType = "agent_spawned"
+	// EventTypeAgentCompleted indicates a coding agent completed execution
+	EventTypeAgentCompleted EventType = "agent_completed"
+	// EventTypeResultsProcessingStarted indicates results processing phase started
+	EventTypeResultsProcessingStarted EventType = "results_processing_started"
+	// EventTypeResultsProcessingCompleted indicates results processing phase completed
+	EventTypeResultsProcessingCompleted EventType = "results_processing_completed"
+	// EventTypeQualityGatesStarted indicates quality gates evaluation started
+	EventTypeQualityGatesStarted EventType = "quality_gates_started"
+	// EventTypeQualityGatesCompleted indicates quality gates evaluation completed
+	EventTypeQualityGatesCompleted EventType = "quality_gates_completed"
 )
 
 // EventSeverity represents the severity level of an event.
