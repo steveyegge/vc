@@ -71,25 +71,25 @@ const (
 // Events are extracted from agent output and stored for analysis and review.
 type AgentEvent struct {
 	// ID is the unique identifier for this event
-	ID string
+	ID string `json:"id"`
 	// Type is the type of event
-	Type EventType
+	Type EventType `json:"type"`
 	// Timestamp is when the event occurred
-	Timestamp time.Time
+	Timestamp time.Time `json:"timestamp"`
 	// IssueID is the issue being worked on when this event occurred
-	IssueID string
+	IssueID string `json:"issue_id"`
 	// ExecutorID is the executor instance that was running
-	ExecutorID string
+	ExecutorID string `json:"executor_id"`
 	// AgentID is the specific agent that produced this event
-	AgentID string
+	AgentID string `json:"agent_id"`
 	// Severity is the severity level of this event
-	Severity EventSeverity
+	Severity EventSeverity `json:"severity"`
 	// Message is a human-readable description of the event
-	Message string
+	Message string `json:"message"`
 	// Data contains structured, type-specific data (must be JSON-serializable)
-	Data map[string]interface{}
+	Data map[string]interface{} `json:"data"`
 	// SourceLine is the line number in the agent output where this event was extracted
-	SourceLine int
+	SourceLine int `json:"source_line"`
 }
 
 // FileModifiedData contains structured data for file modification events.
@@ -152,3 +152,5 @@ type EventFilter struct {
 	// Limit limits the number of events returned
 	Limit int
 }
+
+// Helper methods for type-safe data access
