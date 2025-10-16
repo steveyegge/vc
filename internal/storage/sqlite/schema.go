@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS issues (
     estimated_minutes INTEGER,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    closed_at DATETIME
+    closed_at DATETIME,
+    approved_at DATETIME,
+    approved_by TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);

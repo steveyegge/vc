@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -175,6 +176,18 @@ func (m *MockStorage) SaveCheckpoint(ctx context.Context, issueID string, checkp
 }
 func (m *MockStorage) GetCheckpoint(ctx context.Context, issueID string) (string, error) {
 	return "", nil
+}
+func (m *MockStorage) StoreAgentEvent(ctx context.Context, event *events.AgentEvent) error {
+	return nil
+}
+func (m *MockStorage) GetAgentEvents(ctx context.Context, filter events.EventFilter) ([]*events.AgentEvent, error) {
+	return nil, nil
+}
+func (m *MockStorage) GetAgentEventsByIssue(ctx context.Context, issueID string) ([]*events.AgentEvent, error) {
+	return nil, nil
+}
+func (m *MockStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*events.AgentEvent, error) {
+	return nil, nil
 }
 
 func TestGenerateAndStorePlan_RequiresApproval(t *testing.T) {

@@ -132,6 +132,8 @@ var allowedUpdateFields = map[string]bool{
 	"notes":               true,
 	"issue_type":          true,
 	"estimated_minutes":   true,
+	"approved_at":         true,
+	"approved_by":         true,
 }
 
 // MaxEventsLimit is the maximum number of events that can be returned by GetEvents

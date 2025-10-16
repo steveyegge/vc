@@ -81,8 +81,17 @@ func (o *Orchestrator) ApprovePlan(ctx context.Context, missionID string, approv
 		return fmt.Errorf("failed to get mission: %w", err)
 	}
 
-	// Add approval comment
+	// Update approval metadata
 	now := time.Now()
+	updates := map[string]interface{}{
+		"approved_at": now,
+		"approved_by": approvedBy,
+	}
+	if err := o.store.UpdateIssue(ctx, missionID, updates, approvedBy); err != nil {
+		return fmt.Errorf("failed to update approval metadata: %w", err)
+	}
+
+	// Add approval comment
 	comment := fmt.Sprintf("Mission plan approved by %s at %s", approvedBy, now.Format(time.RFC3339))
 	if err := o.store.AddComment(ctx, missionID, approvedBy, comment); err != nil {
 		return fmt.Errorf("failed to add approval comment: %w", err)

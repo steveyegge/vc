@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS issues (
     estimated_minutes INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    closed_at TIMESTAMPTZ
+    closed_at TIMESTAMPTZ,
+    approved_at TIMESTAMPTZ,
+    approved_by TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
@@ -102,7 +104,7 @@ WHERE i.status IN ('open', 'in_progress', 'blocked')
   AND blocker.status IN ('open', 'in_progress', 'blocked')
 GROUP BY i.id, i.title, i.description, i.design, i.acceptance_criteria, i.notes,
          i.status, i.priority, i.issue_type, i.assignee, i.estimated_minutes,
-         i.created_at, i.updated_at, i.closed_at;
+         i.created_at, i.updated_at, i.closed_at, i.approved_at, i.approved_by;
 
 -- Executor instances table
 -- Tracks running executor instances for multi-executor coordination

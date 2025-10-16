@@ -146,20 +146,22 @@ func (s *SQLiteStorage) CreateIssue(ctx context.Context, issue *types.Issue, act
 func (s *SQLiteStorage) GetIssue(ctx context.Context, id string) (*types.Issue, error) {
 	var issue types.Issue
 	var closedAt sql.NullTime
+	var approvedAt sql.NullTime
 	var estimatedMinutes sql.NullInt64
 	var assignee sql.NullString
+	var approvedBy sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, title, description, design, acceptance_criteria, notes,
 		       status, priority, issue_type, assignee, estimated_minutes,
-		       created_at, updated_at, closed_at
+		       created_at, updated_at, closed_at, approved_at, approved_by
 		FROM issues
 		WHERE id = ?
 	`, id).Scan(
 		&issue.ID, &issue.Title, &issue.Description, &issue.Design,
 		&issue.AcceptanceCriteria, &issue.Notes, &issue.Status,
 		&issue.Priority, &issue.IssueType, &assignee, &estimatedMinutes,
-		&issue.CreatedAt, &issue.UpdatedAt, &closedAt,
+		&issue.CreatedAt, &issue.UpdatedAt, &closedAt, &approvedAt, &approvedBy,
 	)
 
 	if err == sql.ErrNoRows {
@@ -195,6 +197,8 @@ var allowedUpdateFields = map[string]bool{
 	"notes":               true,
 	"issue_type":          true,
 	"estimated_minutes":   true,
+	"approved_at":         true,
+	"approved_by":         true,
 }
 
 // UpdateIssue updates fields on an issue
