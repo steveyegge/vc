@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -30,13 +31,15 @@ type Result struct {
 // Runner executes quality gates for an issue
 type Runner struct {
 	store      storage.Storage
+	supervisor *ai.Supervisor // Optional: for AI-driven recovery strategies
 	workingDir string
 }
 
 // Config holds quality gate runner configuration
 type Config struct {
 	Store      storage.Storage
-	WorkingDir string // Directory where gate commands are executed
+	Supervisor *ai.Supervisor // Optional: enables AI-driven recovery strategies (ZFC)
+	WorkingDir string         // Directory where gate commands are executed
 }
 
 // NewRunner creates a new quality gate runner
@@ -50,6 +53,7 @@ func NewRunner(cfg *Config) (*Runner, error) {
 
 	return &Runner{
 		store:      cfg.Store,
+		supervisor: cfg.Supervisor,
 		workingDir: cfg.WorkingDir,
 	}, nil
 }
@@ -200,7 +204,8 @@ func (r *Runner) CreateBlockingIssue(ctx context.Context, originalIssue *types.I
 	return issueID, nil
 }
 
-// HandleGateResults processes gate results, creating blocking issues and updating original issue
+// HandleGateResults processes gate results using AI-driven recovery strategies (ZFC)
+// Falls back to hardcoded behavior if supervisor is unavailable
 func (r *Runner) HandleGateResults(ctx context.Context, originalIssue *types.Issue, results []*Result, allPassed bool) error {
 	// Log all gate results as events
 	for _, result := range results {
@@ -220,6 +225,84 @@ func (r *Runner) HandleGateResults(ctx context.Context, originalIssue *types.Iss
 		return nil
 	}
 
+	// ZFC: Use AI to determine recovery strategy
+	if r.supervisor != nil {
+		return r.handleGateResultsWithAI(ctx, originalIssue, results)
+	}
+
+	// Fallback: Use hardcoded behavior (backward compatibility)
+	fmt.Printf("warning: No AI supervisor configured for quality gates on %s, using fallback logic\n", originalIssue.ID)
+	return r.handleGateResultsFallback(ctx, originalIssue, results)
+}
+
+// handleGateResultsWithAI uses AI supervisor to determine recovery strategy (ZFC)
+func (r *Runner) handleGateResultsWithAI(ctx context.Context, originalIssue *types.Issue, results []*Result) error {
+	// Convert gate results to AI format
+	var gateFailures []ai.GateFailure
+	for _, result := range results {
+		if !result.Passed {
+			// Truncate output for AI consumption
+			output := result.Output
+			if len(output) > 1000 {
+				output = output[:1000] + "\n... (truncated)"
+			}
+
+			errMsg := ""
+			if result.Error != nil {
+				errMsg = result.Error.Error()
+			}
+
+			gateFailures = append(gateFailures, ai.GateFailure{
+				Gate:   string(result.Gate),
+				Output: output,
+				Error:  errMsg,
+			})
+		}
+	}
+
+	// Ask AI for recovery strategy
+	strategy, err := r.supervisor.GenerateRecoveryStrategy(ctx, originalIssue, gateFailures)
+	if err != nil {
+		// If AI fails, fall back to hardcoded behavior
+		fmt.Printf("warning: AI recovery strategy failed for %s: %v (falling back)\n", originalIssue.ID, err)
+		return r.handleGateResultsFallback(ctx, originalIssue, results)
+	}
+
+	// Log the AI's reasoning
+	reasoningComment := fmt.Sprintf("**AI Recovery Strategy**\n\n"+
+		"Action: %s\n"+
+		"Confidence: %.2f\n\n"+
+		"Reasoning: %s\n",
+		strategy.Action, strategy.Confidence, strategy.Reasoning)
+	if err := r.store.AddComment(ctx, originalIssue.ID, "ai-supervisor", reasoningComment); err != nil {
+		fmt.Printf("warning: failed to add AI reasoning comment: %v\n", err)
+	}
+
+	// Execute the recommended action
+	switch strategy.Action {
+	case "fix_in_place":
+		return r.executeFixInPlace(ctx, originalIssue, strategy)
+
+	case "acceptable_failure":
+		return r.executeAcceptableFailure(ctx, originalIssue, strategy)
+
+	case "split_work":
+		return r.executeSplitWork(ctx, originalIssue, strategy)
+
+	case "escalate":
+		return r.executeEscalate(ctx, originalIssue, strategy)
+
+	case "retry":
+		return r.executeRetry(ctx, originalIssue, strategy)
+
+	default:
+		fmt.Printf("warning: unknown recovery action '%s' for %s, falling back\n", strategy.Action, originalIssue.ID)
+		return r.handleGateResultsFallback(ctx, originalIssue, results)
+	}
+}
+
+// handleGateResultsFallback uses hardcoded logic (old behavior)
+func (r *Runner) handleGateResultsFallback(ctx context.Context, originalIssue *types.Issue, results []*Result) error {
 	// Create blocking issues for each failed gate
 	var createdIssues []string
 	for _, result := range results {
@@ -247,6 +330,176 @@ func (r *Runner) HandleGateResults(ctx context.Context, originalIssue *types.Iss
 		fmt.Printf("warning: failed to add summary comment: %v\n", err)
 	}
 
+	return nil
+}
+
+// executeFixInPlace creates blocking issues and marks original as blocked
+func (r *Runner) executeFixInPlace(ctx context.Context, originalIssue *types.Issue, strategy *ai.RecoveryStrategy) error {
+	// Create issues from AI recommendations
+	var createdIssues []string
+	for _, discoveredIssue := range strategy.CreateIssues {
+		issue := &types.Issue{
+			Title:              discoveredIssue.Title,
+			Description:        discoveredIssue.Description,
+			Status:             types.StatusOpen,
+			Priority:           originalIssue.Priority, // Inherit priority
+			IssueType:          types.TypeBug,
+			Design:             "Fix the quality gate failure described above",
+			AcceptanceCriteria: "Gate passes without errors",
+		}
+
+		if err := r.store.CreateIssue(ctx, issue, "ai-supervisor"); err != nil {
+			return fmt.Errorf("failed to create AI-recommended issue: %w", err)
+		}
+
+		createdIssues = append(createdIssues, issue.ID)
+
+		// Add blocking dependency
+		dep := &types.Dependency{
+			IssueID:     originalIssue.ID,
+			DependsOnID: issue.ID,
+			Type:        types.DepBlocks,
+		}
+		if err := r.store.AddDependency(ctx, dep, "ai-supervisor"); err != nil {
+			return fmt.Errorf("failed to create blocking dependency: %w", err)
+		}
+	}
+
+	// Mark as blocked if AI recommends it
+	if strategy.MarkAsBlocked {
+		updates := map[string]interface{}{
+			"status": types.StatusBlocked,
+		}
+		if err := r.store.UpdateIssue(ctx, originalIssue.ID, updates, "ai-supervisor"); err != nil {
+			return fmt.Errorf("failed to mark issue as blocked: %w", err)
+		}
+	}
+
+	// Add AI's comment if provided
+	if strategy.AddComment != "" {
+		if err := r.store.AddComment(ctx, originalIssue.ID, "ai-supervisor", strategy.AddComment); err != nil {
+			fmt.Printf("warning: failed to add AI comment: %v\n", err)
+		}
+	}
+
+	fmt.Printf("✓ AI recovery (fix_in_place): created %d issue(s) for %s\n", len(createdIssues), originalIssue.ID)
+	return nil
+}
+
+// executeAcceptableFailure closes the issue despite gate failures
+func (r *Runner) executeAcceptableFailure(ctx context.Context, originalIssue *types.Issue, strategy *ai.RecoveryStrategy) error {
+	// Add warning comment about acceptable failure
+	warningComment := fmt.Sprintf("⚠️ **Quality gates failed but closing anyway (AI decision)**\n\n%s", strategy.AddComment)
+	if err := r.store.AddComment(ctx, originalIssue.ID, "ai-supervisor", warningComment); err != nil {
+		fmt.Printf("warning: failed to add acceptable failure comment: %v\n", err)
+	}
+
+	// Close if AI recommends it (and if not requiring approval)
+	if strategy.CloseOriginal && !strategy.RequiresApproval {
+		reason := fmt.Sprintf("AI assessed gate failures as acceptable (confidence: %.2f)", strategy.Confidence)
+		if err := r.store.CloseIssue(ctx, originalIssue.ID, reason, "ai-supervisor"); err != nil {
+			return fmt.Errorf("failed to close issue: %w", err)
+		}
+		fmt.Printf("✓ AI recovery (acceptable_failure): closed %s despite gate failures\n", originalIssue.ID)
+	} else if strategy.RequiresApproval {
+		// Add approval request label
+		if err := r.store.AddLabel(ctx, originalIssue.ID, "needs-approval", "ai-supervisor"); err != nil {
+			fmt.Printf("warning: failed to add needs-approval label: %v\n", err)
+		}
+		fmt.Printf("⏳ AI recovery (acceptable_failure): %s requires human approval\n", originalIssue.ID)
+	}
+
+	return nil
+}
+
+// executeSplitWork creates new issues and closes original
+func (r *Runner) executeSplitWork(ctx context.Context, originalIssue *types.Issue, strategy *ai.RecoveryStrategy) error {
+	// Create issues from AI recommendations
+	var createdIssues []string
+	for _, discoveredIssue := range strategy.CreateIssues {
+		issue := &types.Issue{
+			Title:              discoveredIssue.Title,
+			Description:        discoveredIssue.Description,
+			Status:             types.StatusOpen,
+			Priority:           originalIssue.Priority,
+			IssueType:          types.TypeBug,
+			Design:             "Fix the quality gate failure described above",
+			AcceptanceCriteria: "Issue resolved and gates pass",
+		}
+
+		if err := r.store.CreateIssue(ctx, issue, "ai-supervisor"); err != nil {
+			return fmt.Errorf("failed to create split work issue: %w", err)
+		}
+
+		createdIssues = append(createdIssues, issue.ID)
+
+		// Add discovered-from dependency (not blocking)
+		dep := &types.Dependency{
+			IssueID:     issue.ID,
+			DependsOnID: originalIssue.ID,
+			Type:        types.DepDiscoveredFrom,
+		}
+		if err := r.store.AddDependency(ctx, dep, "ai-supervisor"); err != nil {
+			fmt.Printf("warning: failed to add discovered-from dependency: %v\n", err)
+		}
+	}
+
+	// Add comment explaining split
+	if strategy.AddComment != "" {
+		if err := r.store.AddComment(ctx, originalIssue.ID, "ai-supervisor", strategy.AddComment); err != nil {
+			fmt.Printf("warning: failed to add split work comment: %v\n", err)
+		}
+	}
+
+	// Close original if AI recommends it
+	if strategy.CloseOriginal {
+		reason := fmt.Sprintf("Work split into %d new issues: %s", len(createdIssues), strings.Join(createdIssues, ", "))
+		if err := r.store.CloseIssue(ctx, originalIssue.ID, reason, "ai-supervisor"); err != nil {
+			return fmt.Errorf("failed to close original issue: %w", err)
+		}
+	}
+
+	fmt.Printf("✓ AI recovery (split_work): created %d issue(s) and closed %s\n", len(createdIssues), originalIssue.ID)
+	return nil
+}
+
+// executeEscalate flags issue for human review
+func (r *Runner) executeEscalate(ctx context.Context, originalIssue *types.Issue, strategy *ai.RecoveryStrategy) error {
+	// Add escalation comment
+	escalationComment := fmt.Sprintf("🚨 **Escalated for human review**\n\n%s", strategy.AddComment)
+	if err := r.store.AddComment(ctx, originalIssue.ID, "ai-supervisor", escalationComment); err != nil {
+		fmt.Printf("warning: failed to add escalation comment: %v\n", err)
+	}
+
+	// Add escalation label
+	if err := r.store.AddLabel(ctx, originalIssue.ID, "escalated", "ai-supervisor"); err != nil {
+		fmt.Printf("warning: failed to add escalation label: %v\n", err)
+	}
+
+	// Mark as blocked if AI recommends it
+	if strategy.MarkAsBlocked {
+		updates := map[string]interface{}{
+			"status": types.StatusBlocked,
+		}
+		if err := r.store.UpdateIssue(ctx, originalIssue.ID, updates, "ai-supervisor"); err != nil {
+			return fmt.Errorf("failed to mark issue as blocked: %w", err)
+		}
+	}
+
+	fmt.Printf("🚨 AI recovery (escalate): %s flagged for human review\n", originalIssue.ID)
+	return nil
+}
+
+// executeRetry suggests retry without creating blocking issues
+func (r *Runner) executeRetry(ctx context.Context, originalIssue *types.Issue, strategy *ai.RecoveryStrategy) error {
+	// Add retry suggestion comment
+	retryComment := fmt.Sprintf("🔄 **Retry suggested**\n\n%s\n\nThe issue remains open for retry.", strategy.AddComment)
+	if err := r.store.AddComment(ctx, originalIssue.ID, "ai-supervisor", retryComment); err != nil {
+		fmt.Printf("warning: failed to add retry comment: %v\n", err)
+	}
+
+	// Don't mark as blocked - leave open for retry
+	fmt.Printf("🔄 AI recovery (retry): %s left open for retry\n", originalIssue.ID)
 	return nil
 }
 

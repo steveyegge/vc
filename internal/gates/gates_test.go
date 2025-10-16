@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/storage/sqlite"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -492,5 +493,240 @@ func TestFormatGateResult(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHandleGateResults_WithAI(t *testing.T) {
+	// Skip if ANTHROPIC_API_KEY not set
+	if os.Getenv("ANTHROPIC_API_KEY") == "" {
+		t.Skip("Skipping AI recovery strategy test: ANTHROPIC_API_KEY not set")
+	}
+
+	// Create temp db
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+
+	store, err := sqlite.New(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer store.Close()
+
+	// Create AI supervisor
+	supervisor, err := ai.NewSupervisor(&ai.Config{
+		Store: store,
+		Retry: ai.DefaultRetryConfig(),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create supervisor: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Create the original issue (P3 chore with minor lint failures)
+	originalIssue := &types.Issue{
+		ID:          "test-ai-1",
+		Title:       "Refactor code structure",
+		Description: "Clean up code organization",
+		Status:      types.StatusInProgress,
+		Priority:    3, // P3 - low priority chore
+		IssueType:   types.TypeChore,
+	}
+
+	if err := store.CreateIssue(ctx, originalIssue, "test"); err != nil {
+		t.Fatalf("Failed to create original issue: %v", err)
+	}
+
+	runner := &Runner{
+		store:      store,
+		supervisor: supervisor, // AI enabled
+		workingDir: ".",
+	}
+
+	// Simulate minor lint failures on a low-priority chore
+	// AI should likely recommend "acceptable_failure" or "retry"
+	results := []*Result{
+		{Gate: GateTest, Passed: true, Output: "All tests passed"},
+		{Gate: GateLint, Passed: false, Output: "line is 81 characters (max 80)", Error: os.ErrInvalid},
+		{Gate: GateBuild, Passed: true, Output: "Build successful"},
+	}
+
+	err = runner.HandleGateResults(ctx, originalIssue, results, false)
+	if err != nil {
+		t.Fatalf("HandleGateResults with AI failed: %v", err)
+	}
+
+	// Verify AI reasoning was logged
+	events, err := store.GetEvents(ctx, originalIssue.ID, 100)
+	if err != nil {
+		t.Fatalf("Failed to get events: %v", err)
+	}
+
+	// Should have AI strategy comment
+	foundAIComment := false
+	for _, event := range events {
+		if event.Actor == "ai-supervisor" {
+			foundAIComment = true
+			if event.Comment != nil {
+				t.Logf("AI Strategy comment: %s", *event.Comment)
+			}
+			break
+		}
+	}
+
+	if !foundAIComment {
+		t.Error("Expected AI supervisor comment not found")
+	}
+
+	// Note: We don't assert specific behavior because AI decisions are non-deterministic
+	// We just verify the AI was invoked and made a decision
+}
+
+func TestHandleGateResults_WithAI_CriticalFailures(t *testing.T) {
+	// Skip if ANTHROPIC_API_KEY not set
+	if os.Getenv("ANTHROPIC_API_KEY") == "" {
+		t.Skip("Skipping AI recovery strategy test: ANTHROPIC_API_KEY not set")
+	}
+
+	// Create temp db
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+
+	store, err := sqlite.New(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer store.Close()
+
+	// Create AI supervisor
+	supervisor, err := ai.NewSupervisor(&ai.Config{
+		Store: store,
+		Retry: ai.DefaultRetryConfig(),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create supervisor: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Create high-priority issue with critical test failures
+	originalIssue := &types.Issue{
+		ID:          "test-ai-2",
+		Title:       "Fix authentication bug",
+		Description: "Critical security issue in auth flow",
+		Status:      types.StatusInProgress,
+		Priority:    0, // P0 - critical
+		IssueType:   types.TypeBug,
+	}
+
+	if err := store.CreateIssue(ctx, originalIssue, "test"); err != nil {
+		t.Fatalf("Failed to create original issue: %v", err)
+	}
+
+	runner := &Runner{
+		store:      store,
+		supervisor: supervisor,
+		workingDir: ".",
+	}
+
+	// Simulate critical test failures on P0 bug
+	// AI should likely recommend "fix_in_place" or "escalate"
+	results := []*Result{
+		{Gate: GateTest, Passed: false, Output: "FAIL: TestAuthFlow\nPanic: nil pointer dereference", Error: os.ErrInvalid},
+		{Gate: GateLint, Passed: true, Output: "No lint errors"},
+		{Gate: GateBuild, Passed: true, Output: "Build successful"},
+	}
+
+	err = runner.HandleGateResults(ctx, originalIssue, results, false)
+	if err != nil {
+		t.Fatalf("HandleGateResults with AI failed: %v", err)
+	}
+
+	// Verify AI reasoning was logged
+	events, err := store.GetEvents(ctx, originalIssue.ID, 100)
+	if err != nil {
+		t.Fatalf("Failed to get events: %v", err)
+	}
+
+	foundAIComment := false
+	for _, event := range events {
+		if event.Actor == "ai-supervisor" {
+			foundAIComment = true
+			if event.Comment != nil {
+				t.Logf("AI Strategy for critical bug: %s", *event.Comment)
+			}
+			break
+		}
+	}
+
+	if !foundAIComment {
+		t.Error("Expected AI supervisor comment not found")
+	}
+}
+
+func TestHandleGateResults_NoAI_Fallback(t *testing.T) {
+	// Test that fallback logic works when no supervisor is configured
+
+	// Create temp db
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+
+	store, err := sqlite.New(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Create test issue
+	originalIssue := &types.Issue{
+		ID:          "test-fallback-1",
+		Title:       "Test fallback behavior",
+		Description: "Testing fallback when AI is unavailable",
+		Status:      types.StatusInProgress,
+		Priority:    2,
+		IssueType:   types.TypeTask,
+	}
+
+	if err := store.CreateIssue(ctx, originalIssue, "test"); err != nil {
+		t.Fatalf("Failed to create original issue: %v", err)
+	}
+
+	runner := &Runner{
+		store:      store,
+		supervisor: nil, // NO AI supervisor
+		workingDir: ".",
+	}
+
+	// Some gates failed
+	results := []*Result{
+		{Gate: GateTest, Passed: false, Output: "Test failure", Error: os.ErrInvalid},
+		{Gate: GateLint, Passed: true, Output: "No lint errors"},
+		{Gate: GateBuild, Passed: false, Output: "Build failure", Error: os.ErrInvalid},
+	}
+
+	err = runner.HandleGateResults(ctx, originalIssue, results, false)
+	if err != nil {
+		t.Fatalf("HandleGateResults fallback failed: %v", err)
+	}
+
+	// Verify fallback behavior: issue should be blocked
+	issue, err := store.GetIssue(ctx, originalIssue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get issue: %v", err)
+	}
+
+	if issue.Status != types.StatusBlocked {
+		t.Errorf("Fallback should mark issue as blocked, got %s", issue.Status)
+	}
+
+	// Verify blocking issues were created
+	testGateIssue, err := store.GetIssue(ctx, "test-fallback-1-gate-test")
+	if err != nil {
+		t.Fatalf("Fallback should create blocking issues: %v", err)
+	}
+	if testGateIssue.Status != types.StatusOpen {
+		t.Errorf("Expected blocking issue to be open")
 	}
 }
