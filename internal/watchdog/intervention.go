@@ -137,7 +137,7 @@ func (ic *InterventionController) PauseAgent(ctx context.Context, report *Anomal
 	}
 
 	// Emit watchdog event
-	if err := ic.emitWatchdogEvent(ctx, result); err != nil {
+	if err := ic.emitWatchdogEvent(ctx, result, ic.currentIssueID); err != nil {
 		result.Message += fmt.Sprintf(" (warning: failed to emit event: %v)", err)
 	}
 
@@ -180,7 +180,7 @@ func (ic *InterventionController) KillAgent(ctx context.Context, report *Anomaly
 	}
 
 	// Emit watchdog event
-	if err := ic.emitWatchdogEvent(ctx, result); err != nil {
+	if err := ic.emitWatchdogEvent(ctx, result, ic.currentIssueID); err != nil {
 		result.Message += fmt.Sprintf(" (warning: failed to emit event: %v)", err)
 	}
 
@@ -216,7 +216,7 @@ func (ic *InterventionController) PauseExecutor(ctx context.Context, report *Ano
 	}
 
 	// Emit watchdog event
-	if err := ic.emitWatchdogEvent(ctx, result); err != nil {
+	if err := ic.emitWatchdogEvent(ctx, result, ic.currentIssueID); err != nil {
 		result.Message += fmt.Sprintf(" (warning: failed to emit event: %v)", err)
 	}
 
@@ -255,7 +255,7 @@ func (ic *InterventionController) notifyHuman(ctx context.Context, report *Anoma
 	}
 	result.EscalationIssueID = escalationID
 
-	if err := ic.emitWatchdogEvent(ctx, result); err != nil {
+	if err := ic.emitWatchdogEvent(ctx, result, currentIssueID); err != nil {
 		result.Message += fmt.Sprintf(" (warning: failed to emit event: %v)", err)
 	}
 
@@ -286,7 +286,7 @@ func (ic *InterventionController) flagForInvestigation(ctx context.Context, repo
 	}
 	result.EscalationIssueID = escalationID
 
-	if err := ic.emitWatchdogEvent(ctx, result); err != nil {
+	if err := ic.emitWatchdogEvent(ctx, result, currentIssueID); err != nil {
 		result.Message += fmt.Sprintf(" (warning: failed to emit event: %v)", err)
 	}
 
@@ -408,8 +408,9 @@ func (ic *InterventionController) createEscalationIssue(ctx context.Context, rep
 }
 
 // emitWatchdogEvent emits a watchdog event through the event system
-func (ic *InterventionController) emitWatchdogEvent(ctx context.Context, result *InterventionResult) error {
-	if ic.currentIssueID == "" {
+// currentIssueID is passed as parameter to avoid reading ic.currentIssueID without lock
+func (ic *InterventionController) emitWatchdogEvent(ctx context.Context, result *InterventionResult, currentIssueID string) error {
+	if currentIssueID == "" {
 		// No current issue to attach event to
 		return nil
 	}
@@ -417,7 +418,7 @@ func (ic *InterventionController) emitWatchdogEvent(ctx context.Context, result 
 	comment := fmt.Sprintf("Watchdog intervention: %s - %s", result.InterventionType, result.Message)
 	actor := fmt.Sprintf("watchdog-%s", ic.executorInstanceID)
 
-	if err := ic.store.AddComment(ctx, ic.currentIssueID, actor, comment); err != nil {
+	if err := ic.store.AddComment(ctx, currentIssueID, actor, comment); err != nil {
 		return fmt.Errorf("failed to create watchdog event: %w", err)
 	}
 
