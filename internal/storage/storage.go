@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/storage/postgres"
 	"github.com/steveyegge/vc/internal/storage/sqlite"
 	"github.com/steveyegge/vc/internal/types"
@@ -12,6 +13,12 @@ import (
 
 // Storage defines the interface for issue storage backends
 type Storage interface {
+	// Agent Events - structured events extracted from agent output
+	StoreAgentEvent(ctx context.Context, event *events.AgentEvent) error
+	GetAgentEvents(ctx context.Context, filter events.EventFilter) ([]*events.AgentEvent, error)
+	GetAgentEventsByIssue(ctx context.Context, issueID string) ([]*events.AgentEvent, error)
+	GetRecentAgentEvents(ctx context.Context, limit int) ([]*events.AgentEvent, error)
+
 	// Issues
 	CreateIssue(ctx context.Context, issue *types.Issue, actor string) error
 	GetIssue(ctx context.Context, id string) (*types.Issue, error)

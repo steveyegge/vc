@@ -384,8 +384,28 @@ func (rp *ResultsProcessor) buildSummary(issue *types.Issue, agentResult *AgentR
 func (rp *ResultsProcessor) autoCommit(ctx context.Context, issue *types.Issue) (string, error) {
 	fmt.Printf("\n=== Auto-commit ===\n")
 
+	// Wrap git operations with event tracking
+	trackedGit, err := git.NewEventTracker(&git.EventTrackerConfig{
+		Git:        rp.gitOps,
+		Store:      rp.store,
+		IssueID:    issue.ID,
+		ExecutorID: rp.actor,
+		AgentID:    "results-processor",
+	})
+	if err != nil {
+		// Fallback to regular git ops if event tracker fails
+		fmt.Fprintf(os.Stderr, "warning: failed to create git event tracker: %v\n", err)
+		trackedGit = nil
+	}
+
+	// Use tracked git if available, otherwise use regular git ops
+	gitOps := rp.gitOps
+	if trackedGit != nil {
+		gitOps = trackedGit
+	}
+
 	// Step 1: Check if there are uncommitted changes
-	hasChanges, err := rp.gitOps.HasUncommittedChanges(ctx, rp.workingDir)
+	hasChanges, err := gitOps.HasUncommittedChanges(ctx, rp.workingDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to check for uncommitted changes: %w", err)
 	}
@@ -396,7 +416,7 @@ func (rp *ResultsProcessor) autoCommit(ctx context.Context, issue *types.Issue) 
 	}
 
 	// Step 2: Get git status to determine changed files
-	status, err := rp.gitOps.GetStatus(ctx, rp.workingDir)
+	status, err := gitOps.GetStatus(ctx, rp.workingDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to get git status: %w", err)
 	}
@@ -449,7 +469,7 @@ func (rp *ResultsProcessor) autoCommit(ctx context.Context, issue *types.Issue) 
 		AllowEmpty: false,
 	}
 
-	commitHash, err := rp.gitOps.CommitChanges(ctx, rp.workingDir, commitOpts)
+	commitHash, err := gitOps.CommitChanges(ctx, rp.workingDir, commitOpts)
 	if err != nil {
 		return "", fmt.Errorf("failed to commit changes: %w", err)
 	}

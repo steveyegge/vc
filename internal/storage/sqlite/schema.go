@@ -124,4 +124,26 @@ CREATE TABLE IF NOT EXISTS issue_execution_state (
 CREATE INDEX IF NOT EXISTS idx_execution_state_executor ON issue_execution_state(executor_instance_id);
 CREATE INDEX IF NOT EXISTS idx_execution_state_state ON issue_execution_state(state);
 CREATE INDEX IF NOT EXISTS idx_execution_state_updated ON issue_execution_state(updated_at);
+
+-- Agent events table
+-- Tracks events extracted from agent execution output (file changes, tests, git ops, errors, etc.)
+CREATE TABLE IF NOT EXISTS agent_events (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL CHECK(type IN ('file_modified', 'test_run', 'git_operation', 'build_output', 'lint_output', 'progress', 'error', 'watchdog_alert')),
+    timestamp DATETIME NOT NULL,
+    issue_id TEXT NOT NULL,
+    executor_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    severity TEXT NOT NULL CHECK(severity IN ('info', 'warning', 'error', 'critical')),
+    message TEXT NOT NULL,
+    data TEXT NOT NULL DEFAULT '{}',
+    source_line INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_events_issue ON agent_events(issue_id);
+CREATE INDEX IF NOT EXISTS idx_agent_events_type ON agent_events(type);
+CREATE INDEX IF NOT EXISTS idx_agent_events_severity ON agent_events(severity);
+CREATE INDEX IF NOT EXISTS idx_agent_events_timestamp ON agent_events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_agent_events_executor ON agent_events(executor_id);
 `
