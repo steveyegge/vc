@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -54,12 +55,14 @@ func (et *EventTracker) HasUncommittedChanges(ctx context.Context, repoPath stri
 	hasChanges, err := et.git.HasUncommittedChanges(ctx, repoPath)
 
 	// Track this as a status check operation
-	_ = et.emitEvent(ctx, events.SeverityInfo, "Git status check", map[string]interface{}{
+	if eventErr := et.emitEvent(ctx, events.SeverityInfo, "Git status check", map[string]interface{}{
 		"command":     "git",
 		"args":        []string{"status", "--porcelain"},
 		"success":     err == nil,
 		"has_changes": hasChanges,
-	})
+	}); eventErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to store git event: %v\n", eventErr)
+	}
 
 	return hasChanges, err
 }
@@ -82,7 +85,9 @@ func (et *EventTracker) GetStatus(ctx context.Context, repoPath string) (*Status
 		eventData["untracked"] = len(status.Untracked)
 	}
 
-	_ = et.emitEvent(ctx, events.SeverityInfo, "Git status", eventData)
+	if eventErr := et.emitEvent(ctx, events.SeverityInfo, "Git status", eventData); eventErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to store git event: %v\n", eventErr)
+	}
 
 	return status, err
 }
@@ -117,7 +122,9 @@ func (et *EventTracker) CommitChanges(ctx context.Context, repoPath string, opts
 		eventData["co_authors"] = opts.CoAuthors
 	}
 
-	_ = et.emitEvent(ctx, severity, message, eventData)
+	if eventErr := et.emitEvent(ctx, severity, message, eventData); eventErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to store git event: %v\n", eventErr)
+	}
 
 	return commitHash, err
 }
@@ -165,7 +172,9 @@ func (et *EventTracker) Rebase(ctx context.Context, repoPath string, opts Rebase
 		}
 	}
 
-	_ = et.emitEvent(ctx, severity, message, eventData)
+	if eventErr := et.emitEvent(ctx, severity, message, eventData); eventErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to store git event: %v\n", eventErr)
+	}
 
 	return result, err
 }
@@ -194,7 +203,9 @@ func (et *EventTracker) GetConflictDetails(ctx context.Context, req ConflictReso
 		eventData["file_count"] = len(result.FileConflicts)
 	}
 
-	_ = et.emitEvent(ctx, severity, message, eventData)
+	if eventErr := et.emitEvent(ctx, severity, message, eventData); eventErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to store git event: %v\n", eventErr)
+	}
 
 	return result, err
 }
@@ -223,7 +234,9 @@ func (et *EventTracker) ValidateConflictResolution(ctx context.Context, repoPath
 		"files":    files,
 	}
 
-	_ = et.emitEvent(ctx, severity, message, eventData)
+	if eventErr := et.emitEvent(ctx, severity, message, eventData); eventErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to store git event: %v\n", eventErr)
+	}
 
 	return resolved, err
 }

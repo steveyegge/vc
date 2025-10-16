@@ -113,7 +113,7 @@ CREATE INDEX IF NOT EXISTS idx_executor_instances_heartbeat ON executor_instance
 CREATE TABLE IF NOT EXISTS issue_execution_state (
     issue_id TEXT PRIMARY KEY,
     executor_instance_id TEXT NOT NULL,
-    state TEXT NOT NULL DEFAULT 'claimed' CHECK(state IN ('claimed', 'assessing', 'executing', 'analyzing', 'gates', 'completed')),
+    state TEXT NOT NULL DEFAULT 'claimed' CHECK(state IN ('claimed', 'assessing', 'executing', 'analyzing', 'gates', 'committing', 'completed')),
     checkpoint_data TEXT NOT NULL DEFAULT '{}',
     started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
