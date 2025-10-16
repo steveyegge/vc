@@ -12,6 +12,12 @@ import (
 	"github.com/steveyegge/vc/internal/types"
 )
 
+// timestamp returns a formatted timestamp for activity logging
+func timestamp() string {
+	gray := color.New(color.FgHiBlack).SprintFunc()
+	return gray(time.Now().Format("[15:04:05]"))
+}
+
 // cmdContinue finds ready work and spawns a worker to execute it
 // This implements vc-75 and uses vc-76's ResultsProcessor
 func (r *REPL) cmdContinue(args []string) error {
@@ -22,7 +28,7 @@ func (r *REPL) cmdContinue(args []string) error {
 	yellow := color.New(color.FgYellow).SprintFunc()
 	red := color.New(color.FgRed).SprintFunc()
 
-	fmt.Printf("\n%s\n", cyan("Finding ready work..."))
+	fmt.Printf("\n%s %s\n", timestamp(), cyan("Finding ready work..."))
 
 	// Step 1: Get ready work (limit 1)
 	issues, err := r.store.GetReadyWork(ctx, types.WorkFilter{
@@ -64,7 +70,7 @@ func (r *REPL) cmdContinue(args []string) error {
 		return fmt.Errorf("failed to claim issue %s: %w", issue.ID, err)
 	}
 
-	fmt.Printf("%s Claimed issue %s\n\n", green("✓"), issue.ID)
+	fmt.Printf("%s %s Claimed issue %s\n\n", timestamp(), green("✓"), issue.ID)
 
 	// Update execution state to executing
 	if err := r.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateExecuting); err != nil {
@@ -72,7 +78,7 @@ func (r *REPL) cmdContinue(args []string) error {
 	}
 
 	// Step 4: Spawn Claude Code worker
-	fmt.Printf("%s Spawning Claude Code worker...\n\n", cyan("⚙"))
+	fmt.Printf("%s %s Spawning Claude Code worker...\n\n", timestamp(), cyan("⚙"))
 
 	agentCfg := executor.AgentConfig{
 		Type:       executor.AgentTypeClaudeCode,
@@ -88,7 +94,7 @@ func (r *REPL) cmdContinue(args []string) error {
 		return fmt.Errorf("failed to spawn agent: %w", err)
 	}
 
-	fmt.Println(cyan("=== Worker Output ==="))
+	fmt.Printf("%s %s\n", timestamp(), cyan("=== Worker Output ==="))
 	fmt.Println()
 
 	// Step 5: Wait for completion (output is streamed in real-time by agent.go)
@@ -99,7 +105,7 @@ func (r *REPL) cmdContinue(args []string) error {
 	}
 
 	fmt.Println()
-	fmt.Println(cyan("=== Worker Completed ==="))
+	fmt.Printf("%s %s\n", timestamp(), cyan("=== Worker Completed ==="))
 	fmt.Println()
 
 	// Step 6: Process results using ResultsProcessor (vc-76 implementation)
@@ -133,18 +139,18 @@ func (r *REPL) cmdContinue(args []string) error {
 	// Step 7: Show summary to user
 	fmt.Println()
 	if procResult.Completed {
-		fmt.Printf("%s Issue %s completed successfully!\n", green("✓"), issue.ID)
+		fmt.Printf("%s %s Issue %s completed successfully!\n", timestamp(), green("✓"), issue.ID)
 	} else if !procResult.GatesPassed {
-		fmt.Printf("%s Issue %s blocked by quality gates\n", red("✗"), issue.ID)
+		fmt.Printf("%s %s Issue %s blocked by quality gates\n", timestamp(), red("✗"), issue.ID)
 	} else if !result.Success {
-		fmt.Printf("%s Worker failed for issue %s\n", red("✗"), issue.ID)
+		fmt.Printf("%s %s Worker failed for issue %s\n", timestamp(), red("✗"), issue.ID)
 	} else {
-		fmt.Printf("%s Issue %s partially complete (left open)\n", yellow("⚡"), issue.ID)
+		fmt.Printf("%s %s Issue %s partially complete (left open)\n", timestamp(), yellow("⚡"), issue.ID)
 	}
 
 	if len(procResult.DiscoveredIssues) > 0 {
-		fmt.Printf("%s Created %d follow-on issues: %v\n",
-			green("✓"), len(procResult.DiscoveredIssues), procResult.DiscoveredIssues)
+		fmt.Printf("%s %s Created %d follow-on issues: %v\n",
+			timestamp(), green("✓"), len(procResult.DiscoveredIssues), procResult.DiscoveredIssues)
 	}
 
 	fmt.Println()
