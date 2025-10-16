@@ -173,6 +173,7 @@ const (
 	EventDependencyRemoved EventType = "dependency_removed"
 	EventLabelAdded        EventType = "label_added"
 	EventLabelRemoved      EventType = "label_removed"
+	EventWatchdog          EventType = "watchdog"
 )
 
 // BlockedIssue extends Issue with blocking information
