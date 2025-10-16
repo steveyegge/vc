@@ -8,20 +8,21 @@ import (
 
 // Issue represents a trackable work item
 type Issue struct {
-	ID                 string     `json:"id"`
-	Title              string     `json:"title"`
-	Description        string     `json:"description"`
-	Design             string     `json:"design,omitempty"`
-	AcceptanceCriteria string     `json:"acceptance_criteria,omitempty"`
-	Notes              string     `json:"notes,omitempty"`
-	Status             Status     `json:"status"`
-	Priority           int        `json:"priority"`
-	IssueType          IssueType  `json:"issue_type"`
-	Assignee           string     `json:"assignee,omitempty"`
-	EstimatedMinutes   *int       `json:"estimated_minutes,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
-	ClosedAt           *time.Time `json:"closed_at,omitempty"`
+	ID                 string        `json:"id"`
+	Title              string        `json:"title"`
+	Description        string        `json:"description"`
+	Design             string        `json:"design,omitempty"`
+	AcceptanceCriteria string        `json:"acceptance_criteria,omitempty"`
+	Notes              string        `json:"notes,omitempty"`
+	Status             Status        `json:"status"`
+	Priority           int           `json:"priority"`
+	IssueType          IssueType     `json:"issue_type"`
+	IssueSubtype       IssueSubtype  `json:"issue_subtype,omitempty"` // mission, phase, or empty for normal issues
+	Assignee           string        `json:"assignee,omitempty"`
+	EstimatedMinutes   *int          `json:"estimated_minutes,omitempty"`
+	CreatedAt          time.Time     `json:"created_at"`
+	UpdatedAt          time.Time     `json:"updated_at"`
+	ClosedAt           *time.Time    `json:"closed_at,omitempty"`
 }
 
 // Validate checks if the issue has valid field values
@@ -40,6 +41,9 @@ func (i *Issue) Validate() error {
 	}
 	if !i.IssueType.IsValid() {
 		return fmt.Errorf("invalid issue type: %s", i.IssueType)
+	}
+	if !i.IssueSubtype.IsValid() {
+		return fmt.Errorf("invalid issue subtype: %s", i.IssueSubtype)
 	}
 	if i.EstimatedMinutes != nil && *i.EstimatedMinutes < 0 {
 		return fmt.Errorf("estimated_minutes cannot be negative")
@@ -81,6 +85,24 @@ const (
 func (t IssueType) IsValid() bool {
 	switch t {
 	case TypeBug, TypeFeature, TypeTask, TypeEpic, TypeChore:
+		return true
+	}
+	return false
+}
+
+// IssueSubtype provides additional categorization for epics
+type IssueSubtype string
+
+const (
+	SubtypeMission IssueSubtype = "mission" // Top-level epic with multiple phase children
+	SubtypePhase   IssueSubtype = "phase"   // Phase epic within a mission
+	SubtypeNormal  IssueSubtype = ""        // Normal issue (not a mission or phase)
+)
+
+// IsValid checks if the issue subtype value is valid
+func (s IssueSubtype) IsValid() bool {
+	switch s {
+	case SubtypeMission, SubtypePhase, SubtypeNormal:
 		return true
 	}
 	return false

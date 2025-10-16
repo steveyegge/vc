@@ -134,12 +134,18 @@ func (o *Orchestrator) CreatePhasesFromPlan(ctx context.Context, missionID strin
 		}
 	}
 
+	// Validate phase structure using AI before creating issues
+	if err := o.planner.ValidatePhaseStructure(ctx, plan.Phases); err != nil {
+		return nil, fmt.Errorf("phase structure validation failed: %w", err)
+	}
+
 	// Create each phase as a child epic
 	for _, plannedPhase := range plan.Phases {
 		phase := &types.Issue{
 			Title:              plannedPhase.Title,
 			Description:        plannedPhase.Description,
 			IssueType:          types.TypeEpic,
+			IssueSubtype:       types.SubtypePhase, // Explicitly mark as phase
 			Status:             types.StatusOpen,
 			Priority:           mission.Priority, // Inherit from parent mission
 			Design:             fmt.Sprintf("Strategy: %s\n\nTasks:\n%s", plannedPhase.Strategy, joinTasks(plannedPhase.Tasks)),
@@ -170,10 +176,15 @@ func (o *Orchestrator) CreatePhasesFromPlan(ctx context.Context, missionID strin
 		// plannedPhase.Dependencies contains phase numbers (1-indexed)
 		// We need to convert to phase IDs
 		for _, depPhaseNum := range plannedPhase.Dependencies {
-			// Validate: phases can only depend on earlier phases
-			if depPhaseNum < 1 || depPhaseNum >= plannedPhase.PhaseNumber {
+			// Basic validation: phase numbers must be valid
+			if depPhaseNum < 1 || depPhaseNum > len(plan.Phases) {
 				cleanup()
-				return nil, fmt.Errorf("invalid phase dependency: phase %d depends on phase %d (must be < current phase)", plannedPhase.PhaseNumber, depPhaseNum)
+				return nil, fmt.Errorf("invalid phase dependency: phase %d depends on non-existent phase %d", plannedPhase.PhaseNumber, depPhaseNum)
+			}
+			// Skip if referring to itself
+			if depPhaseNum == plannedPhase.PhaseNumber {
+				cleanup()
+				return nil, fmt.Errorf("invalid phase dependency: phase %d cannot depend on itself", plannedPhase.PhaseNumber)
 			}
 			depPhaseID := phaseIDs[depPhaseNum-1]
 
@@ -254,25 +265,12 @@ func (o *Orchestrator) HandlePhaseCompletion(ctx context.Context, phaseID string
 	}
 
 	// Find parent mission (parent-child dependency)
+	// Use explicit subtype instead of counting children (ZFC compliance)
 	var missionID string
 	for _, dep := range deps {
-		if dep.IssueType == types.TypeEpic {
-			// Could be a mission - check if it's actually a mission by seeing if it has phases
-			children, err := o.store.GetDependents(ctx, dep.ID)
-			if err != nil {
-				continue
-			}
-			// If it has multiple epic children (phases), it's a mission
-			epicChildren := 0
-			for _, child := range children {
-				if child.IssueType == types.TypeEpic {
-					epicChildren++
-				}
-			}
-			if epicChildren > 1 {
-				missionID = dep.ID
-				break
-			}
+		if dep.IssueType == types.TypeEpic && dep.IssueSubtype == types.SubtypeMission {
+			missionID = dep.ID
+			break
 		}
 	}
 

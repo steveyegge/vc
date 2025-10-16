@@ -621,18 +621,12 @@ func (s *Supervisor) buildCompletionPrompt(issue *types.Issue, children []*types
 		childSummary.WriteString(fmt.Sprintf("%s %s (%s) - %s\n", statusSymbol, child.ID, child.Status, child.Title))
 	}
 
-	// Note: Missions are just epics with multiple epic children
-	// We can detect missions by checking if children are mostly epics
+	// Use explicit subtype instead of heuristics (ZFC compliance)
 	issueTypeStr := "epic"
-	epicChildCount := 0
-	for _, child := range children {
-		if child.IssueType == types.TypeEpic {
-			epicChildCount++
-		}
-	}
-	// If more than 1 epic child, this is likely a mission
-	if epicChildCount > 1 {
+	if issue.IssueSubtype == types.SubtypeMission {
 		issueTypeStr = "mission"
+	} else if issue.IssueSubtype == types.SubtypePhase {
+		issueTypeStr = "phase"
 	}
 
 	return fmt.Sprintf(`You are assessing whether an %s is truly complete and should be closed.
@@ -1176,6 +1170,143 @@ func (s *Supervisor) ValidatePlan(ctx context.Context, plan *types.MissionPlan) 
 	}
 
 	return nil
+}
+
+// ValidatePhaseStructure validates phase dependencies and ordering using AI
+// This replaces hardcoded validation rules (like "phases can only depend on earlier phases")
+// with AI-driven validation that can be more flexible and context-aware
+func (s *Supervisor) ValidatePhaseStructure(ctx context.Context, phases []types.PlannedPhase) error {
+	startTime := time.Now()
+
+	// For very simple cases (single phase, no dependencies), skip AI validation
+	if len(phases) == 1 {
+		return nil
+	}
+
+	// Build validation prompt
+	prompt := s.buildPhaseValidationPrompt(phases)
+
+	// Call Anthropic API with retry logic
+	var response *anthropic.Message
+	err := s.retryWithBackoff(ctx, "phase-validation", func(attemptCtx context.Context) error {
+		resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(s.model),
+			MaxTokens: 2048,
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			},
+		})
+		if apiErr != nil {
+			return apiErr
+		}
+		response = resp
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("anthropic API call failed: %w", err)
+	}
+
+	// Extract the text content from the response
+	var responseText string
+	for _, block := range response.Content {
+		if block.Type == "text" {
+			responseText += block.Text
+		}
+	}
+
+	// Parse the response
+	type validationResult struct {
+		Valid     bool     `json:"valid"`
+		Errors    []string `json:"errors"`
+		Warnings  []string `json:"warnings"`
+		Reasoning string   `json:"reasoning"`
+	}
+
+	parseResult := Parse[validationResult](responseText, ParseOptions{
+		Context:   "phase validation response",
+		LogErrors: true,
+	})
+	if !parseResult.Success {
+		return fmt.Errorf("failed to parse phase validation response: %s (response: %s)", parseResult.Error, responseText)
+	}
+	result := parseResult.Data
+
+	// Log the validation
+	duration := time.Since(startTime)
+	fmt.Printf("AI Phase Validation: valid=%v, errors=%d, warnings=%d, duration=%v\n",
+		result.Valid, len(result.Errors), len(result.Warnings), duration)
+
+	// Log AI usage (use a dummy issue ID for now since we don't have one in this context)
+	if err := s.logAIUsage(ctx, "phase-validation", "phase-validation", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
+	}
+
+	// If invalid, return the errors
+	if !result.Valid {
+		return fmt.Errorf("phase structure validation failed: %s (errors: %v)", result.Reasoning, result.Errors)
+	}
+
+	// Log warnings if any
+	for _, warning := range result.Warnings {
+		fmt.Printf("Phase validation warning: %s\n", warning)
+	}
+
+	return nil
+}
+
+// buildPhaseValidationPrompt builds the prompt for validating phase structure
+func (s *Supervisor) buildPhaseValidationPrompt(phases []types.PlannedPhase) string {
+	// Build phase summary
+	var phaseSummary strings.Builder
+	for _, phase := range phases {
+		phaseSummary.WriteString(fmt.Sprintf("\nPhase %d: %s\n", phase.PhaseNumber, phase.Title))
+		phaseSummary.WriteString(fmt.Sprintf("  Description: %s\n", phase.Description))
+		phaseSummary.WriteString(fmt.Sprintf("  Dependencies: %v\n", phase.Dependencies))
+		phaseSummary.WriteString(fmt.Sprintf("  Estimated Effort: %s\n", phase.EstimatedEffort))
+	}
+
+	return fmt.Sprintf(`You are validating the structure and dependencies of a multi-phase implementation plan.
+
+PHASES TO VALIDATE:
+%s
+
+VALIDATION TASK:
+Check if this phase structure makes logical sense. Consider:
+
+1. **Dependency Validity**: Are dependencies sensible?
+   - Typically phases depend on earlier phases, but forward dependencies MAY be valid in special cases
+   - Example: Phase 3 depending on Phase 5 might be valid if Phase 5 is foundational infrastructure
+
+2. **Circular Dependencies**: Are there any circular dependency chains?
+   - Phase A → Phase B → Phase A is always invalid
+
+3. **Missing Dependencies**: Are there obvious missing dependencies?
+   - If Phase 3 builds on Phase 2's work, it should depend on Phase 2
+
+4. **Logical Ordering**: Does the phase sequence make sense?
+   - Foundation before features
+   - Core before polish
+   - Setup before execution
+
+IMPORTANT: Be flexible. Not all plans follow strict "earlier phases only" rules. Consider the context.
+
+Provide your validation as a JSON object:
+{
+  "valid": true/false,
+  "errors": ["Critical error 1", "Critical error 2"],
+  "warnings": ["Concern 1", "Concern 2"],
+  "reasoning": "Detailed explanation of the assessment"
+}
+
+Guidelines:
+- errors: Critical issues that MUST be fixed (invalid structure, circular deps)
+- warnings: Concerns that should be reviewed but might be intentional
+- reasoning: Explain your assessment clearly
+- Be pragmatic: unusual structures might be valid if there's good reason
+
+IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (` + "```" + `). Just the JSON object.`,
+		phaseSummary.String())
 }
 
 // buildPlanningPrompt builds the prompt for generating a mission plan

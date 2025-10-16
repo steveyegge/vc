@@ -224,6 +224,11 @@ type MissionPlanner interface {
 	// ValidatePlan checks if a generated plan is valid and executable
 	// Returns error if plan has issues, nil if valid
 	ValidatePlan(ctx context.Context, plan *MissionPlan) error
+
+	// ValidatePhaseStructure validates phase dependencies and ordering
+	// Returns error if phase structure is invalid (e.g., circular dependencies, invalid ordering)
+	// This delegates validation logic to AI rather than using hardcoded rules
+	ValidatePhaseStructure(ctx context.Context, phases []PlannedPhase) error
 }
 
 // PlannedTask represents a granular task within a phase

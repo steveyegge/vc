@@ -33,6 +33,10 @@ func (m *MockPlanner) ValidatePlan(ctx context.Context, plan *types.MissionPlan)
 	return nil
 }
 
+func (m *MockPlanner) ValidatePhaseStructure(ctx context.Context, phases []types.PlannedPhase) error {
+	return nil
+}
+
 // MockStorage is a minimal mock for testing (only implements methods we need)
 type MockStorage struct {
 	issues           map[string]*types.Issue
@@ -57,6 +61,17 @@ func (m *MockStorage) GetIssue(ctx context.Context, id string) (*types.Issue, er
 		return issue, nil
 	}
 	return nil, ErrNotFound
+}
+
+func (m *MockStorage) GetMission(ctx context.Context, id string) (*types.Mission, error) {
+	issue, err := m.GetIssue(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	// Convert Issue to Mission (simple stub for testing)
+	return &types.Mission{
+		Issue: *issue,
+	}, nil
 }
 
 func (m *MockStorage) CreateIssue(ctx context.Context, issue *types.Issue, actor string) error {
@@ -591,11 +606,12 @@ func TestHandlePhaseCompletion(t *testing.T) {
 
 	// Create mission
 	mission := &types.Issue{
-		ID:        "mission-1",
-		Title:     "Test Mission",
-		IssueType: types.TypeEpic,
-		Status:    types.StatusOpen,
-		Priority:  0,
+		ID:           "mission-1",
+		Title:        "Test Mission",
+		IssueType:    types.TypeEpic,
+		IssueSubtype: types.SubtypeMission, // Mark as mission
+		Status:       types.StatusOpen,
+		Priority:     0,
 	}
 	store.issues["mission-1"] = mission
 
@@ -657,11 +673,12 @@ func TestCheckMissionCompletion_PartialProgress(t *testing.T) {
 
 	// Create mission
 	mission := &types.Issue{
-		ID:        "mission-1",
-		Title:     "Test Mission",
-		IssueType: types.TypeEpic,
-		Status:    types.StatusOpen,
-		Priority:  0,
+		ID:           "mission-1",
+		Title:        "Test Mission",
+		IssueType:    types.TypeEpic,
+		IssueSubtype: types.SubtypeMission, // Mark as mission
+		Status:       types.StatusOpen,
+		Priority:     0,
 	}
 	store.issues["mission-1"] = mission
 

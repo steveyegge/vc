@@ -59,6 +59,16 @@ func (m *mockStorage) AddDependency(ctx context.Context, dep *types.Dependency, 
 func (m *mockStorage) GetIssue(ctx context.Context, id string) (*types.Issue, error) {
 	return m.issues[id], nil
 }
+func (m *mockStorage) GetMission(ctx context.Context, id string) (*types.Mission, error) {
+	issue, err := m.GetIssue(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if issue == nil {
+		return nil, nil
+	}
+	return &types.Mission{Issue: *issue}, nil
+}
 func (m *mockStorage) UpdateIssue(ctx context.Context, id string, updates map[string]interface{}, actor string) error {
 	return nil
 }
