@@ -185,6 +185,58 @@ func (s *SQLiteStorage) GetIssue(ctx context.Context, id string) (*types.Issue, 
 	return &issue, nil
 }
 
+// GetMission retrieves a mission by ID with approval metadata
+func (s *SQLiteStorage) GetMission(ctx context.Context, id string) (*types.Mission, error) {
+	var mission types.Mission
+	var closedAt sql.NullTime
+	var approvedAt sql.NullTime
+	var estimatedMinutes sql.NullInt64
+	var assignee sql.NullString
+	var approvedBy sql.NullString
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, title, description, design, acceptance_criteria, notes,
+		       status, priority, issue_type, assignee, estimated_minutes,
+		       created_at, updated_at, closed_at, approved_at, approved_by
+		FROM issues
+		WHERE id = ?
+	`, id).Scan(
+		&mission.ID, &mission.Title, &mission.Description, &mission.Design,
+		&mission.AcceptanceCriteria, &mission.Notes, &mission.Status,
+		&mission.Priority, &mission.IssueType, &assignee, &estimatedMinutes,
+		&mission.CreatedAt, &mission.UpdatedAt, &closedAt, &approvedAt, &approvedBy,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mission: %w", err)
+	}
+
+	// Set nullable fields
+	if closedAt.Valid {
+		mission.ClosedAt = &closedAt.Time
+	}
+	if estimatedMinutes.Valid {
+		mins := int(estimatedMinutes.Int64)
+		mission.EstimatedMinutes = &mins
+	}
+	if assignee.Valid {
+		mission.Assignee = assignee.String
+	}
+
+	// Set mission-specific approval fields
+	if approvedAt.Valid {
+		mission.ApprovedAt = &approvedAt.Time
+	}
+	if approvedBy.Valid {
+		mission.ApprovedBy = approvedBy.String
+	}
+
+	return &mission, nil
+}
+
 // Allowed fields for update to prevent SQL injection
 var allowedUpdateFields = map[string]bool{
 	"status":              true,

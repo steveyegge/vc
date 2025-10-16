@@ -893,3 +893,138 @@ func getEnv(key, defaultValue string) string {
 	}
 	return defaultValue
 }
+
+// TestGetMissionWithApprovalMetadata tests that GetMission properly loads approval fields
+func TestGetMissionWithApprovalMetadata(t *testing.T) {
+	backends := []string{"sqlite", "postgres"}
+
+	for _, backend := range backends {
+		t.Run(backend, func(t *testing.T) {
+			if backend == "postgres" && !isPostgresAvailable() {
+				t.Skip("PostgreSQL not available")
+			}
+
+			ctx := context.Background()
+			store := setupStorage(t, backend)
+			defer store.Close()
+
+			// Create a mission (epic issue type)
+			mission := &types.Issue{
+				ID:                 "", // Will be auto-generated
+				Title:              "Test Mission",
+				Description:        "Mission for testing approval metadata",
+				IssueType:          types.TypeEpic,
+				Status:             types.StatusOpen,
+				Priority:           0,
+				AcceptanceCriteria: "All phases complete",
+				CreatedAt:          time.Now(),
+				UpdatedAt:          time.Now(),
+			}
+			if err := store.CreateIssue(ctx, mission, "test"); err != nil {
+				t.Fatalf("Failed to create mission: %v", err)
+			}
+
+			// Test 1: Mission without approval (ApprovedAt = nil)
+			retrieved, err := store.GetMission(ctx, mission.ID)
+			if err != nil {
+				t.Fatalf("Failed to get mission: %v", err)
+			}
+			if retrieved == nil {
+				t.Fatal("GetMission returned nil")
+			}
+			if retrieved.ApprovedAt != nil {
+				t.Errorf("Expected ApprovedAt to be nil, got %v", retrieved.ApprovedAt)
+			}
+			if retrieved.ApprovedBy != "" {
+				t.Errorf("Expected ApprovedBy to be empty, got %s", retrieved.ApprovedBy)
+			}
+
+			// Test 2: Approve the mission
+			approvalTime := time.Now()
+			approver := "test-user"
+			updates := map[string]interface{}{
+				"approved_at": approvalTime,
+				"approved_by": approver,
+			}
+			if err := store.UpdateIssue(ctx, mission.ID, updates, "test"); err != nil {
+				t.Fatalf("Failed to update mission with approval: %v", err)
+			}
+
+			// Test 3: Retrieve mission again and verify approval fields are populated
+			approved, err := store.GetMission(ctx, mission.ID)
+			if err != nil {
+				t.Fatalf("Failed to get approved mission: %v", err)
+			}
+			if approved == nil {
+				t.Fatal("GetMission returned nil for approved mission")
+			}
+			if approved.ApprovedAt == nil {
+				t.Error("Expected ApprovedAt to be set after approval")
+			} else {
+				// Check that the time is close (within 1 second due to rounding)
+				diff := approved.ApprovedAt.Sub(approvalTime)
+				if diff < 0 {
+					diff = -diff
+				}
+				if diff > time.Second {
+					t.Errorf("ApprovedAt time mismatch: expected %v, got %v (diff: %v)",
+						approvalTime, approved.ApprovedAt, diff)
+				}
+			}
+			if approved.ApprovedBy != approver {
+				t.Errorf("Expected ApprovedBy to be %s, got %s", approver, approved.ApprovedBy)
+			}
+
+			// Test 4: Verify IsApproved() works correctly with database state
+			// First test: Mission with ApprovalRequired=false should return true
+			approved.ApprovalRequired = false
+			if !approved.IsApproved() {
+				t.Error("Mission with ApprovalRequired=false should be approved")
+			}
+
+			// Second test: Mission with ApprovalRequired=true and ApprovedAt set should return true
+			approved.ApprovalRequired = true
+			if !approved.IsApproved() {
+				t.Error("Mission with ApprovalRequired=true and ApprovedAt set should be approved")
+			}
+
+			// Test 5: Create a mission that requires approval but hasn't been approved
+			unapprovedMission := &types.Issue{
+				Title:              "Unapproved Mission",
+				Description:        "Mission requiring approval",
+				IssueType:          types.TypeEpic,
+				Status:             types.StatusOpen,
+				Priority:           0,
+				AcceptanceCriteria: "Needs approval",
+				CreatedAt:          time.Now(),
+				UpdatedAt:          time.Now(),
+			}
+			if err := store.CreateIssue(ctx, unapprovedMission, "test"); err != nil {
+				t.Fatalf("Failed to create unapproved mission: %v", err)
+			}
+
+			unapproved, err := store.GetMission(ctx, unapprovedMission.ID)
+			if err != nil {
+				t.Fatalf("Failed to get unapproved mission: %v", err)
+			}
+			unapproved.ApprovalRequired = true
+			if unapproved.IsApproved() {
+				t.Error("Mission with ApprovalRequired=true and ApprovedAt=nil should not be approved")
+			}
+
+			// Test 6: Verify GetIssue doesn't populate approval fields (sanity check)
+			asIssue, err := store.GetIssue(ctx, mission.ID)
+			if err != nil {
+				t.Fatalf("Failed to get mission as issue: %v", err)
+			}
+			// GetIssue returns *types.Issue which doesn't have ApprovedAt/ApprovedBy fields
+			// Just verify it doesn't fail
+			if asIssue == nil {
+				t.Fatal("GetIssue returned nil")
+			}
+			if asIssue.ID != mission.ID {
+				t.Errorf("Expected issue ID %s, got %s", mission.ID, asIssue.ID)
+			}
+		})
+	}
+}

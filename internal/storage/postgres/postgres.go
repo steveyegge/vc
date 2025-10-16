@@ -242,6 +242,51 @@ func (s *PostgresStorage) GetIssue(ctx context.Context, id string) (*types.Issue
 	return &issue, nil
 }
 
+// GetMission retrieves a mission by ID with approval metadata
+func (s *PostgresStorage) GetMission(ctx context.Context, id string) (*types.Mission, error) {
+	var mission types.Mission
+	var closedAt *time.Time
+	var approvedAt *time.Time
+	var estimatedMinutes *int
+	var assignee *string
+	var approvedBy *string
+
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, title, description, design, acceptance_criteria, notes,
+		       status, priority, issue_type, assignee, estimated_minutes,
+		       created_at, updated_at, closed_at, approved_at, approved_by
+		FROM issues
+		WHERE id = $1
+	`, id).Scan(
+		&mission.ID, &mission.Title, &mission.Description, &mission.Design,
+		&mission.AcceptanceCriteria, &mission.Notes, &mission.Status,
+		&mission.Priority, &mission.IssueType, &assignee, &estimatedMinutes,
+		&mission.CreatedAt, &mission.UpdatedAt, &closedAt, &approvedAt, &approvedBy,
+	)
+
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mission: %w", err)
+	}
+
+	// Set nullable fields
+	mission.ClosedAt = closedAt
+	mission.EstimatedMinutes = estimatedMinutes
+	if assignee != nil {
+		mission.Assignee = *assignee
+	}
+
+	// Set mission-specific approval fields
+	mission.ApprovedAt = approvedAt
+	if approvedBy != nil {
+		mission.ApprovedBy = *approvedBy
+	}
+
+	return &mission, nil
+}
+
 // UpdateIssue updates fields on an issue
 func (s *PostgresStorage) UpdateIssue(ctx context.Context, id string, updates map[string]interface{}, actor string) error {
 	// Get old issue for event
