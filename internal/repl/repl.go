@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/chzyer/readline"
 	"github.com/fatih/color"
 	"github.com/steveyegge/vc/internal/storage"
+	"github.com/steveyegge/vc/internal/types"
 )
 
 // REPL represents the interactive shell
@@ -19,6 +21,8 @@ type REPL struct {
 	actor        string
 	commands     map[string]CommandHandler
 	conversation *ConversationHandler
+	pendingPlans map[string]*types.MissionPlan // Mission plans awaiting approval
+	plansMu      sync.RWMutex                   // Protects pendingPlans map
 }
 
 // CommandHandler handles a specific command
@@ -42,9 +46,10 @@ func New(cfg *Config) (*REPL, error) {
 	}
 
 	r := &REPL{
-		store:    cfg.Store,
-		actor:    actor,
-		commands: make(map[string]CommandHandler),
+		store:        cfg.Store,
+		actor:        actor,
+		commands:     make(map[string]CommandHandler),
+		pendingPlans: make(map[string]*types.MissionPlan),
 	}
 
 	// Register built-in commands
@@ -150,6 +155,10 @@ func (r *REPL) registerCommands() {
 	r.commands["/ready"] = r.cmdReady
 	r.commands["/blocked"] = r.cmdBlocked
 	r.commands["/continue"] = r.cmdContinue
+	// Mission approval commands
+	r.commands["/plan"] = r.cmdPlan
+	r.commands["/approve"] = r.cmdApprove
+	r.commands["/reject"] = r.cmdReject
 }
 
 // printWelcome prints the welcome message
@@ -178,6 +187,12 @@ func (r *REPL) cmdHelp(args []string) error {
 	fmt.Printf("  %s         Show ready work\n", green("/ready"))
 	fmt.Printf("  %s       Show blocked issues\n", green("/blocked"))
 	fmt.Printf("  %s      Resume execution - claim and execute ready work\n", green("/continue"))
+	fmt.Println()
+	fmt.Printf("%s\n", cyan("Mission Planning:"))
+	fmt.Printf("  %s <id>      Show mission plan for review\n", green("/plan"))
+	fmt.Printf("  %s <id>   Approve mission plan and proceed\n", green("/approve"))
+	fmt.Printf("  %s <id>    Reject mission plan with optional reason\n", green("/reject"))
+	fmt.Println()
 	fmt.Printf("  %s          Exit the REPL\n", green("/exit"))
 	fmt.Println()
 
