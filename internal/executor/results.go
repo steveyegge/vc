@@ -111,11 +111,23 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
 		}
 
+		// Log analysis started
+		rp.logEvent(ctx, events.EventTypeAnalysisStarted, events.SeverityInfo, issue.ID,
+			fmt.Sprintf("Starting AI analysis for issue %s", issue.ID),
+			map[string]interface{}{})
+
 		var err error
 		analysis, err = rp.supervisor.AnalyzeExecutionResult(ctx, issue, agentOutput, agentResult.Success)
 		if err != nil {
 			// Don't fail - just log and continue
 			fmt.Fprintf(os.Stderr, "Warning: AI analysis failed: %v (continuing without analysis)\n", err)
+			// Log analysis failure
+			rp.logEvent(ctx, events.EventTypeAnalysisCompleted, events.SeverityError, issue.ID,
+				fmt.Sprintf("AI analysis failed: %v", err),
+				map[string]interface{}{
+					"success": false,
+					"error":   err.Error(),
+				})
 		} else {
 			result.AIAnalysis = analysis
 			fmt.Printf("\n=== AI Analysis ===\n")
@@ -123,6 +135,15 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			fmt.Printf("Discovered Issues: %d\n", len(analysis.DiscoveredIssues))
 			fmt.Printf("Quality Issues: %d\n", len(analysis.QualityIssues))
 			fmt.Printf("Summary: %s\n", analysis.Summary)
+			// Log analysis success
+			rp.logEvent(ctx, events.EventTypeAnalysisCompleted, events.SeverityInfo, issue.ID,
+				fmt.Sprintf("AI analysis completed for issue %s", issue.ID),
+				map[string]interface{}{
+					"success":          true,
+					"completed":        analysis.Completed,
+					"discovered_count": len(analysis.DiscoveredIssues),
+					"quality_issues":   len(analysis.QualityIssues),
+				})
 		}
 	}
 
@@ -136,9 +157,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 		// Log quality gates started
 		rp.logEvent(ctx, events.EventTypeQualityGatesStarted, events.SeverityInfo, issue.ID,
 			fmt.Sprintf("Starting quality gates evaluation for issue %s", issue.ID),
-			map[string]interface{}{
-				"issue_id": issue.ID,
-			})
+			map[string]interface{}{})
 
 		gateRunner, err := gates.NewRunner(&gates.Config{
 			Store:      rp.store,
@@ -147,12 +166,11 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to create quality gate runner: %v (skipping gates)\n", err)
 			// Log quality gates error
-			rp.logEvent(ctx, events.EventTypeQualityGatesCompleted, events.SeverityWarning, issue.ID,
+			rp.logEvent(ctx, events.EventTypeQualityGatesCompleted, events.SeverityError, issue.ID,
 				fmt.Sprintf("Quality gate runner creation failed: %v", err),
 				map[string]interface{}{
-					"issue_id": issue.ID,
-					"success":  false,
-					"error":    err.Error(),
+					"success": false,
+					"error":   err.Error(),
 				})
 		} else {
 			gateResults, allPassed := gateRunner.RunAll(ctx)
@@ -165,9 +183,8 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 
 			// Log quality gates completed
 			gateData := map[string]interface{}{
-				"issue_id":     issue.ID,
-				"all_passed":   allPassed,
-				"gates_run":    len(gateResults),
+				"all_passed": allPassed,
+				"gates_run":  len(gateResults),
 			}
 
 			// Count passed and failed gates
@@ -213,6 +230,19 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				return result, nil
 			}
 		}
+	} else {
+		// Quality gates skipped - log why
+		var reason string
+		if !agentResult.Success {
+			reason = "agent execution failed"
+		} else {
+			reason = "quality gates disabled"
+		}
+		rp.logEvent(ctx, events.EventTypeQualityGatesSkipped, events.SeverityInfo, issue.ID,
+			fmt.Sprintf("Quality gates skipped for issue %s: %s", issue.ID, reason),
+			map[string]interface{}{
+				"reason": reason,
+			})
 	}
 
 	// Step 3.5: Auto-commit changes (if enabled, agent succeeded, and gates passed)
@@ -428,13 +458,18 @@ func (rp *ResultsProcessor) buildSummary(issue *types.Issue, agentResult *AgentR
 
 // logEvent creates and stores an agent event for observability
 func (rp *ResultsProcessor) logEvent(ctx context.Context, eventType events.EventType, severity events.EventSeverity, issueID, message string, data map[string]interface{}) {
+	// Skip logging if context is cancelled (e.g., during shutdown)
+	if ctx.Err() != nil {
+		return
+	}
+
 	event := &events.AgentEvent{
 		ID:         uuid.New().String(),
 		Type:       eventType,
 		Timestamp:  time.Now(),
 		IssueID:    issueID,
 		ExecutorID: rp.actor,
-		AgentID:    "", // Populated later for agent-specific events
+		AgentID:    "", // Empty for executor-level events (not produced by coding agents)
 		Severity:   severity,
 		Message:    message,
 		Data:       data,

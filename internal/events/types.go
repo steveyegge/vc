@@ -41,10 +41,16 @@ const (
 	EventTypeResultsProcessingStarted EventType = "results_processing_started"
 	// EventTypeResultsProcessingCompleted indicates results processing phase completed
 	EventTypeResultsProcessingCompleted EventType = "results_processing_completed"
+	// EventTypeAnalysisStarted indicates AI analysis phase started
+	EventTypeAnalysisStarted EventType = "analysis_started"
+	// EventTypeAnalysisCompleted indicates AI analysis phase completed
+	EventTypeAnalysisCompleted EventType = "analysis_completed"
 	// EventTypeQualityGatesStarted indicates quality gates evaluation started
 	EventTypeQualityGatesStarted EventType = "quality_gates_started"
 	// EventTypeQualityGatesCompleted indicates quality gates evaluation completed
 	EventTypeQualityGatesCompleted EventType = "quality_gates_completed"
+	// EventTypeQualityGatesSkipped indicates quality gates evaluation was skipped
+	EventTypeQualityGatesSkipped EventType = "quality_gates_skipped"
 )
 
 // EventSeverity represents the severity level of an event.

@@ -127,9 +127,19 @@ CREATE INDEX IF NOT EXISTS idx_execution_state_updated ON issue_execution_state(
 
 -- Agent events table
 -- Tracks events extracted from agent execution output (file changes, tests, git ops, errors, etc.)
+-- AND executor-level events (issue claimed, assessment, agent lifecycle, quality gates, etc.)
 CREATE TABLE IF NOT EXISTS agent_events (
     id TEXT PRIMARY KEY,
-    type TEXT NOT NULL CHECK(type IN ('file_modified', 'test_run', 'git_operation', 'build_output', 'lint_output', 'progress', 'error', 'watchdog_alert')),
+    type TEXT NOT NULL CHECK(type IN (
+        -- Agent output events
+        'file_modified', 'test_run', 'git_operation', 'build_output', 'lint_output', 'progress', 'error', 'watchdog_alert',
+        -- Executor-level events
+        'issue_claimed', 'assessment_started', 'assessment_completed',
+        'agent_spawned', 'agent_completed',
+        'results_processing_started', 'results_processing_completed',
+        'analysis_started', 'analysis_completed',
+        'quality_gates_started', 'quality_gates_completed', 'quality_gates_skipped'
+    )),
     timestamp DATETIME NOT NULL,
     issue_id TEXT NOT NULL,
     executor_id TEXT NOT NULL,

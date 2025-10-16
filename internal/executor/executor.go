@@ -268,9 +268,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	e.logEvent(ctx, events.EventTypeIssueClaimed, events.SeverityInfo, issue.ID,
 		fmt.Sprintf("Issue %s claimed by executor %s", issue.ID, e.instanceID),
 		map[string]interface{}{
-			"issue_id":    issue.ID,
 			"issue_title": issue.Title,
-			"executor_id": e.instanceID,
 		})
 
 	// Phase 1: AI Assessment (if enabled)
@@ -284,9 +282,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		// Log assessment started
 		e.logEvent(ctx, events.EventTypeAssessmentStarted, events.SeverityInfo, issue.ID,
 			fmt.Sprintf("Starting AI assessment for issue %s", issue.ID),
-			map[string]interface{}{
-				"issue_id": issue.ID,
-			})
+			map[string]interface{}{})
 
 		var err error
 		assessment, err = e.supervisor.AssessIssueState(ctx, issue)
@@ -294,12 +290,11 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 			// Don't fail execution - just log and continue without assessment
 			fmt.Fprintf(os.Stderr, "Warning: AI assessment failed: %v (continuing without assessment)\n", err)
 			// Log assessment failure
-			e.logEvent(ctx, events.EventTypeAssessmentCompleted, events.SeverityWarning, issue.ID,
+			e.logEvent(ctx, events.EventTypeAssessmentCompleted, events.SeverityError, issue.ID,
 				fmt.Sprintf("AI assessment failed: %v", err),
 				map[string]interface{}{
-					"issue_id": issue.ID,
-					"success":  false,
-					"error":    err.Error(),
+					"success": false,
+					"error":   err.Error(),
 				})
 		} else {
 			// Log the assessment as a comment
@@ -322,7 +317,6 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 			e.logEvent(ctx, events.EventTypeAssessmentCompleted, events.SeverityInfo, issue.ID,
 				fmt.Sprintf("AI assessment completed for issue %s", issue.ID),
 				map[string]interface{}{
-					"issue_id":         issue.ID,
 					"success":          true,
 					"strategy":         assessment.Strategy,
 					"confidence":       assessment.Confidence,
@@ -349,16 +343,15 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 
 	agent, err := SpawnAgent(ctx, agentCfg)
 	if err != nil {
-		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to spawn agent: %v", err))
-		// Log agent spawn failure
+		// Log agent spawn failure BEFORE releasing issue
 		e.logEvent(ctx, events.EventTypeAgentSpawned, events.SeverityError, issue.ID,
 			fmt.Sprintf("Failed to spawn agent: %v", err),
 			map[string]interface{}{
-				"issue_id":   issue.ID,
 				"success":    false,
 				"agent_type": agentCfg.Type,
 				"error":      err.Error(),
 			})
+		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to spawn agent: %v", err))
 		return fmt.Errorf("failed to spawn agent: %w", err)
 	}
 
@@ -366,7 +359,6 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	e.logEvent(ctx, events.EventTypeAgentSpawned, events.SeverityInfo, issue.ID,
 		fmt.Sprintf("Agent spawned for issue %s", issue.ID),
 		map[string]interface{}{
-			"issue_id":   issue.ID,
 			"success":    true,
 			"agent_type": agentCfg.Type,
 		})
@@ -374,15 +366,14 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	// Wait for agent to complete
 	result, err := agent.Wait(ctx)
 	if err != nil {
-		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Agent execution failed: %v", err))
-		// Log agent execution failure
+		// Log agent execution failure BEFORE releasing issue
 		e.logEvent(ctx, events.EventTypeAgentCompleted, events.SeverityError, issue.ID,
 			fmt.Sprintf("Agent execution failed: %v", err),
 			map[string]interface{}{
-				"issue_id": issue.ID,
-				"success":  false,
-				"error":    err.Error(),
+				"success": false,
+				"error":   err.Error(),
 			})
+		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Agent execution failed: %v", err))
 		return fmt.Errorf("agent execution failed: %w", err)
 	}
 
@@ -390,7 +381,6 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	e.logEvent(ctx, events.EventTypeAgentCompleted, events.SeverityInfo, issue.ID,
 		fmt.Sprintf("Agent completed execution for issue %s", issue.ID),
 		map[string]interface{}{
-			"issue_id":     issue.ID,
 			"success":      true,
 			"exit_code":    result.ExitCode,
 			"duration_ms":  result.Duration.Milliseconds(),
@@ -403,9 +393,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	// Log results processing started
 	e.logEvent(ctx, events.EventTypeResultsProcessingStarted, events.SeverityInfo, issue.ID,
 		fmt.Sprintf("Starting results processing for issue %s", issue.ID),
-		map[string]interface{}{
-			"issue_id": issue.ID,
-		})
+		map[string]interface{}{})
 
 	processor, err := NewResultsProcessor(&ResultsProcessorConfig{
 		Store:              e.store,
@@ -415,29 +403,27 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		Actor:              e.instanceID,
 	})
 	if err != nil {
-		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to create results processor: %v", err))
-		// Log results processing failure
+		// Log results processing failure BEFORE releasing issue
 		e.logEvent(ctx, events.EventTypeResultsProcessingCompleted, events.SeverityError, issue.ID,
 			fmt.Sprintf("Results processor creation failed: %v", err),
 			map[string]interface{}{
-				"issue_id": issue.ID,
-				"success":  false,
-				"error":    err.Error(),
+				"success": false,
+				"error":   err.Error(),
 			})
+		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to create results processor: %v", err))
 		return fmt.Errorf("failed to create results processor: %w", err)
 	}
 
 	procResult, err := processor.ProcessAgentResult(ctx, issue, result)
 	if err != nil {
-		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to process results: %v", err))
-		// Log results processing failure
+		// Log results processing failure BEFORE releasing issue
 		e.logEvent(ctx, events.EventTypeResultsProcessingCompleted, events.SeverityError, issue.ID,
 			fmt.Sprintf("Results processing failed: %v", err),
 			map[string]interface{}{
-				"issue_id": issue.ID,
-				"success":  false,
-				"error":    err.Error(),
+				"success": false,
+				"error":   err.Error(),
 			})
+		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to process results: %v", err))
 		return fmt.Errorf("failed to process agent result: %w", err)
 	}
 
@@ -445,12 +431,11 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	e.logEvent(ctx, events.EventTypeResultsProcessingCompleted, events.SeverityInfo, issue.ID,
 		fmt.Sprintf("Results processing completed for issue %s", issue.ID),
 		map[string]interface{}{
-			"issue_id":           issue.ID,
-			"success":            true,
-			"completed":          procResult.Completed,
-			"gates_passed":       procResult.GatesPassed,
-			"discovered_issues":  len(procResult.DiscoveredIssues),
-			"commit_hash":        procResult.CommitHash,
+			"success":           true,
+			"completed":         procResult.Completed,
+			"gates_passed":      procResult.GatesPassed,
+			"discovered_issues": len(procResult.DiscoveredIssues),
+			"commit_hash":       procResult.CommitHash,
 		})
 
 	// Print summary
@@ -461,13 +446,18 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 
 // logEvent creates and stores an agent event for observability
 func (e *Executor) logEvent(ctx context.Context, eventType events.EventType, severity events.EventSeverity, issueID, message string, data map[string]interface{}) {
+	// Skip logging if context is cancelled (e.g., during shutdown)
+	if ctx.Err() != nil {
+		return
+	}
+
 	event := &events.AgentEvent{
 		ID:         uuid.New().String(),
 		Type:       eventType,
 		Timestamp:  time.Now(),
 		IssueID:    issueID,
 		ExecutorID: e.instanceID,
-		AgentID:    "", // Populated later for agent-specific events
+		AgentID:    "", // Empty for executor-level events (not produced by coding agents)
 		Severity:   severity,
 		Message:    message,
 		Data:       data,
