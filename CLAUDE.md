@@ -404,3 +404,69 @@ git commit -m "your message"
 ---
 
 **Remember**: When in doubt, check `bd ready` to see what needs doing!
+
+---
+
+## 💬 Using the VC Conversational REPL (For End Users)
+
+**Note**: This section describes the VC REPL for end users. As an AI agent working on VC's codebase, you'll use `bd` commands. But users of VC will interact via the conversational interface.
+
+### Pure Conversational Interface
+
+VC provides a natural language interface - no slash commands to memorize (except `/quit`).
+
+**Starting VC:**
+```bash
+export ANTHROPIC_API_KEY=your-key-here
+./vc
+```
+
+**Example conversations:**
+
+Finding and starting work:
+```
+You: What's ready to work on?
+AI: [Shows ready issues]
+You: Let's continue working
+AI: [Executes next ready issue]
+```
+
+Creating issues:
+```
+You: We need Docker support
+AI: [Creates feature issue]
+You: Add tests for authentication
+AI: [Creates task]
+```
+
+Monitoring:
+```
+You: How's the project doing?
+AI: [Shows project statistics]
+You: What's blocked?
+AI: [Lists blocked issues with details]
+```
+
+Multi-turn context:
+```
+You: Create an epic for user management
+AI: [Creates epic vc-200]
+You: Add login, registration, and password reset as children
+AI: [Creates 3 tasks and links to epic]
+```
+
+### Available Conversational Tools
+
+The AI has access to these tools (you don't call them directly):
+- **create_issue**: Creates issues from natural language
+- **create_epic**: Creates epic (container) issues
+- **add_child_to_epic**: Links issues to epics
+- **get_ready_work**: Shows issues ready to execute
+- **get_issue**: Retrieves issue details
+- **get_status**: Shows project statistics
+- **get_blocked_issues**: Lists blocked issues
+- **continue_execution**: Executes work (the VibeCoder Primitive)
+- **get_recent_activity**: Shows agent execution history
+- **search_issues**: Searches issues by text
+
+The AI understands your intent and uses these tools automatically.

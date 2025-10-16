@@ -400,7 +400,9 @@ func (c *ConversationHandler) SendMessage(ctx context.Context, userMessage strin
 	return "", fmt.Errorf("conversation exceeded maximum iterations (%d)", MaxConversationIterations)
 }
 
-// executeTool executes a tool and returns the result
+// executeTool executes a tool and returns the result.
+// This dispatcher routes tool calls from the AI to the appropriate handler function.
+// Each tool has typed validation and error handling.
 func (c *ConversationHandler) executeTool(ctx context.Context, name string, input interface{}) (string, error) {
 	inputMap, ok := input.(map[string]interface{})
 	if !ok {
@@ -433,6 +435,10 @@ func (c *ConversationHandler) executeTool(ctx context.Context, name string, inpu
 	}
 }
 
+// toolCreateIssue creates a new issue from natural language input.
+// Supports all issue types (bug, feature, task, chore) with optional design and acceptance criteria.
+// Input: title (required), description, type (default: task), priority (default: 2), design, acceptance
+// Returns: Formatted success message with issue ID
 func (c *ConversationHandler) toolCreateIssue(ctx context.Context, input map[string]interface{}) (string, error) {
 	title, _ := input["title"].(string)
 	if title == "" {
@@ -484,6 +490,10 @@ func (c *ConversationHandler) toolCreateIssue(ctx context.Context, input map[str
 	return fmt.Sprintf("Created %s %s: %s", issueType, issue.ID, title), nil
 }
 
+// toolCreateEpic creates an epic (container for related work).
+// Epics are automatically given priority 1 and can have children added via toolAddChildToEpic.
+// Input: title (required), description, design, acceptance
+// Returns: Formatted success message with epic ID
 func (c *ConversationHandler) toolCreateEpic(ctx context.Context, input map[string]interface{}) (string, error) {
 	title, _ := input["title"].(string)
 	if title == "" {
@@ -514,6 +524,10 @@ func (c *ConversationHandler) toolCreateEpic(ctx context.Context, input map[stri
 	return fmt.Sprintf("Created epic %s: %s", epic.ID, title), nil
 }
 
+// toolAddChildToEpic links an issue as a child of an epic.
+// Creates parent-child dependency and optionally a blocks relationship.
+// Input: epic_id (required), child_issue_id (required), blocks (default: true)
+// Returns: Formatted success message with both IDs
 func (c *ConversationHandler) toolAddChildToEpic(ctx context.Context, input map[string]interface{}) (string, error) {
 	epicID, _ := input["epic_id"].(string)
 	childID, _ := input["child_issue_id"].(string)
@@ -559,6 +573,10 @@ func (c *ConversationHandler) toolAddChildToEpic(ctx context.Context, input map[
 	return fmt.Sprintf("Added %s as child of epic %s (blocks=%v)", childID, epicID, blocks), nil
 }
 
+// toolGetReadyWork retrieves issues that are ready to execute (no blockers).
+// Returns issues in priority order with type and priority information.
+// Input: limit (default: 5)
+// Returns: Formatted list of ready issues or "No ready work found"
 func (c *ConversationHandler) toolGetReadyWork(ctx context.Context, input map[string]interface{}) (string, error) {
 	limit := 5
 	if l, ok := input["limit"].(float64); ok {
@@ -587,6 +605,10 @@ func (c *ConversationHandler) toolGetReadyWork(ctx context.Context, input map[st
 	return result, nil
 }
 
+// toolGetIssue retrieves detailed information about a specific issue.
+// Returns full issue data as JSON including dependencies and metadata.
+// Input: issue_id (required)
+// Returns: JSON representation of the issue
 func (c *ConversationHandler) toolGetIssue(ctx context.Context, input map[string]interface{}) (string, error) {
 	issueID, _ := input["issue_id"].(string)
 	if issueID == "" {
@@ -606,6 +628,10 @@ func (c *ConversationHandler) toolGetIssue(ctx context.Context, input map[string
 	return string(data), nil
 }
 
+// toolGetStatus retrieves overall project statistics.
+// Shows issue counts by status, ready work, and average lead time.
+// Input: none (validates that no parameters are passed)
+// Returns: Formatted project status summary
 func (c *ConversationHandler) toolGetStatus(ctx context.Context, input map[string]interface{}) (string, error) {
 	// Validate no unexpected input parameters (tool takes no parameters)
 	if len(input) > 0 {
@@ -637,6 +663,10 @@ func (c *ConversationHandler) toolGetStatus(ctx context.Context, input map[strin
 	return result, nil
 }
 
+// toolGetBlockedIssues retrieves issues blocked by dependencies.
+// Returns issues with details about what's blocking them.
+// Input: limit (default: 10)
+// Returns: Formatted list of blocked issues with blocker IDs or "No blocked issues found"
 func (c *ConversationHandler) toolGetBlockedIssues(ctx context.Context, input map[string]interface{}) (string, error) {
 	limit := 10
 	if l, ok := input["limit"].(float64); ok {
@@ -670,6 +700,10 @@ func (c *ConversationHandler) toolGetBlockedIssues(ctx context.Context, input ma
 	return result, nil
 }
 
+// toolGetRecentActivity retrieves recent agent execution events.
+// Shows what agents have been doing across all issues or for a specific issue.
+// Input: limit (default: 20), issue_id (optional filter)
+// Returns: Formatted list of agent events with timestamps and severity or "No recent agent activity found"
 func (c *ConversationHandler) toolGetRecentActivity(ctx context.Context, input map[string]interface{}) (string, error) {
 	limit := 20
 	if l, ok := input["limit"].(float64); ok {
@@ -717,6 +751,10 @@ func (c *ConversationHandler) toolGetRecentActivity(ctx context.Context, input m
 	return result, nil
 }
 
+// toolSearchIssues performs full-text search across issues.
+// Searches titles, descriptions, and other text fields with optional status filter.
+// Input: query (required), status (optional), limit (default: 10)
+// Returns: Formatted list of matching issues with truncated descriptions or "No issues found"
 func (c *ConversationHandler) toolSearchIssues(ctx context.Context, input map[string]interface{}) (string, error) {
 	query, _ := input["query"].(string)
 	if query == "" {
@@ -760,6 +798,11 @@ func (c *ConversationHandler) toolSearchIssues(ctx context.Context, input map[st
 	return result, nil
 }
 
+// toolContinueExecution executes work on an issue (THE VIBECODER PRIMITIVE).
+// Spawns a coding agent, processes results, runs quality gates, and creates follow-on issues.
+// This is the core operation of VibeCoder - AI-supervised execution of coding work.
+// Input: issue_id (optional - picks next ready if not provided), async (not yet implemented)
+// Returns: Execution status, completion details, and any discovered follow-on work
 func (c *ConversationHandler) toolContinueExecution(ctx context.Context, input map[string]interface{}) (string, error) {
 	issueID, _ := input["issue_id"].(string)
 	async := false

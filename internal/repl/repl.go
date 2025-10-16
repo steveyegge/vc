@@ -126,16 +126,21 @@ func (r *REPL) processInput(line string) error {
 func (r *REPL) printWelcome() {
 	cyan := color.New(color.FgCyan, color.Bold).SprintFunc()
 	gray := color.New(color.FgHiBlack).SprintFunc()
+	green := color.New(color.FgGreen).SprintFunc()
 	fmt.Printf("\n%s\n", cyan("Welcome to VC - VibeCoder v2"))
 	fmt.Println("AI-orchestrated coding agent colony")
 	fmt.Println()
-	fmt.Println("Talk to the AI naturally to manage work:")
+	fmt.Printf("%s No commands to memorize - just talk naturally!\n", green("✓"))
+	fmt.Println()
+	fmt.Println("Example interactions:")
 	fmt.Printf("  %s\n", gray("• \"What's ready to work on?\""))
 	fmt.Printf("  %s\n", gray("• \"Let's continue working\""))
 	fmt.Printf("  %s\n", gray("• \"Add a login feature\""))
 	fmt.Printf("  %s\n", gray("• \"Show me what's blocked\""))
+	fmt.Printf("  %s\n", gray("• \"How's the project doing?\""))
+	fmt.Printf("  %s\n", gray("• \"Create an epic for user auth\""))
 	fmt.Println()
-	fmt.Printf("Type %s to exit\n", cyan("/quit"))
+	fmt.Printf("Type %s or %s to exit\n", cyan("/quit"), cyan("/exit"))
 	fmt.Println()
 }
 

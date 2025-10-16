@@ -57,14 +57,59 @@ Loop {
 ## Quick Start
 
 ```bash
-# Build
+# Set up environment
+export ANTHROPIC_API_KEY=your-key-here
+
+# Build and run
 go build -o vc ./cmd/vc
+./vc
 
-# View work
-./vc ready
+# Talk to VC naturally:
+vc> What's ready to work on?
+vc> Let's continue working
+vc> Add a feature for CSV export
+vc> Show me what's blocked
+vc> How's the project doing?
+```
 
-# Start executor (when ready)
-./vc execute --epic vc-1
+The REPL provides a pure conversational interface - no commands to memorize. The AI understands your intent and uses the appropriate tools to help you manage work.
+
+### Example Conversations
+
+**Starting work:**
+```
+You: What's ready to work on?
+AI: [Shows 3 ready issues with priorities]
+You: Let's work on the first one
+AI: [Starts execution on vc-123]
+```
+
+**Creating issues:**
+```
+You: We need Docker support
+AI: [Creates feature issue vc-145]
+You: Make that priority 0
+AI: [Updates priority]
+You: Now work on it
+AI: [Starts execution]
+```
+
+**Monitoring progress:**
+```
+You: How's the project doing?
+AI: [Shows 50 total, 12 ready, 3 blocked, 22 closed]
+You: What's blocking us?
+AI: [Lists blocked issues with blocker details]
+```
+
+**Context-aware:**
+```
+You: Add user authentication
+AI: [Creates epic vc-200]
+You: Break that into login, registration, and password reset
+AI: [Creates 3 child tasks]
+You: Link them to the epic
+AI: [Adds dependencies]
 ```
 
 ## Documentation
