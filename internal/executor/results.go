@@ -97,7 +97,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 	}
 
 	// Step 1: Extract agent output summary
-	agentOutput := rp.extractSummary(agentResult)
+	agentOutput := rp.extractSummary(ctx, issue, agentResult)
 	fmt.Printf("\n=== Agent Execution Complete ===\n")
 	fmt.Printf("Success: %v\n", agentResult.Success)
 	fmt.Printf("Exit Code: %d\n", agentResult.ExitCode)
@@ -364,8 +364,35 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 	return result, nil
 }
 
-// extractSummary extracts a summary from agent output
-func (rp *ResultsProcessor) extractSummary(result *AgentResult) string {
+// extractSummary extracts a summary from agent output using AI
+func (rp *ResultsProcessor) extractSummary(ctx context.Context, issue *types.Issue, result *AgentResult) string {
+	if len(result.Output) == 0 {
+		return "Agent completed with no output"
+	}
+
+	// Join output lines into full text
+	fullOutput := strings.Join(result.Output, "\n")
+
+	// Use AI summarization if supervisor is available
+	if rp.supervisor != nil {
+		// Target summary length: aim for ~2000 chars (enough for meaningful summary)
+		const maxSummaryLength = 2000
+
+		summary, err := rp.supervisor.SummarizeAgentOutput(ctx, issue, fullOutput, maxSummaryLength)
+		if err != nil {
+			// Fall back to heuristic-based summary if AI fails
+			fmt.Fprintf(os.Stderr, "Warning: AI summarization failed, using fallback: %v\n", err)
+			return rp.fallbackExtractSummary(result)
+		}
+		return summary
+	}
+
+	// No supervisor available, use fallback
+	return rp.fallbackExtractSummary(result)
+}
+
+// fallbackExtractSummary provides the old heuristic-based summary as a fallback
+func (rp *ResultsProcessor) fallbackExtractSummary(result *AgentResult) string {
 	if len(result.Output) == 0 {
 		return "Agent completed with no output"
 	}
