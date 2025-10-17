@@ -15,7 +15,7 @@ func (s *SQLiteStorage) AddLabel(ctx context.Context, issueID, label, actor stri
 	}
 	defer tx.Rollback()
 
-	_, err = tx.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO labels (issue_id, label)
 		VALUES (?, ?)
 	`, issueID, label)
@@ -23,12 +23,20 @@ func (s *SQLiteStorage) AddLabel(ctx context.Context, issueID, label, actor stri
 		return fmt.Errorf("failed to add label: %w", err)
 	}
 
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO events (issue_id, event_type, actor, comment)
-		VALUES (?, ?, ?, ?)
-	`, issueID, types.EventLabelAdded, actor, fmt.Sprintf("Added label: %s", label))
+	// Only record event if a row was actually inserted
+	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("failed to record event: %w", err)
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+
+	if rowsAffected > 0 {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO events (issue_id, event_type, actor, comment)
+			VALUES (?, ?, ?, ?)
+		`, issueID, types.EventLabelAdded, actor, fmt.Sprintf("Added label: %s", label))
+		if err != nil {
+			return fmt.Errorf("failed to record event: %w", err)
+		}
 	}
 
 	return tx.Commit()
@@ -42,19 +50,27 @@ func (s *SQLiteStorage) RemoveLabel(ctx context.Context, issueID, label, actor s
 	}
 	defer tx.Rollback()
 
-	_, err = tx.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 		DELETE FROM labels WHERE issue_id = ? AND label = ?
 	`, issueID, label)
 	if err != nil {
 		return fmt.Errorf("failed to remove label: %w", err)
 	}
 
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO events (issue_id, event_type, actor, comment)
-		VALUES (?, ?, ?, ?)
-	`, issueID, types.EventLabelRemoved, actor, fmt.Sprintf("Removed label: %s", label))
+	// Only record event if a row was actually deleted
+	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("failed to record event: %w", err)
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+
+	if rowsAffected > 0 {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO events (issue_id, event_type, actor, comment)
+			VALUES (?, ?, ?, ?)
+		`, issueID, types.EventLabelRemoved, actor, fmt.Sprintf("Removed label: %s", label))
+		if err != nil {
+			return fmt.Errorf("failed to record event: %w", err)
+		}
 	}
 
 	return tx.Commit()
