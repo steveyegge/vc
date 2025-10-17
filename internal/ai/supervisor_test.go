@@ -82,9 +82,9 @@ func (m *mockStorage) RemoveDependency(ctx context.Context, issueID, dependsOnID
 	return nil
 }
 func (m *mockStorage) GetDependencies(ctx context.Context, issueID string) ([]*types.Issue, error) {
-func (m *mockStorage) GetDependencyRecords(ctx context.Context, issueID string) ([]*types.Dependency, error) {
 	return nil, nil
 }
+func (m *mockStorage) GetDependencyRecords(ctx context.Context, issueID string) ([]*types.Dependency, error) {
 	return nil, nil
 }
 func (m *mockStorage) GetDependents(ctx context.Context, issueID string) ([]*types.Issue, error) {
@@ -151,6 +151,14 @@ func (m *mockStorage) ReleaseIssue(ctx context.Context, issueID string) error {
 	return nil
 }
 func (m *mockStorage) Close() error {
+	return nil
+}
+
+// Execution History methods
+func (m *mockStorage) GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error) {
+	return nil, nil
+}
+func (m *mockStorage) RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error {
 	return nil
 }
 
