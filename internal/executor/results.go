@@ -244,18 +244,55 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 					"error":   err.Error(),
 				})
 		} else {
-			gateResults, allPassed := gateRunner.RunAll(ctx)
-			result.GatesPassed = allPassed
+			// Create timeout context for quality gates (vc-245)
+			// 5 minutes should be enough for test/lint/build, but prevents indefinite hangs
+			gateCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+			defer cancel()
+
+			fmt.Printf("Running quality gates (timeout: 5m)...\n")
+
+			// Run gates with timeout protection
+			gateResults, allPassed := gateRunner.RunAll(gateCtx)
+
+			// Log progress for each gate (vc-245)
+			for _, gateResult := range gateResults {
+				status := "PASS"
+				severity := events.SeverityInfo
+				if !gateResult.Passed {
+					status = "FAIL"
+					severity = events.SeverityWarning
+				}
+				fmt.Printf("  %s: %s\n", gateResult.Gate, status)
+
+				// Emit progress event for each gate
+				rp.logEvent(ctx, events.EventTypeQualityGatesProgress, severity, issue.ID,
+					fmt.Sprintf("Quality gate %s: %s", gateResult.Gate, status),
+					map[string]interface{}{
+						"gate":   string(gateResult.Gate),
+						"passed": gateResult.Passed,
+					})
+			}
+
+			// Check if we timed out
+			timedOut := gateCtx.Err() == context.DeadlineExceeded
+			if timedOut {
+				fmt.Fprintf(os.Stderr, "Warning: quality gates timed out after 5 minutes\n")
+				result.GatesPassed = false
+				allPassed = false // Override allPassed on timeout
+			} else {
+				result.GatesPassed = allPassed
+			}
 
 			// Handle gate results (creates blocking issues on failure)
 			if err := gateRunner.HandleGateResults(ctx, issue, gateResults, allPassed); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to handle gate results: %v\n", err)
 			}
 
-			// Log quality gates completed
+			// Build completion event data
 			gateData := map[string]interface{}{
 				"all_passed": allPassed,
 				"gates_run":  len(gateResults),
+				"timeout":    timedOut,
 			}
 
 			// Count passed and failed gates
@@ -271,14 +308,20 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			gateData["passed_count"] = passedCount
 			gateData["failed_count"] = failedCount
 
+			// Determine severity and message
 			severity := events.SeverityInfo
-			if !allPassed {
+			message := fmt.Sprintf("Quality gates evaluation completed for issue %s (passed: %v)", issue.ID, allPassed)
+
+			if timedOut {
+				severity = events.SeverityError
+				message = fmt.Sprintf("Quality gates timed out after 5 minutes for issue %s", issue.ID)
+				gateData["error"] = "deadline exceeded"
+			} else if !allPassed {
 				severity = events.SeverityWarning
 			}
 
-			rp.logEvent(ctx, events.EventTypeQualityGatesCompleted, severity, issue.ID,
-				fmt.Sprintf("Quality gates evaluation completed for issue %s (passed: %v)", issue.ID, allPassed),
-				gateData)
+			// Always emit completion event (vc-245)
+			rp.logEvent(ctx, events.EventTypeQualityGatesCompleted, severity, issue.ID, message, gateData)
 
 			if !allPassed {
 				fmt.Printf("\n=== Quality Gates Failed ===\n")

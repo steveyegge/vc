@@ -416,6 +416,21 @@ func (s *SQLiteStorage) SearchIssues(ctx context.Context, query string, filter t
 		args = append(args, *filter.Assignee)
 	}
 
+	// Handle label filtering (vc-243)
+	// If labels are specified, we need to join with issue_labels and ensure ALL labels match
+	labelJoinSQL := ""
+	if len(filter.Labels) > 0 {
+		// For each label, add a clause that requires the issue to have that label
+		for _, label := range filter.Labels {
+			whereClauses = append(whereClauses, `
+				EXISTS (
+					SELECT 1 FROM issue_labels il
+					WHERE il.issue_id = issues.id AND il.label = ?
+				)`)
+			args = append(args, label)
+		}
+	}
+
 	whereSQL := ""
 	if len(whereClauses) > 0 {
 		whereSQL = "WHERE " + strings.Join(whereClauses, " AND ")
@@ -431,10 +446,10 @@ func (s *SQLiteStorage) SearchIssues(ctx context.Context, query string, filter t
 		       status, priority, issue_type, assignee, estimated_minutes,
 		       created_at, updated_at, closed_at
 		FROM issues
-		%s
+		%s%s
 		ORDER BY priority ASC, created_at DESC
 		%s
-	`, whereSQL, limitSQL)
+	`, labelJoinSQL, whereSQL, limitSQL)
 
 	rows, err := s.db.QueryContext(ctx, querySQL, args...)
 	if err != nil {

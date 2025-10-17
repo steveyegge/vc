@@ -47,6 +47,8 @@ const (
 	EventTypeAnalysisCompleted EventType = "analysis_completed"
 	// EventTypeQualityGatesStarted indicates quality gates evaluation started
 	EventTypeQualityGatesStarted EventType = "quality_gates_started"
+	// EventTypeQualityGatesProgress indicates progress during quality gates evaluation
+	EventTypeQualityGatesProgress EventType = "quality_gates_progress"
 	// EventTypeQualityGatesCompleted indicates quality gates evaluation completed
 	EventTypeQualityGatesCompleted EventType = "quality_gates_completed"
 	// EventTypeQualityGatesSkipped indicates quality gates evaluation was skipped
