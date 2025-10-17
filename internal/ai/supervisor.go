@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -1144,7 +1145,7 @@ func (s *Supervisor) buildCodeReviewPrompt(issue *types.Issue, gitDiff string) s
 	wasTruncated := false
 	const maxDiffSize = 30000
 	if len(gitDiff) > maxDiffSize {
-		diffToAnalyze = gitDiff[:maxDiffSize] + "\n\n... [diff truncated - remaining content omitted for brevity] ..."
+		diffToAnalyze = safeTruncateString(gitDiff, maxDiffSize) + "\n\n... [diff truncated - remaining content omitted for brevity] ..."
 		wasTruncated = true
 	}
 
@@ -1213,7 +1214,7 @@ func (s *Supervisor) buildCodeQualityPrompt(issue *types.Issue, gitDiff string) 
 	wasTruncated := false
 	const maxDiffSize = 50000
 	if len(gitDiff) > maxDiffSize {
-		diffToAnalyze = gitDiff[:maxDiffSize] + "\n\n... [diff truncated - remaining content omitted for brevity] ..."
+		diffToAnalyze = safeTruncateString(gitDiff, maxDiffSize) + "\n\n... [diff truncated - remaining content omitted for brevity] ..."
 		wasTruncated = true
 	}
 
@@ -1408,6 +1409,32 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[len(s)-maxLen:]
+}
+
+// safeTruncateString truncates a string to maxLen bytes while preserving UTF-8 encoding
+// If truncation would split a multi-byte UTF-8 sequence, it backs off to a valid boundary
+func safeTruncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+
+	// Truncate at maxLen initially
+	truncated := s[:maxLen]
+
+	// Walk backwards to find a valid UTF-8 boundary
+	// We only need to check up to 4 bytes back (max UTF-8 sequence length)
+	for i := 0; i < 4 && len(truncated) > 0; i++ {
+		// Check if we have valid UTF-8
+		if utf8.ValidString(truncated) {
+			return truncated
+		}
+		// Remove last byte and try again
+		truncated = truncated[:len(truncated)-1]
+	}
+
+	// If we still don't have valid UTF-8 after 4 bytes, something is very wrong
+	// Return empty string rather than corrupted data
+	return ""
 }
 
 // CallAI makes a generic AI API call with the given prompt

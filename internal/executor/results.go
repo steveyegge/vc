@@ -327,7 +327,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			fmt.Fprintf(os.Stderr, "Warning: auto-commit failed: %v (continuing without commit)\n", err)
 		} else if commitHash != "" {
 			result.CommitHash = commitHash
-			fmt.Printf("\n✓ Changes committed: %s\n", commitHash[:8])
+			fmt.Printf("\n✓ Changes committed: %s\n", safeShortHash(commitHash))
 
 			// Add comment with commit hash
 			commitComment := fmt.Sprintf("Auto-committed changes: %s", commitHash)
@@ -620,7 +620,7 @@ func (rp *ResultsProcessor) buildSummary(issue *types.Issue, agentResult *AgentR
 	}
 
 	if procResult.CommitHash != "" {
-		summary.WriteString(fmt.Sprintf("\n✓ Auto-committed: %s\n", procResult.CommitHash[:8]))
+		summary.WriteString(fmt.Sprintf("\n✓ Auto-committed: %s\n", safeShortHash(procResult.CommitHash)))
 	}
 
 	return summary.String()
@@ -663,6 +663,14 @@ func getOutputSample(output []string, maxLines int) []string {
 	}
 
 	return output[len(output)-maxLines:]
+}
+
+// safeShortHash returns a shortened version of a git hash, safely handling short or empty hashes
+func safeShortHash(hash string) string {
+	if len(hash) >= 8 {
+		return hash[:8]
+	}
+	return hash
 }
 
 // getCommitDiff gets the git diff for a specific commit using git directly
@@ -742,9 +750,9 @@ func (rp *ResultsProcessor) createCodeReviewIssue(ctx context.Context, parentIss
 _This issue was automatically created by AI code review analysis._`,
 		parentIssue.ID,
 		parentIssue.ID,
-		commitHash[:8],
+		safeShortHash(commitHash),
 		reasoning,
-		commitHash[:8])
+		safeShortHash(commitHash))
 
 	// Create the code review issue
 	reviewIssue := &types.Issue{
@@ -787,8 +795,10 @@ _This issue was automatically created by AI code review analysis._`,
 
 // createQualityIssues creates blocking quality fix issues from automated code analysis (vc-216)
 // Each issue represents a specific fix that should be addressed.
+// If individual issue creation fails, continues creating remaining issues and collects all errors.
 func (rp *ResultsProcessor) createQualityIssues(ctx context.Context, parentIssue *types.Issue, commitHash string, qualityIssues []ai.DiscoveredIssue) ([]string, error) {
 	var createdIssues []string
+	var errors []error
 
 	for i, qualityIssue := range qualityIssues {
 		// Create issue title with commit reference
@@ -804,7 +814,7 @@ func (rp *ResultsProcessor) createQualityIssues(ctx context.Context, parentIssue
 
 _This issue was automatically created by AI code quality analysis (vc-216)._`,
 			parentIssue.ID,
-			commitHash[:8],
+			safeShortHash(commitHash),
 			qualityIssue.Description)
 
 		// Map priority string to int
@@ -845,7 +855,10 @@ _This issue was automatically created by AI code quality analysis (vc-216)._`,
 
 		err := rp.store.CreateIssue(ctx, fixIssue, "ai-supervisor")
 		if err != nil {
-			return createdIssues, fmt.Errorf("failed to create quality fix issue %d: %w", i+1, err)
+			// Collect error but continue creating remaining issues
+			errors = append(errors, fmt.Errorf("failed to create quality fix issue %d (%s): %w", i+1, title, err))
+			fmt.Fprintf(os.Stderr, "warning: failed to create quality fix issue %d (%s): %v (continuing with remaining issues)\n", i+1, title, err)
+			continue
 		}
 
 		fixIssueID := fixIssue.ID
@@ -874,6 +887,17 @@ _This issue was automatically created by AI code quality analysis (vc-216)._`,
 		if err := rp.store.AddComment(ctx, parentIssue.ID, "ai-supervisor", qualityComment); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to add quality issues comment to parent: %v\n", err)
 		}
+	}
+
+	// Return any errors that occurred during issue creation
+	if len(errors) > 0 {
+		// Create a combined error message
+		var errMsg strings.Builder
+		errMsg.WriteString(fmt.Sprintf("encountered %d errors while creating quality issues:", len(errors)))
+		for _, err := range errors {
+			errMsg.WriteString(fmt.Sprintf("\n  - %v", err))
+		}
+		return createdIssues, fmt.Errorf("%s", errMsg.String())
 	}
 
 	return createdIssues, nil
