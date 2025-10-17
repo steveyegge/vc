@@ -361,14 +361,10 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 
 						// Determine if review is needed considering both AI decision and confidence
 						needsReview := decision.NeedsReview
-						reviewReason := decision.Reasoning
 
 						// Safety measure: require review if confidence is too low
 						if !needsReview && decision.Confidence < minCodeReviewConfidence {
 							needsReview = true
-							reviewReason = fmt.Sprintf("Low confidence decision (%.0f%% < %.0f%% threshold). "+
-								"Requesting review as safety measure.\n\nOriginal reasoning: %s",
-								decision.Confidence*100, minCodeReviewConfidence*100, decision.Reasoning)
 							fmt.Printf("⚠️  Low confidence (%.0f%%), requesting review as safety measure\n",
 								decision.Confidence*100)
 						}
@@ -383,14 +379,26 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 							fmt.Printf("\n=== Automated Code Quality Analysis ===\n")
 							qualityAnalysis, err := rp.supervisor.AnalyzeCodeQuality(ctx, issue, diff)
 							if err != nil {
-								fmt.Fprintf(os.Stderr, "Warning: code quality analysis failed: %v\n", err)
-								// Fall back to creating a manual review issue if analysis fails
-								reviewIssueID, err := rp.createCodeReviewIssue(ctx, issue, commitHash, reviewReason)
-								if err != nil {
-									fmt.Fprintf(os.Stderr, "Warning: failed to create code review issue: %v\n", err)
-								} else {
-									fmt.Printf("✓ Created manual code review issue: %s\n", reviewIssueID)
-									result.DiscoveredIssues = append(result.DiscoveredIssues, reviewIssueID)
+								// AI quality analysis failed - log error and document for human review
+								// Note: We don't fall back to creating a manual review issue because:
+								// 1. The AI already has retry logic with exponential backoff
+								// 2. Creating a generic "please review" issue adds no value over logging the error
+								// 3. Keeps us consistent with vc-216's vision of automated quality analysis
+								fmt.Fprintf(os.Stderr, "✗ Automated code quality analysis failed: %v\n", err)
+								fmt.Fprintf(os.Stderr, "  Commit %s requires human review\n", safeShortHash(commitHash))
+
+								// Add comment to parent issue documenting the failure
+								failureComment := fmt.Sprintf("**Automated Code Quality Analysis Failed**\n\n"+
+									"The AI supervisor failed to analyze code quality for commit %s.\n\n"+
+									"Error: %v\n\n"+
+									"**Action Required:**\n"+
+									"Manual code review is needed for this commit. Please review the changes and:\n"+
+									"1. Check for bugs, security issues, and code quality problems\n"+
+									"2. File specific issues for any problems found\n"+
+									"3. Investigate why the AI analysis failed (check logs, API connectivity, etc.)",
+									commitHash, err)
+								if err := rp.store.AddComment(ctx, issue.ID, "ai-supervisor", failureComment); err != nil {
+									fmt.Fprintf(os.Stderr, "warning: failed to add quality analysis failure comment: %v\n", err)
 								}
 							} else {
 								// Add analysis summary as comment
