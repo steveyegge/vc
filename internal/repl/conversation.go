@@ -1035,6 +1035,13 @@ type issueExecutionResult struct {
 }
 
 func (c *ConversationHandler) executeIssue(ctx context.Context, issue *types.Issue) (*issueExecutionResult, error) {
+	// Validate issue can be executed (prevent race conditions)
+	if errMsg, err := c.validateIssueForExecution(ctx, issue); err != nil {
+		return nil, err
+	} else if errMsg != "" {
+		return nil, fmt.Errorf("%s", errMsg)
+	}
+
 	// Claim the issue
 	instanceID := fmt.Sprintf("conversation-%s", AIActor)
 	if err := c.storage.ClaimIssue(ctx, issue.ID, instanceID); err != nil {
