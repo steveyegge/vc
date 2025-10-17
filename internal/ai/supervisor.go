@@ -464,6 +464,24 @@ type CodeReviewDecision struct {
 	Confidence  float64 `json:"confidence"`   // Confidence in the assessment (0.0-1.0)
 }
 
+// CodeQualityAnalysis represents automated code quality review findings (vc-79)
+// This replaces manual code review with AI-driven analysis that automatically files fix issues
+type CodeQualityAnalysis struct {
+	Issues     []DiscoveredIssue `json:"issues"`      // Specific fix issues to create
+	Summary    string            `json:"summary"`     // Overall code quality assessment
+	Confidence float64           `json:"confidence"`  // Confidence in the analysis (0.0-1.0)
+}
+
+// TestSufficiencyAnalysis represents test coverage analysis (vc-79)
+// AI analyzes code changes and existing tests to identify gaps
+type TestSufficiencyAnalysis struct {
+	SufficientCoverage bool              `json:"sufficient_coverage"` // Is test coverage adequate?
+	UncoveredAreas     []string          `json:"uncovered_areas"`     // Specific areas lacking tests
+	TestIssues         []DiscoveredIssue `json:"test_issues"`         // Test improvement issues to create
+	Summary            string            `json:"summary"`             // Overall test coverage assessment
+	Confidence         float64           `json:"confidence"`          // Confidence in the analysis (0.0-1.0)
+}
+
 // AssessCompletion uses AI to determine if an epic or mission is truly complete.
 // This replaces the hardcoded "all children closed = complete" heuristic with AI decision-making.
 //
