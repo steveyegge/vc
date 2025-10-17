@@ -2,12 +2,15 @@ package executor
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/steveyegge/vc/internal/gates"
+	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -649,6 +652,197 @@ func TestMultiTaskCoordination(t *testing.T) {
 	}
 
 	t.Log("Multi-task coordination test completed successfully")
+}
+
+// TestExecutorSandboxIntegration tests the full executor integration with sandbox manager
+func TestExecutorSandboxIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+
+	// Create a temporary directory to serve as the parent repo
+	parentRepo := t.TempDir()
+
+	// Initialize it as a git repo
+	if err := setupGitRepo(t, parentRepo); err != nil {
+		t.Fatalf("Failed to setup git repo: %v", err)
+	}
+
+	// Create storage in the parent repo
+	dbPath := filepath.Join(parentRepo, ".beads", "test.db")
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		t.Fatalf("Failed to create .beads dir: %v", err)
+	}
+
+	cfg := storage.DefaultConfig()
+	cfg.Path = dbPath
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer store.Close()
+
+	// Create executor with sandboxes enabled
+	sandboxRoot := filepath.Join(parentRepo, ".sandboxes")
+	execCfg := DefaultConfig()
+	execCfg.Store = store
+	execCfg.EnableSandboxes = true
+	execCfg.SandboxRoot = sandboxRoot
+	execCfg.ParentRepo = parentRepo
+	execCfg.WorkingDir = parentRepo
+	execCfg.PollInterval = 100 * time.Millisecond
+	execCfg.EnableAISupervision = false // Disable AI for test
+	execCfg.EnableQualityGates = false  // Disable gates for test
+
+	exec, err := New(execCfg)
+	if err != nil {
+		t.Fatalf("Failed to create executor: %v", err)
+	}
+
+	// Register executor instance
+	instance := &types.ExecutorInstance{
+		InstanceID:    exec.instanceID,
+		Hostname:      exec.hostname,
+		PID:           exec.pid,
+		Status:        types.ExecutorStatusRunning,
+		StartedAt:     time.Now(),
+		LastHeartbeat: time.Now(),
+		Version:       exec.version,
+		Metadata:      "{}",
+	}
+	if err := store.RegisterInstance(ctx, instance); err != nil {
+		t.Fatalf("Failed to register executor: %v", err)
+	}
+
+	// Verify sandbox manager was initialized
+	if exec.sandboxMgr == nil {
+		t.Fatal("Sandbox manager should be initialized when EnableSandboxes is true")
+	}
+
+	// Create a test issue
+	issue := &types.Issue{
+		Title:              "Test sandbox integration",
+		Description:        "Test that executor creates and cleans up sandboxes",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		AcceptanceCriteria: "Sandbox created, used, and cleaned up",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Note: We can't easily test the full executeIssue() flow in a unit test
+	// because it spawns actual agents. Instead, we verify the sandbox manager
+	// is properly initialized and configured.
+
+	// Test that sandbox manager can create a sandbox
+	sb, err := exec.sandboxMgr.Create(ctx, sandbox.SandboxConfig{
+		MissionID:  issue.ID,
+		BaseBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create sandbox: %v", err)
+	}
+	defer exec.sandboxMgr.Cleanup(ctx, sb)
+
+	// Verify sandbox was created
+	if sb == nil {
+		t.Fatal("Expected sandbox to be created")
+	}
+	if sb.ID == "" {
+		t.Error("Sandbox should have an ID")
+	}
+	if sb.MissionID != issue.ID {
+		t.Errorf("Expected mission ID %s, got %s", issue.ID, sb.MissionID)
+	}
+	if sb.Path == "" {
+		t.Error("Sandbox should have a path")
+	}
+
+	// Verify sandbox directory exists
+	if _, err := os.Stat(sb.Path); os.IsNotExist(err) {
+		t.Errorf("Sandbox directory should exist at %s", sb.Path)
+	}
+
+	// Verify sandbox has its own git branch
+	if sb.GitBranch == "" {
+		t.Error("Sandbox should have a git branch")
+	}
+
+	// List sandboxes
+	sandboxes, err := exec.sandboxMgr.List(ctx)
+	if err != nil {
+		t.Fatalf("Failed to list sandboxes: %v", err)
+	}
+	if len(sandboxes) != 1 {
+		t.Errorf("Expected 1 sandbox, got %d", len(sandboxes))
+	}
+
+	// Cleanup sandbox
+	if err := exec.sandboxMgr.Cleanup(ctx, sb); err != nil {
+		t.Fatalf("Failed to cleanup sandbox: %v", err)
+	}
+
+	// Verify sandbox was cleaned up
+	sandboxes, err = exec.sandboxMgr.List(ctx)
+	if err != nil {
+		t.Fatalf("Failed to list sandboxes after cleanup: %v", err)
+	}
+	if len(sandboxes) != 0 {
+		t.Errorf("Expected 0 sandboxes after cleanup, got %d", len(sandboxes))
+	}
+
+	t.Log("Executor sandbox integration test completed successfully")
+}
+
+// Helper function to setup a git repository
+func setupGitRepo(t *testing.T, path string) error {
+	t.Helper()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = path
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git init failed: %w", err)
+	}
+
+	// Configure git user (required for commits)
+	cmd = exec.Command("git", "config", "user.email", "test@example.com")
+	cmd.Dir = path
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git config user.email failed: %w", err)
+	}
+
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = path
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git config user.name failed: %w", err)
+	}
+
+	// Create an initial commit (required for worktrees)
+	readmePath := filepath.Join(path, "README.md")
+	if err := os.WriteFile(readmePath, []byte("# Test Repo\n"), 0644); err != nil {
+		return fmt.Errorf("failed to create README: %w", err)
+	}
+
+	cmd = exec.Command("git", "add", "README.md")
+	cmd.Dir = path
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git add failed: %w", err)
+	}
+
+	cmd = exec.Command("git", "commit", "-m", "Initial commit")
+	cmd.Dir = path
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git commit failed: %w", err)
+	}
+
+	return nil
 }
 
 // Helper functions

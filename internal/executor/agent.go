@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/vc/internal/events"
+	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -35,6 +36,8 @@ type AgentConfig struct {
 	Store      storage.Storage
 	ExecutorID string
 	AgentID    string
+	// Sandbox context (optional - if nil, agent runs in main workspace)
+	Sandbox    *sandbox.Sandbox
 }
 
 const (

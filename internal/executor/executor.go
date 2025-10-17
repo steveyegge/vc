@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/events"
+	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 	"github.com/steveyegge/vc/internal/watchdog"
@@ -23,6 +24,8 @@ type Executor struct {
 	analyzer   *watchdog.Analyzer
 	intervention *watchdog.InterventionController
 	watchdogConfig *watchdog.WatchdogConfig
+	sandboxMgr sandbox.Manager
+	config     *Config
 	instanceID string
 	hostname   string
 	pid        int
@@ -39,6 +42,7 @@ type Executor struct {
 	heartbeatTicker     *time.Ticker
 	enableAISupervision bool
 	enableQualityGates  bool
+	enableSandboxes     bool
 	workingDir          string
 
 	// State
@@ -54,7 +58,11 @@ type Config struct {
 	HeartbeatPeriod     time.Duration
 	EnableAISupervision bool // Enable AI assessment and analysis (default: true)
 	EnableQualityGates  bool // Enable quality gates enforcement (default: true)
+	EnableSandboxes     bool // Enable sandbox isolation (default: false)
 	WorkingDir          string // Working directory for quality gates (default: ".")
+	SandboxRoot         string // Root directory for sandboxes (default: ".sandboxes")
+	ParentRepo          string // Parent repository path (default: ".")
+	DefaultBranch       string // Default git branch for sandboxes (default: "main")
 	WatchdogConfig      *watchdog.WatchdogConfig // Watchdog configuration (default: conservative defaults)
 }
 
@@ -66,7 +74,11 @@ func DefaultConfig() *Config {
 		HeartbeatPeriod:     30 * time.Second,
 		EnableAISupervision: true,
 		EnableQualityGates:  true,
+		EnableSandboxes:     false,
 		WorkingDir:          ".",
+		SandboxRoot:         ".sandboxes",
+		ParentRepo:          ".",
+		DefaultBranch:       "main",
 	}
 }
 
@@ -87,8 +99,21 @@ func New(cfg *Config) (*Executor, error) {
 		workingDir = "."
 	}
 
+	// Set default sandbox root if not specified
+	sandboxRoot := cfg.SandboxRoot
+	if sandboxRoot == "" {
+		sandboxRoot = ".sandboxes"
+	}
+
+	// Set default parent repo if not specified
+	parentRepo := cfg.ParentRepo
+	if parentRepo == "" {
+		parentRepo = "."
+	}
+
 	e := &Executor{
 		store:               cfg.Store,
+		config:              cfg,
 		instanceID:          uuid.New().String(),
 		hostname:            hostname,
 		pid:                 os.Getpid(),
@@ -96,9 +121,26 @@ func New(cfg *Config) (*Executor, error) {
 		pollInterval:        cfg.PollInterval,
 		enableAISupervision: cfg.EnableAISupervision,
 		enableQualityGates:  cfg.EnableQualityGates,
+		enableSandboxes:     cfg.EnableSandboxes,
 		workingDir:          workingDir,
 		stopCh:              make(chan struct{}),
 		doneCh:              make(chan struct{}),
+	}
+
+	// Initialize sandbox manager if enabled
+	if cfg.EnableSandboxes {
+		sandboxMgr, err := sandbox.NewManager(sandbox.Config{
+			SandboxRoot: sandboxRoot,
+			ParentRepo:  parentRepo,
+			MainDB:      cfg.Store,
+		})
+		if err != nil {
+			// Don't fail - just disable sandboxes
+			fmt.Fprintf(os.Stderr, "Warning: failed to initialize sandbox manager: %v (continuing without sandboxes)\n", err)
+			e.enableSandboxes = false
+		} else {
+			e.sandboxMgr = sandboxMgr
+		}
 	}
 
 	// Initialize AI supervisor if enabled
@@ -406,7 +448,53 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		}
 	}
 
-	// Phase 2: Spawn the coding agent
+	// Phase 2: Create sandbox if enabled
+	var sb *sandbox.Sandbox
+	workingDir := e.workingDir
+	if e.enableSandboxes && e.sandboxMgr != nil {
+		fmt.Printf("Creating sandbox for issue %s...\n", issue.ID)
+
+		// Get parent repo from config (will be set by manager if not specified)
+		parentRepo := "."
+		if e.config != nil && e.config.ParentRepo != "" {
+			parentRepo = e.config.ParentRepo
+		}
+
+		// Get base branch from config
+		baseBranch := "main"
+		if e.config != nil && e.config.DefaultBranch != "" {
+			baseBranch = e.config.DefaultBranch
+		}
+
+		sandboxCfg := sandbox.SandboxConfig{
+			MissionID:  issue.ID,
+			ParentRepo: parentRepo,
+			BaseBranch: baseBranch,
+		}
+
+		var err error
+		sb, err = e.sandboxMgr.Create(ctx, sandboxCfg)
+		if err != nil {
+			// Don't fail execution - just log and continue without sandbox
+			fmt.Fprintf(os.Stderr, "Warning: failed to create sandbox: %v (continuing in main workspace)\n", err)
+		} else {
+			// Set working directory to sandbox path
+			workingDir = sb.Path
+			fmt.Printf("Sandbox created: %s (branch: %s)\n", sb.Path, sb.GitBranch)
+
+			// Ensure cleanup happens
+			defer func() {
+				if sb != nil {
+					fmt.Printf("Cleaning up sandbox %s...\n", sb.ID)
+					if err := e.sandboxMgr.Cleanup(ctx, sb); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: failed to cleanup sandbox: %v\n", err)
+					}
+				}
+			}()
+		}
+	}
+
+	// Phase 3: Spawn the coding agent
 	// Update execution state to executing
 	if err := e.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateExecuting); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
@@ -480,7 +568,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 
 	agentCfg := AgentConfig{
 		Type:       AgentTypeClaudeCode, // Default to Claude Code for now
-		WorkingDir: ".",
+		WorkingDir: workingDir,
 		Issue:      issue,
 		StreamJSON: false,
 		Timeout:    30 * time.Minute,
@@ -488,6 +576,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		Store:      e.store,
 		ExecutorID: e.instanceID,
 		AgentID:    agentID,
+		Sandbox:    sb,
 	}
 
 	agent, err := SpawnAgent(agentCtx, agentCfg, prompt)
