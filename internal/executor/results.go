@@ -228,6 +228,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 
 		gateRunner, err := gates.NewRunner(&gates.Config{
 			Store:      rp.store,
+			Supervisor: rp.supervisor, // Enable AI-driven recovery strategies (ZFC)
 			WorkingDir: rp.workingDir,
 		})
 		if err != nil {
