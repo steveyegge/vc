@@ -972,6 +972,112 @@ func TestToolGetIssue(t *testing.T) {
 	})
 }
 
+// TestToolContinueUntilBlocked tests the continue_until_blocked tool
+func TestToolContinueUntilBlocked(t *testing.T) {
+	t.Run("stops when no ready work", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		result, err := handler.toolContinueUntilBlocked(ctx, map[string]interface{}{})
+		if err != nil {
+			t.Fatalf("toolContinueUntilBlocked failed: %v", err)
+		}
+
+		if !strings.Contains(result, "no more ready work") {
+			t.Errorf("Expected 'no more ready work' stop reason, got: %s", result)
+		}
+		if !strings.Contains(result, "Completed: 0") {
+			t.Errorf("Expected 0 completed issues, got: %s", result)
+		}
+	})
+
+	t.Run("accepts max_iterations parameter", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		// Should not error with max_iterations
+		_, err := handler.toolContinueUntilBlocked(ctx, map[string]interface{}{
+			"max_iterations": float64(5),
+		})
+		if err != nil {
+			t.Fatalf("toolContinueUntilBlocked failed: %v", err)
+		}
+	})
+
+	t.Run("accepts timeout_minutes parameter", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		// Should not error with timeout_minutes
+		_, err := handler.toolContinueUntilBlocked(ctx, map[string]interface{}{
+			"timeout_minutes": float64(60),
+		})
+		if err != nil {
+			t.Fatalf("toolContinueUntilBlocked failed: %v", err)
+		}
+	})
+
+	t.Run("accepts error_threshold parameter", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		// Should not error with error_threshold
+		_, err := handler.toolContinueUntilBlocked(ctx, map[string]interface{}{
+			"error_threshold": float64(5),
+		})
+		if err != nil {
+			t.Fatalf("toolContinueUntilBlocked failed: %v", err)
+		}
+	})
+
+	t.Run("uses default parameters", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		// Should work with no parameters (all defaults)
+		result, err := handler.toolContinueUntilBlocked(ctx, map[string]interface{}{})
+		if err != nil {
+			t.Fatalf("toolContinueUntilBlocked failed: %v", err)
+		}
+
+		if !strings.Contains(result, "Autonomous Execution Complete") {
+			t.Errorf("Expected success message, got: %s", result)
+		}
+	})
+
+	t.Run("formats result correctly", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		result, err := handler.toolContinueUntilBlocked(ctx, map[string]interface{}{})
+		if err != nil {
+			t.Fatalf("toolContinueUntilBlocked failed: %v", err)
+		}
+
+		// Verify all expected sections are present
+		expectedSections := []string{
+			"Autonomous Execution Complete",
+			"Stop Reason:",
+			"Iterations:",
+			"Elapsed Time:",
+			"Completed:",
+			"Failed:",
+		}
+
+		for _, section := range expectedSections {
+			if !strings.Contains(result, section) {
+				t.Errorf("Expected section '%s' in result, got: %s", section, result)
+			}
+		}
+	})
+}
+
 // TestExecuteTool tests the tool dispatcher
 func TestExecuteTool(t *testing.T) {
 	t.Run("dispatches to correct tool", func(t *testing.T) {
@@ -1060,8 +1166,8 @@ func TestGetTools(t *testing.T) {
 
 	tools := handler.getTools()
 
-	// Should have 10 tools
-	expectedTools := 10
+	// Should have 11 tools
+	expectedTools := 11
 	if len(tools) != expectedTools {
 		t.Errorf("Expected %d tools, got %d", expectedTools, len(tools))
 	}
@@ -1076,6 +1182,7 @@ func TestGetTools(t *testing.T) {
 		"get_status",
 		"get_blocked_issues",
 		"continue_execution",
+		"continue_until_blocked",
 		"get_recent_activity",
 		"search_issues",
 	}

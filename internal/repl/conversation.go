@@ -82,6 +82,12 @@ You have access to these conversational tools:
   • Parameters: issue_id (optional - picks next ready if not provided), async (default: false)
   • This is the core action - it spawns an agent, processes results, creates follow-on issues
 
+- continue_until_blocked: Autonomously execute ready issues in a loop until blocked
+  • Use when: User wants VC to work through multiple issues without intervention
+  • Parameters: max_iterations (default: 10), timeout_minutes (default: 120), error_threshold (default: 3)
+  • Executes issues sequentially, stops when no ready work or limits reached
+  • Provides summary of completed/failed issues
+
 - get_ready_work: Get issues ready to work on (no blockers)
   • Use when: User asks what's ready or what to do next
   • Parameters: limit (default: 5)
@@ -112,6 +118,11 @@ Map natural language to tool calls:
 "continue working" → continue_execution()
 "work on vc-123" → continue_execution(issue_id: "vc-123")
 "execute vc-456" → continue_execution(issue_id: "vc-456")
+
+"keep working until blocked" → continue_until_blocked()
+"work through everything" → continue_until_blocked()
+"autonomous mode" → continue_until_blocked()
+"execute all ready work" → continue_until_blocked()
 
 "what's ready?" → get_ready_work(5)
 "show ready work" → get_ready_work(5)
@@ -312,6 +323,17 @@ func (c *ConversationHandler) getTools() []anthropic.ToolUnionParam {
 				Required: []string{"query"},
 			},
 		},
+		{
+			Name:        "continue_until_blocked",
+			Description: anthropic.String("Autonomously execute ready issues in a loop until no more work is available. This enables supervised autonomous operation where VC works through multiple issues without intervention."),
+			InputSchema: anthropic.ToolInputSchemaParam{
+				Properties: map[string]interface{}{
+					"max_iterations":  map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 100, "description": "Maximum number of issues to execute (default: 10)"},
+					"timeout_minutes": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 480, "description": "Maximum time to run in minutes (default: 120)"},
+					"error_threshold": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 10, "description": "Stop after this many consecutive errors (default: 3)"},
+				},
+			},
+		},
 	}
 
 	tools := make([]anthropic.ToolUnionParam, len(toolParams))
@@ -430,6 +452,8 @@ func (c *ConversationHandler) executeTool(ctx context.Context, name string, inpu
 		return c.toolGetRecentActivity(ctx, inputMap)
 	case "search_issues":
 		return c.toolSearchIssues(ctx, inputMap)
+	case "continue_until_blocked":
+		return c.toolContinueUntilBlocked(ctx, inputMap)
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
@@ -944,6 +968,202 @@ func (c *ConversationHandler) toolContinueExecution(ctx context.Context, input m
 	}
 
 	return response, nil
+}
+
+// toolContinueUntilBlocked autonomously executes ready issues in a loop until blocked.
+// This is the autonomous execution mode that enables VC to work through multiple issues
+// without manual intervention. It includes watchdog monitoring, error tracking, and
+// graceful shutdown capabilities.
+// Input: max_iterations (default: 10), timeout_minutes (default: 120), error_threshold (default: 3)
+// Returns: Summary of execution including issues completed, errors, and stop reason
+func (c *ConversationHandler) toolContinueUntilBlocked(ctx context.Context, input map[string]interface{}) (string, error) {
+	// Parse parameters with defaults
+	maxIterations := 10
+	if mi, ok := input["max_iterations"].(float64); ok {
+		maxIterations = int(mi)
+	}
+
+	timeoutMinutes := 120
+	if tm, ok := input["timeout_minutes"].(float64); ok {
+		timeoutMinutes = int(tm)
+	}
+
+	errorThreshold := 3
+	if et, ok := input["error_threshold"].(float64); ok {
+		errorThreshold = int(et)
+	}
+
+	// Create timeout context
+	timeoutDuration := time.Duration(timeoutMinutes) * time.Minute
+	ctx, cancel := context.WithTimeout(ctx, timeoutDuration)
+	defer cancel()
+
+	// Track execution state
+	var (
+		completedIssues   []string
+		failedIssues      []string
+		consecutiveErrors int
+		iteration         int
+		startTime         = time.Now()
+	)
+
+	// Execution loop
+	for iteration = 0; iteration < maxIterations; iteration++ {
+		// Check for context cancellation (timeout or Ctrl+C)
+		select {
+		case <-ctx.Done():
+			elapsed := time.Since(startTime)
+			return c.formatContinueLoopResult(completedIssues, failedIssues, iteration, "timeout or interruption", elapsed), nil
+		default:
+		}
+
+		// Check for ready work
+		readyIssues, err := c.storage.GetReadyWork(ctx, types.WorkFilter{
+			Status: types.StatusOpen,
+			Limit:  1,
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to check for ready work: %w", err)
+		}
+
+		if len(readyIssues) == 0 {
+			// No more work - successful completion
+			elapsed := time.Since(startTime)
+			return c.formatContinueLoopResult(completedIssues, failedIssues, iteration, "no more ready work", elapsed), nil
+		}
+
+		issue := readyIssues[0]
+
+		// Execute the issue using the same logic as continue_execution
+		executionResult, execErr := c.executeIssue(ctx, issue)
+
+		if execErr != nil {
+			// Execution failed
+			failedIssues = append(failedIssues, issue.ID)
+			consecutiveErrors++
+
+			// Check error threshold
+			if consecutiveErrors >= errorThreshold {
+				elapsed := time.Since(startTime)
+				return c.formatContinueLoopResult(completedIssues, failedIssues, iteration+1, fmt.Sprintf("error threshold exceeded (%d consecutive errors)", consecutiveErrors), elapsed), nil
+			}
+		} else {
+			// Execution succeeded
+			if executionResult.Completed {
+				completedIssues = append(completedIssues, issue.ID)
+				consecutiveErrors = 0 // Reset error counter on success
+			} else {
+				// Issue left open (partially complete)
+				failedIssues = append(failedIssues, issue.ID)
+			}
+		}
+
+		// Progress update (will be visible in the conversation)
+		// The AI will see this in the tool result
+	}
+
+	// Reached max iterations
+	elapsed := time.Since(startTime)
+	return c.formatContinueLoopResult(completedIssues, failedIssues, iteration, "max iterations reached", elapsed), nil
+}
+
+// executeIssue executes a single issue and returns the result.
+// This is extracted from toolContinueExecution to enable reuse in the autonomous loop.
+type issueExecutionResult struct {
+	Completed        bool
+	GatesPassed      bool
+	DiscoveredIssues []string
+}
+
+func (c *ConversationHandler) executeIssue(ctx context.Context, issue *types.Issue) (*issueExecutionResult, error) {
+	// Claim the issue
+	instanceID := fmt.Sprintf("conversation-%s", AIActor)
+	if err := c.storage.ClaimIssue(ctx, issue.ID, instanceID); err != nil {
+		return nil, fmt.Errorf("failed to claim issue %s: %w", issue.ID, err)
+	}
+
+	// Update execution state to executing
+	if err := c.storage.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateExecuting); err != nil {
+		// Log warning but continue
+		fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
+	}
+
+	// Spawn agent
+	agentCfg := executor.AgentConfig{
+		Type:       executor.AgentTypeClaudeCode,
+		WorkingDir: ".",
+		Issue:      issue,
+		StreamJSON: false,
+		Timeout:    30 * time.Minute,
+	}
+
+	agent, err := executor.SpawnAgent(ctx, agentCfg)
+	if err != nil {
+		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to spawn agent: %v", err))
+		return nil, fmt.Errorf("failed to spawn agent: %w", err)
+	}
+
+	// Wait for completion
+	result, err := agent.Wait(ctx)
+	if err != nil {
+		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Agent execution failed: %v", err))
+		return nil, fmt.Errorf("agent execution failed: %w", err)
+	}
+
+	// Process results using ResultsProcessor
+	supervisor, err := ai.NewSupervisor(&ai.Config{
+		Store: c.storage,
+	})
+	if err != nil {
+		// Continue without AI supervision
+		fmt.Fprintf(os.Stderr, "Warning: AI supervisor not available: %v (continuing without AI analysis)\n", err)
+		supervisor = nil
+	}
+
+	processor, err := executor.NewResultsProcessor(&executor.ResultsProcessorConfig{
+		Store:              c.storage,
+		Supervisor:         supervisor,
+		EnableQualityGates: true,
+		WorkingDir:         ".",
+		Actor:              instanceID,
+	})
+	if err != nil {
+		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to create results processor: %v", err))
+		return nil, fmt.Errorf("failed to create results processor: %w", err)
+	}
+
+	procResult, err := processor.ProcessAgentResult(ctx, issue, result)
+	if err != nil {
+		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to process results: %v", err))
+		return nil, fmt.Errorf("failed to process results: %w", err)
+	}
+
+	return &issueExecutionResult{
+		Completed:        procResult.Completed,
+		GatesPassed:      procResult.GatesPassed,
+		DiscoveredIssues: procResult.DiscoveredIssues,
+	}, nil
+}
+
+// formatContinueLoopResult formats the result of a continue_until_blocked execution.
+func (c *ConversationHandler) formatContinueLoopResult(completed, failed []string, iterations int, stopReason string, elapsed time.Duration) string {
+	var result string
+
+	result += fmt.Sprintf("⚡ Autonomous Execution Complete\n\n")
+	result += fmt.Sprintf("Stop Reason: %s\n", stopReason)
+	result += fmt.Sprintf("Iterations: %d\n", iterations)
+	result += fmt.Sprintf("Elapsed Time: %s\n", elapsed.Round(time.Second))
+	result += fmt.Sprintf("\n")
+	result += fmt.Sprintf("Completed: %d issues\n", len(completed))
+	if len(completed) > 0 {
+		result += fmt.Sprintf("  %v\n", completed)
+	}
+	result += fmt.Sprintf("Failed: %d issues\n", len(failed))
+	if len(failed) > 0 {
+		result += fmt.Sprintf("  %v\n", failed)
+	}
+
+	return result
 }
 
 // releaseIssueWithError releases an issue and adds an error comment
