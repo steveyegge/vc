@@ -336,10 +336,33 @@ func (ic *InterventionController) Intervene(ctx context.Context, report *Anomaly
 	}
 }
 
-// createEscalationIssue creates a new issue for human review of the anomaly
+// createEscalationIssue creates or updates an escalation issue for human review
+// Implements deduplication to prevent spam (vc-243)
 // currentIssueID is passed as parameter to avoid reading ic.currentIssueID without lock
 func (ic *InterventionController) createEscalationIssue(ctx context.Context, report *AnomalyReport, interventionType InterventionType, currentIssueID string) (string, error) {
-	// Build issue title and description
+	// Check for existing open escalation for this (issue, anomaly type) combination
+	anomalyLabel := fmt.Sprintf("anomaly:%s", report.AnomalyType)
+	affectedLabel := fmt.Sprintf("affected-issue:%s", currentIssueID)
+
+	openStatus := types.StatusOpen
+	filter := types.IssueFilter{
+		Status: &openStatus,
+		Labels: []string{"watchdog-escalation", anomalyLabel, affectedLabel},
+		Limit:  1,
+	}
+
+	existing, err := ic.store.SearchIssues(ctx, "", filter)
+	if err != nil {
+		// Log but continue - we'll create new if search fails
+		fmt.Printf("Warning: failed to search for existing escalation: %v\n", err)
+	}
+
+	// If existing escalation found, update it instead of creating new
+	if len(existing) > 0 {
+		return ic.updateEscalationIssue(ctx, existing[0], report, interventionType)
+	}
+
+	// No existing escalation - create new one
 	title := fmt.Sprintf("Watchdog: %s anomaly detected in %s", report.AnomalyType, currentIssueID)
 
 	description := fmt.Sprintf(`Watchdog detected anomalous behavior and intervened.
@@ -357,6 +380,10 @@ func (ic *InterventionController) createEscalationIssue(ctx context.Context, rep
 %s
 
 **Recommended Action**: %s
+
+---
+**Detection History**:
+- %s: Detected (severity=%s, confidence=%.2f, intervention=%s)
 `,
 		report.AnomalyType,
 		report.Severity,
@@ -366,6 +393,10 @@ func (ic *InterventionController) createEscalationIssue(ctx context.Context, rep
 		report.Description,
 		report.Reasoning,
 		report.RecommendedAction,
+		time.Now().Format("2006-01-02 15:04:05"),
+		report.Severity,
+		report.Confidence,
+		interventionType,
 	)
 
 	// Determine issue priority based on severity
@@ -397,20 +428,66 @@ func (ic *InterventionController) createEscalationIssue(ctx context.Context, rep
 		return "", fmt.Errorf("failed to create escalation issue: %w", err)
 	}
 
-	// If there's a current issue being executed, create a dependency
-	if currentIssueID != "" {
-		dep := &types.Dependency{
-			IssueID:     issue.ID,
-			DependsOnID: currentIssueID,
-			Type:        types.DepDiscoveredFrom,
-			CreatedAt:   time.Now(),
-			CreatedBy:   "watchdog",
+	// Add labels for deduplication
+	labels := []string{"watchdog-escalation", anomalyLabel, affectedLabel}
+	for _, label := range labels {
+		if err := ic.store.AddLabel(ctx, issue.ID, label, "watchdog"); err != nil {
+			// Log but don't fail - labels are for optimization
+			fmt.Printf("Warning: failed to add label %s to escalation %s: %v\n", label, issue.ID, err)
 		}
-		if err := ic.store.AddDependency(ctx, dep, "watchdog"); err != nil {
-			// Log but don't fail - dependency is nice-to-have
-			fmt.Printf("Warning: failed to add dependency from escalation %s to %s: %v\n",
-				issue.ID, currentIssueID, err)
-		}
+	}
+
+	// Note: We do NOT create a dependency on the parent issue (vc-244)
+	// Escalation issues are monitoring artifacts that should not block their parent
+	// Parent issue ID is already in the title and labels for reference
+
+	return issue.ID, nil
+}
+
+// updateEscalationIssue updates an existing escalation with new observation
+func (ic *InterventionController) updateEscalationIssue(ctx context.Context, issue *types.Issue, report *AnomalyReport, interventionType InterventionType) (string, error) {
+	// Append new detection to history
+	now := time.Now()
+	newObservation := fmt.Sprintf("\n- %s: Detected (severity=%s, confidence=%.2f, intervention=%s)",
+		now.Format("2006-01-02 15:04:05"),
+		report.Severity,
+		report.Confidence,
+		interventionType,
+	)
+
+	// Build updates map
+	updates := map[string]interface{}{
+		"description": issue.Description + newObservation,
+		"updated_at":  now,
+	}
+
+	// Update priority if severity increased
+	var newPriority int
+	switch report.Severity {
+	case SeverityCritical:
+		newPriority = 0
+	case SeverityHigh:
+		newPriority = 1
+	case SeverityMedium:
+		newPriority = 2
+	default:
+		newPriority = 3
+	}
+	if newPriority < issue.Priority {
+		updates["priority"] = newPriority
+	}
+
+	// Save updated issue
+	if err := ic.store.UpdateIssue(ctx, issue.ID, updates, "watchdog"); err != nil {
+		return "", fmt.Errorf("failed to update escalation issue: %w", err)
+	}
+
+	// Add comment about new detection
+	comment := fmt.Sprintf("New %s anomaly detection: severity=%s, confidence=%.2f, intervention=%s",
+		report.AnomalyType, report.Severity, report.Confidence, interventionType)
+	if err := ic.store.AddComment(ctx, issue.ID, "watchdog", comment); err != nil {
+		// Log but don't fail - comment is nice-to-have
+		fmt.Printf("Warning: failed to add comment to escalation %s: %v\n", issue.ID, err)
 	}
 
 	return issue.ID, nil

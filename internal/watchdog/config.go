@@ -422,8 +422,8 @@ func (c *WatchdogConfig) ShouldIntervene(report *AnomalyReport) bool {
 	}
 
 	if !report.Detected {
-		// No anomaly - clear all detection states
-		c.detectionStates = make(map[AnomalyType]*DetectionState)
+		// No anomaly detected - just return false
+		// Don't clear states; they'll naturally expire or reset on next detection
 		return false
 	}
 
@@ -440,8 +440,16 @@ func (c *WatchdogConfig) ShouldIntervene(report *AnomalyReport) bool {
 		}
 		c.detectionStates[report.AnomalyType] = state
 	} else {
-		// Consecutive detection
-		state.ConsecutiveCount++
+		// Check for gaps - if too much time passed, reset counter
+		timeSinceLastDetection := now.Sub(state.LastDetectedAt)
+		if timeSinceLastDetection > c.CheckInterval*2 {
+			// Gap too large - reset counter but keep tracking
+			state.ConsecutiveCount = 1
+			state.FirstDetectedAt = now
+		} else {
+			// Consecutive detection - increment
+			state.ConsecutiveCount++
+		}
 		state.LastDetectedAt = now
 	}
 
