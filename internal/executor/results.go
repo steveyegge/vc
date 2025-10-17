@@ -17,6 +17,13 @@ import (
 	"github.com/steveyegge/vc/internal/types"
 )
 
+// Code review decision thresholds
+const (
+	// minCodeReviewConfidence is the minimum confidence threshold for skipping code review.
+	// If AI confidence is below this threshold, we request review as a safety measure.
+	minCodeReviewConfidence = 0.70
+)
+
 // ResultsProcessor handles post-execution results collection and tracker updates
 type ResultsProcessor struct {
 	store              storage.Storage
@@ -352,10 +359,26 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 							fmt.Fprintf(os.Stderr, "warning: failed to add code review decision comment: %v\n", err)
 						}
 
+						// Determine if review is needed considering both AI decision and confidence
+						needsReview := decision.NeedsReview
+						reviewReason := decision.Reasoning
+
+						// Safety measure: require review if confidence is too low
+						if !needsReview && decision.Confidence < minCodeReviewConfidence {
+							needsReview = true
+							reviewReason = fmt.Sprintf("Low confidence decision (%.0f%% < %.0f%% threshold). "+
+								"Requesting review as safety measure.\n\nOriginal reasoning: %s",
+								decision.Confidence*100, minCodeReviewConfidence*100, decision.Reasoning)
+							fmt.Printf("⚠️  Low confidence (%.0f%%), requesting review as safety measure\n",
+								decision.Confidence*100)
+						}
+
 						// If review is needed, create a blocking code review issue
-						if decision.NeedsReview {
-							fmt.Printf("Code review recommended (confidence: %.0f%%)\n", decision.Confidence*100)
-							reviewIssueID, err := rp.createCodeReviewIssue(ctx, issue, commitHash, decision.Reasoning)
+						if needsReview {
+							if decision.NeedsReview {
+								fmt.Printf("Code review recommended (confidence: %.0f%%)\n", decision.Confidence*100)
+							}
+							reviewIssueID, err := rp.createCodeReviewIssue(ctx, issue, commitHash, reviewReason)
 							if err != nil {
 								fmt.Fprintf(os.Stderr, "Warning: failed to create code review issue: %v\n", err)
 							} else {
@@ -615,18 +638,56 @@ func getOutputSample(output []string, maxLines int) []string {
 
 // getCommitDiff gets the git diff for a specific commit using git directly
 func (rp *ResultsProcessor) getCommitDiff(ctx context.Context, commitHash string) (string, error) {
-	// Run git diff <hash>^ <hash> to get the diff for this specific commit
-	// The ^ suffix means "parent of this commit"
-	cmd := fmt.Sprintf("cd %s && git diff %s^ %s", rp.workingDir, commitHash, commitHash)
+	// Validate commit hash format to prevent command injection
+	if !isValidGitRef(commitHash) {
+		return "", fmt.Errorf("invalid commit hash format: %s", commitHash)
+	}
 
-	// Use bash to execute the command
-	bashCmd := exec.CommandContext(ctx, "bash", "-c", cmd)
-	output, err := bashCmd.Output()
+	// Check if this commit has a parent (handles first commit case)
+	checkParentCmd := exec.CommandContext(ctx, "git", "-C", rp.workingDir,
+		"rev-parse", "--verify", "--quiet", commitHash+"^")
+	hasParent := checkParentCmd.Run() == nil
+
+	var cmd *exec.Cmd
+	if !hasParent {
+		// First commit - use git show instead of diff
+		cmd = exec.CommandContext(ctx, "git", "-C", rp.workingDir,
+			"show", "--format=", commitHash)
+	} else {
+		// Normal case - diff against parent
+		// Use exec.Command with separate args to prevent command injection
+		cmd = exec.CommandContext(ctx, "git", "-C", rp.workingDir,
+			"diff", commitHash+"^", commitHash)
+	}
+
+	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("git diff failed: %w", err)
 	}
 
 	return string(output), nil
+}
+
+// isValidGitRef validates that a git reference is safe to use in commands
+// Accepts: commit SHAs (40 hex chars for SHA-1, 64 for SHA-256), short forms (7-40 chars),
+// and special refs like HEAD, HEAD~1, etc.
+func isValidGitRef(ref string) bool {
+	if len(ref) == 0 || len(ref) > 64 {
+		return false
+	}
+
+	// Allow alphanumeric, -, ~, ^, / (for refs/heads/branch-name)
+	// Reject shell metacharacters: ; & | $ ` \ " ' < > ( ) { } [ ] * ? !
+	for _, c := range ref {
+		if !((c >= '0' && c <= '9') ||
+		     (c >= 'a' && c <= 'z') ||
+		     (c >= 'A' && c <= 'Z') ||
+		     c == '-' || c == '_' || c == '/' || c == '~' || c == '^' || c == '.') {
+			return false
+		}
+	}
+
+	return true
 }
 
 // createCodeReviewIssue creates a blocking code review issue for the given commit
