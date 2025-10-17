@@ -428,6 +428,53 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		defer e.intervention.ClearAgentContext()
 	}
 
+	// Gather context for comprehensive prompt
+	gatherer := NewContextGatherer(e.store)
+	promptCtx, err := gatherer.GatherContext(ctx, issue, nil)
+	if err != nil {
+		e.logEvent(ctx, events.EventTypeAgentSpawned, events.SeverityError, issue.ID,
+			fmt.Sprintf("Failed to gather context: %v", err),
+			map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			})
+		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to gather context: %v", err))
+		e.monitor.EndExecution(false, false)
+		return fmt.Errorf("failed to gather context: %w", err)
+	}
+
+	// Build comprehensive prompt using PromptBuilder
+	builder, err := NewPromptBuilder()
+	if err != nil {
+		e.logEvent(ctx, events.EventTypeAgentSpawned, events.SeverityError, issue.ID,
+			fmt.Sprintf("Failed to create prompt builder: %v", err),
+			map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			})
+		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to create prompt builder: %v", err))
+		e.monitor.EndExecution(false, false)
+		return fmt.Errorf("failed to create prompt builder: %w", err)
+	}
+
+	prompt, err := builder.BuildPrompt(promptCtx)
+	if err != nil {
+		e.logEvent(ctx, events.EventTypeAgentSpawned, events.SeverityError, issue.ID,
+			fmt.Sprintf("Failed to build prompt: %v", err),
+			map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			})
+		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to build prompt: %v", err))
+		e.monitor.EndExecution(false, false)
+		return fmt.Errorf("failed to build prompt: %w", err)
+	}
+
+	// Log prompt for debugging if VC_DEBUG_PROMPTS is set
+	if os.Getenv("VC_DEBUG_PROMPTS") != "" {
+		fmt.Fprintf(os.Stderr, "\n=== AGENT PROMPT ===\n%s\n=== END PROMPT ===\n\n", prompt)
+	}
+
 	// Generate a unique agent ID for this execution
 	agentID := uuid.New().String()
 
@@ -443,7 +490,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		AgentID:    agentID,
 	}
 
-	agent, err := SpawnAgent(agentCtx, agentCfg)
+	agent, err := SpawnAgent(agentCtx, agentCfg, prompt)
 	if err != nil {
 		// Log agent spawn failure BEFORE releasing issue
 		e.logEvent(ctx, events.EventTypeAgentSpawned, events.SeverityError, issue.ID,

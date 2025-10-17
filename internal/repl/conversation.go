@@ -1064,6 +1064,32 @@ func (c *ConversationHandler) executeIssue(ctx context.Context, issue *types.Iss
 		fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
 	}
 
+	// Gather context for comprehensive prompt
+	gatherer := executor.NewContextGatherer(c.storage)
+	promptCtx, err := gatherer.GatherContext(ctx, issue, nil)
+	if err != nil {
+		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to gather context: %v", err))
+		return nil, fmt.Errorf("failed to gather context: %w", err)
+	}
+
+	// Build comprehensive prompt using PromptBuilder
+	builder, err := executor.NewPromptBuilder()
+	if err != nil {
+		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to create prompt builder: %v", err))
+		return nil, fmt.Errorf("failed to create prompt builder: %w", err)
+	}
+
+	prompt, err := builder.BuildPrompt(promptCtx)
+	if err != nil {
+		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to build prompt: %v", err))
+		return nil, fmt.Errorf("failed to build prompt: %w", err)
+	}
+
+	// Log prompt for debugging if VC_DEBUG_PROMPTS is set
+	if os.Getenv("VC_DEBUG_PROMPTS") != "" {
+		fmt.Fprintf(os.Stderr, "\n=== AGENT PROMPT ===\n%s\n=== END PROMPT ===\n\n", prompt)
+	}
+
 	// Spawn agent
 	agentCfg := executor.AgentConfig{
 		Type:       executor.AgentTypeClaudeCode,
@@ -1073,7 +1099,7 @@ func (c *ConversationHandler) executeIssue(ctx context.Context, issue *types.Iss
 		Timeout:    30 * time.Minute,
 	}
 
-	agent, err := executor.SpawnAgent(ctx, agentCfg)
+	agent, err := executor.SpawnAgent(ctx, agentCfg, prompt)
 	if err != nil {
 		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to spawn agent: %v", err))
 		return nil, fmt.Errorf("failed to spawn agent: %w", err)

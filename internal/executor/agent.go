@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 	"time"
 
@@ -75,8 +74,8 @@ type Agent struct {
 	parser *events.OutputParser // Parser for extracting events from output
 }
 
-// SpawnAgent starts a coding agent process
-func SpawnAgent(ctx context.Context, cfg AgentConfig) (*Agent, error) {
+// SpawnAgent starts a coding agent process with a pre-built prompt
+func SpawnAgent(ctx context.Context, cfg AgentConfig, prompt string) (*Agent, error) {
 	// Validate config
 	if cfg.Issue == nil {
 		return nil, fmt.Errorf("issue is required")
@@ -87,14 +86,17 @@ func SpawnAgent(ctx context.Context, cfg AgentConfig) (*Agent, error) {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Minute // Default 30min timeout
 	}
+	if prompt == "" {
+		return nil, fmt.Errorf("prompt is required")
+	}
 
 	// Build the command based on agent type
 	var cmd *exec.Cmd
 	switch cfg.Type {
 	case AgentTypeCody:
-		cmd = buildCodyCommand(cfg)
+		cmd = buildCodyCommand(cfg, prompt)
 	case AgentTypeClaudeCode:
-		cmd = buildClaudeCodeCommand(cfg)
+		cmd = buildClaudeCodeCommand(cfg, prompt)
 	default:
 		return nil, fmt.Errorf("unsupported agent type: %s", cfg.Type)
 	}
@@ -278,9 +280,7 @@ func (a *Agent) parseAndStoreEvents(line string) {
 }
 
 // buildCodyCommand constructs the Cody CLI command
-func buildCodyCommand(cfg AgentConfig) *exec.Cmd {
-	prompt := buildPrompt(cfg.Issue)
-
+func buildCodyCommand(cfg AgentConfig, prompt string) *exec.Cmd {
 	args := []string{"chat", "--message", prompt}
 	if cfg.StreamJSON {
 		args = append(args, "--stream-json")
@@ -290,49 +290,11 @@ func buildCodyCommand(cfg AgentConfig) *exec.Cmd {
 }
 
 // buildClaudeCodeCommand constructs the Claude Code CLI command
-func buildClaudeCodeCommand(cfg AgentConfig) *exec.Cmd {
-	prompt := buildPrompt(cfg.Issue)
-
+func buildClaudeCodeCommand(cfg AgentConfig, prompt string) *exec.Cmd {
 	// Claude Code uses the message directly
 	args := []string{prompt}
 
 	return exec.Command("claude", args...)
-}
-
-// buildPrompt creates the prompt to send to the coding agent
-func buildPrompt(issue *types.Issue) string {
-	var sb strings.Builder
-
-	sb.WriteString(fmt.Sprintf("# Task: %s\n\n", issue.Title))
-
-	if issue.Description != "" {
-		sb.WriteString("## Description\n")
-		sb.WriteString(issue.Description)
-		sb.WriteString("\n\n")
-	}
-
-	if issue.Design != "" {
-		sb.WriteString("## Design\n")
-		sb.WriteString(issue.Design)
-		sb.WriteString("\n\n")
-	}
-
-	if issue.AcceptanceCriteria != "" {
-		sb.WriteString("## Acceptance Criteria\n")
-		sb.WriteString(issue.AcceptanceCriteria)
-		sb.WriteString("\n\n")
-	}
-
-	if issue.Notes != "" {
-		sb.WriteString("## Notes\n")
-		sb.WriteString(issue.Notes)
-		sb.WriteString("\n\n")
-	}
-
-	sb.WriteString("Please implement this task following the acceptance criteria.\n")
-	sb.WriteString("When complete, respond with a summary of what was done.\n")
-
-	return sb.String()
 }
 
 // GetOutput returns a copy of the current output
