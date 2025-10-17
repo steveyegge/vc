@@ -305,31 +305,17 @@ func (a *Analyzer) callAISupervisor(ctx context.Context, prompt string) (*Anomal
 	return &parseResult.Data, nil
 }
 
-// callAIWithRetry calls the AI API with the prompt
-// This is a simplified version of supervisor's retry logic
-// TODO: Refactor supervisor to expose a generic CallAI method instead of duplicating this
+// callAIWithRetry calls the AI API with the prompt using the supervisor's generic CallAI method
+// This leverages the supervisor's retry logic and circuit breaker without code duplication
 func (a *Analyzer) callAIWithRetry(ctx context.Context, prompt string) (string, error) {
-	// For the initial implementation, we'll create a simple mock response
-	// In production, this should call supervisor's API or we should add Supervisor.CallAI()
+	// Use supervisor's generic CallAI method
+	// This provides retry logic, circuit breaker, and proper error handling
+	responseText, err := a.supervisor.CallAI(ctx, prompt, "anomaly-detection", "claude-sonnet-4-5-20250929", 4096)
+	if err != nil {
+		return "", fmt.Errorf("AI anomaly detection API call failed: %w", err)
+	}
 
-	// TEMPORARY: Return a mock response indicating no anomalies
-	// This allows the structure to be in place while we refactor supervisor
-	mockResponse := `{
-  "detected": false,
-  "description": "No anomalies detected in execution patterns",
-  "reasoning": "All executions completed successfully with normal timing and state transitions. No evidence of loops, thrashing, or stuck states.",
-  "confidence": 0.95
-}`
-
-	// TODO: Replace this with actual AI API call
-	// Either by:
-	// 1. Adding Supervisor.CallAI(ctx, prompt) method
-	// 2. Or duplicating the supervisor's API call logic here
-	//
-	// For now, we return the mock response to allow tests to pass
-	// and demonstrate the architecture
-
-	return mockResponse, nil
+	return responseText, nil
 }
 
 // GetTelemetrySummary returns a summary of recent telemetry for external consumers

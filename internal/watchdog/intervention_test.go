@@ -15,7 +15,6 @@ func TestInterventionController_PauseAgent(t *testing.T) {
 
 	// Setup in-memory storage
 	store, err := storage.NewStorage(ctx, &storage.Config{
-		Backend: "sqlite",
 		Path:    ":memory:",
 	})
 	if err != nil {
@@ -157,7 +156,6 @@ func TestInterventionController_KillAgent(t *testing.T) {
 
 	// Setup in-memory storage
 	store, err := storage.NewStorage(ctx, &storage.Config{
-		Backend: "sqlite",
 		Path:    ":memory:",
 	})
 	if err != nil {
@@ -250,7 +248,6 @@ func TestInterventionController_Intervene(t *testing.T) {
 
 	// Setup storage
 	store, err := storage.NewStorage(ctx, &storage.Config{
-		Backend: "sqlite",
 		Path:    ":memory:",
 	})
 	if err != nil {
@@ -366,7 +363,6 @@ func TestInterventionController_NoActiveAgent(t *testing.T) {
 	ctx := context.Background()
 
 	store, err := storage.NewStorage(ctx, &storage.Config{
-		Backend: "sqlite",
 		Path:    ":memory:",
 	})
 	if err != nil {
@@ -408,7 +404,6 @@ func TestInterventionController_ClearAgentContext(t *testing.T) {
 	ctx := context.Background()
 
 	store, err := storage.NewStorage(ctx, &storage.Config{
-		Backend: "sqlite",
 		Path:    ":memory:",
 	})
 	if err != nil {
@@ -447,7 +442,6 @@ func TestInterventionController_InterventionHistory(t *testing.T) {
 	ctx := context.Background()
 
 	store, err := storage.NewStorage(ctx, &storage.Config{
-		Backend: "sqlite",
 		Path:    ":memory:",
 	})
 	if err != nil {

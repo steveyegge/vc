@@ -52,6 +52,8 @@ func (m *mockStorage) UpdateExecutionState(ctx context.Context, issueID string, 
 func (m *mockStorage) SaveCheckpoint(ctx context.Context, issueID string, checkpointData interface{}) error { return nil }
 func (m *mockStorage) GetCheckpoint(ctx context.Context, issueID string) (string, error) { return "", nil }
 func (m *mockStorage) ReleaseIssue(ctx context.Context, issueID string) error { return nil }
+func (m *mockStorage) GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error) { return nil, nil }
+func (m *mockStorage) RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error { return nil }
 
 // createTestSupervisor creates a supervisor for testing
 // Since we're using mock responses in the analyzer, the supervisor won't make real AI calls

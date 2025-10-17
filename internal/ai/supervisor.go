@@ -1203,6 +1203,59 @@ func truncateString(s string, maxLen int) string {
 	return s[len(s)-maxLen:]
 }
 
+// CallAI makes a generic AI API call with the given prompt
+// This provides a generic interface for other components (like watchdog) to use AI
+// without duplicating retry logic and circuit breaker code
+func (s *Supervisor) CallAI(ctx context.Context, prompt string, operation string, model string, maxTokens int) (string, error) {
+	startTime := time.Now()
+	var responseText string
+
+	// Use default model if not specified
+	if model == "" {
+		model = s.model
+	}
+
+	// Use default maxTokens if not specified
+	if maxTokens == 0 {
+		maxTokens = 4096
+	}
+
+	// Call Anthropic API with retry logic
+	var response *anthropic.Message
+	err := s.retryWithBackoff(ctx, operation, func(attemptCtx context.Context) error {
+		resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(model),
+			MaxTokens: int64(maxTokens),
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			},
+		})
+		if apiErr != nil {
+			return apiErr
+		}
+		response = resp
+		return nil
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("anthropic API call failed: %w", err)
+	}
+
+	// Extract the text content from the response
+	for _, block := range response.Content {
+		if block.Type == "text" {
+			responseText += block.Text
+		}
+	}
+
+	// Log the call
+	duration := time.Since(startTime)
+	fmt.Printf("AI %s call: input=%d tokens, output=%d tokens, duration=%v\n",
+		operation, response.Usage.InputTokens, response.Usage.OutputTokens, duration)
+
+	return responseText, nil
+}
+
 // SummarizeAgentOutput uses AI to create an intelligent summary of agent output
 // instead of using a simple "last N lines" heuristic.
 //
