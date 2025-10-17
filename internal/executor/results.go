@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -326,6 +327,47 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			if err := rp.store.AddComment(ctx, issue.ID, rp.actor, commitComment); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to add commit comment: %v\n", err)
 			}
+
+			// Step 3.6: AI-based code review decision (ZFC principle - no heuristics)
+			if rp.supervisor != nil {
+				fmt.Printf("\n=== Code Review Decision ===\n")
+
+				// Get the diff for this commit using git directly
+				// Note: We can't use gitOps.GetDiff() because it doesn't support commit refs
+				diff, err := rp.getCommitDiff(ctx, commitHash)
+				if err != nil {
+					// Don't fail - just log and continue
+					fmt.Fprintf(os.Stderr, "Warning: failed to get diff for code review decision: %v\n", err)
+				} else {
+					// Use Haiku to decide if review is needed (fast and cheap)
+					decision, err := rp.supervisor.AnalyzeCodeReviewNeed(ctx, issue, diff)
+					if err != nil {
+						// Don't fail - just log and continue
+						fmt.Fprintf(os.Stderr, "Warning: code review decision failed: %v\n", err)
+					} else {
+						// Log the decision
+						decisionComment := fmt.Sprintf("**Code Review Decision**\n\nNeeds Review: %v\n\nReasoning: %s\n\nConfidence: %.0f%%",
+							decision.NeedsReview, decision.Reasoning, decision.Confidence*100)
+						if err := rp.store.AddComment(ctx, issue.ID, "ai-supervisor", decisionComment); err != nil {
+							fmt.Fprintf(os.Stderr, "warning: failed to add code review decision comment: %v\n", err)
+						}
+
+						// If review is needed, create a blocking code review issue
+						if decision.NeedsReview {
+							fmt.Printf("Code review recommended (confidence: %.0f%%)\n", decision.Confidence*100)
+							reviewIssueID, err := rp.createCodeReviewIssue(ctx, issue, commitHash, decision.Reasoning)
+							if err != nil {
+								fmt.Fprintf(os.Stderr, "Warning: failed to create code review issue: %v\n", err)
+							} else {
+								fmt.Printf("✓ Created code review issue: %s\n", reviewIssueID)
+								result.DiscoveredIssues = append(result.DiscoveredIssues, reviewIssueID)
+							}
+						} else {
+							fmt.Printf("No code review needed (confidence: %.0f%%)\n", decision.Confidence*100)
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -569,6 +611,88 @@ func getOutputSample(output []string, maxLines int) []string {
 	}
 
 	return output[len(output)-maxLines:]
+}
+
+// getCommitDiff gets the git diff for a specific commit using git directly
+func (rp *ResultsProcessor) getCommitDiff(ctx context.Context, commitHash string) (string, error) {
+	// Run git diff <hash>^ <hash> to get the diff for this specific commit
+	// The ^ suffix means "parent of this commit"
+	cmd := fmt.Sprintf("cd %s && git diff %s^ %s", rp.workingDir, commitHash, commitHash)
+
+	// Use bash to execute the command
+	bashCmd := exec.CommandContext(ctx, "bash", "-c", cmd)
+	output, err := bashCmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git diff failed: %w", err)
+	}
+
+	return string(output), nil
+}
+
+// createCodeReviewIssue creates a blocking code review issue for the given commit
+func (rp *ResultsProcessor) createCodeReviewIssue(ctx context.Context, parentIssue *types.Issue, commitHash, reasoning string) (string, error) {
+	// Create issue title
+	title := fmt.Sprintf("Code review: %s", parentIssue.Title)
+
+	// Build detailed description
+	description := fmt.Sprintf(`Code review requested by AI supervisor for changes made in %s.
+
+**Original Issue:** %s
+**Commit:** %s
+
+**AI Reasoning:**
+%s
+
+**Review Instructions:**
+1. Review the changes in commit %s
+2. Check for correctness, security issues, and code quality
+3. Add review comments to this issue
+4. Close this issue when review is complete
+
+_This issue was automatically created by AI code review analysis._`,
+		parentIssue.ID,
+		parentIssue.ID,
+		commitHash[:8],
+		reasoning,
+		commitHash[:8])
+
+	// Create the code review issue
+	reviewIssue := &types.Issue{
+		Title:       title,
+		Description: description,
+		IssueType:   types.TypeTask,
+		Status:      types.StatusOpen,
+		Priority:    1, // P1 - high priority
+		Assignee:    "ai-supervisor",
+	}
+
+	err := rp.store.CreateIssue(ctx, reviewIssue, "ai-supervisor")
+	if err != nil {
+		return "", fmt.Errorf("failed to create code review issue: %w", err)
+	}
+
+	reviewIssueID := reviewIssue.ID
+
+	// Add blocking dependency: parent issue is blocked by review issue
+	// This ensures the parent can't be considered "done" until review is complete
+	dep := &types.Dependency{
+		IssueID:     parentIssue.ID,          // Parent issue
+		DependsOnID: reviewIssueID,           // Depends on review issue
+		Type:        types.DepBlocks,         // Review blocks parent
+	}
+	if err := rp.store.AddDependency(ctx, dep, "ai-supervisor"); err != nil {
+		// Log warning but don't fail - issue was created successfully
+		fmt.Fprintf(os.Stderr, "warning: failed to add blocking dependency %s -> %s: %v\n",
+			parentIssue.ID, reviewIssueID, err)
+	}
+
+	// Add comment to parent issue about code review
+	reviewComment := fmt.Sprintf("Code review issue created: %s\n\nThis issue is now blocked pending code review.", reviewIssueID)
+	if err := rp.store.AddComment(ctx, parentIssue.ID, "ai-supervisor", reviewComment); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to add code review comment to parent: %v\n", err)
+	}
+
+	return reviewIssueID, nil
 }
 
 // autoCommit performs auto-commit with AI-generated message.

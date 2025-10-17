@@ -246,6 +246,13 @@ type RecoveryStrategy struct {
 	RequiresApproval bool              `json:"requires_approval"`  // Whether human approval is needed
 }
 
+// CodeReviewDecision represents AI decision about whether code review is needed
+type CodeReviewDecision struct {
+	NeedsReview bool    `json:"needs_review"` // Should this code be reviewed?
+	Reasoning   string  `json:"reasoning"`    // Detailed reasoning for the decision
+	Confidence  float64 `json:"confidence"`   // Confidence in the assessment (0.0-1.0)
+}
+
 // AssessCompletion uses AI to determine if an epic or mission is truly complete.
 // This replaces the hardcoded "all children closed = complete" heuristic with AI decision-making.
 //
@@ -380,6 +387,74 @@ func (s *Supervisor) GenerateRecoveryStrategy(ctx context.Context, issue *types.
 	}
 
 	return &strategy, nil
+}
+
+// AnalyzeCodeReviewNeed uses Haiku to decide if code review is warranted.
+// This replaces arbitrary heuristics (line counts, file counts) with AI decision-making (ZFC compliance).
+//
+// The AI analyzes the git diff considering:
+// - Complexity and risk of changes
+// - Critical paths touched (auth, security, data integrity)
+// - Semantic significance vs. boilerplate
+// - API changes and public interfaces
+//
+// Returns a decision with reasoning.
+func (s *Supervisor) AnalyzeCodeReviewNeed(ctx context.Context, issue *types.Issue, gitDiff string) (*CodeReviewDecision, error) {
+	startTime := time.Now()
+
+	// Build the prompt for code review decision
+	prompt := s.buildCodeReviewPrompt(issue, gitDiff)
+
+	// Call Anthropic API with retry logic using Haiku (fast and cheap)
+	var response *anthropic.Message
+	err := s.retryWithBackoff(ctx, "code-review-decision", func(attemptCtx context.Context) error {
+		resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+			Model:     anthropic.Model("claude-3-5-haiku-20241022"), // Use Haiku for cost efficiency
+			MaxTokens: 1024, // Short decision
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			},
+		})
+		if apiErr != nil {
+			return apiErr
+		}
+		response = resp
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("anthropic API call failed: %w", err)
+	}
+
+	// Extract the text content from the response
+	var responseText string
+	for _, block := range response.Content {
+		if block.Type == "text" {
+			responseText += block.Text
+		}
+	}
+
+	// Parse the response as JSON using resilient parser
+	parseResult := Parse[CodeReviewDecision](responseText, ParseOptions{
+		Context:   "code review decision response",
+		LogErrors: true,
+	})
+	if !parseResult.Success {
+		return nil, fmt.Errorf("failed to parse code review decision response: %s (response: %s)", parseResult.Error, responseText)
+	}
+	decision := parseResult.Data
+
+	// Log the decision
+	duration := time.Since(startTime)
+	fmt.Printf("AI Code Review Decision for %s: needs_review=%v, confidence=%.2f, duration=%v\n",
+		issue.ID, decision.NeedsReview, decision.Confidence, duration)
+
+	// Log AI usage to events
+	if err := s.logAIUsage(ctx, issue.ID, "code-review-decision", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
+	}
+
+	return &decision, nil
 }
 
 // GateFailure represents a failed quality gate with details
@@ -762,6 +837,75 @@ IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (`
 		issue.Description,
 		len(gateResults),
 		failureSummary.String())
+}
+
+// buildCodeReviewPrompt builds the prompt for deciding if code review is needed
+func (s *Supervisor) buildCodeReviewPrompt(issue *types.Issue, gitDiff string) string {
+	// Truncate diff if it's too large (keep it under 30k chars for fast processing)
+	diffToAnalyze := gitDiff
+	wasTruncated := false
+	const maxDiffSize = 30000
+	if len(gitDiff) > maxDiffSize {
+		diffToAnalyze = gitDiff[:maxDiffSize] + "\n\n... [diff truncated - remaining content omitted for brevity] ..."
+		wasTruncated = true
+	}
+
+	truncationNote := ""
+	if wasTruncated {
+		truncationNote = "\n\nNote: The diff was truncated. Base your decision on what's shown."
+	}
+
+	return fmt.Sprintf(`You are deciding whether code review is warranted for this change.
+
+IMPORTANT: Use SEMANTIC ANALYSIS, not heuristics like line counts or file counts.
+
+ISSUE CONTEXT:
+Issue ID: %s
+Title: %s
+Type: %s
+Priority: P%d
+Description: %s
+
+GIT DIFF:
+%s%s
+
+DECISION TASK:
+Analyze the diff and determine if code review is needed. Consider:
+
+1. **Complexity and Risk**: Are the changes complex or risky?
+2. **Critical Paths**: Does this touch auth, security, data integrity, or core business logic?
+3. **Semantic Significance**: Is this meaningful code or generated boilerplate?
+4. **API Changes**: Are public interfaces or contracts being modified?
+5. **Refactoring vs New Features**: Refactoring often needs review, boilerplate doesn't
+
+EXAMPLES WHERE REVIEW **IS** NEEDED:
+- 10 lines changing authentication logic → REVIEW
+- 30 lines refactoring critical payment code → REVIEW
+- API contract changes (even small) → REVIEW
+- Security-sensitive changes → REVIEW
+- Complex algorithm changes → REVIEW
+
+EXAMPLES WHERE REVIEW **IS NOT** NEEDED:
+- 200 lines of generated test fixtures → SKIP
+- 100 lines updating dependency versions → SKIP
+- Trivial formatting changes → SKIP
+- Simple config updates → SKIP
+- Documentation-only changes → SKIP
+
+Provide your decision as a JSON object:
+{
+  "needs_review": true/false,
+  "reasoning": "Detailed explanation of why review is/isn't needed",
+  "confidence": 0.9
+}
+
+Be objective. It's better to request review when unsure than to miss a critical issue.
+
+IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (` + "```" + `). Just the JSON object.`,
+		issue.ID, issue.Title, issue.IssueType, issue.Priority,
+		issue.Description,
+		diffToAnalyze,
+		truncationNote)
 }
 
 // logAIUsage logs AI API usage via comments
