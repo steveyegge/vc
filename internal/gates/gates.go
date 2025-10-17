@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/storage"
@@ -277,8 +278,12 @@ func (r *Runner) handleGateResultsWithAI(ctx context.Context, originalIssue *typ
 		}
 	}
 
-	// Ask AI for recovery strategy
-	strategy, err := r.supervisor.GenerateRecoveryStrategy(ctx, originalIssue, gateFailures)
+	// Ask AI for recovery strategy with timeout protection (vc-225)
+	// Prevent hanging on AI API issues - fallback after 2 minutes
+	aiCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	strategy, err := r.supervisor.GenerateRecoveryStrategy(aiCtx, originalIssue, gateFailures)
 	if err != nil {
 		// If AI fails, fall back to hardcoded behavior
 		fmt.Printf("warning: AI recovery strategy failed for %s: %v (falling back)\n", originalIssue.ID, err)
