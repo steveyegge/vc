@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -315,7 +316,66 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			})
 	}
 
-	// Step 3.5: Auto-commit changes (if enabled, agent succeeded, and gates passed)
+	// Step 3.5: Test Coverage Analysis (vc-217)
+	// After quality gates pass, analyze test coverage and file test improvement issues
+	if agentResult.Success && result.GatesPassed && rp.supervisor != nil && rp.gitOps != nil {
+		fmt.Printf("\n=== Test Coverage Analysis ===\n")
+
+		// Check if there are uncommitted changes to analyze
+		hasChanges, err := rp.gitOps.HasUncommittedChanges(ctx, rp.workingDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to check for changes: %v\n", err)
+		} else if hasChanges {
+			// Get the diff of uncommitted changes
+			diff, err := rp.getUncommittedDiff(ctx)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to get diff for test coverage analysis: %v\n", err)
+			} else if diff != "" {
+			// Get existing test files to understand test patterns
+			existingTests, err := rp.getExistingTests(ctx)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to get existing tests: %v\n", err)
+			}
+
+			// Analyze test coverage
+			testAnalysis, err := rp.supervisor.AnalyzeTestCoverage(ctx, issue, diff, existingTests)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: test coverage analysis failed: %v\n", err)
+			} else {
+				// Add analysis summary as comment
+				testComment := fmt.Sprintf("**Test Coverage Analysis**\n\n%s\n\nSufficient Coverage: %v\nConfidence: %.0f%%\nTest Issues Found: %d",
+					testAnalysis.Summary, testAnalysis.SufficientCoverage, testAnalysis.Confidence*100, len(testAnalysis.TestIssues))
+				if len(testAnalysis.UncoveredAreas) > 0 {
+					testComment += fmt.Sprintf("\n\nUncovered Areas:\n")
+					for _, area := range testAnalysis.UncoveredAreas {
+						testComment += fmt.Sprintf("- %s\n", area)
+					}
+				}
+				if err := rp.store.AddComment(ctx, issue.ID, "ai-supervisor", testComment); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to add test coverage comment: %v\n", err)
+				}
+
+				// File test improvement issues if gaps were found
+				if len(testAnalysis.TestIssues) > 0 {
+					fmt.Printf("Filing %d test improvement issues...\n", len(testAnalysis.TestIssues))
+					createdTestIssues, err := rp.createTestIssues(ctx, issue, testAnalysis.TestIssues)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to create test issues: %v\n", err)
+					} else {
+						result.DiscoveredIssues = append(result.DiscoveredIssues, createdTestIssues...)
+						fmt.Printf("✓ Created %d test improvement issues: %v\n", len(createdTestIssues), createdTestIssues)
+					}
+				} else {
+					fmt.Printf("✓ No test coverage gaps found - coverage looks good\n")
+				}
+			}
+			}
+		} else {
+			fmt.Printf("No uncommitted changes - skipping test coverage analysis\n")
+		}
+	}
+
+	// Step 3.6: Auto-commit changes (if enabled, agent succeeded, and gates passed)
 	if agentResult.Success && result.GatesPassed && rp.enableAutoCommit && rp.gitOps != nil && rp.messageGen != nil {
 		// Update execution state to committing
 		if err := rp.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateCommitting); err != nil {
@@ -682,6 +742,16 @@ func safeShortHash(hash string) string {
 	return hash
 }
 
+// getUncommittedDiff gets the git diff for uncommitted changes
+func (rp *ResultsProcessor) getUncommittedDiff(ctx context.Context) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", rp.workingDir, "diff", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git diff failed: %w", err)
+	}
+	return string(output), nil
+}
+
 // getCommitDiff gets the git diff for a specific commit using git directly
 func (rp *ResultsProcessor) getCommitDiff(ctx context.Context, commitHash string) (string, error) {
 	// Validate commit hash format to prevent command injection
@@ -912,6 +982,160 @@ _This issue was automatically created by AI code quality analysis (vc-216)._`,
 	return createdIssues, nil
 }
 
+// getExistingTests finds and reads existing test files to understand test patterns
+func (rp *ResultsProcessor) getExistingTests(ctx context.Context) (string, error) {
+	// Use git to find test files (handles .gitignore automatically)
+	// Look for common test file patterns: *_test.go, *.test.*, test_*.*
+	cmd := exec.CommandContext(ctx, "git", "-C", rp.workingDir,
+		"ls-files", "*_test.go", "*.test.*", "test_*.*")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to find test files: %w", err)
+	}
+
+	testFiles := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(testFiles) == 0 || (len(testFiles) == 1 && testFiles[0] == "") {
+		return "", fmt.Errorf("no test files found")
+	}
+
+	// Read a sample of test files (up to 5 files, max 10KB total)
+	var testContent strings.Builder
+	const maxFiles = 5
+	const maxTotalSize = 10000
+	totalSize := 0
+
+	for i, testFile := range testFiles {
+		if i >= maxFiles {
+			testContent.WriteString(fmt.Sprintf("\n... [%d more test files omitted]\n", len(testFiles)-i))
+			break
+		}
+		if totalSize >= maxTotalSize {
+			testContent.WriteString(fmt.Sprintf("\n... [content limit reached, %d files omitted]\n", len(testFiles)-i))
+			break
+		}
+
+		filePath := filepath.Join(rp.workingDir, testFile)
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			continue // Skip files we can't read
+		}
+
+		// Add this file's content
+		testContent.WriteString(fmt.Sprintf("\n=== %s ===\n", testFile))
+		contentStr := string(content)
+		if len(contentStr)+totalSize > maxTotalSize {
+			// Truncate this file to fit within limit (safely, preserving UTF-8)
+			remaining := maxTotalSize - totalSize
+			if remaining > 0 {
+				contentStr = safeTruncateUTF8(contentStr, remaining) + "\n... [truncated]\n"
+			} else {
+				contentStr = "\n... [truncated]\n"
+			}
+		}
+		testContent.WriteString(contentStr)
+		totalSize += len(contentStr)
+	}
+
+	return testContent.String(), nil
+}
+
+// createTestIssues creates test improvement issues from test coverage analysis (vc-217)
+func (rp *ResultsProcessor) createTestIssues(ctx context.Context, parentIssue *types.Issue, testIssues []ai.DiscoveredIssue) ([]string, error) {
+	var createdIssues []string
+	var errors []error
+
+	for i, testIssue := range testIssues {
+		title := testIssue.Title
+
+		// Build description with parent issue context
+		description := fmt.Sprintf(`Test coverage gap identified by automated analysis (vc-217).
+
+**Original Issue:** %s
+
+%s
+
+_This issue was automatically created by AI test coverage analysis._`,
+			parentIssue.ID,
+			testIssue.Description)
+
+		// Map priority string to int
+		priority := 2 // default P2
+		switch testIssue.Priority {
+		case "P0":
+			priority = 0
+		case "P1":
+			priority = 1
+		case "P2":
+			priority = 2
+		case "P3":
+			priority = 3
+		}
+
+		// Map type string to types.IssueType
+		issueType := types.TypeTask // default for tests
+		switch testIssue.Type {
+		case "bug":
+			issueType = types.TypeBug
+		case "task":
+			issueType = types.TypeTask
+		case "chore":
+			issueType = types.TypeChore
+		}
+
+		// Create the test improvement issue
+		newIssue := &types.Issue{
+			Title:       title,
+			Description: description,
+			IssueType:   issueType,
+			Status:      types.StatusOpen,
+			Priority:    priority,
+			Assignee:    "ai-supervisor",
+		}
+
+		err := rp.store.CreateIssue(ctx, newIssue, "ai-supervisor")
+		if err != nil {
+			errors = append(errors, fmt.Errorf("failed to create test issue %d (%s): %w", i+1, title, err))
+			fmt.Fprintf(os.Stderr, "warning: failed to create test issue %d (%s): %v\n", i+1, title, err)
+			continue
+		}
+
+		createdIssues = append(createdIssues, newIssue.ID)
+
+		// Add related dependency (not blocking - these are follow-on improvements)
+		dep := &types.Dependency{
+			IssueID:     newIssue.ID,             // Test issue
+			DependsOnID: parentIssue.ID,          // Related to parent
+			Type:        types.DepDiscoveredFrom, // Discovered from parent work
+		}
+		if err := rp.store.AddDependency(ctx, dep, "ai-supervisor"); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to add dependency %s -> %s: %v\n",
+				newIssue.ID, parentIssue.ID, err)
+		}
+
+		fmt.Printf("  ✓ Created %s (%s, P%d): %s\n", newIssue.ID, issueType, priority, title)
+	}
+
+	// Add comment to parent issue about test issues
+	if len(createdIssues) > 0 {
+		testComment := fmt.Sprintf("Test coverage analysis found %d test gaps and created issues:\n%v",
+			len(createdIssues), createdIssues)
+		if err := rp.store.AddComment(ctx, parentIssue.ID, "ai-supervisor", testComment); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to add test issues comment to parent: %v\n", err)
+		}
+	}
+
+	if len(errors) > 0 {
+		var errMsg strings.Builder
+		errMsg.WriteString(fmt.Sprintf("encountered %d errors while creating test issues:", len(errors)))
+		for _, err := range errors {
+			errMsg.WriteString(fmt.Sprintf("\n  - %v", err))
+		}
+		return createdIssues, fmt.Errorf("%s", errMsg.String())
+	}
+
+	return createdIssues, nil
+}
+
 // autoCommit performs auto-commit with AI-generated message.
 // Returns the commit hash if successful, empty string if no changes to commit.
 func (rp *ResultsProcessor) autoCommit(ctx context.Context, issue *types.Issue) (string, error) {
@@ -1008,4 +1232,43 @@ func (rp *ResultsProcessor) autoCommit(ctx context.Context, issue *types.Issue) 
 	}
 
 	return commitHash, nil
+}
+
+// safeTruncateUTF8 truncates a string to maxLen bytes while preserving UTF-8 encoding
+// If truncation would split a multi-byte UTF-8 sequence, it backs off to a valid boundary
+func safeTruncateUTF8(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+
+	// Truncate at maxLen initially
+	truncated := s[:maxLen]
+
+	// Walk backwards to find a valid UTF-8 boundary
+	// We only need to check up to 4 bytes back (max UTF-8 sequence length)
+	for i := 0; i < 4 && len(truncated) > 0; i++ {
+		// Check if we have valid UTF-8
+		if isValidUTF8(truncated) {
+			return truncated
+		}
+		// Remove last byte and try again
+		truncated = truncated[:len(truncated)-1]
+	}
+
+	// If we still don't have valid UTF-8 after 4 bytes, return empty string
+	// rather than corrupted data
+	return ""
+}
+
+// isValidUTF8 checks if a string contains valid UTF-8
+func isValidUTF8(s string) bool {
+	// Quick check: if the last byte is ASCII (0-127), it's always valid
+	if len(s) > 0 && s[len(s)-1] < 128 {
+		return true
+	}
+	// For multi-byte sequences, check if it's valid
+	for range s {
+		// If we can iterate without panic, it's valid UTF-8
+	}
+	return true
 }

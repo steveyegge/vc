@@ -709,6 +709,74 @@ func (s *Supervisor) AnalyzeCodeReviewNeed(ctx context.Context, issue *types.Iss
 	return &decision, nil
 }
 
+// AnalyzeTestCoverage analyzes test coverage for code changes and identifies specific test gaps.
+// This is the implementation of vc-217.
+//
+// The AI analyzes the git diff using Sonnet to:
+// - Identify what code/logic was added or modified
+// - Review existing tests to understand patterns
+// - Determine specific test coverage gaps
+// - File granular test improvement issues (not generic "add more tests")
+//
+// Returns test sufficiency analysis with specific test issues to file.
+func (s *Supervisor) AnalyzeTestCoverage(ctx context.Context, issue *types.Issue, gitDiff string, existingTests string) (*TestSufficiencyAnalysis, error) {
+	startTime := time.Now()
+
+	// Build the prompt for test coverage analysis
+	prompt := s.buildTestCoveragePrompt(issue, gitDiff, existingTests)
+
+	// Call Anthropic API with retry logic using Sonnet (thorough analysis)
+	var response *anthropic.Message
+	err := s.retryWithBackoff(ctx, "test-coverage-analysis", func(attemptCtx context.Context) error {
+		resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(s.model), // Use Sonnet for thorough analysis
+			MaxTokens: 4096, // Longer responses for detailed analysis
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			},
+		})
+		if apiErr != nil {
+			return apiErr
+		}
+		response = resp
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("anthropic API call failed: %w", err)
+	}
+
+	// Extract the text content from the response
+	var responseText string
+	for _, block := range response.Content {
+		if block.Type == "text" {
+			responseText += block.Text
+		}
+	}
+
+	// Parse the response as JSON using resilient parser
+	parseResult := Parse[TestSufficiencyAnalysis](responseText, ParseOptions{
+		Context:   "test coverage analysis response",
+		LogErrors: true,
+	})
+	if !parseResult.Success {
+		return nil, fmt.Errorf("failed to parse test coverage analysis response: %s (response: %s)", parseResult.Error, responseText)
+	}
+	analysis := parseResult.Data
+
+	// Log the analysis
+	duration := time.Since(startTime)
+	fmt.Printf("AI Test Coverage Analysis for %s: sufficient=%v, test_issues=%d, confidence=%.2f, duration=%v\n",
+		issue.ID, analysis.SufficientCoverage, len(analysis.TestIssues), analysis.Confidence, duration)
+
+	// Log AI usage to events
+	if err := s.logAIUsage(ctx, issue.ID, "test-coverage-analysis", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
+	}
+
+	return &analysis, nil
+}
+
 // AnalyzeCodeQuality performs detailed code quality analysis and identifies specific issues.
 // This replaces manual code review with AI-driven analysis (vc-216).
 //
@@ -1230,6 +1298,152 @@ IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (`
 }
 
 // buildCodeQualityPrompt builds the prompt for automated code quality analysis
+func (s *Supervisor) buildTestCoveragePrompt(issue *types.Issue, gitDiff string, existingTests string) string {
+	// Truncate diff if it's too large
+	diffToAnalyze := gitDiff
+	diffTruncated := false
+	const maxDiffSize = 30000
+	if len(gitDiff) > maxDiffSize {
+		diffToAnalyze = safeTruncateString(gitDiff, maxDiffSize) + "\n\n... [diff truncated] ..."
+		diffTruncated = true
+	}
+
+	// Truncate existing tests if too large
+	testsToAnalyze := existingTests
+	testsTruncated := false
+	const maxTestsSize = 20000
+	if len(existingTests) > maxTestsSize {
+		testsToAnalyze = safeTruncateString(existingTests, maxTestsSize) + "\n\n... [tests truncated] ..."
+		testsTruncated = true
+	}
+
+	truncationNote := ""
+	if diffTruncated || testsTruncated {
+		truncationNote = "\n\nNote: Content was truncated. Base your analysis on what's shown."
+	}
+
+	return fmt.Sprintf(`You are analyzing test coverage for code changes to identify specific test gaps.
+
+IMPORTANT: Your job is to find SPECIFIC, ACTIONABLE test gaps. Each gap you identify will become a separate test improvement issue.
+
+ISSUE CONTEXT:
+Issue ID: %s
+Title: %s
+Type: %s
+Priority: P%d
+Description: %s
+
+GIT DIFF (what changed):
+%s
+
+EXISTING TESTS (for reference):
+%s%s
+
+ANALYSIS TASK:
+Analyze the changes and existing tests to identify specific test coverage gaps. Consider:
+
+1. **New Functionality Without Tests**
+   - New functions/methods that lack test coverage
+   - New API endpoints without integration tests
+   - New business logic without unit tests
+   - New edge cases introduced
+
+2. **Edge Cases and Error Handling**
+   - Error conditions not tested
+   - Boundary conditions not covered
+   - Null/empty input handling
+   - Concurrent access scenarios
+   - Resource exhaustion scenarios
+
+3. **Integration and System Tests**
+   - Component interactions not tested
+   - Database operations without integration tests
+   - External service interactions not mocked/tested
+   - End-to-end workflows not covered
+
+4. **Security and Data Validation**
+   - Input validation not tested
+   - Authentication/authorization logic
+   - Data sanitization and escaping
+   - Permission checks
+
+5. **Regression Prevention**
+   - Bug fixes without regression tests
+   - Critical paths without coverage
+   - Previously broken functionality
+
+GUIDELINES FOR TEST ISSUE CREATION:
+- Be SPECIFIC: "Add unit tests for UserAuth.validateToken edge cases (nil token, expired token, invalid signature)" not "Add more tests"
+- Be ACTIONABLE: Each issue should clearly describe what tests to add
+- Be SELECTIVE: Only file issues for meaningful gaps, not trivial cases
+- Include CONTEXT: Explain why the test is needed and what it should cover
+- Reference CODE LOCATIONS: Include file names and line numbers/function names
+- Assign PRIORITY appropriately:
+  - P0: Critical security or data integrity paths with no tests
+  - P1: Core functionality, bug fixes, or security-sensitive code without tests
+  - P2: Important features or error handling without coverage
+  - P3: Nice-to-have coverage for edge cases
+- Assign TYPE appropriately:
+  - task: Adding new tests (most common)
+  - bug: When lack of tests indicates a likely bug
+  - chore: Minor test improvements or cleanup
+
+WHEN TO SKIP FILING ISSUES:
+- Trivial getters/setters that are tested implicitly
+- Code that's already well-tested
+- Generated code or boilerplate
+- Debug/logging code
+- Changes that only refactor without adding logic
+
+EXISTING TEST PATTERNS TO FOLLOW:
+Look at the existing tests provided to understand:
+- Testing framework being used (e.g., Go testing, Jest, pytest)
+- File naming conventions (e.g., _test.go, .test.js, test_*.py)
+- Test organization and structure
+- Mocking/stubbing patterns
+- Assertion style
+
+Provide your analysis as a JSON object:
+{
+  "sufficient_coverage": false,
+  "uncovered_areas": [
+    "UserAuth.validateToken edge cases (nil token, expired token, invalid signature)",
+    "Payment flow error handling when payment gateway is down",
+    "Concurrent access to user session cache"
+  ],
+  "test_issues": [
+    {
+      "title": "Add unit tests for UserAuth.validateToken edge cases",
+      "description": "The validateToken method in internal/auth/user_auth.go (lines 45-78) handles token validation but lacks tests for edge cases.\n\nAdd tests for:\n- Nil token input (should return error)\n- Expired token (should return specific error)\n- Invalid signature (should return error)\n- Malformed token format (should handle gracefully)\n- Token with missing claims\n\nThese are security-critical paths that must be tested.",
+      "type": "task",
+      "priority": "P1"
+    },
+    {
+      "title": "Add integration test for payment flow with gateway failures",
+      "description": "The payment processing logic in internal/payments/processor.go (lines 120-145) was modified to handle timeouts, but there's no test coverage for failure scenarios.\n\nAdd integration test covering:\n- Gateway connection timeout\n- Gateway returning error response\n- Partial payment failure and rollback\n- Retry logic validation\n\nThis is critical for ensuring payment reliability.",
+      "type": "task",
+      "priority": "P1"
+    }
+  ],
+  "summary": "Found 2 significant test gaps: UserAuth edge cases and payment error handling. Both are high-priority areas.",
+  "confidence": 0.85
+}
+
+IMPORTANT NOTES:
+- Empty test_issues array is valid if test coverage looks good
+- sufficient_coverage should be true only if no meaningful gaps exist
+- Don't be overly pedantic - focus on real testing gaps
+- Consider the risk and importance of the changed code
+- Be constructive and specific in descriptions
+
+IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (` + "```" + `). Just the JSON object.`,
+		issue.ID, issue.Title, issue.IssueType, issue.Priority,
+		issue.Description,
+		diffToAnalyze,
+		testsToAnalyze,
+		truncationNote)
+}
+
 func (s *Supervisor) buildCodeQualityPrompt(issue *types.Issue, gitDiff string) string {
 	// Truncate diff if it's too large (keep it under 50k chars for thorough analysis)
 	diffToAnalyze := gitDiff
