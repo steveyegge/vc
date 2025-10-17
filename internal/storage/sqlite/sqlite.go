@@ -63,22 +63,24 @@ func getNextID(db *sql.DB) (int, error) {
 	var maxID sql.NullString
 	err := db.QueryRow("SELECT MAX(id) FROM issues").Scan(&maxID)
 	if err != nil {
-		return 1, nil // Start from 1 if table is empty
+		// Propagate actual errors (network, permissions, etc.)
+		return 0, fmt.Errorf("failed to query max issue ID: %w", err)
 	}
 
+	// Empty table or NULL result - start from 1
 	if !maxID.Valid || maxID.String == "" {
 		return 1, nil
 	}
 
-	// Parse "bd-123" to get 123
+	// Parse "vc-123" or "bd-123" to get 123
 	parts := strings.Split(maxID.String, "-")
 	if len(parts) != 2 {
-		return 1, nil
+		return 0, fmt.Errorf("invalid issue ID format: %s (expected prefix-number)", maxID.String)
 	}
 
 	var num int
 	if _, err := fmt.Sscanf(parts[1], "%d", &num); err != nil {
-		return 1, nil
+		return 0, fmt.Errorf("failed to parse issue number from %s: %w", maxID.String, err)
 	}
 
 	return num + 1, nil
