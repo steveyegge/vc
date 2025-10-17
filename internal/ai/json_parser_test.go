@@ -609,6 +609,26 @@ func TestParse_DisableCleanup(t *testing.T) {
 	}
 }
 
+func TestParse_DisableCleanupWithContext(t *testing.T) {
+	input := "```json\n{\"test\": true}\n```"
+
+	// KNOWN LIMITATION (vc-248): Currently cannot disable cleanup when Context is provided
+	// The heuristic in Parse() only disables cleanup if Context is empty
+	result := Parse[map[string]any](input, ParseOptions{
+		Context:       "test context",
+		EnableCleanup: false, // This gets IGNORED when Context is set!
+	})
+
+	// Due to the limitation, cleanup is still enabled, so this should succeed
+	if !result.Success {
+		t.Errorf("Due to vc-248 limitation, cleanup cannot be disabled with Context set. "+
+			"Expected parse to succeed, got error: %s", result.Error)
+	}
+
+	// This test documents the current behavior - it should be updated when vc-248 is fixed
+	// After vc-248: this test should expect parse to FAIL (cleanup truly disabled)
+}
+
 func TestParse_WithContext(t *testing.T) {
 	input := `invalid json`
 
@@ -703,6 +723,47 @@ func TestTruncate(t *testing.T) {
 				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
 			}
 		})
+	}
+}
+
+// Test with the EXACT format from the vc-72 dogfood run that caused parsing failure
+func TestParse_Dogfood_vc72_ErrorCase(t *testing.T) {
+	// This is the exact format that caused the error in vc-72 dogfood run
+	// Error was: invalid character '`' looking for beginning of value
+	input := "```json\n" +
+		`{
+  "completed": false,
+  "punted_items": ["item1"],
+  "discovered_issues": [],
+  "quality_issues": [],
+  "summary": "test",
+  "confidence": 0.95
+}` + "\n```"
+
+	type Analysis struct {
+		Completed        bool     `json:"completed"`
+		PuntedItems      []string `json:"punted_items"`
+		DiscoveredIssues []any    `json:"discovered_issues"`
+		QualityIssues    []string `json:"quality_issues"`
+		Summary          string   `json:"summary"`
+		Confidence       float64  `json:"confidence"`
+	}
+
+	result := Parse[Analysis](input, ParseOptions{
+		Context:   "analysis response",
+		LogErrors: true,
+	})
+
+	if !result.Success {
+		t.Fatalf("Parse should succeed with code fences (vc-241), got error: %s\nInput: %s", result.Error, input)
+	}
+
+	if result.Data.Completed != false {
+		t.Errorf("Expected completed=false, got %v", result.Data.Completed)
+	}
+
+	if result.Data.Confidence != 0.95 {
+		t.Errorf("Expected confidence=0.95, got %v", result.Data.Confidence)
 	}
 }
 

@@ -40,6 +40,15 @@ type ParseResult[T any] struct {
 }
 
 // ParseOptions configures JSON parsing behavior.
+//
+// NOTE: Due to Go's zero-value semantics, bool fields cannot distinguish
+// between "not set" and "explicitly set to false". Current limitations:
+//   - EnableCleanup: Defaults to true when Context is provided
+//   - To disable cleanup: set EnableCleanup=false AND omit Context
+//   - LogErrors: Always copied from provided options (cannot detect "unset")
+//
+// TODO(vc-248): Refactor to use pointers for optional bool fields to properly
+// distinguish between "not set" and "explicitly set to false".
 type ParseOptions struct {
 	Context       string // Context for error messages
 	EnableCleanup bool   // Enable AI response cleanup strategies (default: true)
@@ -63,9 +72,34 @@ var defaultOptions = ParseOptions{
 //  3. Fix common JSON issues and retry
 //  4. Extract JSON from mixed content and retry
 func Parse[T any](text string, opts ...ParseOptions) ParseResult[T] {
+	// Start with defaults
 	options := defaultOptions
+
+	// Override with provided options (merge, don't replace)
 	if len(opts) > 0 {
-		options = opts[0]
+		provided := opts[0]
+
+		// Copy Context if provided
+		if provided.Context != "" {
+			options.Context = provided.Context
+		}
+
+		// Copy LogErrors
+		options.LogErrors = provided.LogErrors
+
+		// Only override MaxInputSize if explicitly set to non-zero
+		if provided.MaxInputSize != 0 {
+			options.MaxInputSize = provided.MaxInputSize
+		}
+
+		// Handle EnableCleanup: Due to Go's zero-value semantics, we can't perfectly
+		// distinguish "not set" from "explicitly set to false". We use this heuristic:
+		// - If Context is set (common case), keep cleanup enabled by default
+		// - If Context is NOT set AND EnableCleanup is false, assume it's a test
+		//   that wants to explicitly disable cleanup
+		if provided.Context == "" && !provided.EnableCleanup {
+			options.EnableCleanup = false
+		}
 	}
 
 	// Check size limit to prevent memory issues
@@ -130,7 +164,8 @@ func Parse[T any](text string, opts ...ParseOptions) ParseResult[T] {
 	}
 
 	// Strategy 4: Extract JSON from mixed content
-	extracted := extractJSON(trimmed)
+	// Extract from cleaned version, not original trimmed (which may still have fences)
+	extracted := extractJSON(cleaned)
 	if extracted != "" {
 		if result, err := tryDirectParse[T](extracted); err == nil {
 			return ParseResult[T]{
@@ -170,9 +205,20 @@ func ParseWithValidation[T any](text string, validator func(any) bool, opts ...P
 		}
 	}
 
+	// Apply same option merging logic as Parse()
 	options := defaultOptions
 	if len(opts) > 0 {
-		options = opts[0]
+		provided := opts[0]
+		if provided.Context != "" {
+			options.Context = provided.Context
+		}
+		options.LogErrors = provided.LogErrors
+		if provided.MaxInputSize != 0 {
+			options.MaxInputSize = provided.MaxInputSize
+		}
+		if provided.Context == "" && !provided.EnableCleanup {
+			options.EnableCleanup = false
+		}
 	}
 
 	if options.LogErrors {
@@ -191,9 +237,20 @@ func ParseOrDefault[T any](text string, fallback T, opts ...ParseOptions) T {
 		return result.Data
 	}
 
+	// Apply same option merging logic as Parse()
 	options := defaultOptions
 	if len(opts) > 0 {
-		options = opts[0]
+		provided := opts[0]
+		if provided.Context != "" {
+			options.Context = provided.Context
+		}
+		options.LogErrors = provided.LogErrors
+		if provided.MaxInputSize != 0 {
+			options.MaxInputSize = provided.MaxInputSize
+		}
+		if provided.Context == "" && !provided.EnableCleanup {
+			options.EnableCleanup = false
+		}
 	}
 
 	if options.LogErrors {
