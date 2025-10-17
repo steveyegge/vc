@@ -2,7 +2,6 @@ package executor
 
 import (
 	"context"
-	"time"
 
 	"github.com/steveyegge/vc/internal/gates"
 	"github.com/steveyegge/vc/internal/types"

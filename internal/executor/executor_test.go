@@ -14,7 +14,6 @@ import (
 func TestExecutorStateTransitions(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -167,7 +166,6 @@ func TestExecutorStateTransitions(t *testing.T) {
 func TestExecutorWithAISupervisionEnabled(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -204,7 +202,6 @@ func TestExecutorWithAISupervisionEnabled(t *testing.T) {
 func TestExecutorStateSequence(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -327,7 +324,6 @@ func TestExecutorStateSequenceWithAI(t *testing.T) {
 func TestExecutorDoubleClaim(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()

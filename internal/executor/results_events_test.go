@@ -14,7 +14,6 @@ import (
 func TestResultsProcessorAnalysisEvents(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -196,7 +195,6 @@ func TestResultsProcessorAnalysisEvents(t *testing.T) {
 func TestResultsProcessorQualityGatesSkippedEvent(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -408,7 +406,6 @@ func TestResultsProcessorGateRunnerCreationFailure(t *testing.T) {
 func TestResultsProcessorEventDataNoRedundancy(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -504,7 +501,6 @@ func TestResultsProcessorEventDataNoRedundancy(t *testing.T) {
 func TestResultsProcessorEventSeverityConsistency(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -597,7 +593,6 @@ func TestResultsProcessorEventSeverityConsistency(t *testing.T) {
 func TestResultsProcessorContextCancellation(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()

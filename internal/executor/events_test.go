@@ -15,7 +15,6 @@ import (
 func TestEventLoggingOrderInErrorPaths(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -116,7 +115,6 @@ func TestEventLoggingOrderInErrorPaths(t *testing.T) {
 func TestEventLoggingInMultipleErrorPaths(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -308,7 +306,6 @@ func TestQualityGatesSkippedEvent(t *testing.T) {
 func TestEventDataNoRedundancy(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -430,7 +427,6 @@ func TestEventDataNoRedundancy(t *testing.T) {
 func TestEventSeverityConsistency(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -531,7 +527,6 @@ func TestEventSeverityConsistency(t *testing.T) {
 func TestContextCancellationHandling(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -648,7 +643,6 @@ func TestContextCancellationHandling(t *testing.T) {
 func TestAgentIDFieldDocumentation(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -754,7 +748,6 @@ func TestCompleteEventSequence(t *testing.T) {
 func BenchmarkEventLogging(b *testing.B) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -804,7 +797,6 @@ func BenchmarkEventLogging(b *testing.B) {
 func TestOutputParserIntegration(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()

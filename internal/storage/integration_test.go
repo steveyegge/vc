@@ -15,13 +15,10 @@ import (
 
 // TestMultiExecutorClaiming tests that multiple executors can claim different issues concurrently
 func TestMultiExecutorClaiming(t *testing.T) {
-	backends := []string{"sqlite", "postgres"}
+	backends := []string{"sqlite"}
 
 	for _, backend := range backends {
 		t.Run(backend, func(t *testing.T) {
-			if backend == "postgres" && !isPostgresAvailable() {
-				t.Skip("PostgreSQL not available")
-			}
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
@@ -105,13 +102,10 @@ func TestMultiExecutorClaiming(t *testing.T) {
 
 // TestRaceConditionPrevention tests that the database prevents double-claiming via race conditions
 func TestRaceConditionPrevention(t *testing.T) {
-	backends := []string{"sqlite", "postgres"}
+	backends := []string{"sqlite"}
 
 	for _, backend := range backends {
 		t.Run(backend, func(t *testing.T) {
-			if backend == "postgres" && !isPostgresAvailable() {
-				t.Skip("PostgreSQL not available")
-			}
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
@@ -184,13 +178,10 @@ func TestRaceConditionPrevention(t *testing.T) {
 
 // TestCheckpointSaveAndRestore tests checkpoint save and restore functionality
 func TestCheckpointSaveAndRestore(t *testing.T) {
-	backends := []string{"sqlite", "postgres"}
+	backends := []string{"sqlite"}
 
 	for _, backend := range backends {
 		t.Run(backend, func(t *testing.T) {
-			if backend == "postgres" && !isPostgresAvailable() {
-				t.Skip("PostgreSQL not available")
-			}
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
@@ -261,13 +252,10 @@ func TestCheckpointSaveAndRestore(t *testing.T) {
 
 // TestStaleInstanceCleanup tests cleanup of stale executor instances
 func TestStaleInstanceCleanup(t *testing.T) {
-	backends := []string{"sqlite", "postgres"}
+	backends := []string{"sqlite"}
 
 	for _, backend := range backends {
 		t.Run(backend, func(t *testing.T) {
-			if backend == "postgres" && !isPostgresAvailable() {
-				t.Skip("PostgreSQL not available")
-			}
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
@@ -353,13 +341,10 @@ func TestStaleInstanceCleanup(t *testing.T) {
 
 // TestResumeAfterInterruption tests that work can be resumed after executor crash/restart
 func TestResumeAfterInterruption(t *testing.T) {
-	backends := []string{"sqlite", "postgres"}
+	backends := []string{"sqlite"}
 
 	for _, backend := range backends {
 		t.Run(backend, func(t *testing.T) {
-			if backend == "postgres" && !isPostgresAvailable() {
-				t.Skip("PostgreSQL not available")
-			}
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
@@ -527,13 +512,10 @@ func TestResumeAfterInterruption(t *testing.T) {
 
 // TestCompleteExecutorWorkflow tests the full workflow from claim to completion
 func TestCompleteExecutorWorkflow(t *testing.T) {
-	backends := []string{"sqlite", "postgres"}
+	backends := []string{"sqlite"}
 
 	for _, backend := range backends {
 		t.Run(backend, func(t *testing.T) {
-			if backend == "postgres" && !isPostgresAvailable() {
-				t.Skip("PostgreSQL not available")
-			}
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
@@ -614,13 +596,10 @@ func TestCompleteExecutorWorkflow(t *testing.T) {
 
 // TestEpicChildDependencyDirection tests that epic-child dependencies use the standard (child, parent) direction
 func TestEpicChildDependencyDirection(t *testing.T) {
-	backends := []string{"sqlite", "postgres"}
+	backends := []string{"sqlite"}
 
 	for _, backend := range backends {
 		t.Run(backend, func(t *testing.T) {
-			if backend == "postgres" && !isPostgresAvailable() {
-				t.Skip("PostgreSQL not available")
-			}
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
@@ -746,58 +725,27 @@ func setupStorage(t *testing.T, backend string) Storage {
 
 	ctx := context.Background()
 
-	switch backend {
-	case "sqlite":
-		// Create a temporary file for the test database
-		// We can't use :memory: because MkdirAll fails on it
-		tmpfile, err := os.CreateTemp("", "test-*.db")
-		if err != nil {
-			t.Fatalf("Failed to create temp file: %v", err)
-		}
-		tmpfile.Close()
-
-		// Clean up the temp file after the test
-		t.Cleanup(func() {
-			os.Remove(tmpfile.Name())
-		})
-
-		cfg := DefaultConfig()
-		cfg.Backend = "sqlite"
-		cfg.Path = tmpfile.Name()
-
-		store, err := NewStorage(ctx, cfg)
-		if err != nil {
-			t.Fatalf("Failed to create SQLite storage: %v", err)
-		}
-		return store
-
-	case "postgres":
-		cfg := DefaultConfig()
-		cfg.Backend = "postgres"
-		cfg.Host = getEnv("VC_PG_HOST", "localhost")
-		cfg.Port = 5432
-		cfg.Database = getEnv("VC_PG_DATABASE", "vc_test")
-		cfg.User = getEnv("VC_PG_USER", "vc")
-		cfg.Password = getEnv("VC_PG_PASSWORD", "")
-
-		store, err := NewStorage(ctx, cfg)
-		if err != nil {
-			t.Fatalf("Failed to create PostgreSQL storage: %v", err)
-		}
-
-		// Clean up test data
-		t.Cleanup(func() {
-			// Note: In a real test, you'd want to clean up tables here
-			// For now, we just close the connection
-			store.Close()
-		})
-
-		return store
-
-	default:
-		t.Fatalf("Unknown backend: %s", backend)
-		return nil
+	// Create a temporary file for the test database
+	// We can't use :memory: because MkdirAll fails on it
+	tmpfile, err := os.CreateTemp("", "test-*.db")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
 	}
+	tmpfile.Close()
+
+	// Clean up the temp file after the test
+	t.Cleanup(func() {
+		os.Remove(tmpfile.Name())
+	})
+
+	cfg := DefaultConfig()
+	cfg.Path = tmpfile.Name()
+
+	store, err := NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite storage: %v", err)
+	}
+	return store
 }
 
 func createExecutors(t *testing.T, ctx context.Context, store Storage, count int) []*types.ExecutorInstance {
@@ -856,53 +804,12 @@ func createTestIssues(t *testing.T, ctx context.Context, store Storage, count in
 	return issues
 }
 
-func isPostgresAvailable() bool {
-	// Check if PostgreSQL environment variables are set
-	// If not set, skip PostgreSQL tests
-	host := os.Getenv("VC_PG_HOST")
-	database := os.Getenv("VC_PG_DATABASE")
-
-	// If either is explicitly set, assume Postgres is available
-	// Otherwise, try to connect with defaults
-	if host != "" || database != "" {
-		return true
-	}
-
-	// Try to connect with defaults to check availability
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	cfg := DefaultConfig()
-	cfg.Backend = "postgres"
-	cfg.Host = "localhost"
-	cfg.Database = "vc_test"
-	cfg.User = "vc"
-	cfg.Password = ""
-
-	store, err := NewStorage(ctx, cfg)
-	if err != nil {
-		return false
-	}
-	store.Close()
-	return true
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
 // TestGetMissionWithApprovalMetadata tests that GetMission properly loads approval fields
 func TestGetMissionWithApprovalMetadata(t *testing.T) {
-	backends := []string{"sqlite", "postgres"}
+	backends := []string{"sqlite"}
 
 	for _, backend := range backends {
 		t.Run(backend, func(t *testing.T) {
-			if backend == "postgres" && !isPostgresAvailable() {
-				t.Skip("PostgreSQL not available")
-			}
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)

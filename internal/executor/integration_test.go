@@ -668,7 +668,6 @@ func setupTestStorage(t *testing.T, ctx context.Context) storage.Storage {
 	})
 
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = tmpfile.Name()
 
 	store, err := storage.NewStorage(ctx, cfg)

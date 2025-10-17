@@ -228,11 +228,11 @@ The workflow:
 
 **The database schema is created automatically** when you first connect to a new database. You don't need to run initialization scripts manually - just start using the storage layer and it will set everything up.
 
-Both SQLite and PostgreSQL backends automatically:
-1. Create all tables (issues, dependencies, labels, events, executor_instances, issue_execution_state)
-2. Create indexes for performance
-3. Create views for ready work and blocked issues
-4. Set up foreign key constraints
+The SQLite backend automatically:
+1. Creates all tables (issues, dependencies, labels, events, executor_instances, issue_execution_state)
+2. Creates indexes for performance
+3. Creates views for ready work and blocked issues
+4. Sets up foreign key constraints
 
 ### Manual Initialization (Optional)
 
@@ -240,16 +240,11 @@ If you want to pre-initialize a database, use the provided script:
 
 ```bash
 # Initialize SQLite database (default: .beads/vc.db)
-./scripts/init-db.sh sqlite
+./scripts/init-db.sh
 
 # Initialize SQLite at custom location
-VC_DB_PATH=/path/to/db.sqlite ./scripts/init-db.sh sqlite
-
-# Initialize PostgreSQL database
-VC_PG_HOST=localhost VC_PG_DATABASE=vc ./scripts/init-db.sh postgres
+VC_DB_PATH=/path/to/db.sqlite ./scripts/init-db.sh
 ```
-
-See `./scripts/init-db.sh --help` for all options.
 
 ### Schema Migrations
 
@@ -275,31 +270,27 @@ manager.Register(migrations.Migration{
 
 // Apply migrations
 err := manager.ApplySQLite(db)
-// or
-err := manager.ApplyPostgreSQL(ctx, pool)
 ```
 
-### Backend Configuration
+### Storage Configuration
 
-Choose between SQLite and PostgreSQL via the storage configuration:
+VC uses SQLite for simple, lightweight operation:
 
 ```go
 import "github.com/steveyegge/vc/internal/storage"
 
-// SQLite (default)
+// Default configuration (.beads/vc.db)
 cfg := storage.DefaultConfig()
-cfg.Backend = "sqlite"
-cfg.Path = ".beads/vc.db"
 store, err := storage.NewStorage(ctx, cfg)
 
-// PostgreSQL
+// Custom path
 cfg := storage.DefaultConfig()
-cfg.Backend = "postgres"
-cfg.Host = "localhost"
-cfg.Port = 5432
-cfg.Database = "vc"
-cfg.User = "vc"
-cfg.Password = "secret"
+cfg.Path = "/path/to/custom.db"
+store, err := storage.NewStorage(ctx, cfg)
+
+// In-memory database (useful for tests)
+cfg := storage.DefaultConfig()
+cfg.Path = ":memory:"
 store, err := storage.NewStorage(ctx, cfg)
 ```
 

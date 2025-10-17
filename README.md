@@ -12,7 +12,7 @@ VC orchestrates multiple coding agents (Cody, Claude Code, etc.) to work on smal
 
 **Zero Framework Cognition**: All decisions delegated to AI. No heuristics, regex, or parsing.
 
-**Issue-Oriented Orchestration**: Work tracked in SQLite/PostgreSQL issue tracker with dependency awareness.
+**Issue-Oriented Orchestration**: Work tracked in SQLite issue tracker with dependency awareness.
 
 **Nondeterministic Idempotence**: Workflows can be interrupted and resumed - AI figures out where it left off.
 
@@ -121,7 +121,7 @@ AI: [Adds dependencies]
 ## Lessons from V1
 
 1. ✅ AI Supervised Issue Workflow worked brilliantly
-2. ✅ PostgreSQL issue tracker was simple and scalable
+2. ✅ SQLite issue tracker is simple and lightweight
 3. ✅ Issue-oriented orchestration enabled self-hosting
 4. ❌ Temporal was too heavyweight for individual dev tool
 5. ❌ Built auxiliary systems before core workflow proved out

@@ -82,7 +82,6 @@ func (p *TestGateProvider) GetRunCount() int {
 func TestQualityGateBlockingIntegration(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()
@@ -335,7 +334,6 @@ func TestQualityGateBlockingIntegration(t *testing.T) {
 func TestQualityGateBlockingWithStoreValidation(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Backend = "sqlite"
 	cfg.Path = ":memory:"
 
 	ctx := context.Background()

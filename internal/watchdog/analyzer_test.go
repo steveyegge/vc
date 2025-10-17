@@ -27,6 +27,9 @@ func (m *mockStorage) SearchIssues(ctx context.Context, query string, filter typ
 func (m *mockStorage) AddDependency(ctx context.Context, dep *types.Dependency, actor string) error { return nil }
 func (m *mockStorage) RemoveDependency(ctx context.Context, issueID, dependsOnID string, actor string) error { return nil }
 func (m *mockStorage) GetDependencies(ctx context.Context, issueID string) ([]*types.Issue, error) { return nil, nil }
+func (m *mockStorage) GetDependencyRecords(ctx context.Context, issueID string) ([]*types.Dependency, error) {
+	return nil, nil
+}
 func (m *mockStorage) GetDependents(ctx context.Context, issueID string) ([]*types.Issue, error) { return nil, nil }
 func (m *mockStorage) GetDependencyTree(ctx context.Context, issueID string, maxDepth int) ([]*types.TreeNode, error) { return nil, nil }
 func (m *mockStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, error) { return nil, nil }

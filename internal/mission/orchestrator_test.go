@@ -118,6 +118,9 @@ func (m *MockStorage) SearchIssues(ctx context.Context, query string, filter typ
 	return nil, nil
 }
 func (m *MockStorage) GetDependencies(ctx context.Context, issueID string) ([]*types.Issue, error) {
+func (m *MockStorage) GetDependencyRecords(ctx context.Context, issueID string) ([]*types.Dependency, error) {
+	return nil, nil
+}
 	// Simple mock: if it's a phase, return the mission
 	// In reality, this would filter based on actual dependency records
 	var deps []*types.Issue

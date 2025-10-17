@@ -82,6 +82,9 @@ func (m *mockStorage) RemoveDependency(ctx context.Context, issueID, dependsOnID
 	return nil
 }
 func (m *mockStorage) GetDependencies(ctx context.Context, issueID string) ([]*types.Issue, error) {
+func (m *mockStorage) GetDependencyRecords(ctx context.Context, issueID string) ([]*types.Dependency, error) {
+	return nil, nil
+}
 	return nil, nil
 }
 func (m *mockStorage) GetDependents(ctx context.Context, issueID string) ([]*types.Issue, error) {

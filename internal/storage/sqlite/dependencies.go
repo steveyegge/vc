@@ -172,6 +172,44 @@ func (s *SQLiteStorage) GetDependents(ctx context.Context, issueID string) ([]*t
 	return scanIssues(rows)
 }
 
+// GetDependencyRecords returns the raw dependency records for an issue
+// This includes the dependency type information which is needed for filtering
+// by relationship type (blocks, parent-child, etc.)
+func (s *SQLiteStorage) GetDependencyRecords(ctx context.Context, issueID string) ([]*types.Dependency, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT issue_id, depends_on_id, type, created_at, created_by
+		FROM dependencies
+		WHERE issue_id = ?
+		ORDER BY created_at ASC
+	`, issueID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dependency records: %w", err)
+	}
+	defer rows.Close()
+
+	var deps []*types.Dependency
+	for rows.Next() {
+		var dep types.Dependency
+		err := rows.Scan(
+			&dep.IssueID,
+			&dep.DependsOnID,
+			&dep.Type,
+			&dep.CreatedAt,
+			&dep.CreatedBy,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan dependency record: %w", err)
+		}
+		deps = append(deps, &dep)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating dependency records: %w", err)
+	}
+
+	return deps, nil
+}
+
 // GetDependencyTree returns the full dependency tree
 func (s *SQLiteStorage) GetDependencyTree(ctx context.Context, issueID string, maxDepth int) ([]*types.TreeNode, error) {
 	if maxDepth <= 0 {

@@ -1,7 +1,6 @@
 package migrations
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 
@@ -72,38 +71,6 @@ func TestSQLiteMigrations(t *testing.T) {
 	if err == nil {
 		t.Error("test table should have been dropped")
 	}
-}
-
-func TestPostgreSQLMigrations(t *testing.T) {
-	// This test requires a running PostgreSQL instance
-	// Skip if not available
-	t.Skip("PostgreSQL integration test - requires running database")
-
-	ctx := context.Background()
-
-	// Note: In a real test, you would:
-	// 1. Connect to a test PostgreSQL database
-	// 2. Create a migration manager
-	// 3. Apply migrations
-	// 4. Verify the migrations were applied
-	// 5. Test rollback
-	// 6. Clean up
-
-	// Example code structure:
-	// pool, err := pgxpool.New(ctx, "postgres://...")
-	// if err != nil {
-	//     t.Fatalf("failed to connect: %v", err)
-	// }
-	// defer pool.Close()
-	//
-	// manager := NewManager()
-	// manager.Register(exampleMigration)
-	//
-	// if err := manager.ApplyPostgreSQL(ctx, pool); err != nil {
-	//     t.Fatalf("failed to apply migrations: %v", err)
-	// }
-
-	_ = ctx // Suppress unused variable warning
 }
 
 func TestMigrationOrdering(t *testing.T) {
