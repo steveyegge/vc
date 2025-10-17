@@ -20,6 +20,9 @@ type Executor struct {
 	store      storage.Storage
 	supervisor *ai.Supervisor
 	monitor    *watchdog.Monitor
+	analyzer   *watchdog.Analyzer
+	intervention *watchdog.InterventionController
+	watchdogConfig *watchdog.WatchdogConfig
 	instanceID string
 	hostname   string
 	pid        int
@@ -28,6 +31,8 @@ type Executor struct {
 	// Control channels
 	stopCh chan struct{}
 	doneCh chan struct{}
+	watchdogStopCh chan struct{} // Separate channel for watchdog shutdown
+	watchdogDoneCh chan struct{} // Signals when watchdog goroutine finished
 
 	// Configuration
 	pollInterval        time.Duration
@@ -50,6 +55,7 @@ type Config struct {
 	EnableAISupervision bool // Enable AI assessment and analysis (default: true)
 	EnableQualityGates  bool // Enable quality gates enforcement (default: true)
 	WorkingDir          string // Working directory for quality gates (default: ".")
+	WatchdogConfig      *watchdog.WatchdogConfig // Watchdog configuration (default: conservative defaults)
 }
 
 // DefaultConfig returns default executor configuration
@@ -109,8 +115,45 @@ func New(cfg *Config) (*Executor, error) {
 		}
 	}
 
-	// Initialize watchdog monitor
+	// Initialize watchdog system
 	e.monitor = watchdog.NewMonitor(watchdog.DefaultConfig())
+
+	// Use provided watchdog config or default
+	if cfg.WatchdogConfig == nil {
+		e.watchdogConfig = watchdog.DefaultWatchdogConfig()
+	} else {
+		e.watchdogConfig = cfg.WatchdogConfig
+	}
+
+	// Initialize watchdog channels
+	e.watchdogStopCh = make(chan struct{})
+	e.watchdogDoneCh = make(chan struct{})
+
+	// Initialize analyzer if AI supervision is enabled
+	if e.enableAISupervision && e.supervisor != nil {
+		analyzer, err := watchdog.NewAnalyzer(&watchdog.AnalyzerConfig{
+			Monitor:    e.monitor,
+			Supervisor: e.supervisor,
+			Store:      cfg.Store,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to initialize watchdog analyzer: %v (watchdog disabled)\n", err)
+		} else {
+			e.analyzer = analyzer
+		}
+	}
+
+	// Initialize intervention controller
+	intervention, err := watchdog.NewInterventionController(&watchdog.InterventionControllerConfig{
+		Store:              cfg.Store,
+		ExecutorInstanceID: e.instanceID,
+		MaxHistorySize:     e.watchdogConfig.MaxHistorySize,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to initialize intervention controller: %v (watchdog disabled)\n", err)
+	} else {
+		e.intervention = intervention
+	}
 
 	return e, nil
 }
@@ -147,6 +190,15 @@ func (e *Executor) Start(ctx context.Context) error {
 	// Start the event loop
 	go e.eventLoop(ctx)
 
+	// Start the watchdog loop if enabled and components are initialized
+	if e.watchdogConfig.IsEnabled() && e.analyzer != nil && e.intervention != nil {
+		go e.watchdogLoop(ctx)
+		fmt.Printf("Watchdog: Started monitoring (check_interval=%v, min_confidence=%.2f, min_severity=%s)\n",
+			e.watchdogConfig.GetCheckInterval(),
+			e.watchdogConfig.AIConfig.MinConfidenceThreshold,
+			e.watchdogConfig.AIConfig.MinSeverityLevel)
+	}
+
 	return nil
 }
 
@@ -162,12 +214,27 @@ func (e *Executor) Stop(ctx context.Context) error {
 	// Signal shutdown
 	close(e.stopCh)
 
+	// Stop watchdog if it's running
+	if e.watchdogConfig.IsEnabled() && e.analyzer != nil {
+		close(e.watchdogStopCh)
+	}
+
 	// Wait for event loop to finish
 	select {
 	case <-e.doneCh:
 		// Event loop finished
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+
+	// Wait for watchdog to finish
+	if e.watchdogConfig.IsEnabled() && e.analyzer != nil {
+		select {
+		case <-e.watchdogDoneCh:
+			// Watchdog finished
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 
 	// Mark instance as stopped
@@ -351,6 +418,16 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		e.monitor.RecordStateTransition(types.ExecutionStateClaimed, types.ExecutionStateExecuting)
 	}
 
+	// Create a cancelable context for the agent so watchdog can intervene
+	agentCtx, agentCancel := context.WithCancel(ctx)
+	defer agentCancel() // Always cancel when we're done
+
+	// Register agent context with intervention controller for watchdog
+	if e.intervention != nil {
+		e.intervention.SetAgentContext(issue.ID, agentCancel)
+		defer e.intervention.ClearAgentContext()
+	}
+
 	agentCfg := AgentConfig{
 		Type:       AgentTypeClaudeCode, // Default to Claude Code for now
 		WorkingDir: ".",
@@ -359,7 +436,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		Timeout:    30 * time.Minute,
 	}
 
-	agent, err := SpawnAgent(ctx, agentCfg)
+	agent, err := SpawnAgent(agentCtx, agentCfg)
 	if err != nil {
 		// Log agent spawn failure BEFORE releasing issue
 		e.logEvent(ctx, events.EventTypeAgentSpawned, events.SeverityError, issue.ID,
@@ -384,7 +461,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		})
 
 	// Wait for agent to complete
-	result, err := agent.Wait(ctx)
+	result, err := agent.Wait(agentCtx)
 	if err != nil {
 		// Log agent execution failure BEFORE releasing issue
 		e.logEvent(ctx, events.EventTypeAgentCompleted, events.SeverityError, issue.ID,
@@ -510,4 +587,74 @@ func (e *Executor) releaseIssueWithError(ctx context.Context, issueID, errMsg st
 	if err := e.store.ReleaseIssue(ctx, issueID); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to release issue: %v\n", err)
 	}
+}
+
+// watchdogLoop runs the watchdog monitoring in a background goroutine
+// It periodically checks for anomalies and intervenes when necessary
+func (e *Executor) watchdogLoop(ctx context.Context) {
+	defer close(e.watchdogDoneCh)
+
+	ticker := time.NewTicker(e.watchdogConfig.GetCheckInterval())
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-e.watchdogStopCh:
+			return
+		case <-ticker.C:
+			// Run anomaly detection
+			if err := e.checkForAnomalies(ctx); err != nil {
+				// Log error but continue monitoring
+				fmt.Fprintf(os.Stderr, "watchdog: error checking for anomalies: %v\n", err)
+			}
+		}
+	}
+}
+
+// checkForAnomalies performs one cycle of anomaly detection and intervention
+func (e *Executor) checkForAnomalies(ctx context.Context) error {
+	// Skip if no analyzer (watchdog disabled)
+	if e.analyzer == nil {
+		return nil
+	}
+
+	// Detect anomalies using AI analysis of telemetry
+	report, err := e.analyzer.DetectAnomalies(ctx)
+	if err != nil {
+		return fmt.Errorf("anomaly detection failed: %w", err)
+	}
+
+	// If no anomaly detected, nothing to do
+	if !report.Detected {
+		return nil
+	}
+
+	// Check if this anomaly meets the threshold for intervention
+	if !e.watchdogConfig.ShouldIntervene(report) {
+		// Anomaly detected but below threshold - just log it
+		if e.watchdogConfig.AIConfig.EnableAnomalyLogging {
+			fmt.Printf("Watchdog: Anomaly detected but below threshold - type=%s, severity=%s, confidence=%.2f (threshold: confidence=%.2f, severity=%s)\n",
+				report.AnomalyType, report.Severity, report.Confidence,
+				e.watchdogConfig.AIConfig.MinConfidenceThreshold,
+				e.watchdogConfig.AIConfig.MinSeverityLevel)
+		}
+		return nil
+	}
+
+	// Anomaly meets threshold - intervene
+	fmt.Printf("Watchdog: Intervening - type=%s, severity=%s, confidence=%.2f, recommended_action=%s\n",
+		report.AnomalyType, report.Severity, report.Confidence, report.RecommendedAction)
+
+	// Use intervention controller to decide and execute intervention
+	result, err := e.intervention.Intervene(ctx, report)
+	if err != nil {
+		return fmt.Errorf("intervention failed: %w", err)
+	}
+
+	fmt.Printf("Watchdog: Intervention completed - %s (escalation issue: %s)\n",
+		result.Message, result.EscalationIssueID)
+
+	return nil
 }
