@@ -924,9 +924,10 @@ func (c *ConversationHandler) toolContinueUntilBlocked(ctx context.Context, inpu
 	ctx, cancel := context.WithTimeout(ctx, timeoutDuration)
 	defer cancel()
 
-	// Track execution state
+	// Track execution state with three categories
 	var (
 		completedIssues   []string
+		partialIssues     []string
 		failedIssues      []string
 		consecutiveErrors int
 		iteration         int
@@ -939,7 +940,7 @@ func (c *ConversationHandler) toolContinueUntilBlocked(ctx context.Context, inpu
 		select {
 		case <-ctx.Done():
 			elapsed := time.Since(startTime)
-			return c.formatContinueLoopResult(completedIssues, failedIssues, iteration, "timeout or interruption", elapsed), nil
+			return c.formatContinueLoopResult(completedIssues, partialIssues, failedIssues, iteration, "timeout or interruption", elapsed), nil
 		default:
 		}
 
@@ -955,7 +956,7 @@ func (c *ConversationHandler) toolContinueUntilBlocked(ctx context.Context, inpu
 		if len(readyIssues) == 0 {
 			// No more work - successful completion
 			elapsed := time.Since(startTime)
-			return c.formatContinueLoopResult(completedIssues, failedIssues, iteration, "no more ready work", elapsed), nil
+			return c.formatContinueLoopResult(completedIssues, partialIssues, failedIssues, iteration, "no more ready work", elapsed), nil
 		}
 
 		issue := readyIssues[0]
@@ -964,24 +965,33 @@ func (c *ConversationHandler) toolContinueUntilBlocked(ctx context.Context, inpu
 		executionResult, execErr := c.executeIssue(ctx, issue)
 
 		if execErr != nil {
-			// Execution failed
+			// Execution error (spawn failed, agent crashed, etc.)
 			failedIssues = append(failedIssues, issue.ID)
 			consecutiveErrors++
 
 			// Check error threshold
 			if consecutiveErrors >= errorThreshold {
 				elapsed := time.Since(startTime)
-				return c.formatContinueLoopResult(completedIssues, failedIssues, iteration+1, fmt.Sprintf("error threshold exceeded (%d consecutive errors)", consecutiveErrors), elapsed), nil
+				return c.formatContinueLoopResult(completedIssues, partialIssues, failedIssues, iteration+1, fmt.Sprintf("error threshold exceeded (%d consecutive errors)", consecutiveErrors), elapsed), nil
 			}
+		} else if !executionResult.GatesPassed {
+			// Quality gates failed - actual failure
+			failedIssues = append(failedIssues, issue.ID)
+			consecutiveErrors++
+
+			// Check error threshold
+			if consecutiveErrors >= errorThreshold {
+				elapsed := time.Since(startTime)
+				return c.formatContinueLoopResult(completedIssues, partialIssues, failedIssues, iteration+1, fmt.Sprintf("error threshold exceeded (%d consecutive errors)", consecutiveErrors), elapsed), nil
+			}
+		} else if executionResult.Completed {
+			// Issue closed successfully
+			completedIssues = append(completedIssues, issue.ID)
+			consecutiveErrors = 0 // Reset error counter on success
 		} else {
-			// Execution succeeded
-			if executionResult.Completed {
-				completedIssues = append(completedIssues, issue.ID)
-				consecutiveErrors = 0 // Reset error counter on success
-			} else {
-				// Issue left open (partially complete)
-				failedIssues = append(failedIssues, issue.ID)
-			}
+			// Issue left open but work was done (partial completion)
+			partialIssues = append(partialIssues, issue.ID)
+			consecutiveErrors = 0 // Reset error counter on partial success
 		}
 
 		// Progress update (will be visible in the conversation)
@@ -990,7 +1000,7 @@ func (c *ConversationHandler) toolContinueUntilBlocked(ctx context.Context, inpu
 
 	// Reached max iterations
 	elapsed := time.Since(startTime)
-	return c.formatContinueLoopResult(completedIssues, failedIssues, iteration, "max iterations reached", elapsed), nil
+	return c.formatContinueLoopResult(completedIssues, partialIssues, failedIssues, iteration, "max iterations reached", elapsed), nil
 }
 
 // validateIssueForExecution validates that an issue can be executed.
@@ -1112,7 +1122,8 @@ func (c *ConversationHandler) executeIssue(ctx context.Context, issue *types.Iss
 }
 
 // formatContinueLoopResult formats the result of a continue_until_blocked execution.
-func (c *ConversationHandler) formatContinueLoopResult(completed, failed []string, iterations int, stopReason string, elapsed time.Duration) string {
+// Displays three categories: completed (closed), partial (work done, left open), and failed (errors).
+func (c *ConversationHandler) formatContinueLoopResult(completed, partial, failed []string, iterations int, stopReason string, elapsed time.Duration) string {
 	var result string
 
 	result += fmt.Sprintf("⚡ Autonomous Execution Complete\n\n")
@@ -1120,10 +1131,20 @@ func (c *ConversationHandler) formatContinueLoopResult(completed, failed []strin
 	result += fmt.Sprintf("Iterations: %d\n", iterations)
 	result += fmt.Sprintf("Elapsed Time: %s\n", elapsed.Round(time.Second))
 	result += fmt.Sprintf("\n")
+
+	// Completed issues (fully closed)
 	result += fmt.Sprintf("Completed: %d issues\n", len(completed))
 	if len(completed) > 0 {
 		result += fmt.Sprintf("  %v\n", completed)
 	}
+
+	// Partial completion (work done, left open for more)
+	result += fmt.Sprintf("Partial: %d issues (work done, left open)\n", len(partial))
+	if len(partial) > 0 {
+		result += fmt.Sprintf("  %v\n", partial)
+	}
+
+	// Failed issues (execution errors or quality gates failed)
 	result += fmt.Sprintf("Failed: %d issues\n", len(failed))
 	if len(failed) > 0 {
 		result += fmt.Sprintf("  %v\n", failed)
