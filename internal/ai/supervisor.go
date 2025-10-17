@@ -686,6 +686,75 @@ func (s *Supervisor) AnalyzeCodeReviewNeed(ctx context.Context, issue *types.Iss
 	return &decision, nil
 }
 
+// AnalyzeCodeQuality performs detailed code quality analysis and identifies specific issues.
+// This replaces manual code review with AI-driven analysis (vc-216).
+//
+// The AI analyzes the git diff using Sonnet (not Haiku) for thorough analysis:
+// - Code correctness and bugs
+// - Security vulnerabilities
+// - Performance issues
+// - Code smells and maintainability
+// - Best practices violations
+//
+// Returns a list of specific issues to file (each becomes a separate blocking issue).
+func (s *Supervisor) AnalyzeCodeQuality(ctx context.Context, issue *types.Issue, gitDiff string) (*CodeQualityAnalysis, error) {
+	startTime := time.Now()
+
+	// Build the prompt for code quality analysis
+	prompt := s.buildCodeQualityPrompt(issue, gitDiff)
+
+	// Call Anthropic API with retry logic using Sonnet (thorough analysis)
+	var response *anthropic.Message
+	err := s.retryWithBackoff(ctx, "code-quality-analysis", func(attemptCtx context.Context) error {
+		resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(s.model), // Use Sonnet for thorough analysis
+			MaxTokens: 4096, // Longer responses for detailed analysis
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			},
+		})
+		if apiErr != nil {
+			return apiErr
+		}
+		response = resp
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("anthropic API call failed: %w", err)
+	}
+
+	// Extract the text content from the response
+	var responseText string
+	for _, block := range response.Content {
+		if block.Type == "text" {
+			responseText += block.Text
+		}
+	}
+
+	// Parse the response as JSON using resilient parser
+	parseResult := Parse[CodeQualityAnalysis](responseText, ParseOptions{
+		Context:   "code quality analysis response",
+		LogErrors: true,
+	})
+	if !parseResult.Success {
+		return nil, fmt.Errorf("failed to parse code quality analysis response: %s (response: %s)", parseResult.Error, responseText)
+	}
+	analysis := parseResult.Data
+
+	// Log the analysis
+	duration := time.Since(startTime)
+	fmt.Printf("AI Code Quality Analysis for %s: issues=%d, confidence=%.2f, duration=%v\n",
+		issue.ID, len(analysis.Issues), analysis.Confidence, duration)
+
+	// Log AI usage to events
+	if err := s.logAIUsage(ctx, issue.ID, "code-quality-analysis", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
+	}
+
+	return &analysis, nil
+}
+
 // GateFailure represents a failed quality gate with details
 type GateFailure struct {
 	Gate   string // Gate type: "test", "lint", "build"
@@ -1129,6 +1198,126 @@ Provide your decision as a JSON object:
 }
 
 Be objective. It's better to request review when unsure than to miss a critical issue.
+
+IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (` + "```" + `). Just the JSON object.`,
+		issue.ID, issue.Title, issue.IssueType, issue.Priority,
+		issue.Description,
+		diffToAnalyze,
+		truncationNote)
+}
+
+// buildCodeQualityPrompt builds the prompt for automated code quality analysis
+func (s *Supervisor) buildCodeQualityPrompt(issue *types.Issue, gitDiff string) string {
+	// Truncate diff if it's too large (keep it under 50k chars for thorough analysis)
+	diffToAnalyze := gitDiff
+	wasTruncated := false
+	const maxDiffSize = 50000
+	if len(gitDiff) > maxDiffSize {
+		diffToAnalyze = gitDiff[:maxDiffSize] + "\n\n... [diff truncated - remaining content omitted for brevity] ..."
+		wasTruncated = true
+	}
+
+	truncationNote := ""
+	if wasTruncated {
+		truncationNote = "\n\nNote: The diff was truncated. Base your analysis on what's shown."
+	}
+
+	return fmt.Sprintf(`You are performing automated code quality analysis to identify specific issues that need fixes.
+
+IMPORTANT: Your job is to find SPECIFIC, ACTIONABLE problems. Each issue you identify will become a separate blocking issue.
+
+ISSUE CONTEXT:
+Issue ID: %s
+Title: %s
+Type: %s
+Priority: P%d
+Description: %s
+
+GIT DIFF:
+%s%s
+
+ANALYSIS TASK:
+Analyze the diff and identify specific quality issues. Consider:
+
+1. **Code Correctness and Bugs**
+   - Logic errors or incorrect implementations
+   - Edge cases not handled
+   - Potential null pointer dereferences
+   - Off-by-one errors
+   - Race conditions or concurrency issues
+
+2. **Security Vulnerabilities**
+   - SQL injection risks
+   - XSS vulnerabilities
+   - Authentication/authorization issues
+   - Insecure data handling
+   - Exposed secrets or credentials
+
+3. **Performance Issues**
+   - Inefficient algorithms (O(n²) where O(n) possible)
+   - Memory leaks
+   - Unnecessary database queries
+   - Missing indexes or caching
+
+4. **Code Smells and Maintainability**
+   - Code duplication
+   - Overly complex functions
+   - Poor naming or unclear code
+   - Missing error handling
+   - Inconsistent patterns
+
+5. **Best Practices Violations**
+   - Missing tests for new functionality
+   - Inadequate error messages
+   - Poor API design
+   - Lack of documentation for complex logic
+
+GUIDELINES FOR ISSUE CREATION:
+- Be SPECIFIC: "Fix null check in parseConfig line 45" not "Improve error handling"
+- Be ACTIONABLE: Each issue should have a clear fix
+- Be SELECTIVE: Only file issues for real problems, not nitpicks
+- Include CONTEXT: Explain why it's a problem and how to fix it
+- Assign PRIORITY appropriately:
+  - P0: Critical bugs, security vulnerabilities
+  - P1: Important bugs, significant code quality issues
+  - P2: Moderate issues, code smells
+  - P3: Minor improvements, nitpicks
+- Assign TYPE appropriately:
+  - bug: Correctness issues, security vulnerabilities
+  - task: Refactoring, adding tests, documentation
+  - chore: Style fixes, minor cleanup
+
+WHEN TO SKIP FILING ISSUES:
+- Trivial style differences (unless project has strict style guide)
+- Personal preference disputes
+- Changes that are intentional trade-offs
+- Generated code that follows patterns
+
+Provide your analysis as a JSON object:
+{
+  "issues": [
+    {
+      "title": "Fix null pointer dereference in parseConfig",
+      "description": "The parseConfig function at line 45 doesn't check if cfg is nil before accessing cfg.Name. This will panic if parseConfig receives a nil pointer.\n\nFix: Add nil check at the start of the function:\nif cfg == nil { return nil, fmt.Errorf(\"config cannot be nil\") }",
+      "type": "bug",
+      "priority": "P1"
+    },
+    {
+      "title": "Add unit tests for new authentication logic",
+      "description": "The new authentication logic in handleLogin (lines 120-145) has no test coverage. This is security-sensitive code that should be thoroughly tested.\n\nCreate tests for:\n- Valid credentials\n- Invalid credentials\n- Missing credentials\n- Expired tokens",
+      "type": "task",
+      "priority": "P1"
+    }
+  ],
+  "summary": "Found 2 issues: 1 null pointer bug and missing tests for authentication",
+  "confidence": 0.9
+}
+
+IMPORTANT NOTES:
+- Empty issues array is valid if code looks good
+- Don't be overly pedantic - focus on real problems
+- Consider the context and intent of the change
+- Be constructive and specific in descriptions
 
 IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (` + "```" + `). Just the JSON object.`,
 		issue.ID, issue.Title, issue.IssueType, issue.Priority,

@@ -335,7 +335,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				fmt.Fprintf(os.Stderr, "warning: failed to add commit comment: %v\n", err)
 			}
 
-			// Step 3.6: AI-based code review decision (ZFC principle - no heuristics)
+			// Step 3.6: AI-based code review decision and automated quality analysis (vc-216)
 			if rp.supervisor != nil {
 				fmt.Printf("\n=== Code Review Decision ===\n")
 
@@ -373,17 +373,46 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 								decision.Confidence*100)
 						}
 
-						// If review is needed, create a blocking code review issue
+						// If review is needed, perform automated code quality analysis (vc-216)
+						// This replaces manual review with AI-driven analysis that files granular fix issues
 						if needsReview {
 							if decision.NeedsReview {
 								fmt.Printf("Code review recommended (confidence: %.0f%%)\n", decision.Confidence*100)
 							}
-							reviewIssueID, err := rp.createCodeReviewIssue(ctx, issue, commitHash, reviewReason)
+
+							fmt.Printf("\n=== Automated Code Quality Analysis ===\n")
+							qualityAnalysis, err := rp.supervisor.AnalyzeCodeQuality(ctx, issue, diff)
 							if err != nil {
-								fmt.Fprintf(os.Stderr, "Warning: failed to create code review issue: %v\n", err)
+								fmt.Fprintf(os.Stderr, "Warning: code quality analysis failed: %v\n", err)
+								// Fall back to creating a manual review issue if analysis fails
+								reviewIssueID, err := rp.createCodeReviewIssue(ctx, issue, commitHash, reviewReason)
+								if err != nil {
+									fmt.Fprintf(os.Stderr, "Warning: failed to create code review issue: %v\n", err)
+								} else {
+									fmt.Printf("✓ Created manual code review issue: %s\n", reviewIssueID)
+									result.DiscoveredIssues = append(result.DiscoveredIssues, reviewIssueID)
+								}
 							} else {
-								fmt.Printf("✓ Created code review issue: %s\n", reviewIssueID)
-								result.DiscoveredIssues = append(result.DiscoveredIssues, reviewIssueID)
+								// Add analysis summary as comment
+								analysisComment := fmt.Sprintf("**Automated Code Quality Analysis**\n\n%s\n\nConfidence: %.0f%%\nIssues Found: %d",
+									qualityAnalysis.Summary, qualityAnalysis.Confidence*100, len(qualityAnalysis.Issues))
+								if err := rp.store.AddComment(ctx, issue.ID, "ai-supervisor", analysisComment); err != nil {
+									fmt.Fprintf(os.Stderr, "warning: failed to add quality analysis comment: %v\n", err)
+								}
+
+								// File granular issues for each quality problem found
+								if len(qualityAnalysis.Issues) > 0 {
+									fmt.Printf("Filing %d quality issues...\n", len(qualityAnalysis.Issues))
+									createdIssues, err := rp.createQualityIssues(ctx, issue, commitHash, qualityAnalysis.Issues)
+									if err != nil {
+										fmt.Fprintf(os.Stderr, "Warning: failed to create quality issues: %v\n", err)
+									} else {
+										result.DiscoveredIssues = append(result.DiscoveredIssues, createdIssues...)
+										fmt.Printf("✓ Created %d quality fix issues: %v\n", len(createdIssues), createdIssues)
+									}
+								} else {
+									fmt.Printf("✓ No quality issues found - code looks good\n")
+								}
 							}
 						} else {
 							fmt.Printf("No code review needed (confidence: %.0f%%)\n", decision.Confidence*100)
@@ -754,6 +783,100 @@ _This issue was automatically created by AI code review analysis._`,
 	}
 
 	return reviewIssueID, nil
+}
+
+// createQualityIssues creates blocking quality fix issues from automated code analysis (vc-216)
+// Each issue represents a specific fix that should be addressed.
+func (rp *ResultsProcessor) createQualityIssues(ctx context.Context, parentIssue *types.Issue, commitHash string, qualityIssues []ai.DiscoveredIssue) ([]string, error) {
+	var createdIssues []string
+
+	for i, qualityIssue := range qualityIssues {
+		// Create issue title with commit reference
+		title := qualityIssue.Title
+
+		// Build detailed description with commit context
+		description := fmt.Sprintf(`Code quality issue identified by automated analysis.
+
+**Original Issue:** %s
+**Commit:** %s
+
+%s
+
+_This issue was automatically created by AI code quality analysis (vc-216)._`,
+			parentIssue.ID,
+			commitHash[:8],
+			qualityIssue.Description)
+
+		// Map priority string to int
+		priority := 2 // default P2
+		switch qualityIssue.Priority {
+		case "P0":
+			priority = 0
+		case "P1":
+			priority = 1
+		case "P2":
+			priority = 2
+		case "P3":
+			priority = 3
+		}
+
+		// Map type string to types.IssueType
+		issueType := types.TypeTask // default
+		switch qualityIssue.Type {
+		case "bug":
+			issueType = types.TypeBug
+		case "task":
+			issueType = types.TypeTask
+		case "chore":
+			issueType = types.TypeChore
+		case "feature", "enhancement":
+			issueType = types.TypeFeature
+		}
+
+		// Create the quality fix issue
+		fixIssue := &types.Issue{
+			Title:       title,
+			Description: description,
+			IssueType:   issueType,
+			Status:      types.StatusOpen,
+			Priority:    priority,
+			Assignee:    "ai-supervisor",
+		}
+
+		err := rp.store.CreateIssue(ctx, fixIssue, "ai-supervisor")
+		if err != nil {
+			return createdIssues, fmt.Errorf("failed to create quality fix issue %d: %w", i+1, err)
+		}
+
+		fixIssueID := fixIssue.ID
+		createdIssues = append(createdIssues, fixIssueID)
+
+		// Add blocking dependency: parent issue is blocked by this fix issue
+		// This ensures the parent can't be considered "done" until quality issues are addressed
+		dep := &types.Dependency{
+			IssueID:     parentIssue.ID,    // Parent issue
+			DependsOnID: fixIssueID,        // Depends on fix issue
+			Type:        types.DepBlocks,   // Fix blocks parent
+		}
+		if err := rp.store.AddDependency(ctx, dep, "ai-supervisor"); err != nil {
+			// Log warning but don't fail - issue was created successfully
+			fmt.Fprintf(os.Stderr, "warning: failed to add blocking dependency %s -> %s: %v\n",
+				parentIssue.ID, fixIssueID, err)
+		}
+
+		fmt.Printf("  ✓ Created %s (%s, P%d): %s\n", fixIssueID, issueType, priority, title)
+	}
+
+	// Add comment to parent issue about quality issues
+	if len(createdIssues) > 0 {
+		qualityComment := fmt.Sprintf("Automated code quality analysis found %d issues:\n%v\n\nThis issue is now blocked pending quality fixes.",
+			len(createdIssues), createdIssues)
+		if err := rp.store.AddComment(ctx, parentIssue.ID, "ai-supervisor", qualityComment); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to add quality issues comment to parent: %v\n", err)
+		}
+	}
+
+	return createdIssues, nil
 }
 
 // autoCommit performs auto-commit with AI-generated message.
