@@ -127,6 +127,28 @@ CREATE INDEX IF NOT EXISTS idx_execution_state_executor ON issue_execution_state
 CREATE INDEX IF NOT EXISTS idx_execution_state_state ON issue_execution_state(state);
 CREATE INDEX IF NOT EXISTS idx_execution_state_updated ON issue_execution_state(updated_at);
 
+-- Execution history table
+-- Tracks all execution attempts for an issue to support resume/retry scenarios
+-- Stores truncated output/errors for context in future attempts
+CREATE TABLE IF NOT EXISTS execution_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id TEXT NOT NULL,
+    executor_instance_id TEXT NOT NULL,
+    attempt_number INTEGER NOT NULL,
+    started_at DATETIME NOT NULL,
+    completed_at DATETIME,
+    success BOOLEAN,
+    exit_code INTEGER,
+    summary TEXT NOT NULL DEFAULT '',
+    output_sample TEXT NOT NULL DEFAULT '',
+    error_sample TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+    FOREIGN KEY (executor_instance_id) REFERENCES executor_instances(instance_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_execution_history_issue ON execution_history(issue_id);
+CREATE INDEX IF NOT EXISTS idx_execution_history_started ON execution_history(started_at);
+
 -- Agent events table
 -- Tracks events extracted from agent execution output (file changes, tests, git ops, errors, etc.)
 -- AND executor-level events (issue claimed, assessment, agent lifecycle, quality gates, etc.)

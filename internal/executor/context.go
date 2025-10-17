@@ -26,7 +26,7 @@ type PromptContext struct {
 	RelatedIssues *RelatedIssues
 
 	// PreviousAttempts tracks execution history for this issue
-	PreviousAttempts []*ExecutionAttempt
+	PreviousAttempts []*types.ExecutionAttempt
 
 	// QualityGateStatus contains results from quality gate checks
 	QualityGateStatus *GateStatus
@@ -54,33 +54,6 @@ type RelatedIssues struct {
 
 	// Related are issues connected through non-blocking relationships
 	Related []*types.Issue
-}
-
-// ExecutionAttempt represents a single attempt to execute an issue.
-// Multiple attempts may occur due to retries, resumption after failures,
-// or iterative refinement.
-type ExecutionAttempt struct {
-	// AttemptNumber is the sequential attempt counter (1-indexed)
-	AttemptNumber int
-
-	// StartedAt is when this attempt began
-	StartedAt time.Time
-
-	// CompletedAt is when this attempt finished (zero if still running)
-	CompletedAt time.Time
-
-	// Success indicates whether the attempt completed successfully
-	Success bool
-
-	// Summary provides a high-level description of what happened
-	Summary string
-
-	// Output contains truncated stdout/stderr from the execution
-	// Full output is stored separately to avoid bloating context
-	Output string
-
-	// Errors contains truncated error messages from the execution
-	Errors string
 }
 
 // GitState captures the current state of the git repository.
@@ -128,9 +101,9 @@ type ContextGatherer interface {
 
 	// GetPreviousAttempts retrieves execution history for an issue
 	// Returns attempts in chronological order (oldest first)
-	GetPreviousAttempts(ctx context.Context, issueID string) ([]*ExecutionAttempt, error)
+	GetPreviousAttempts(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error)
 
 	// AnalyzeResumeState examines sandbox state and previous attempts to determine
 	// where execution left off. Returns a human-readable hint for the AI.
-	AnalyzeResumeState(ctx context.Context, sandbox interface{}, attempts []*ExecutionAttempt) (string, error)
+	AnalyzeResumeState(ctx context.Context, sandbox interface{}, attempts []*types.ExecutionAttempt) (string, error)
 }

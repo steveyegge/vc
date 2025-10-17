@@ -322,3 +322,34 @@ func (s *IssueExecutionState) Validate() error {
 	}
 	return nil
 }
+
+// ExecutionAttempt represents a single execution attempt for an issue.
+// Multiple attempts may occur due to retries, resumption after failures,
+// or iterative refinement.
+type ExecutionAttempt struct {
+	ID                 int64      `json:"id"`
+	IssueID            string     `json:"issue_id"`
+	ExecutorInstanceID string     `json:"executor_instance_id"`
+	AttemptNumber      int        `json:"attempt_number"`
+	StartedAt          time.Time  `json:"started_at"`
+	CompletedAt        *time.Time `json:"completed_at,omitempty"`
+	Success            *bool      `json:"success,omitempty"` // nil if not completed yet
+	ExitCode           *int       `json:"exit_code,omitempty"`
+	Summary            string     `json:"summary"`
+	OutputSample       string     `json:"output_sample"` // Truncated output (last 1000 lines)
+	ErrorSample        string     `json:"error_sample"`  // Truncated errors (last 1000 lines)
+}
+
+// Validate checks if the execution attempt has valid field values
+func (a *ExecutionAttempt) Validate() error {
+	if a.IssueID == "" {
+		return fmt.Errorf("issue_id is required")
+	}
+	if a.ExecutorInstanceID == "" {
+		return fmt.Errorf("executor_instance_id is required")
+	}
+	if a.AttemptNumber < 1 {
+		return fmt.Errorf("attempt_number must be positive (got %d)", a.AttemptNumber)
+	}
+	return nil
+}

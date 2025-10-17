@@ -66,6 +66,10 @@ type Storage interface {
 	GetCheckpoint(ctx context.Context, issueID string) (string, error)
 	ReleaseIssue(ctx context.Context, issueID string) error
 
+	// Execution History
+	GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error)
+	RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error
+
 	// Lifecycle
 	Close() error
 }
