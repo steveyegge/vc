@@ -850,27 +850,11 @@ func (c *ConversationHandler) toolContinueExecution(ctx context.Context, input m
 			return "", fmt.Errorf("failed to get issue %s: %w", issueID, err)
 		}
 
-		// Validate issue status
-		switch issue.Status {
-		case types.StatusClosed:
-			return fmt.Sprintf("Cannot execute issue %s: already closed", issueID), nil
-		case types.StatusInProgress:
-			return fmt.Sprintf("Cannot execute issue %s: already in progress (may be claimed by another executor)", issueID), nil
-		case types.StatusBlocked:
-			// Get dependencies to show what's blocking it
-			deps, depErr := c.storage.GetDependencies(ctx, issueID)
-			if depErr == nil && len(deps) > 0 {
-				var blockingIDs []string
-				for _, dep := range deps {
-					if dep.Status != types.StatusClosed {
-						blockingIDs = append(blockingIDs, dep.ID)
-					}
-				}
-				if len(blockingIDs) > 0 {
-					return fmt.Sprintf("Cannot execute issue %s: blocked by %v", issueID, blockingIDs), nil
-				}
-			}
-			return fmt.Sprintf("Cannot execute issue %s: currently blocked", issueID), nil
+		// Validate issue can be executed
+		if errMsg, err := c.validateIssueForExecution(ctx, issue); err != nil {
+			return "", err
+		} else if errMsg != "" {
+			return errMsg, nil
 		}
 	} else {
 		// Get next ready work
@@ -889,82 +873,24 @@ func (c *ConversationHandler) toolContinueExecution(ctx context.Context, input m
 		issue = issues[0]
 	}
 
-	// Claim the issue
-	instanceID := fmt.Sprintf("conversation-%s", AIActor)
-	if err := c.storage.ClaimIssue(ctx, issue.ID, instanceID); err != nil {
-		return "", fmt.Errorf("failed to claim issue %s: %w", issue.ID, err)
-	}
-
-	// Update execution state to executing
-	if err := c.storage.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateExecuting); err != nil {
-		// Log warning but continue
-		fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
-	}
-
-	// Spawn agent
-	agentCfg := executor.AgentConfig{
-		Type:       executor.AgentTypeClaudeCode,
-		WorkingDir: ".",
-		Issue:      issue,
-		StreamJSON: false,
-		Timeout:    30 * time.Minute,
-	}
-
-	agent, err := executor.SpawnAgent(ctx, agentCfg)
+	// Execute the issue using shared execution logic
+	result, err := c.executeIssue(ctx, issue)
 	if err != nil {
-		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to spawn agent: %v", err))
-		return "", fmt.Errorf("failed to spawn agent: %w", err)
+		return "", err
 	}
 
-	// Wait for completion
-	result, err := agent.Wait(ctx)
-	if err != nil {
-		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Agent execution failed: %v", err))
-		return "", fmt.Errorf("agent execution failed: %w", err)
-	}
-
-	// Process results using ResultsProcessor
-	supervisor, err := ai.NewSupervisor(&ai.Config{
-		Store: c.storage,
-	})
-	if err != nil {
-		// Continue without AI supervision
-		fmt.Fprintf(os.Stderr, "Warning: AI supervisor not available: %v (continuing without AI analysis)\n", err)
-		supervisor = nil
-	}
-
-	processor, err := executor.NewResultsProcessor(&executor.ResultsProcessorConfig{
-		Store:              c.storage,
-		Supervisor:         supervisor,
-		EnableQualityGates: true,
-		WorkingDir:         ".",
-		Actor:              instanceID,
-	})
-	if err != nil {
-		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to create results processor: %v", err))
-		return "", fmt.Errorf("failed to create results processor: %w", err)
-	}
-
-	procResult, err := processor.ProcessAgentResult(ctx, issue, result)
-	if err != nil {
-		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to process results: %v", err))
-		return "", fmt.Errorf("failed to process results: %w", err)
-	}
-
-	// Build response
+	// Build response (format differs from batch execution in continue_until_blocked)
 	var response string
-	if procResult.Completed {
+	if result.Completed {
 		response = fmt.Sprintf("✓ Issue %s completed successfully!\n", issue.ID)
-	} else if !procResult.GatesPassed {
+	} else if !result.GatesPassed {
 		response = fmt.Sprintf("✗ Issue %s blocked by quality gates\n", issue.ID)
-	} else if !result.Success {
-		response = fmt.Sprintf("✗ Worker failed for issue %s\n", issue.ID)
 	} else {
 		response = fmt.Sprintf("⚡ Issue %s partially complete (left open)\n", issue.ID)
 	}
 
-	if len(procResult.DiscoveredIssues) > 0 {
-		response += fmt.Sprintf("\nCreated %d follow-on issues: %v\n", len(procResult.DiscoveredIssues), procResult.DiscoveredIssues)
+	if len(result.DiscoveredIssues) > 0 {
+		response += fmt.Sprintf("\nCreated %d follow-on issues: %v\n", len(result.DiscoveredIssues), result.DiscoveredIssues)
 	}
 
 	return response, nil
@@ -1065,6 +991,39 @@ func (c *ConversationHandler) toolContinueUntilBlocked(ctx context.Context, inpu
 	// Reached max iterations
 	elapsed := time.Since(startTime)
 	return c.formatContinueLoopResult(completedIssues, failedIssues, iteration, "max iterations reached", elapsed), nil
+}
+
+// validateIssueForExecution validates that an issue can be executed.
+// Returns a user-facing error message if the issue cannot be executed, or empty string if valid.
+// Returns a system error if validation itself fails (e.g., database error).
+func (c *ConversationHandler) validateIssueForExecution(ctx context.Context, issue *types.Issue) (string, error) {
+	switch issue.Status {
+	case types.StatusClosed:
+		return fmt.Sprintf("Cannot execute issue %s: already closed", issue.ID), nil
+	case types.StatusInProgress:
+		return fmt.Sprintf("Cannot execute issue %s: already in progress (may be claimed by another executor)", issue.ID), nil
+	case types.StatusBlocked:
+		// Get dependencies to show what's blocking it
+		deps, err := c.storage.GetDependencies(ctx, issue.ID)
+		if err != nil {
+			return "", fmt.Errorf("failed to get dependencies for issue %s: %w", issue.ID, err)
+		}
+
+		if len(deps) > 0 {
+			var blockingIDs []string
+			for _, dep := range deps {
+				if dep.Status != types.StatusClosed {
+					blockingIDs = append(blockingIDs, dep.ID)
+				}
+			}
+			if len(blockingIDs) > 0 {
+				return fmt.Sprintf("Cannot execute issue %s: blocked by %v", issue.ID, blockingIDs), nil
+			}
+		}
+		return fmt.Sprintf("Cannot execute issue %s: currently blocked", issue.ID), nil
+	}
+
+	return "", nil
 }
 
 // executeIssue executes a single issue and returns the result.
