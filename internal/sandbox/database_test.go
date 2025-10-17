@@ -21,7 +21,8 @@ func TestInitSandboxDB(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Initialize sandbox DB
-	dbPath, err := initSandboxDB(ctx, tmpDir, "vc-123")
+	parentDBPath := filepath.Join(t.TempDir(), "parent.db")
+	dbPath, err := initSandboxDB(ctx, tmpDir, "vc-123", parentDBPath)
 	if err != nil {
 		t.Fatalf("initSandboxDB failed: %v", err)
 	}

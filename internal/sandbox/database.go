@@ -27,7 +27,15 @@ type SandboxMetadata struct {
 // it with the proper schema and metadata.
 //
 // Returns the absolute path to the created database file.
-func initSandboxDB(ctx context.Context, sandboxPath, missionID string) (string, error) {
+func initSandboxDB(ctx context.Context, sandboxPath, missionID, parentDBPath string) (string, error) {
+	// Validate inputs
+	if sandboxPath == "" {
+		return "", fmt.Errorf("sandboxPath cannot be empty")
+	}
+	if missionID == "" {
+		return "", fmt.Errorf("missionID cannot be empty")
+	}
+
 	// Create .beads directory in sandbox
 	beadsDir := filepath.Join(sandboxPath, ".beads")
 	if err := os.MkdirAll(beadsDir, 0755); err != nil {
@@ -47,10 +55,11 @@ func initSandboxDB(ctx context.Context, sandboxPath, missionID string) (string, 
 	if err != nil {
 		return "", fmt.Errorf("failed to create sandbox database: %w", err)
 	}
-	defer store.Close()
+	// Close the storage connection before opening a raw connection for metadata
+	store.Close()
 
 	// Store metadata in a custom table
-	if err := storeSandboxMetadata(dbPath, missionID); err != nil {
+	if err := storeSandboxMetadata(ctx, dbPath, missionID, parentDBPath); err != nil {
 		return "", fmt.Errorf("failed to store sandbox metadata: %w", err)
 	}
 
@@ -58,7 +67,7 @@ func initSandboxDB(ctx context.Context, sandboxPath, missionID string) (string, 
 }
 
 // storeSandboxMetadata creates a metadata table and stores sandbox provenance information
-func storeSandboxMetadata(dbPath, missionID string) error {
+func storeSandboxMetadata(ctx context.Context, dbPath, missionID, parentDBPath string) error {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
@@ -66,7 +75,7 @@ func storeSandboxMetadata(dbPath, missionID string) error {
 	defer db.Close()
 
 	// Create metadata table
-	_, err = db.Exec(`
+	_, err = db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS sandbox_metadata (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL,
@@ -81,7 +90,7 @@ func storeSandboxMetadata(dbPath, missionID string) error {
 	now := time.Now()
 	metadata := SandboxMetadata{
 		SandboxID:    fmt.Sprintf("sandbox-%s-%d", missionID, now.Unix()),
-		ParentDBPath: "", // Will be set when copying from main DB
+		ParentDBPath: parentDBPath,
 		MissionID:    missionID,
 		CreatedAt:    now,
 	}
@@ -91,7 +100,7 @@ func storeSandboxMetadata(dbPath, missionID string) error {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
-	_, err = db.Exec(`
+	_, err = db.ExecContext(ctx, `
 		INSERT OR REPLACE INTO sandbox_metadata (key, value)
 		VALUES (?, ?)
 	`, "sandbox_info", string(metadataJSON))
@@ -109,6 +118,14 @@ func storeSandboxMetadata(dbPath, missionID string) error {
 // - All child issues of the mission
 // - All dependencies and labels associated with these issues
 func copyCoreIssues(ctx context.Context, mainDB, sandboxDB storage.Storage, missionID string) error {
+	// Validate inputs
+	if missionID == "" {
+		return fmt.Errorf("missionID cannot be empty")
+	}
+	if mainDB == nil || sandboxDB == nil {
+		return fmt.Errorf("storage instances cannot be nil")
+	}
+
 	// Get the mission issue
 	mission, err := mainDB.GetIssue(ctx, missionID)
 	if err != nil {
@@ -122,8 +139,8 @@ func copyCoreIssues(ctx context.Context, mainDB, sandboxDB storage.Storage, miss
 	visited := make(map[string]bool)
 	issuesToCopy := []*types.Issue{}
 
-	// Recursively collect all dependencies
-	if err := collectDependenciesRecursive(ctx, mainDB, missionID, visited, &issuesToCopy); err != nil {
+	// Recursively collect all dependencies (with depth limit to prevent pathological cases)
+	if err := collectDependenciesRecursive(ctx, mainDB, missionID, visited, &issuesToCopy, 0); err != nil {
 		return fmt.Errorf("failed to collect dependencies: %w", err)
 	}
 
@@ -177,9 +194,18 @@ func copyCoreIssues(ctx context.Context, mainDB, sandboxDB storage.Storage, miss
 	return nil
 }
 
+// Maximum depth for dependency traversal to prevent pathological cases
+const maxDependencyDepth = 50
+
 // collectDependenciesRecursive recursively collects all issues that the given issue depends on
 func collectDependenciesRecursive(ctx context.Context, db storage.Storage, issueID string,
-	visited map[string]bool, result *[]*types.Issue) error {
+	visited map[string]bool, result *[]*types.Issue, depth int) error {
+
+	// Prevent excessive recursion depth
+	if depth > maxDependencyDepth {
+		return fmt.Errorf("maximum dependency depth (%d) exceeded for issue %s (possible cycle or pathological chain)",
+			maxDependencyDepth, issueID)
+	}
 
 	// Skip if already visited
 	if visited[issueID] {
@@ -207,13 +233,16 @@ func collectDependenciesRecursive(ctx context.Context, db storage.Storage, issue
 
 	// Recursively collect dependencies
 	for _, dep := range deps {
-		if err := collectDependenciesRecursive(ctx, db, dep.ID, visited, result); err != nil {
+		if err := collectDependenciesRecursive(ctx, db, dep.ID, visited, result, depth+1); err != nil {
 			return err
 		}
 	}
 
 	return nil
 }
+
+// Maximum number of events to merge from sandbox execution
+const maxEventsToMerge = 100
 
 // mergeResults merges completed work from the sandbox database back to the main database.
 // This includes:
@@ -259,8 +288,12 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 		return fmt.Errorf("failed to search sandbox issues: %w", err)
 	}
 
+	// Track discovered issues to add dependencies in second pass
+	discoveredIssues := make(map[string]*types.Issue)
+
+	// First pass: Create all discovered issues and their labels, update existing issues
 	for _, sandboxIssue := range sandboxIssues {
-		// Skip the original mission and its pre-existing dependencies
+		// Skip the original mission
 		if sandboxIssue.ID == missionID {
 			continue
 		}
@@ -277,6 +310,9 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 				return fmt.Errorf("failed to create discovered issue %s: %w", sandboxIssue.ID, err)
 			}
 
+			// Track this as a discovered issue
+			discoveredIssues[sandboxIssue.ID] = sandboxIssue
+
 			// Copy labels for the new issue
 			labels, err := sandboxDB.GetLabels(ctx, sandboxIssue.ID)
 			if err != nil {
@@ -285,20 +321,6 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 			for _, label := range labels {
 				if err := mainDB.AddLabel(ctx, sandboxIssue.ID, label, "sandbox-discovered"); err != nil {
 					return fmt.Errorf("failed to add label %s to %s: %w", label, sandboxIssue.ID, err)
-				}
-			}
-
-			// Copy dependencies for the new issue
-			deps, err := sandboxDB.GetDependencyRecords(ctx, sandboxIssue.ID)
-			if err != nil {
-				return fmt.Errorf("failed to get dependencies for %s: %w", sandboxIssue.ID, err)
-			}
-			for _, dep := range deps {
-				// Only copy if the dependency target exists in main DB
-				if targetIssue, _ := mainDB.GetIssue(ctx, dep.DependsOnID); targetIssue != nil {
-					if err := mainDB.AddDependency(ctx, dep, "sandbox-discovered"); err != nil {
-						return fmt.Errorf("failed to add dependency for %s: %w", sandboxIssue.ID, err)
-					}
 				}
 			}
 		} else if mainIssue.Status != sandboxIssue.Status {
@@ -312,8 +334,39 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 		}
 	}
 
+	// Second pass: Add dependencies for discovered issues
+	// This ensures all issues exist before we try to create dependencies between them
+	for issueID := range discoveredIssues {
+		deps, err := sandboxDB.GetDependencyRecords(ctx, issueID)
+		if err != nil {
+			return fmt.Errorf("failed to get dependencies for %s: %w", issueID, err)
+		}
+
+		for _, dep := range deps {
+			// Check if both ends of the dependency exist in main DB
+			issueExists, err := mainDB.GetIssue(ctx, dep.IssueID)
+			if err != nil {
+				return fmt.Errorf("failed to check issue %s exists: %w", dep.IssueID, err)
+			}
+
+			targetExists, err := mainDB.GetIssue(ctx, dep.DependsOnID)
+			if err != nil {
+				return fmt.Errorf("failed to check dependency target %s exists: %w", dep.DependsOnID, err)
+			}
+
+			// Only create dependency if both ends exist
+			if issueExists != nil && targetExists != nil {
+				if err := mainDB.AddDependency(ctx, dep, "sandbox-discovered"); err != nil {
+					// Ignore if dependency already exists (might happen if issue was pre-existing)
+					// TODO: Consider checking for specific "already exists" error
+					continue
+				}
+			}
+		}
+	}
+
 	// Copy comments/events from sandbox that reference the mission
-	sandboxEvents, err := sandboxDB.GetEvents(ctx, missionID, 100)
+	sandboxEvents, err := sandboxDB.GetEvents(ctx, missionID, maxEventsToMerge)
 	if err != nil {
 		return fmt.Errorf("failed to get sandbox events: %w", err)
 	}
