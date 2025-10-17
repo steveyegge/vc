@@ -79,6 +79,18 @@ func TestParse_WithCodeFences(t *testing.T) {
 				`{"success": true, "message": "js fence"}` + "\n" +
 				"```",
 		},
+		{
+			name: "json fence without newlines (vc-226 edge case)",
+			input: "```json" + `{"success": true, "message": "no newlines"}` + "```",
+		},
+		{
+			name: "json fence with space but no newline",
+			input: "```json " + `{"success": true, "message": "space no newline"}` + "```",
+		},
+		{
+			name: "fence without language or newlines",
+			input: "```" + `{"success": true, "message": "minimal"}` + "```",
+		},
 	}
 
 	for _, tt := range tests {
@@ -454,6 +466,21 @@ func TestRemoveCodeFences(t *testing.T) {
 		{
 			name:     "no fences",
 			input:    `{"test": true}`,
+			expected: `{"test": true}`,
+		},
+		{
+			name:     "json fence no newlines (vc-226)",
+			input:    "```json{\"test\": true}```",
+			expected: `{"test": true}`,
+		},
+		{
+			name:     "fence with space no newline",
+			input:    "```json {\"test\": true}```",
+			expected: `{"test": true}`,
+		},
+		{
+			name:     "minimal fence no newlines",
+			input:    "```{\"test\": true}```",
 			expected: `{"test": true}`,
 		},
 	}
