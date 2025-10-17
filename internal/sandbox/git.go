@@ -50,7 +50,7 @@ func createWorktree(ctx context.Context, cfg SandboxConfig, branchName string) (
 	absPath, err := filepath.Abs(worktreePath)
 	if err != nil {
 		// Try to clean up the worktree we just created
-		removeWorktree(ctx, worktreePath)
+		removeWorktree(ctx, cfg.ParentRepo, worktreePath)
 		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
@@ -60,7 +60,8 @@ func createWorktree(ctx context.Context, cfg SandboxConfig, branchName string) (
 // removeWorktree removes a git worktree.
 // This should be called during sandbox cleanup to remove the isolated workspace.
 // It removes both the worktree and prunes the git worktree list.
-func removeWorktree(ctx context.Context, worktreePath string) error {
+// The parentRepo parameter is optional - if empty, commands will run without explicit directory context.
+func removeWorktree(ctx context.Context, parentRepo, worktreePath string) error {
 	// Check if path exists
 	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
 		// Path doesn't exist, nothing to remove
@@ -68,11 +69,13 @@ func removeWorktree(ctx context.Context, worktreePath string) error {
 	}
 
 	// First, try to remove the worktree using git command
-	// We need to find the parent repo to run this command from
-	// For now, we'll try to run it from the worktree itself
+	// Run from parent repo if provided for more reliable operation
 	cmd := exec.CommandContext(ctx, "git", "worktree", "remove", worktreePath, "--force")
+	if parentRepo != "" {
+		cmd.Dir = parentRepo
+	}
 
-	output, err := cmd.CombinedOutput()
+	_, err := cmd.CombinedOutput()
 	if err != nil {
 		// If git command fails, fall back to manual removal
 		// This can happen if the worktree is already broken
@@ -83,13 +86,15 @@ func removeWorktree(ctx context.Context, worktreePath string) error {
 		// Try to prune the worktree list
 		// This may fail if we can't find the parent repo, but that's okay
 		pruneCmd := exec.CommandContext(ctx, "git", "worktree", "prune")
+		if parentRepo != "" {
+			pruneCmd.Dir = parentRepo
+		}
 		pruneCmd.Run() // Ignore errors from prune
 
 		return nil
 	}
 
 	// Successfully removed via git command
-	_ = output // Suppress unused warning
 	return nil
 }
 
@@ -132,6 +137,7 @@ func getModifiedFiles(ctx context.Context, worktreePath string) ([]string, error
 	// Parse porcelain output
 	// Format is: XY filename
 	// Where X is staged status, Y is unstaged status
+	// Note: Git quotes filenames with special characters (spaces, quotes, etc.)
 	var files []string
 	lines := strings.Split(status, "\n")
 	for _, line := range lines {
@@ -146,6 +152,19 @@ func getModifiedFiles(ctx context.Context, worktreePath string) ([]string, error
 		}
 
 		filename := strings.TrimSpace(line[3:])
+
+		// Remove quotes if present (git quotes filenames with special chars)
+		filename = strings.Trim(filename, `"`)
+
+		// Handle renames (format: "old -> new")
+		// For renames, return only the new filename
+		if strings.Contains(filename, " -> ") {
+			parts := strings.Split(filename, " -> ")
+			if len(parts) == 2 {
+				filename = strings.TrimSpace(parts[1])
+			}
+		}
+
 		if filename != "" {
 			files = append(files, filename)
 		}
@@ -163,6 +182,11 @@ func createBranch(ctx context.Context, worktreePath, branchName, baseBranch stri
 		return fmt.Errorf("worktree validation failed: %w", err)
 	}
 
+	// Validate branch name
+	if err := validateGitRefName(branchName); err != nil {
+		return fmt.Errorf("invalid branch name: %w", err)
+	}
+
 	// Check if branch already exists (locally)
 	checkCmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", branchName)
 	checkCmd.Dir = worktreePath
@@ -178,6 +202,45 @@ func createBranch(ctx context.Context, worktreePath, branchName, baseBranch stri
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git checkout -b failed: %w (output: %s)", err, string(output))
+	}
+
+	return nil
+}
+
+// validateGitRefName validates that a string is a valid git reference name.
+// Git ref names cannot contain certain characters or patterns.
+// See git-check-ref-format(1) for full specification.
+func validateGitRefName(name string) error {
+	if name == "" {
+		return fmt.Errorf("ref name cannot be empty")
+	}
+
+	// Check for invalid characters and patterns
+	invalidChars := []string{" ", "~", "^", ":", "?", "*", "[", "\\", "..", "@{", "//"}
+	for _, char := range invalidChars {
+		if strings.Contains(name, char) {
+			return fmt.Errorf("ref name contains invalid character or pattern: %s", char)
+		}
+	}
+
+	// Cannot start or end with dot
+	if strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".") {
+		return fmt.Errorf("ref name cannot start or end with '.'")
+	}
+
+	// Cannot end with .lock
+	if strings.HasSuffix(name, ".lock") {
+		return fmt.Errorf("ref name cannot end with '.lock'")
+	}
+
+	// Cannot start with slash
+	if strings.HasPrefix(name, "/") {
+		return fmt.Errorf("ref name cannot start with '/'")
+	}
+
+	// Cannot end with slash
+	if strings.HasSuffix(name, "/") {
+		return fmt.Errorf("ref name cannot end with '/'")
 	}
 
 	return nil

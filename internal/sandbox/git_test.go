@@ -146,7 +146,7 @@ func TestCreateWorktree(t *testing.T) {
 	}
 
 	// Clean up worktree
-	if err := removeWorktree(ctx, worktreePath); err != nil {
+	if err := removeWorktree(ctx, repo, worktreePath); err != nil {
 		t.Errorf("Failed to remove worktree: %v", err)
 	}
 }
@@ -178,7 +178,7 @@ func TestRemoveWorktree(t *testing.T) {
 	}
 
 	// Remove worktree
-	if err := removeWorktree(ctx, worktreePath); err != nil {
+	if err := removeWorktree(ctx, repo, worktreePath); err != nil {
 		t.Errorf("removeWorktree failed: %v", err)
 	}
 
@@ -188,7 +188,7 @@ func TestRemoveWorktree(t *testing.T) {
 	}
 
 	// Test removing non-existent worktree (should succeed)
-	if err := removeWorktree(ctx, worktreePath); err != nil {
+	if err := removeWorktree(ctx, repo, worktreePath); err != nil {
 		t.Errorf("removeWorktree should succeed for non-existent path: %v", err)
 	}
 }
@@ -218,7 +218,7 @@ func TestGetGitStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createWorktree failed: %v", err)
 	}
-	defer removeWorktree(ctx, worktreePath)
+	defer removeWorktree(ctx, repo, worktreePath)
 
 	// Get status (should be empty initially)
 	status, err := getGitStatus(ctx, worktreePath)
@@ -276,7 +276,7 @@ func TestGetModifiedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createWorktree failed: %v", err)
 	}
-	defer removeWorktree(ctx, worktreePath)
+	defer removeWorktree(ctx, repo, worktreePath)
 
 	// Get modified files (should be empty initially)
 	files, err := getModifiedFiles(ctx, worktreePath)
@@ -350,7 +350,7 @@ func TestCreateBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createWorktree failed: %v", err)
 	}
-	defer removeWorktree(ctx, worktreePath)
+	defer removeWorktree(ctx, repo, worktreePath)
 
 	// Create branch
 	branchName := "mission-test-202"
@@ -466,12 +466,182 @@ func TestIntegrationWorkflow(t *testing.T) {
 	}
 
 	// 6. Clean up worktree
-	if err := removeWorktree(ctx, worktreePath); err != nil {
+	if err := removeWorktree(ctx, repo, worktreePath); err != nil {
 		t.Fatalf("Step 6 - removeWorktree failed: %v", err)
 	}
 
 	// 7. Verify cleanup
 	if _, err := os.Stat(worktreePath); !os.IsNotExist(err) {
 		t.Error("Step 7 - Worktree should be removed")
+	}
+}
+
+func TestGetModifiedFilesWithSpaces(t *testing.T) {
+	repo, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create sandbox root
+	sandboxRoot, err := os.MkdirTemp("", "vc-sandbox-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create sandbox root: %v", err)
+	}
+	defer os.RemoveAll(sandboxRoot)
+
+	cfg := SandboxConfig{
+		MissionID:   "test-spaces",
+		ParentRepo:  repo,
+		BaseBranch:  "HEAD",
+		SandboxRoot: sandboxRoot,
+	}
+
+	// Create worktree
+	worktreePath, err := createWorktree(ctx, cfg, "mission-test-spaces")
+	if err != nil {
+		t.Fatalf("createWorktree failed: %v", err)
+	}
+	defer removeWorktree(ctx, repo, worktreePath)
+
+	// Create file with spaces in name
+	fileWithSpaces := filepath.Join(worktreePath, "file with spaces.txt")
+	if err := os.WriteFile(fileWithSpaces, []byte("content\n"), 0644); err != nil {
+		t.Fatalf("Failed to create file with spaces: %v", err)
+	}
+
+	// Get modified files
+	files, err := getModifiedFiles(ctx, worktreePath)
+	if err != nil {
+		t.Fatalf("getModifiedFiles failed: %v", err)
+	}
+
+	if len(files) != 1 {
+		t.Fatalf("Expected 1 file, got %d: %v", len(files), files)
+	}
+
+	// Verify filename is returned WITHOUT quotes
+	if files[0] != "file with spaces.txt" {
+		t.Errorf("Expected 'file with spaces.txt', got: '%s'", files[0])
+	}
+
+	// Verify no quotes in the returned filename
+	if strings.Contains(files[0], `"`) {
+		t.Errorf("Filename should not contain quotes, got: %s", files[0])
+	}
+}
+
+func TestGetModifiedFilesWithRenames(t *testing.T) {
+	repo, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create sandbox root
+	sandboxRoot, err := os.MkdirTemp("", "vc-sandbox-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create sandbox root: %v", err)
+	}
+	defer os.RemoveAll(sandboxRoot)
+
+	cfg := SandboxConfig{
+		MissionID:   "test-rename",
+		ParentRepo:  repo,
+		BaseBranch:  "HEAD",
+		SandboxRoot: sandboxRoot,
+	}
+
+	// Create worktree
+	worktreePath, err := createWorktree(ctx, cfg, "mission-test-rename")
+	if err != nil {
+		t.Fatalf("createWorktree failed: %v", err)
+	}
+	defer removeWorktree(ctx, repo, worktreePath)
+
+	// Create a branch
+	if err := createBranch(ctx, worktreePath, "test-branch", "HEAD"); err != nil {
+		t.Fatalf("createBranch failed: %v", err)
+	}
+
+	// Rename README.md to GUIDE.md using git
+	mvCmd := exec.Command("git", "mv", "README.md", "GUIDE.md")
+	mvCmd.Dir = worktreePath
+	if err := mvCmd.Run(); err != nil {
+		t.Fatalf("Failed to rename file: %v", err)
+	}
+
+	// Get modified files
+	files, err := getModifiedFiles(ctx, worktreePath)
+	if err != nil {
+		t.Fatalf("getModifiedFiles failed: %v", err)
+	}
+
+	// Should return only the new filename (GUIDE.md)
+	if len(files) != 1 {
+		t.Fatalf("Expected 1 file, got %d: %v", len(files), files)
+	}
+
+	if files[0] != "GUIDE.md" {
+		t.Errorf("Expected 'GUIDE.md' (new name), got: '%s'", files[0])
+	}
+}
+
+func TestCreateBranchWithInvalidNames(t *testing.T) {
+	repo, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create sandbox root
+	sandboxRoot, err := os.MkdirTemp("", "vc-sandbox-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create sandbox root: %v", err)
+	}
+	defer os.RemoveAll(sandboxRoot)
+
+	cfg := SandboxConfig{
+		MissionID:   "test-invalid-branch",
+		ParentRepo:  repo,
+		BaseBranch:  "HEAD",
+		SandboxRoot: sandboxRoot,
+	}
+
+	// Create worktree
+	worktreePath, err := createWorktree(ctx, cfg, "mission-test-invalid-branch")
+	if err != nil {
+		t.Fatalf("createWorktree failed: %v", err)
+	}
+	defer removeWorktree(ctx, repo, worktreePath)
+
+	// Test invalid branch names
+	invalidNames := []string{
+		"",                  // Empty
+		"branch with space", // Contains space
+		"branch~1",          // Contains tilde
+		"branch^1",          // Contains caret
+		"branch:name",       // Contains colon
+		"branch?name",       // Contains question mark
+		"branch*name",       // Contains asterisk
+		"branch[0]",         // Contains brackets
+		"branch\\name",      // Contains backslash
+		"branch..name",      // Contains double dot
+		"branch@{name}",     // Contains @{
+		"branch//name",      // Contains double slash
+		".branch",           // Starts with dot
+		"branch.",           // Ends with dot
+		"branch.lock",       // Ends with .lock
+		"/branch",           // Starts with slash
+		"branch/",           // Ends with slash
+	}
+
+	for _, name := range invalidNames {
+		if err := createBranch(ctx, worktreePath, name, "HEAD"); err == nil {
+			t.Errorf("createBranch should fail for invalid branch name: '%s'", name)
+		}
+	}
+
+	// Test valid branch name (should succeed)
+	validName := "feature/valid-branch-123"
+	if err := createBranch(ctx, worktreePath, validName, "HEAD"); err != nil {
+		t.Errorf("createBranch should succeed for valid branch name: '%s', got error: %v", validName, err)
 	}
 }
