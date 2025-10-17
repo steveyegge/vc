@@ -281,15 +281,22 @@ IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences. J
 
 // callAISupervisor sends the prompt to the AI supervisor and parses the response
 func (a *Analyzer) callAISupervisor(ctx context.Context, prompt string) (*AnomalyReport, error) {
-	// Use a mock response for now - we'll need to add a generic CallAI method to supervisor
-	// This is a temporary implementation to demonstrate the architecture
-
-	// NOTE: In production, we should add Supervisor.CallAI(ctx, prompt) method
-	// For now, we'll implement a simple direct call using the same pattern as supervisor
-
 	responseText, err := a.callAIWithRetry(ctx, prompt)
 	if err != nil {
 		return nil, err
+	}
+
+	// Strip markdown code fences if present (Claude sometimes adds them despite instructions)
+	responseText = strings.TrimSpace(responseText)
+	if strings.HasPrefix(responseText, "```json") {
+		responseText = strings.TrimPrefix(responseText, "```json")
+		responseText = strings.TrimPrefix(responseText, "```")
+		responseText = strings.TrimSuffix(responseText, "```")
+		responseText = strings.TrimSpace(responseText)
+	} else if strings.HasPrefix(responseText, "```") {
+		responseText = strings.TrimPrefix(responseText, "```")
+		responseText = strings.TrimSuffix(responseText, "```")
+		responseText = strings.TrimSpace(responseText)
 	}
 
 	// Parse the response using AI's resilient JSON parser

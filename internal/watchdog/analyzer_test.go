@@ -2,6 +2,7 @@ package watchdog
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -56,14 +57,20 @@ func (m *mockStorage) GetExecutionHistory(ctx context.Context, issueID string) (
 func (m *mockStorage) RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error { return nil }
 
 // createTestSupervisor creates a supervisor for testing
-// Since we're using mock responses in the analyzer, the supervisor won't make real AI calls
+// If ANTHROPIC_API_KEY is set, uses real AI calls; otherwise uses a test key (which will fail API calls)
 func createTestSupervisor(t *testing.T) *ai.Supervisor {
 	t.Helper()
 	store := &mockStorage{}
 
-	// Create a supervisor with mock API key (won't be called due to mock responses)
+	// Use real API key from environment if available, otherwise use test key
+	// When test key is used, tests that call the AI will skip or fail gracefully
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey == "" {
+		apiKey = "test-key"
+	}
+
 	supervisor, err := ai.NewSupervisor(&ai.Config{
-		APIKey: "test-key",
+		APIKey: apiKey,
 		Store:  store,
 	})
 	if err != nil {
@@ -456,6 +463,11 @@ func TestAnomalyReport_ZFCCompliance(t *testing.T) {
 	// - All detection via AI
 	// - No regex or pattern matching in detection logic
 
+	// Skip if no API key available (would fail without real AI)
+	if os.Getenv("ANTHROPIC_API_KEY") == "" {
+		t.Skip("Skipping test that requires ANTHROPIC_API_KEY")
+	}
+
 	monitor := NewMonitor(nil)
 	supervisor := createTestSupervisor(t)
 	store := &mockStorage{}
@@ -470,8 +482,7 @@ func TestAnomalyReport_ZFCCompliance(t *testing.T) {
 		t.Fatalf("failed to create analyzer: %v", err)
 	}
 
-	// Add some telemetry that might look anomalous by hardcoded heuristics
-	// e.g., same issue executed many times
+	// Add some telemetry that looks anomalous: same issue executed many times, all failures
 	for i := 0; i < 10; i++ {
 		monitor.StartExecution("vc-repeated", "executor-1")
 		monitor.EndExecution(false, false) // All failures
@@ -483,13 +494,31 @@ func TestAnomalyReport_ZFCCompliance(t *testing.T) {
 		t.Fatalf("DetectAnomalies failed: %v", err)
 	}
 
-	// The mock AI returns "no anomaly detected"
-	// This demonstrates that the analyzer doesn't have hardcoded rules like:
+	// With real AI, this pattern SHOULD be detected as anomalous
+	// This demonstrates ZFC compliance: the analyzer has NO hardcoded rules like:
 	// "if same issue fails 10 times, flag as anomaly"
-	// Instead, it delegates all detection to AI
+	// Instead, ALL detection logic is delegated to the AI
 
+	if !report.Detected {
+		t.Error("AI should detect anomaly for 10 repeated failures (ZFC compliance)")
+	}
+
+	// Verify the report has the expected fields
 	if report.Detected {
-		t.Error("mock AI should return no anomaly (demonstrating ZFC compliance)")
+		if report.AnomalyType == "" {
+			t.Error("expected anomaly_type to be set when detected=true")
+		}
+		if report.Severity == "" {
+			t.Error("expected severity to be set when detected=true")
+		}
+		if report.RecommendedAction == "" {
+			t.Error("expected recommended_action to be set when detected=true")
+		}
+		if report.Confidence < 0.5 {
+			t.Errorf("expected high confidence for clear anomaly, got %.2f", report.Confidence)
+		}
+		t.Logf("✓ AI correctly detected anomaly: type=%s, severity=%s, confidence=%.2f",
+			report.AnomalyType, report.Severity, report.Confidence)
 	}
 
 	// The analyzer should NOT have code like:
