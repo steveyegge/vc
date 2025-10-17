@@ -9,6 +9,14 @@ import (
 	"time"
 )
 
+// DetectionState tracks consecutive detections of a specific anomaly type
+// This enables accumulation-based intervention logic
+type DetectionState struct {
+	ConsecutiveCount int       // Number of consecutive detections
+	FirstDetectedAt  time.Time // When this anomaly was first detected in the current sequence
+	LastDetectedAt   time.Time // Most recent detection time
+}
+
 // WatchdogConfig holds the complete watchdog configuration
 // This includes settings for monitoring, anomaly detection, and intervention policies
 type WatchdogConfig struct {
@@ -34,7 +42,11 @@ type WatchdogConfig struct {
 	// Default: 100
 	MaxHistorySize int `json:"max_history_size"`
 
-	mu sync.RWMutex // Protects runtime reconfiguration
+	// detectionStates tracks consecutive detections per anomaly type
+	// This supports accumulation-based intervention logic (vc-227)
+	detectionStates map[AnomalyType]*DetectionState
+
+	mu sync.RWMutex // Protects runtime reconfiguration and detection state
 }
 
 // AIConfig holds AI-related watchdog settings
@@ -105,7 +117,8 @@ func DefaultWatchdogConfig() *WatchdogConfig {
 				SeverityLow:      3, // P3
 			},
 		},
-		MaxHistorySize: 100,
+		MaxHistorySize:  100,
+		detectionStates: make(map[AnomalyType]*DetectionState),
 	}
 }
 
@@ -297,6 +310,16 @@ func (c *WatchdogConfig) Clone() *WatchdogConfig {
 		escPriority[k] = v
 	}
 
+	// Copy detection states map
+	detectionStates := make(map[AnomalyType]*DetectionState)
+	for k, v := range c.detectionStates {
+		detectionStates[k] = &DetectionState{
+			ConsecutiveCount: v.ConsecutiveCount,
+			FirstDetectedAt:  v.FirstDetectedAt,
+			LastDetectedAt:   v.LastDetectedAt,
+		}
+	}
+
 	return &WatchdogConfig{
 		Enabled:             c.Enabled,
 		CheckInterval:       c.CheckInterval,
@@ -312,7 +335,8 @@ func (c *WatchdogConfig) Clone() *WatchdogConfig {
 			EscalateOnCritical: c.InterventionConfig.EscalateOnCritical,
 			EscalationPriority: escPriority,
 		},
-		MaxHistorySize: c.MaxHistorySize,
+		MaxHistorySize:  c.MaxHistorySize,
+		detectionStates: detectionStates,
 	}
 }
 
@@ -382,19 +406,63 @@ func (c *WatchdogConfig) SetCheckInterval(interval time.Duration) error {
 }
 
 // ShouldIntervene determines if an anomaly report should trigger an intervention
-// based on the current configuration thresholds
+// based on the current configuration thresholds and accumulation model (vc-227)
+//
+// Accumulation model for stuck_state:
+//   - Intervene after 10 consecutive detections (regardless of confidence/severity)
+//   - OR intervene after 3 minutes stuck (regardless of confidence/severity)
+//
+// Other anomaly types use standard thresholds (confidence + severity)
 func (c *WatchdogConfig) ShouldIntervene(report *AnomalyReport) bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock() // Need write lock to update detection states
+	defer c.mu.Unlock()
 
 	if !c.Enabled {
 		return false
 	}
 
 	if !report.Detected {
+		// No anomaly - clear all detection states
+		c.detectionStates = make(map[AnomalyType]*DetectionState)
 		return false
 	}
 
+	// Update detection state for this anomaly type
+	state, exists := c.detectionStates[report.AnomalyType]
+	now := time.Now()
+
+	if !exists {
+		// First detection of this anomaly type
+		state = &DetectionState{
+			ConsecutiveCount: 1,
+			FirstDetectedAt:  now,
+			LastDetectedAt:   now,
+		}
+		c.detectionStates[report.AnomalyType] = state
+	} else {
+		// Consecutive detection
+		state.ConsecutiveCount++
+		state.LastDetectedAt = now
+	}
+
+	// Special accumulation logic for stuck_state (vc-227)
+	if report.AnomalyType == AnomalyStuckState {
+		// Condition 1: 10 consecutive detections
+		if state.ConsecutiveCount >= 10 {
+			return true
+		}
+
+		// Condition 2: Stuck for 3+ minutes
+		stuckDuration := now.Sub(state.FirstDetectedAt)
+		if stuckDuration >= 3*time.Minute {
+			return true
+		}
+
+		// Neither condition met - don't intervene yet
+		return false
+	}
+
+	// For other anomaly types, use standard threshold logic
 	// Check confidence threshold
 	if report.Confidence < c.AIConfig.MinConfidenceThreshold {
 		return false
