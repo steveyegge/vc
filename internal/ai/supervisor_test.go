@@ -2,9 +2,12 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/types"
@@ -612,5 +615,491 @@ func TestTypeMapping(t *testing.T) {
 				t.Errorf("Type %s mapped to %s, want %s", tt.input, issue.IssueType, tt.want)
 			}
 		})
+	}
+}
+
+// ============================================================================
+// Circuit Breaker Tests
+// ============================================================================
+
+// TestCircuitBreakerInitialization tests circuit breaker creation and defaults
+func TestCircuitBreakerInitialization(t *testing.T) {
+	t.Run("default config enables circuit breaker", func(t *testing.T) {
+		cfg := DefaultRetryConfig()
+
+		if !cfg.CircuitBreakerEnabled {
+			t.Error("Circuit breaker should be enabled by default")
+		}
+		if cfg.FailureThreshold != 5 {
+			t.Errorf("Default failure threshold should be 5, got %d", cfg.FailureThreshold)
+		}
+		if cfg.SuccessThreshold != 2 {
+			t.Errorf("Default success threshold should be 2, got %d", cfg.SuccessThreshold)
+		}
+		if cfg.OpenTimeout != 30*time.Second {
+			t.Errorf("Default open timeout should be 30s, got %v", cfg.OpenTimeout)
+		}
+	})
+
+	t.Run("new circuit breaker starts in closed state", func(t *testing.T) {
+		cb := NewCircuitBreaker(5, 2, 30*time.Second)
+
+		if cb.GetState() != CircuitClosed {
+			t.Errorf("New circuit breaker should start in CLOSED state, got %s", cb.GetState())
+		}
+
+		state, failures, successes := cb.GetMetrics()
+		if state != CircuitClosed {
+			t.Errorf("Expected CLOSED state, got %s", state)
+		}
+		if failures != 0 {
+			t.Errorf("Expected 0 failures, got %d", failures)
+		}
+		if successes != 0 {
+			t.Errorf("Expected 0 successes, got %d", successes)
+		}
+	})
+}
+
+// TestCircuitBreakerClosedState tests normal operation when circuit is closed
+func TestCircuitBreakerClosedState(t *testing.T) {
+	t.Run("allows requests in closed state", func(t *testing.T) {
+		cb := NewCircuitBreaker(5, 2, 30*time.Second)
+
+		// Should allow multiple requests
+		for i := 0; i < 10; i++ {
+			if err := cb.Allow(); err != nil {
+				t.Errorf("Request %d should be allowed in CLOSED state, got error: %v", i, err)
+			}
+		}
+	})
+
+	t.Run("resets failure count on success", func(t *testing.T) {
+		cb := NewCircuitBreaker(5, 2, 30*time.Second)
+
+		// Record some failures
+		cb.RecordFailure()
+		cb.RecordFailure()
+		_, failures, _ := cb.GetMetrics()
+		if failures != 2 {
+			t.Errorf("Expected 2 failures, got %d", failures)
+		}
+
+		// Record success should reset failure count
+		cb.RecordSuccess()
+		_, failures, _ = cb.GetMetrics()
+		if failures != 0 {
+			t.Errorf("Failure count should be reset to 0 after success, got %d", failures)
+		}
+	})
+
+	t.Run("transitions to open after threshold failures", func(t *testing.T) {
+		cb := NewCircuitBreaker(3, 2, 30*time.Second)
+
+		// Record failures up to threshold
+		for i := 0; i < 3; i++ {
+			cb.RecordFailure()
+		}
+
+		// Should now be open
+		if cb.GetState() != CircuitOpen {
+			t.Errorf("Circuit should be OPEN after %d failures, got %s", 3, cb.GetState())
+		}
+	})
+}
+
+// TestCircuitBreakerOpenState tests fail-fast behavior when circuit is open
+func TestCircuitBreakerOpenState(t *testing.T) {
+	t.Run("blocks requests when open", func(t *testing.T) {
+		cb := NewCircuitBreaker(3, 2, 30*time.Second)
+
+		// Trip the circuit
+		for i := 0; i < 3; i++ {
+			cb.RecordFailure()
+		}
+
+		// Should block requests
+		err := cb.Allow()
+		if err == nil {
+			t.Error("Allow() should return error when circuit is OPEN")
+		}
+		if !errors.Is(err, ErrCircuitOpen) {
+			t.Errorf("Expected ErrCircuitOpen, got %v", err)
+		}
+	})
+
+	t.Run("transitions to half-open after timeout", func(t *testing.T) {
+		cb := NewCircuitBreaker(3, 2, 100*time.Millisecond) // Short timeout for testing
+
+		// Trip the circuit
+		for i := 0; i < 3; i++ {
+			cb.RecordFailure()
+		}
+
+		if cb.GetState() != CircuitOpen {
+			t.Fatal("Circuit should be OPEN")
+		}
+
+		// Should still be blocked immediately
+		if err := cb.Allow(); !errors.Is(err, ErrCircuitOpen) {
+			t.Error("Should be blocked immediately after opening")
+		}
+
+		// Wait for timeout
+		time.Sleep(150 * time.Millisecond)
+
+		// Should transition to half-open and allow request
+		if err := cb.Allow(); err != nil {
+			t.Errorf("Should allow request after timeout, got error: %v", err)
+		}
+
+		if cb.GetState() != CircuitHalfOpen {
+			t.Errorf("Circuit should be HALF_OPEN after timeout, got %s", cb.GetState())
+		}
+	})
+}
+
+// TestCircuitBreakerHalfOpenState tests recovery probing in half-open state
+func TestCircuitBreakerHalfOpenState(t *testing.T) {
+	t.Run("allows probe requests in half-open", func(t *testing.T) {
+		cb := NewCircuitBreaker(3, 2, 50*time.Millisecond)
+
+		// Trip and wait for half-open
+		for i := 0; i < 3; i++ {
+			cb.RecordFailure()
+		}
+		time.Sleep(60 * time.Millisecond)
+
+		// Transition to half-open
+		cb.Allow()
+
+		// Should allow requests in half-open
+		if err := cb.Allow(); err != nil {
+			t.Errorf("Should allow probe requests in HALF_OPEN, got error: %v", err)
+		}
+	})
+
+	t.Run("transitions to closed after success threshold", func(t *testing.T) {
+		cb := NewCircuitBreaker(3, 2, 50*time.Millisecond)
+
+		// Trip and transition to half-open
+		for i := 0; i < 3; i++ {
+			cb.RecordFailure()
+		}
+		time.Sleep(60 * time.Millisecond)
+		cb.Allow()
+
+		if cb.GetState() != CircuitHalfOpen {
+			t.Fatal("Should be in HALF_OPEN state")
+		}
+
+		// Record successful probes
+		cb.RecordSuccess()
+		if cb.GetState() != CircuitHalfOpen {
+			t.Error("Should still be HALF_OPEN after 1 success")
+		}
+
+		cb.RecordSuccess()
+		if cb.GetState() != CircuitClosed {
+			t.Errorf("Should transition to CLOSED after 2 successes, got %s", cb.GetState())
+		}
+
+		// Verify failure count is reset
+		_, failures, _ := cb.GetMetrics()
+		if failures != 0 {
+			t.Errorf("Failure count should be reset to 0, got %d", failures)
+		}
+	})
+
+	t.Run("reopens immediately on failure in half-open", func(t *testing.T) {
+		cb := NewCircuitBreaker(3, 2, 50*time.Millisecond)
+
+		// Trip and transition to half-open
+		for i := 0; i < 3; i++ {
+			cb.RecordFailure()
+		}
+		time.Sleep(60 * time.Millisecond)
+		cb.Allow()
+
+		if cb.GetState() != CircuitHalfOpen {
+			t.Fatal("Should be in HALF_OPEN state")
+		}
+
+		// One success, then failure
+		cb.RecordSuccess()
+		cb.RecordFailure()
+
+		// Should immediately reopen
+		if cb.GetState() != CircuitOpen {
+			t.Errorf("Should immediately transition to OPEN on failure in HALF_OPEN, got %s", cb.GetState())
+		}
+	})
+}
+
+// TestCircuitBreakerThreadSafety tests concurrent access to circuit breaker
+func TestCircuitBreakerThreadSafety(t *testing.T) {
+	cb := NewCircuitBreaker(10, 2, 100*time.Millisecond)
+
+	// Run many concurrent operations
+	var wg sync.WaitGroup
+	numGoroutines := 50
+	operationsPerGoroutine := 100
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < operationsPerGoroutine; j++ {
+				// Mix of operations
+				cb.Allow()
+				if j%3 == 0 {
+					cb.RecordSuccess()
+				} else if j%7 == 0 {
+					cb.RecordFailure()
+				}
+				cb.GetState()
+				cb.GetMetrics()
+			}
+		}(i)
+	}
+
+	// Should complete without deadlock or panic
+	wg.Wait()
+
+	// Circuit breaker should still be functional
+	state := cb.GetState()
+	if state != CircuitClosed && state != CircuitOpen && state != CircuitHalfOpen {
+		t.Errorf("Circuit breaker in invalid state: %v", state)
+	}
+}
+
+// TestCircuitBreakerWithRetry tests integration with retryWithBackoff
+func TestCircuitBreakerWithRetry(t *testing.T) {
+	t.Run("circuit breaker blocks retries when open", func(t *testing.T) {
+		store := newMockStorage()
+		cfg := &Config{
+			Store: store,
+			Retry: RetryConfig{
+				MaxRetries:            3,
+				InitialBackoff:        10 * time.Millisecond,
+				MaxBackoff:            100 * time.Millisecond,
+				BackoffMultiplier:     2.0,
+				Timeout:               100 * time.Millisecond,
+				CircuitBreakerEnabled: true,
+				FailureThreshold:      2,
+				SuccessThreshold:      1,
+				OpenTimeout:           200 * time.Millisecond,
+			},
+		}
+
+		supervisor, err := NewSupervisor(cfg)
+		if err != nil {
+			t.Fatalf("Failed to create supervisor: %v", err)
+		}
+
+		// Trip the circuit by causing failures
+		callCount := 0
+		ctx := context.Background()
+		retriableError := errors.New("503 service unavailable")
+
+		// First attempt - causes 2 failures and opens circuit
+		err = supervisor.retryWithBackoff(ctx, "test", func(ctx context.Context) error {
+			callCount++
+			return retriableError
+		})
+		if err == nil {
+			t.Error("Expected error from retryWithBackoff")
+		}
+
+		// Circuit should be open now
+		if supervisor.circuitBreaker.GetState() != CircuitOpen {
+			t.Errorf("Circuit should be OPEN, got %s", supervisor.circuitBreaker.GetState())
+		}
+
+		// Second attempt should fail immediately without retry
+		callCountBefore := callCount
+		err = supervisor.retryWithBackoff(ctx, "test", func(ctx context.Context) error {
+			callCount++
+			return retriableError
+		})
+
+		// Should fail fast without calling the function
+		if callCount != callCountBefore {
+			t.Error("Circuit breaker should block request without calling function")
+		}
+
+		// Error should mention circuit breaker
+		if !strings.Contains(err.Error(), "circuit breaker") {
+			t.Errorf("Error should mention circuit breaker, got: %v", err)
+		}
+	})
+
+	t.Run("successful request records success with circuit breaker", func(t *testing.T) {
+		store := newMockStorage()
+		cfg := &Config{
+			Store: store,
+			Retry: RetryConfig{
+				MaxRetries:            3,
+				InitialBackoff:        10 * time.Millisecond,
+				MaxBackoff:            100 * time.Millisecond,
+				BackoffMultiplier:     2.0,
+				Timeout:               100 * time.Millisecond,
+				CircuitBreakerEnabled: true,
+				FailureThreshold:      5,
+				SuccessThreshold:      2,
+				OpenTimeout:           30 * time.Second,
+			},
+		}
+
+		supervisor, err := NewSupervisor(cfg)
+		if err != nil {
+			t.Fatalf("Failed to create supervisor: %v", err)
+		}
+
+		ctx := context.Background()
+
+		// Record some failures
+		supervisor.circuitBreaker.RecordFailure()
+		supervisor.circuitBreaker.RecordFailure()
+		_, failures, _ := supervisor.circuitBreaker.GetMetrics()
+		if failures != 2 {
+			t.Errorf("Expected 2 failures, got %d", failures)
+		}
+
+		// Successful request should reset failure count
+		err = supervisor.retryWithBackoff(ctx, "test", func(ctx context.Context) error {
+			return nil // Success
+		})
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+
+		_, failures, _ = supervisor.circuitBreaker.GetMetrics()
+		if failures != 0 {
+			t.Errorf("Failure count should be reset after success, got %d", failures)
+		}
+	})
+
+	t.Run("non-retriable errors don't affect circuit breaker", func(t *testing.T) {
+		store := newMockStorage()
+		cfg := &Config{
+			Store: store,
+			Retry: RetryConfig{
+				MaxRetries:            3,
+				InitialBackoff:        10 * time.Millisecond,
+				MaxBackoff:            100 * time.Millisecond,
+				BackoffMultiplier:     2.0,
+				Timeout:               100 * time.Millisecond,
+				CircuitBreakerEnabled: true,
+				FailureThreshold:      2,
+				SuccessThreshold:      1,
+				OpenTimeout:           30 * time.Second,
+			},
+		}
+
+		supervisor, err := NewSupervisor(cfg)
+		if err != nil {
+			t.Fatalf("Failed to create supervisor: %v", err)
+		}
+
+		ctx := context.Background()
+		nonRetriableError := errors.New("401 unauthorized")
+
+		// Non-retriable error shouldn't affect circuit breaker
+		err = supervisor.retryWithBackoff(ctx, "test", func(ctx context.Context) error {
+			return nonRetriableError
+		})
+		if err == nil {
+			t.Error("Expected error from retryWithBackoff")
+		}
+
+		// Circuit should still be closed
+		if supervisor.circuitBreaker.GetState() != CircuitClosed {
+			t.Errorf("Circuit should remain CLOSED for non-retriable errors, got %s", supervisor.circuitBreaker.GetState())
+		}
+
+		_, failures, _ := supervisor.circuitBreaker.GetMetrics()
+		if failures != 0 {
+			t.Errorf("Non-retriable errors shouldn't count as failures, got %d", failures)
+		}
+	})
+}
+
+// TestCircuitBreakerStateTransitions tests all state transition logging
+func TestCircuitBreakerStateTransitions(t *testing.T) {
+	t.Run("logs all state transitions", func(t *testing.T) {
+		cb := NewCircuitBreaker(2, 1, 50*time.Millisecond)
+
+		// CLOSED -> OPEN
+		cb.RecordFailure()
+		cb.RecordFailure() // Should log transition
+
+		// Wait for timeout and transition to HALF_OPEN
+		time.Sleep(60 * time.Millisecond)
+		cb.Allow() // Should log transition
+
+		// HALF_OPEN -> CLOSED
+		cb.RecordSuccess() // Should log transition
+
+		// CLOSED -> OPEN again
+		cb.RecordFailure()
+		cb.RecordFailure() // Should log transition
+
+		// Wait and OPEN -> HALF_OPEN
+		time.Sleep(60 * time.Millisecond)
+		cb.Allow()
+
+		// HALF_OPEN -> OPEN (failure in half-open)
+		cb.RecordFailure() // Should log transition
+
+		// Verify we end in OPEN state
+		if cb.GetState() != CircuitOpen {
+			t.Errorf("Expected final state to be OPEN, got %s", cb.GetState())
+		}
+	})
+}
+
+// TestCircuitBreakerDisabled tests behavior when circuit breaker is disabled
+func TestCircuitBreakerDisabled(t *testing.T) {
+	store := newMockStorage()
+	cfg := &Config{
+		Store: store,
+		Retry: RetryConfig{
+			MaxRetries:            3,
+			InitialBackoff:        10 * time.Millisecond,
+			MaxBackoff:            100 * time.Millisecond,
+			BackoffMultiplier:     2.0,
+			Timeout:               100 * time.Millisecond,
+			CircuitBreakerEnabled: false, // Disabled
+		},
+	}
+
+	supervisor, err := NewSupervisor(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create supervisor: %v", err)
+	}
+
+	// Circuit breaker should be nil
+	if supervisor.circuitBreaker != nil {
+		t.Error("Circuit breaker should be nil when disabled")
+	}
+
+	// Retry logic should still work
+	ctx := context.Background()
+	callCount := 0
+	err = supervisor.retryWithBackoff(ctx, "test", func(ctx context.Context) error {
+		callCount++
+		if callCount < 3 {
+			return errors.New("503 service unavailable")
+		}
+		return nil
+	})
+
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if callCount != 3 {
+		t.Errorf("Expected 3 calls (2 retries + 1 success), got %d", callCount)
 	}
 }

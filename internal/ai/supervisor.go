@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -17,10 +18,11 @@ import (
 // Supervisor handles AI-powered assessment and analysis of issues
 // It also implements the MissionPlanner interface for mission orchestration
 type Supervisor struct {
-	client *anthropic.Client
-	store  storage.Storage
-	model  string
-	retry  RetryConfig
+	client         *anthropic.Client
+	store          storage.Storage
+	model          string
+	retry          RetryConfig
+	circuitBreaker *CircuitBreaker
 }
 
 // Compile-time check that Supervisor implements MissionPlanner
@@ -28,22 +30,195 @@ var _ types.MissionPlanner = (*Supervisor)(nil)
 
 // RetryConfig holds retry configuration for API calls
 type RetryConfig struct {
-	MaxRetries      int           // Maximum number of retries (default: 3)
-	InitialBackoff  time.Duration // Initial backoff duration (default: 1s)
-	MaxBackoff      time.Duration // Maximum backoff duration (default: 30s)
-	BackoffMultiplier float64     // Backoff multiplier (default: 2.0)
-	Timeout         time.Duration // Per-request timeout (default: 60s)
+	MaxRetries        int           // Maximum number of retries (default: 3)
+	InitialBackoff    time.Duration // Initial backoff duration (default: 1s)
+	MaxBackoff        time.Duration // Maximum backoff duration (default: 30s)
+	BackoffMultiplier float64       // Backoff multiplier (default: 2.0)
+	Timeout           time.Duration // Per-request timeout (default: 60s)
+
+	// Circuit breaker settings
+	CircuitBreakerEnabled bool          // Enable circuit breaker (default: true)
+	FailureThreshold      int           // Failures before opening circuit (default: 5)
+	SuccessThreshold      int           // Successes in half-open before closing (default: 2)
+	OpenTimeout           time.Duration // How long to keep circuit open (default: 30s)
 }
+
+// CircuitState represents the state of a circuit breaker
+type CircuitState int
+
+const (
+	CircuitClosed CircuitState = iota // Normal operation, requests pass through
+	CircuitOpen                        // Too many failures, block requests (fail fast)
+	CircuitHalfOpen                    // Testing recovery, allow limited requests
+)
+
+func (s CircuitState) String() string {
+	switch s {
+	case CircuitClosed:
+		return "CLOSED"
+	case CircuitOpen:
+		return "OPEN"
+	case CircuitHalfOpen:
+		return "HALF_OPEN"
+	default:
+		return "UNKNOWN"
+	}
+}
+
+// CircuitBreaker implements the circuit breaker pattern to prevent cascading failures
+type CircuitBreaker struct {
+	mu sync.Mutex
+
+	state            CircuitState
+	failureCount     int
+	successCount     int
+	lastFailureTime  time.Time
+	lastStateChange  time.Time
+	failureThreshold int
+	successThreshold int
+	openTimeout      time.Duration
+}
+
+// ErrCircuitOpen is returned when the circuit breaker is open
+var ErrCircuitOpen = errors.New("circuit breaker is open")
 
 // DefaultRetryConfig returns the default retry configuration
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
-		MaxRetries:        3,
-		InitialBackoff:    1 * time.Second,
-		MaxBackoff:        30 * time.Second,
-		BackoffMultiplier: 2.0,
-		Timeout:           60 * time.Second,
+		MaxRetries:            3,
+		InitialBackoff:        1 * time.Second,
+		MaxBackoff:            30 * time.Second,
+		BackoffMultiplier:     2.0,
+		Timeout:               60 * time.Second,
+		CircuitBreakerEnabled: true,
+		FailureThreshold:      5,
+		SuccessThreshold:      2,
+		OpenTimeout:           30 * time.Second,
 	}
+}
+
+// NewCircuitBreaker creates a new circuit breaker with the given configuration
+func NewCircuitBreaker(failureThreshold, successThreshold int, openTimeout time.Duration) *CircuitBreaker {
+	return &CircuitBreaker{
+		state:            CircuitClosed,
+		failureThreshold: failureThreshold,
+		successThreshold: successThreshold,
+		openTimeout:      openTimeout,
+		lastStateChange:  time.Now(),
+	}
+}
+
+// Allow checks if a request should be allowed through the circuit breaker
+// Returns an error if the circuit is open and hasn't timed out yet
+func (cb *CircuitBreaker) Allow() error {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	switch cb.state {
+	case CircuitClosed:
+		// Normal operation, allow request
+		return nil
+
+	case CircuitOpen:
+		// Check if we should transition to half-open
+		if time.Since(cb.lastFailureTime) > cb.openTimeout {
+			cb.transitionToHalfOpen()
+			return nil
+		}
+		// Circuit is still open, fail fast
+		return ErrCircuitOpen
+
+	case CircuitHalfOpen:
+		// In half-open state, allow one request through to probe
+		return nil
+
+	default:
+		return ErrCircuitOpen
+	}
+}
+
+// RecordSuccess records a successful request
+func (cb *CircuitBreaker) RecordSuccess() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	switch cb.state {
+	case CircuitClosed:
+		// Reset failure count on success
+		if cb.failureCount > 0 {
+			cb.failureCount = 0
+		}
+
+	case CircuitHalfOpen:
+		// Count successes in half-open state
+		cb.successCount++
+		if cb.successCount >= cb.successThreshold {
+			cb.transitionToClosed()
+		}
+	}
+}
+
+// RecordFailure records a failed request
+func (cb *CircuitBreaker) RecordFailure() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	cb.lastFailureTime = time.Now()
+
+	switch cb.state {
+	case CircuitClosed:
+		cb.failureCount++
+		if cb.failureCount >= cb.failureThreshold {
+			cb.transitionToOpen()
+		}
+
+	case CircuitHalfOpen:
+		// Any failure in half-open immediately opens the circuit
+		cb.transitionToOpen()
+	}
+}
+
+// GetState returns the current state (for testing/monitoring)
+func (cb *CircuitBreaker) GetState() CircuitState {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.state
+}
+
+// GetMetrics returns current metrics (for monitoring/logging)
+func (cb *CircuitBreaker) GetMetrics() (state CircuitState, failures, successes int) {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.state, cb.failureCount, cb.successCount
+}
+
+// transitionToClosed moves the circuit to closed state (must be called with lock held)
+func (cb *CircuitBreaker) transitionToClosed() {
+	oldState := cb.state
+	cb.state = CircuitClosed
+	cb.failureCount = 0
+	cb.successCount = 0
+	cb.lastStateChange = time.Now()
+	fmt.Printf("Circuit breaker state transition: %s → %s (failures reset)\n", oldState, cb.state)
+}
+
+// transitionToOpen moves the circuit to open state (must be called with lock held)
+func (cb *CircuitBreaker) transitionToOpen() {
+	oldState := cb.state
+	cb.state = CircuitOpen
+	cb.successCount = 0
+	cb.lastStateChange = time.Now()
+	fmt.Printf("Circuit breaker state transition: %s → %s (failures=%d, will reopen in %v)\n",
+		oldState, cb.state, cb.failureCount, cb.openTimeout)
+}
+
+// transitionToHalfOpen moves the circuit to half-open state (must be called with lock held)
+func (cb *CircuitBreaker) transitionToHalfOpen() {
+	oldState := cb.state
+	cb.state = CircuitHalfOpen
+	cb.successCount = 0
+	cb.lastStateChange = time.Now()
+	fmt.Printf("Circuit breaker state transition: %s → %s (probing for recovery)\n", oldState, cb.state)
 }
 
 // Config holds supervisor configuration
@@ -81,20 +256,45 @@ func NewSupervisor(cfg *Config) (*Supervisor, error) {
 
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 
+	// Initialize circuit breaker if enabled
+	var circuitBreaker *CircuitBreaker
+	if retry.CircuitBreakerEnabled {
+		circuitBreaker = NewCircuitBreaker(
+			retry.FailureThreshold,
+			retry.SuccessThreshold,
+			retry.OpenTimeout,
+		)
+		fmt.Printf("Circuit breaker initialized: threshold=%d failures, recovery=%d successes, timeout=%v\n",
+			retry.FailureThreshold, retry.SuccessThreshold, retry.OpenTimeout)
+	}
+
 	return &Supervisor{
-		client: &client,
-		store:  cfg.Store,
-		model:  model,
-		retry:  retry,
+		client:         &client,
+		store:          cfg.Store,
+		model:          model,
+		retry:          retry,
+		circuitBreaker: circuitBreaker,
 	}, nil
 }
 
 // retryWithBackoff executes an operation with exponential backoff retry logic
+// and circuit breaker protection
 func (s *Supervisor) retryWithBackoff(ctx context.Context, operation string, fn func(context.Context) error) error {
 	var lastErr error
 	backoff := s.retry.InitialBackoff
 
 	for attempt := 0; attempt <= s.retry.MaxRetries; attempt++ {
+		// Check circuit breaker before attempting request
+		if s.circuitBreaker != nil {
+			if err := s.circuitBreaker.Allow(); err != nil {
+				// Circuit is open, fail fast without retrying
+				state, failures, _ := s.circuitBreaker.GetMetrics()
+				fmt.Fprintf(os.Stderr, "AI API %s blocked by circuit breaker (state=%s, failures=%d)\n",
+					operation, state, failures)
+				return fmt.Errorf("%s failed: %w", operation, err)
+			}
+		}
+
 		// Create timeout context for this attempt
 		attemptCtx, cancel := context.WithTimeout(ctx, s.retry.Timeout)
 
@@ -104,6 +304,11 @@ func (s *Supervisor) retryWithBackoff(ctx context.Context, operation string, fn 
 
 		// Success!
 		if err == nil {
+			// Record success with circuit breaker
+			if s.circuitBreaker != nil {
+				s.circuitBreaker.RecordSuccess()
+			}
+
 			if attempt > 0 {
 				fmt.Printf("AI API %s succeeded after %d retries\n", operation, attempt)
 			}
@@ -111,6 +316,12 @@ func (s *Supervisor) retryWithBackoff(ctx context.Context, operation string, fn 
 		}
 
 		lastErr = err
+
+		// Record failure with circuit breaker if it's a retriable error
+		// Non-retriable errors (like auth failures) shouldn't count against circuit breaker
+		if s.circuitBreaker != nil && isRetriableError(err) {
+			s.circuitBreaker.RecordFailure()
+		}
 
 		// Check if we should retry
 		if !isRetriableError(err) {
