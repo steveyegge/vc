@@ -224,6 +224,8 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to create quality gate runner: %v (skipping gates)\n", err)
+			// Set GatesPassed to false to prevent issue from completing without gates
+			result.GatesPassed = false
 			// Log quality gates error
 			rp.logEvent(ctx, events.EventTypeQualityGatesCompleted, events.SeverityError, issue.ID,
 				fmt.Sprintf("Quality gate runner creation failed: %v", err),
