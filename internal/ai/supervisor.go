@@ -14,6 +14,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
+	"golang.org/x/sync/semaphore"
 )
 
 // Supervisor handles AI-powered assessment and analysis of issues
@@ -24,6 +25,7 @@ type Supervisor struct {
 	model          string
 	retry          RetryConfig
 	circuitBreaker *CircuitBreaker
+	concurrencySem *semaphore.Weighted // Limits concurrent AI API calls (vc-220)
 }
 
 // Compile-time check that Supervisor implements MissionPlanner
@@ -42,6 +44,9 @@ type RetryConfig struct {
 	FailureThreshold      int           // Failures before opening circuit (default: 5)
 	SuccessThreshold      int           // Successes in half-open before closing (default: 2)
 	OpenTimeout           time.Duration // How long to keep circuit open (default: 30s)
+
+	// Concurrency limit (vc-220)
+	MaxConcurrentCalls int // Maximum concurrent AI API calls (default: 3, 0 = unlimited)
 }
 
 // CircuitState represents the state of a circuit breaker
@@ -95,6 +100,7 @@ func DefaultRetryConfig() RetryConfig {
 		FailureThreshold:      5,
 		SuccessThreshold:      2,
 		OpenTimeout:           30 * time.Second,
+		MaxConcurrentCalls:    3, // Limit concurrent AI calls to prevent rate limiting (vc-220)
 	}
 }
 
@@ -269,18 +275,34 @@ func NewSupervisor(cfg *Config) (*Supervisor, error) {
 			retry.FailureThreshold, retry.SuccessThreshold, retry.OpenTimeout)
 	}
 
+	// Initialize concurrency limiter (vc-220)
+	var concurrencySem *semaphore.Weighted
+	if retry.MaxConcurrentCalls > 0 {
+		concurrencySem = semaphore.NewWeighted(int64(retry.MaxConcurrentCalls))
+		fmt.Printf("AI concurrency limiter initialized: max_concurrent=%d calls\n", retry.MaxConcurrentCalls)
+	}
+
 	return &Supervisor{
 		client:         &client,
 		store:          cfg.Store,
 		model:          model,
 		retry:          retry,
 		circuitBreaker: circuitBreaker,
+		concurrencySem: concurrencySem,
 	}, nil
 }
 
 // retryWithBackoff executes an operation with exponential backoff retry logic
 // and circuit breaker protection
 func (s *Supervisor) retryWithBackoff(ctx context.Context, operation string, fn func(context.Context) error) error {
+	// Acquire concurrency slot if limiter is enabled (vc-220)
+	if s.concurrencySem != nil {
+		if err := s.concurrencySem.Acquire(ctx, 1); err != nil {
+			return fmt.Errorf("failed to acquire concurrency slot for %s: %w", operation, err)
+		}
+		defer s.concurrencySem.Release(1)
+	}
+
 	var lastErr error
 	backoff := s.retry.InitialBackoff
 
