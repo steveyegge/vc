@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/steveyegge/vc/internal/events"
+	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -30,6 +32,10 @@ type AgentConfig struct {
 	Issue       *types.Issue
 	StreamJSON  bool
 	Timeout     time.Duration
+	// Event parsing and storage (optional - if nil, events won't be captured)
+	Store      storage.Storage
+	ExecutorID string
+	AgentID    string
 }
 
 const (
@@ -62,9 +68,11 @@ type Agent struct {
 	stdout    io.ReadCloser
 	stderr    io.ReadCloser
 	startTime time.Time
+	ctx       context.Context // Context for storage operations
 
 	mu     sync.Mutex
 	result AgentResult
+	parser *events.OutputParser // Parser for extracting events from output
 }
 
 // SpawnAgent starts a coding agent process
@@ -116,10 +124,16 @@ func SpawnAgent(ctx context.Context, cfg AgentConfig) (*Agent, error) {
 		stdout:    stdout,
 		stderr:    stderr,
 		startTime: time.Now(),
+		ctx:       ctx,
 		result: AgentResult{
 			Output: []string{},
 			Errors: []string{},
 		},
+	}
+
+	// Initialize OutputParser if event storage is enabled
+	if cfg.Store != nil && cfg.Issue != nil {
+		agent.parser = events.NewOutputParser(cfg.Issue.ID, cfg.ExecutorID, cfg.AgentID)
 	}
 
 	// Start goroutines to capture output
@@ -175,6 +189,7 @@ func (a *Agent) Kill() error {
 }
 
 // captureOutput reads stdout/stderr and stores in result
+// If event parsing is enabled, it also parses lines into structured events and stores them
 func (a *Agent) captureOutput() {
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -204,6 +219,12 @@ func (a *Agent) captureOutput() {
 					a.result.ParsedJSON = append(a.result.ParsedJSON, msg)
 				}
 			}
+
+			// Parse line for events if parser is enabled
+			if a.parser != nil && a.config.Store != nil {
+				a.parseAndStoreEvents(line)
+			}
+
 			a.mu.Unlock()
 		}
 	}()
@@ -225,11 +246,35 @@ func (a *Agent) captureOutput() {
 				// Add truncation marker once
 				a.result.Errors = append(a.result.Errors, "[... error output truncated: limit reached ...]")
 			}
+
+			// Parse stderr for events too (errors, warnings, etc.)
+			if a.parser != nil && a.config.Store != nil {
+				a.parseAndStoreEvents(line)
+			}
+
 			a.mu.Unlock()
 		}
 	}()
 
 	wg.Wait()
+}
+
+// parseAndStoreEvents parses a line for events and stores them immediately
+// This method should be called with the mutex held
+func (a *Agent) parseAndStoreEvents(line string) {
+	// Parse the line into events
+	extractedEvents := a.parser.ParseLine(line)
+
+	// Store each event immediately
+	for _, event := range extractedEvents {
+		// Store event asynchronously to avoid blocking output capture
+		go func(evt *events.AgentEvent) {
+			if err := a.config.Store.StoreAgentEvent(a.ctx, evt); err != nil {
+				// Log error but don't fail - event storage is best-effort
+				fmt.Fprintf(os.Stderr, "warning: failed to store agent event: %v\n", err)
+			}
+		}(event)
+	}
 }
 
 // buildCodyCommand constructs the Cody CLI command

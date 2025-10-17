@@ -428,12 +428,19 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		defer e.intervention.ClearAgentContext()
 	}
 
+	// Generate a unique agent ID for this execution
+	agentID := uuid.New().String()
+
 	agentCfg := AgentConfig{
 		Type:       AgentTypeClaudeCode, // Default to Claude Code for now
 		WorkingDir: ".",
 		Issue:      issue,
 		StreamJSON: false,
 		Timeout:    30 * time.Minute,
+		// Enable event parsing and storage
+		Store:      e.store,
+		ExecutorID: e.instanceID,
+		AgentID:    agentID,
 	}
 
 	agent, err := SpawnAgent(agentCtx, agentCfg)
