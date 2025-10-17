@@ -417,10 +417,8 @@ func (s *SQLiteStorage) SearchIssues(ctx context.Context, query string, filter t
 	}
 
 	// Handle label filtering (vc-243)
-	// If labels are specified, we need to join with issue_labels and ensure ALL labels match
-	labelJoinSQL := ""
+	// Each label requires an EXISTS subquery to ensure ALL labels match
 	if len(filter.Labels) > 0 {
-		// For each label, add a clause that requires the issue to have that label
 		for _, label := range filter.Labels {
 			whereClauses = append(whereClauses, `
 				EXISTS (
@@ -446,10 +444,10 @@ func (s *SQLiteStorage) SearchIssues(ctx context.Context, query string, filter t
 		       status, priority, issue_type, assignee, estimated_minutes,
 		       created_at, updated_at, closed_at
 		FROM issues
-		%s%s
+		%s
 		ORDER BY priority ASC, created_at DESC
 		%s
-	`, labelJoinSQL, whereSQL, limitSQL)
+	`, whereSQL, limitSQL)
 
 	rows, err := s.db.QueryContext(ctx, querySQL, args...)
 	if err != nil {
