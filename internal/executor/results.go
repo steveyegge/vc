@@ -387,6 +387,34 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				fmt.Printf("\n=== Quality Gates Failed ===\n")
 				fmt.Printf("Issue %s marked as blocked due to failing quality gates\n", issue.ID)
 
+				// Build comment explaining which gates failed
+				var failedGates []string
+				var passedGates []string
+				for _, gateResult := range gateResults {
+					if gateResult.Passed {
+						passedGates = append(passedGates, string(gateResult.Gate))
+					} else {
+						failedGates = append(failedGates, string(gateResult.Gate))
+					}
+				}
+
+				gatesComment := fmt.Sprintf("**Quality Gates Failed**\n\nIssue marked as blocked.\n\nFailed gates (%d):\n", len(failedGates))
+				for _, gate := range failedGates {
+					gatesComment += fmt.Sprintf("- %s\n", gate)
+				}
+				if len(passedGates) > 0 {
+					gatesComment += fmt.Sprintf("\nPassed gates (%d):\n", len(passedGates))
+					for _, gate := range passedGates {
+						gatesComment += fmt.Sprintf("- %s\n", gate)
+					}
+				}
+				gatesComment += "\nPlease fix the failing gates and retry."
+
+				// Add comment before updating status
+				if err := rp.store.AddComment(ctx, issue.ID, rp.actor, gatesComment); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to add quality gates comment: %v\n", err)
+				}
+
 				// Update issue to blocked status
 				updates := map[string]interface{}{
 					"status": types.StatusBlocked,
