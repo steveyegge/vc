@@ -55,6 +55,14 @@ func initSandboxDB(ctx context.Context, sandboxPath, missionID, parentDBPath str
 	if err != nil {
 		return "", fmt.Errorf("failed to create sandbox database: %w", err)
 	}
+
+	// Set issue_prefix to 'vc' to match the main database
+	// This prevents sandbox-created issues from using the wrong prefix
+	if err := store.SetConfig(ctx, "issue_prefix", "vc"); err != nil {
+		store.Close()
+		return "", fmt.Errorf("failed to set issue_prefix config: %w", err)
+	}
+
 	// Close the storage connection before opening a raw connection for metadata
 	store.Close()
 

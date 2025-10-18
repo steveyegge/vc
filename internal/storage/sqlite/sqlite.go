@@ -53,6 +53,19 @@ func New(path string) (*SQLiteStorage, error) {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
+	// Check config table for issue_prefix (takes precedence over filename-based prefix)
+	// This allows sandboxes and other databases to override the prefix
+	var configPrefix string
+	err = db.QueryRow("SELECT value FROM config WHERE key = ?", "issue_prefix").Scan(&configPrefix)
+	if err == nil && configPrefix != "" {
+		// Use config table value if present
+		issuePrefix = configPrefix + "-"
+	} else if err != nil && err != sql.ErrNoRows {
+		// Propagate unexpected errors (not "no rows")
+		return nil, fmt.Errorf("failed to read issue_prefix from config: %w", err)
+	}
+	// Otherwise use the filename-based prefix set above
+
 	// Get next ID
 	nextID, err := getNextID(db)
 	if err != nil {
@@ -495,6 +508,25 @@ func (s *SQLiteStorage) SearchIssues(ctx context.Context, query string, filter t
 	}
 
 	return issues, nil
+}
+
+// GetConfig gets a configuration value from the config table
+func (s *SQLiteStorage) GetConfig(ctx context.Context, key string) (string, error) {
+	var value string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM config WHERE key = ?`, key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return value, err
+}
+
+// SetConfig sets a configuration value in the config table
+func (s *SQLiteStorage) SetConfig(ctx context.Context, key, value string) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO config (key, value) VALUES (?, ?)
+		ON CONFLICT (key) DO UPDATE SET value = excluded.value
+	`, key, value)
+	return err
 }
 
 // Close closes the database connection

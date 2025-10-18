@@ -45,9 +45,31 @@ func TestInitSandboxDB(t *testing.T) {
 	}
 	defer store.Close()
 
-	// Verify metadata table exists and has data
-	// Note: We can't easily test this without exposing the metadata retrieval,
-	// but the fact that the database opens successfully is a good sign
+	// Verify issue_prefix is set to 'vc' (vc-139 fix)
+	prefix, err := store.GetConfig(ctx, "issue_prefix")
+	if err != nil {
+		t.Fatalf("failed to get issue_prefix config: %v", err)
+	}
+	if prefix != "vc" {
+		t.Errorf("expected issue_prefix='vc', got '%s'", prefix)
+	}
+
+	// Verify that new issues created in sandbox use 'vc-' prefix
+	testIssue := &types.Issue{
+		Title:       "Test Issue",
+		Description: "Test that sandbox uses correct prefix",
+		Status:      types.StatusOpen,
+		Priority:    2,
+		IssueType:   types.TypeTask,
+	}
+	if err := store.CreateIssue(ctx, testIssue, "test"); err != nil {
+		t.Fatalf("failed to create test issue: %v", err)
+	}
+
+	// Check that the generated ID has 'vc-' prefix, not 'mission-' or 'bd-'
+	if len(testIssue.ID) < 3 || testIssue.ID[:3] != "vc-" {
+		t.Errorf("expected issue ID to start with 'vc-', got '%s'", testIssue.ID)
+	}
 }
 
 func TestCopyCoreIssues(t *testing.T) {

@@ -69,6 +69,10 @@ type Storage interface {
 	GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error)
 	RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error
 
+	// Config
+	GetConfig(ctx context.Context, key string) (string, error)
+	SetConfig(ctx context.Context, key, value string) error
+
 	// Lifecycle
 	Close() error
 }

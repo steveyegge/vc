@@ -180,4 +180,11 @@ CREATE INDEX IF NOT EXISTS idx_agent_events_type ON agent_events(type);
 CREATE INDEX IF NOT EXISTS idx_agent_events_severity ON agent_events(severity);
 CREATE INDEX IF NOT EXISTS idx_agent_events_timestamp ON agent_events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_agent_events_executor ON agent_events(executor_id);
+
+-- Config table
+-- Stores configuration key-value pairs (e.g., issue_prefix)
+CREATE TABLE IF NOT EXISTS config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 `
