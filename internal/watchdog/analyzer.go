@@ -14,12 +14,13 @@ import (
 type AnomalyType string
 
 const (
-	AnomalyInfiniteLoop  AnomalyType = "infinite_loop"  // Issue keeps re-executing without progress
-	AnomalyThrashing     AnomalyType = "thrashing"      // Rapid state changes without completion
-	AnomalyStuckState    AnomalyType = "stuck_state"    // Issue stuck in specific state for too long
-	AnomalyRegression    AnomalyType = "regression"     // Pattern of failures after previous successes
-	AnomalyResourceSpike AnomalyType = "resource_spike" // Unusual resource usage pattern
-	AnomalyOther         AnomalyType = "other"          // Other anomalous behavior
+	AnomalyInfiniteLoop      AnomalyType = "infinite_loop"      // Issue keeps re-executing without progress
+	AnomalyThrashing         AnomalyType = "thrashing"          // Rapid state changes without completion
+	AnomalyStuckState        AnomalyType = "stuck_state"        // Issue stuck in specific state for too long
+	AnomalyRegression        AnomalyType = "regression"         // Pattern of failures after previous successes
+	AnomalyResourceSpike     AnomalyType = "resource_spike"     // Unusual resource usage pattern
+	AnomalyContextExhaustion AnomalyType = "context_exhaustion" // Context usage approaching limit
+	AnomalyOther             AnomalyType = "other"              // Other anomalous behavior
 )
 
 // AnomalySeverity indicates how critical an anomaly is
@@ -42,6 +43,7 @@ const (
 	ActionInvestigate    RecommendedAction = "investigate"      // Flag for investigation
 	ActionMonitor        RecommendedAction = "monitor"          // Continue monitoring but no action yet
 	ActionNotifyHuman    RecommendedAction = "notify_human"     // Alert a human operator
+	ActionCheckpoint     RecommendedAction = "checkpoint"       // Request checkpoint and graceful termination
 )
 
 // AnomalyReport represents the result of anomaly detection analysis

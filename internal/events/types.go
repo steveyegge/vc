@@ -25,6 +25,8 @@ const (
 	EventTypeError EventType = "error"
 	// EventTypeWatchdog indicates a watchdog alert was triggered
 	EventTypeWatchdog EventType = "watchdog_alert"
+	// EventTypeContextUsage indicates context usage measurement from agent output
+	EventTypeContextUsage EventType = "context_usage"
 
 	// Executor-level events
 	// EventTypeIssueClaimed indicates an executor claimed an issue for processing

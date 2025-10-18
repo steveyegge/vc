@@ -14,9 +14,10 @@ import (
 type InterventionType string
 
 const (
-	InterventionPauseAgent    InterventionType = "pause_agent"
-	InterventionKillAgent     InterventionType = "kill_agent"
-	InterventionPauseExecutor InterventionType = "pause_executor"
+	InterventionPauseAgent       InterventionType = "pause_agent"
+	InterventionKillAgent        InterventionType = "kill_agent"
+	InterventionPauseExecutor    InterventionType = "pause_executor"
+	InterventionRequestCheckpoint InterventionType = "request_checkpoint"
 )
 
 // InterventionResult represents the outcome of an intervention
@@ -241,6 +242,55 @@ func (ic *InterventionController) PauseExecutor(ctx context.Context, report *Ano
 	return result, nil
 }
 
+// RequestCheckpoint requests that the agent checkpoint its progress and terminate gracefully
+// This is used when context usage is approaching exhaustion (vc-121)
+// The agent should:
+//  1. Record current progress as issues
+//  2. Save checkpoint state for handoff
+//  3. Gracefully terminate
+// The next worker can then pick up the checkpoint and continue
+func (ic *InterventionController) RequestCheckpoint(ctx context.Context, report *AnomalyReport) (*InterventionResult, error) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+
+	if ic.cancelFunc == nil {
+		return nil, fmt.Errorf("no active agent to checkpoint")
+	}
+
+	result := &InterventionResult{
+		Success:          true,
+		InterventionType: InterventionRequestCheckpoint,
+		AnomalyReport:    report,
+		Message:          fmt.Sprintf("Requested checkpoint for issue %s due to context exhaustion (%.1f%% usage)", ic.currentIssueID, report.Confidence*100),
+		Timestamp:        time.Now(),
+	}
+
+	// Cancel the agent's context to trigger graceful shutdown
+	// The agent should detect this and checkpoint its state
+	ic.cancelFunc()
+
+	// Create escalation issue documenting the checkpoint request
+	// Pass currentIssueID to avoid reading without lock
+	escalationID, err := ic.createEscalationIssue(ctx, report, InterventionRequestCheckpoint, ic.currentIssueID)
+	if err != nil {
+		result.Message += fmt.Sprintf(" (warning: failed to create escalation issue: %v)", err)
+	} else {
+		result.EscalationIssueID = escalationID
+	}
+
+	// Emit watchdog event
+	if err := ic.emitWatchdogEvent(ctx, result, ic.currentIssueID); err != nil {
+		result.Message += fmt.Sprintf(" (warning: failed to emit event: %v)", err)
+	}
+
+	// Add to history
+	ic.addToHistoryLocked(result)
+
+	fmt.Printf("Watchdog: Requested checkpoint for issue %s (escalation: %s)\n", ic.currentIssueID, escalationID)
+
+	return result, nil
+}
+
 // notifyHuman creates an escalation issue without stopping execution
 // This is used for anomalies that need human attention but aren't critical
 func (ic *InterventionController) notifyHuman(ctx context.Context, report *AnomalyReport) (*InterventionResult, error) {
@@ -323,6 +373,9 @@ func (ic *InterventionController) Intervene(ctx context.Context, report *Anomaly
 		// Mark as blocked = pause agent and create escalation issue
 		// The escalation issue will be marked as blocked for human review
 		return ic.PauseAgent(ctx, report)
+	case ActionCheckpoint:
+		// Request checkpoint for context exhaustion
+		return ic.RequestCheckpoint(ctx, report)
 	case ActionNotifyHuman:
 		// Just create the escalation issue without stopping execution
 		return ic.notifyHuman(ctx, report)

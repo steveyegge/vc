@@ -156,7 +156,7 @@ CREATE TABLE IF NOT EXISTS agent_events (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL CHECK(type IN (
         -- Agent output events
-        'file_modified', 'test_run', 'git_operation', 'build_output', 'lint_output', 'progress', 'error', 'watchdog_alert',
+        'file_modified', 'test_run', 'git_operation', 'build_output', 'lint_output', 'progress', 'error', 'watchdog_alert', 'context_usage',
         -- Executor-level events
         'issue_claimed', 'assessment_started', 'assessment_completed',
         'agent_spawned', 'agent_completed',
