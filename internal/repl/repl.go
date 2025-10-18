@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/chzyer/readline"
 	"github.com/fatih/color"
@@ -53,6 +55,11 @@ func New(cfg *Config) (*REPL, error) {
 // Run starts the REPL loop
 func (r *REPL) Run(ctx context.Context) error {
 	r.ctx = ctx
+
+	// Register this REPL as an executor instance
+	if err := r.registerExecutorInstance(ctx); err != nil {
+		return fmt.Errorf("failed to register executor instance: %w", err)
+	}
 
 	// Create readline instance
 	cyan := color.New(color.FgCyan).SprintFunc()
@@ -150,4 +157,25 @@ func (r *REPL) cmdExit(args []string) error {
 	fmt.Printf("\n%s Goodbye!\n", green("✓"))
 	r.rl.Close()
 	return io.EOF // Signal to exit the loop
+}
+
+// registerExecutorInstance registers the REPL as an executor instance in the database
+func (r *REPL) registerExecutorInstance(ctx context.Context) error {
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "unknown"
+	}
+
+	instance := &types.ExecutorInstance{
+		InstanceID:    fmt.Sprintf("conversation-%s", r.actor),
+		Hostname:      hostname,
+		PID:           os.Getpid(),
+		Status:        types.ExecutorStatusRunning,
+		StartedAt:     time.Now(),
+		LastHeartbeat: time.Now(),
+		Version:       "v2",
+		Metadata:      `{"type":"repl","mode":"interactive"}`,
+	}
+
+	return r.store.RegisterInstance(ctx, instance)
 }

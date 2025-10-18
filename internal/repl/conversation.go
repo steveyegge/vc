@@ -30,13 +30,18 @@ type ConversationHandler struct {
 	model   string
 	history []anthropic.MessageParam
 	storage storage.Storage
+	actor   string // Actor name for this conversation handler
 }
 
 // NewConversationHandler creates a new conversation handler
-func NewConversationHandler(store storage.Storage) (*ConversationHandler, error) {
+func NewConversationHandler(store storage.Storage, actor string) (*ConversationHandler, error) {
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	if apiKey == "" {
 		return nil, fmt.Errorf("ANTHROPIC_API_KEY not set")
+	}
+
+	if actor == "" {
+		actor = "user"
 	}
 
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
@@ -46,6 +51,7 @@ func NewConversationHandler(store storage.Storage) (*ConversationHandler, error)
 		model:   "claude-sonnet-4-5-20250929",
 		history: make([]anthropic.MessageParam, 0),
 		storage: store,
+		actor:   actor,
 	}, nil
 }
 
@@ -1075,7 +1081,7 @@ func (c *ConversationHandler) executeIssue(ctx context.Context, issue *types.Iss
 	}
 
 	// Claim the issue
-	instanceID := fmt.Sprintf("conversation-%s", AIActor)
+	instanceID := fmt.Sprintf("conversation-%s", c.actor)
 	if err := c.storage.ClaimIssue(ctx, issue.ID, instanceID); err != nil {
 		return nil, fmt.Errorf("failed to claim issue %s: %w", issue.ID, err)
 	}
@@ -1223,7 +1229,7 @@ func (c *ConversationHandler) ClearHistory() {
 func (r *REPL) processNaturalLanguage(input string) error {
 	// Initialize conversation handler if needed
 	if r.conversation == nil {
-		handler, err := NewConversationHandler(r.store)
+		handler, err := NewConversationHandler(r.store, r.actor)
 		if err != nil {
 			yellow := color.New(color.FgYellow).SprintFunc()
 			fmt.Printf("\n%s AI conversation requires ANTHROPIC_API_KEY environment variable.\n", yellow("Note:"))
