@@ -60,7 +60,7 @@ func (m *MessageGenerator) GenerateCommitMessage(ctx context.Context, req Commit
 	// Parse the JSON response
 	parseResult := ai.Parse[CommitMessageResponse](responseText, ai.ParseOptions{
 		Context:   "commit message response",
-		LogErrors: true,
+		LogErrors: ai.BoolPtr(true),
 	})
 
 	if !parseResult.Success {

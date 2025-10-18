@@ -58,8 +58,10 @@ var (
 )
 
 // Helper functions for creating ParseOptions with common configurations
-func boolPtr(b bool) *bool { return &b }
-func intPtr(i int) *int    { return &i }
+func BoolPtr(b bool) *bool { return &b }
+func boolPtr(b bool) *bool { return BoolPtr(b) } // Keep for backward compat
+func IntPtr(i int) *int    { return &i }
+func intPtr(i int) *int    { return IntPtr(i) } // Keep for backward compat
 
 // Parse attempts to parse JSON with multiple fallback strategies.
 // It handles common AI response formatting issues like code fences,

@@ -337,8 +337,10 @@ func (c *ConversationHandler) getTools() []anthropic.ToolUnionParam {
 	}
 
 	tools := make([]anthropic.ToolUnionParam, len(toolParams))
-	for i, toolParam := range toolParams {
-		tools[i] = anthropic.ToolUnionParam{OfTool: &toolParam}
+	for i := range toolParams {
+		// Create a copy to avoid capturing loop variable address
+		tool := toolParams[i]
+		tools[i] = anthropic.ToolUnionParam{OfTool: &tool}
 	}
 	return tools
 }

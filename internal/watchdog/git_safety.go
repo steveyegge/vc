@@ -254,7 +254,7 @@ func (gsm *GitSafetyMonitor) callAISupervisor(ctx context.Context, prompt string
 	// Parse the response using AI's resilient JSON parser
 	parseResult := ai.Parse[GitSafetyEvaluation](mockResponse, ai.ParseOptions{
 		Context:   "git safety evaluation response",
-		LogErrors: true,
+		LogErrors: ai.BoolPtr(true),
 	})
 	if !parseResult.Success {
 		return nil, fmt.Errorf("failed to parse git safety evaluation: %s (response: %s)",

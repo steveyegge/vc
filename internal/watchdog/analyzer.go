@@ -302,7 +302,7 @@ func (a *Analyzer) callAISupervisor(ctx context.Context, prompt string) (*Anomal
 	// Parse the response using AI's resilient JSON parser
 	parseResult := ai.Parse[AnomalyReport](responseText, ai.ParseOptions{
 		Context:   "anomaly detection response",
-		LogErrors: true,
+		LogErrors: ai.BoolPtr(true),
 	})
 	if !parseResult.Success {
 		return nil, fmt.Errorf("failed to parse anomaly detection response: %s (response: %s)",
