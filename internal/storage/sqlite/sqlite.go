@@ -17,9 +17,10 @@ import (
 
 // SQLiteStorage implements the Storage interface using SQLite
 type SQLiteStorage struct {
-	db     *sql.DB
-	nextID int
-	idMu   sync.Mutex // Protects nextID from concurrent access
+	db          *sql.DB
+	nextID      int
+	idMu        sync.Mutex // Protects nextID from concurrent access
+	issuePrefix string     // Prefix for issue IDs (e.g., "vc-", "bd-")
 }
 
 // New creates a new SQLite storage backend
@@ -29,6 +30,12 @@ func New(path string) (*SQLiteStorage, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create directory: %w", err)
 	}
+
+	// Extract issue prefix from database filename (vc-247)
+	// e.g., ".beads/vc.db" → "vc-", ".beads/bd.db" → "bd-"
+	filename := filepath.Base(path)
+	prefix := strings.TrimSuffix(filename, filepath.Ext(filename))
+	issuePrefix := prefix + "-"
 
 	// Open database with WAL mode for better concurrency
 	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=ON")
@@ -53,8 +60,9 @@ func New(path string) (*SQLiteStorage, error) {
 	}
 
 	return &SQLiteStorage{
-		db:     db,
-		nextID: nextID,
+		db:          db,
+		nextID:      nextID,
+		issuePrefix: issuePrefix,
 	}, nil
 }
 
@@ -96,7 +104,7 @@ func (s *SQLiteStorage) CreateIssue(ctx context.Context, issue *types.Issue, act
 	// Generate ID if not set (thread-safe)
 	if issue.ID == "" {
 		s.idMu.Lock()
-		issue.ID = fmt.Sprintf("bd-%d", s.nextID)
+		issue.ID = fmt.Sprintf("%s%d", s.issuePrefix, s.nextID)
 		s.nextID++
 		s.idMu.Unlock()
 	}
