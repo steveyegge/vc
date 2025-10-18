@@ -6,7 +6,7 @@ AI-orchestrated coding agent colony. Built on lessons learned from 350k LOC Type
 
 > Build a colony of coding agents, not the world's largest ant.
 
-VC orchestrates multiple coding agents (Cody, Claude Code, etc.) to work on small, well-defined tasks, guided by AI supervision. This keeps agents focused, improves quality, and minimizes context window costs.
+VC orchestrates multiple coding agents (Amp, Claude Code, etc.) to work on small, well-defined tasks, guided by AI supervision. This keeps agents focused, improves quality, and minimizes context window costs.
 
 ## Core Principles
 
@@ -27,7 +27,7 @@ AI Supervisor (Sonnet 4.5)
     ↓
 Issue Workflow Executor (event loop)
     ↓
-Worker Agents (Cody, Claude Code)
+Worker Agents (Amp, Claude Code)
     ↓
 Code Changes
 ```

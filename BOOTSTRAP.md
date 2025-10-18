@@ -19,7 +19,7 @@ Tracer bullet approach: Get end-to-end workflow working before expanding.
 **Goal**: Event loop that claims and executes issues via agents
 
 - [ ] Port IssueWorkflowExecutor (atomic claiming with FOR UPDATE SKIP LOCKED)
-- [ ] Spawn Cody with `-stream-json` for execution
+- [ ] Spawn coding agent (Amp/Claude Code) with `--stream-json` for execution
 - [ ] Parse agent output and update issue status
 - [ ] Handle epic completion detection
 - [ ] Support pause/resume/abort

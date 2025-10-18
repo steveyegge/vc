@@ -230,7 +230,7 @@ The workflow:
 1. Finds ready work in tracker
 2. Claims issue atomically
 3. AI assesses the task
-4. Spawns coding agent (Cody/Claude Code)
+4. Spawns coding agent (Amp/Claude Code)
 5. AI analyzes the result
 6. Creates follow-on issues for discovered work
 7. Runs quality gates

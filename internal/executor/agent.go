@@ -21,9 +21,8 @@ import (
 type AgentType string
 
 const (
-	AgentTypeCody        AgentType = "cody"
-	AgentTypeClaudeCode  AgentType = "claude-code"
-	AgentTypeAmp         AgentType = "amp" // Sourcegraph Cody CLI (amp)
+	AgentTypeAmp         AgentType = "amp"         // Sourcegraph Amp (agentic)
+	AgentTypeClaudeCode  AgentType = "claude-code" // Anthropic Claude Code
 )
 
 // AgentConfig holds configuration for spawning an agent
@@ -97,12 +96,10 @@ func SpawnAgent(ctx context.Context, cfg AgentConfig, prompt string) (*Agent, er
 	// Build the command based on agent type
 	var cmd *exec.Cmd
 	switch cfg.Type {
-	case AgentTypeCody:
-		cmd = buildCodyCommand(cfg, prompt)
-	case AgentTypeClaudeCode:
-		cmd = buildClaudeCodeCommand(cfg, prompt)
 	case AgentTypeAmp:
 		cmd = buildAmpCommand(cfg, prompt)
+	case AgentTypeClaudeCode:
+		cmd = buildClaudeCodeCommand(cfg, prompt)
 	default:
 		return nil, fmt.Errorf("unsupported agent type: %s", cfg.Type)
 	}
@@ -285,16 +282,6 @@ func (a *Agent) parseAndStoreEvents(line string) {
 	}
 }
 
-// buildCodyCommand constructs the Cody CLI command
-func buildCodyCommand(cfg AgentConfig, prompt string) *exec.Cmd {
-	args := []string{"chat", "--message", prompt}
-	if cfg.StreamJSON {
-		args = append(args, "--stream-json")
-	}
-
-	return exec.Command("cody", args...)
-}
-
 // buildClaudeCodeCommand constructs the Claude Code CLI command
 func buildClaudeCodeCommand(cfg AgentConfig, prompt string) *exec.Cmd {
 	// Claude Code uses the message directly
@@ -303,7 +290,7 @@ func buildClaudeCodeCommand(cfg AgentConfig, prompt string) *exec.Cmd {
 	return exec.Command("claude", args...)
 }
 
-// buildAmpCommand constructs the Sourcegraph amp (Cody CLI) command
+// buildAmpCommand constructs the Sourcegraph amp CLI command
 func buildAmpCommand(cfg AgentConfig, prompt string) *exec.Cmd {
 	// amp requires --execute for single-shot execution mode
 	args := []string{"--execute", prompt}
