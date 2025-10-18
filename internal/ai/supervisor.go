@@ -949,12 +949,23 @@ func (s *Supervisor) AnalyzeExecutionResult(ctx context.Context, issue *types.Is
 	}
 
 	// Parse the response as JSON using resilient parser
+	// The parser automatically tries multiple strategies:
+	// 1. Direct JSON parse
+	// 2. Remove markdown code fences (```json, ```, etc.) and retry
+	// 3. Fix common JSON issues (trailing commas, unquoted keys, comments) and retry
+	// 4. Extract JSON from mixed content and retry
 	parseResult := Parse[Analysis](responseText, ParseOptions{
 		Context:   "analysis response",
 		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
-		return nil, fmt.Errorf("failed to parse analysis response: %s (response: %s)", parseResult.Error, responseText)
+		// Show truncated response to avoid overwhelming logs
+		// Note: Error message shows ORIGINAL text, but parser tried cleaning strategies above
+		truncatedResponse := responseText
+		if len(responseText) > 500 {
+			truncatedResponse = responseText[:500] + "... (truncated)"
+		}
+		return nil, fmt.Errorf("%s\n\nNote: Parser tried all strategies (fence removal, JSON cleanup, extraction). Original response: %s", parseResult.Error, truncatedResponse)
 	}
 	analysis := parseResult.Data
 

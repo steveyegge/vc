@@ -118,9 +118,6 @@ func (m *MockStorage) SearchIssues(ctx context.Context, query string, filter typ
 	return nil, nil
 }
 func (m *MockStorage) GetDependencies(ctx context.Context, issueID string) ([]*types.Issue, error) {
-func (m *MockStorage) GetDependencyRecords(ctx context.Context, issueID string) ([]*types.Dependency, error) {
-	return nil, nil
-}
 	// Simple mock: if it's a phase, return the mission
 	// In reality, this would filter based on actual dependency records
 	var deps []*types.Issue
@@ -132,6 +129,9 @@ func (m *MockStorage) GetDependencyRecords(ctx context.Context, issueID string) 
 		}
 	}
 	return deps, nil
+}
+func (m *MockStorage) GetDependencyRecords(ctx context.Context, issueID string) ([]*types.Dependency, error) {
+	return nil, nil
 }
 func (m *MockStorage) GetDependents(ctx context.Context, issueID string) ([]*types.Issue, error) {
 	// Return all issues that are in the store (simple implementation for testing)
@@ -206,6 +206,12 @@ func (m *MockStorage) GetAgentEventsByIssue(ctx context.Context, issueID string)
 }
 func (m *MockStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*events.AgentEvent, error) {
 	return nil, nil
+}
+func (m *MockStorage) GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error) {
+	return nil, nil
+}
+func (m *MockStorage) RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error {
+	return nil
 }
 
 func TestGenerateAndStorePlan_RequiresApproval(t *testing.T) {
