@@ -186,6 +186,9 @@ IMPORTANT: Base your analysis on the DATA provided, not on hardcoded thresholds.
 			prompt.WriteString(fmt.Sprintf("\nExecution %d:\n", i+1))
 			prompt.WriteString(fmt.Sprintf("  Issue: %s\n", t.IssueID))
 			prompt.WriteString(fmt.Sprintf("  Executor: %s\n", t.ExecutorID))
+			// Add temporal context (vc-78): absolute timestamps + duration
+			prompt.WriteString(fmt.Sprintf("  Started: %s\n", t.StartTime.Format(time.RFC3339)))
+			prompt.WriteString(fmt.Sprintf("  Ended: %s\n", t.EndTime.Format(time.RFC3339)))
 			prompt.WriteString(fmt.Sprintf("  Duration: %v\n", duration))
 			prompt.WriteString(fmt.Sprintf("  Success: %v\n", t.Success))
 			prompt.WriteString(fmt.Sprintf("  Gates Passed: %v\n", t.GatesPassed))
@@ -210,10 +213,14 @@ IMPORTANT: Base your analysis on the DATA provided, not on hardcoded thresholds.
 
 	// Add current execution if any
 	if current != nil {
-		duration := time.Since(current.StartTime)
+		now := time.Now()
+		duration := now.Sub(current.StartTime)
 		prompt.WriteString("\nCURRENT EXECUTION (in progress):\n")
 		prompt.WriteString(fmt.Sprintf("  Issue: %s\n", current.IssueID))
 		prompt.WriteString(fmt.Sprintf("  Executor: %s\n", current.ExecutorID))
+		// Add temporal context (vc-78): start time, current time, and running duration
+		prompt.WriteString(fmt.Sprintf("  Started: %s\n", current.StartTime.Format(time.RFC3339)))
+		prompt.WriteString(fmt.Sprintf("  Current time: %s\n", now.Format(time.RFC3339)))
 		prompt.WriteString(fmt.Sprintf("  Running for: %v\n", duration))
 
 		if len(current.StateTransitions) > 0 {
@@ -242,6 +249,12 @@ Consider:
 3. Are there patterns of state transitions that suggest problems?
 4. Are there event patterns that seem abnormal?
 5. Is there evidence of thrashing, looping, or stuckness?
+6. TEMPORAL PATTERNS: Use the timestamps to detect time-based anomalies:
+   - Time-of-day patterns (failures at specific times)
+   - Rate-based anomalies (too many executions in short window)
+   - Execution gaps (unusual delays between retries)
+   - Trends over time (getting slower/faster)
+   - Burst detection (sudden spike in activity)
 
 Provide your analysis as a JSON object:
 {

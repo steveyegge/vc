@@ -457,6 +457,72 @@ func TestBuildAnomalyDetectionPrompt_WithCurrentExecution(t *testing.T) {
 	}
 }
 
+// TestBuildAnomalyDetectionPrompt_TemporalContext verifies vc-78: timestamps in prompts
+func TestBuildAnomalyDetectionPrompt_TemporalContext(t *testing.T) {
+	monitor := NewMonitor(nil)
+	supervisor := createTestSupervisor(t)
+	store := &mockStorage{}
+
+	// Add historical execution
+	monitor.StartExecution("vc-historical", "executor-1")
+	time.Sleep(10 * time.Millisecond) // Small delay to create measurable duration
+	monitor.EndExecution(true, true)
+
+	// Start current execution
+	monitor.StartExecution("vc-current", "executor-1")
+	monitor.RecordStateTransition(types.ExecutionStateClaimed, types.ExecutionStateExecuting)
+
+	analyzer, err := NewAnalyzer(&AnalyzerConfig{
+		Monitor:    monitor,
+		Supervisor: supervisor,
+		Store:      store,
+	})
+	if err != nil {
+		t.Fatalf("failed to create analyzer: %v", err)
+	}
+
+	telemetry := monitor.GetTelemetry()
+	current := monitor.GetCurrentExecution()
+	prompt, err := analyzer.buildAnomalyDetectionPrompt(telemetry, current)
+	if err != nil {
+		t.Fatalf("buildAnomalyDetectionPrompt failed: %v", err)
+	}
+
+	// vc-78 acceptance criteria: verify temporal context is present
+
+	// Should include "Started:" timestamp (RFC3339 format)
+	if !containsIgnoreCase(prompt, "Started:") {
+		t.Error("prompt should include 'Started:' timestamp for temporal context (vc-78)")
+	}
+
+	// Should include "Ended:" for historical executions
+	if !containsIgnoreCase(prompt, "Ended:") {
+		t.Error("prompt should include 'Ended:' timestamp for completed executions (vc-78)")
+	}
+
+	// Should include "Current time:" for in-progress execution
+	if !containsIgnoreCase(prompt, "Current time:") {
+		t.Error("prompt should include 'Current time:' for in-progress execution (vc-78)")
+	}
+
+	// Should still include "Duration:" for easy reference
+	if !containsIgnoreCase(prompt, "Duration:") {
+		t.Error("prompt should still include 'Duration:' field")
+	}
+
+	// Should include temporal pattern analysis guidance
+	if !containsIgnoreCase(prompt, "TEMPORAL PATTERNS") {
+		t.Error("prompt should include TEMPORAL PATTERNS section to guide AI analysis (vc-78)")
+	}
+
+	// Verify mentions time-based detection capabilities
+	if !containsIgnoreCase(prompt, "time-of-day") {
+		t.Error("prompt should mention 'time-of-day' pattern detection")
+	}
+
+	t.Log("✓ Temporal context successfully added to anomaly detection prompts (vc-78)")
+}
+
 func TestAnomalyReport_ZFCCompliance(t *testing.T) {
 	// This test verifies that the analyzer follows ZFC principles:
 	// - No hardcoded thresholds
