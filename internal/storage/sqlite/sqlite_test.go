@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"testing"
@@ -430,6 +431,56 @@ func TestCascadeDeleteWorks(t *testing.T) {
 	}
 	if labelCount != 0 {
 		t.Errorf("Expected labels to be cascade deleted, but found %d", labelCount)
+	}
+}
+
+// TestGetStatisticsWithEmptyDatabase verifies GetStatistics handles empty database (vc-112)
+// Bug: SUM() returns NULL when table is empty, causing "converting NULL to int" error
+// Fix: Use COALESCE(SUM(...), 0) to convert NULL to 0
+func TestGetStatisticsWithEmptyDatabase(t *testing.T) {
+	// Create temp database
+	tmpfile, err := os.CreateTemp("", "test-*.db")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpfile.Name())
+	tmpfile.Close()
+
+	// Create new storage (will initialize schema with empty tables)
+	storage, err := New(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+
+	// Get statistics on empty database - should not error
+	ctx := context.Background()
+	stats, err := storage.GetStatistics(ctx)
+	if err != nil {
+		t.Fatalf("GetStatistics failed on empty database: %v", err)
+	}
+
+	// Verify all counts are zero
+	if stats.TotalIssues != 0 {
+		t.Errorf("Expected TotalIssues=0, got %d", stats.TotalIssues)
+	}
+	if stats.OpenIssues != 0 {
+		t.Errorf("Expected OpenIssues=0, got %d", stats.OpenIssues)
+	}
+	if stats.InProgressIssues != 0 {
+		t.Errorf("Expected InProgressIssues=0, got %d", stats.InProgressIssues)
+	}
+	if stats.ClosedIssues != 0 {
+		t.Errorf("Expected ClosedIssues=0, got %d", stats.ClosedIssues)
+	}
+	if stats.BlockedIssues != 0 {
+		t.Errorf("Expected BlockedIssues=0, got %d", stats.BlockedIssues)
+	}
+	if stats.ReadyIssues != 0 {
+		t.Errorf("Expected ReadyIssues=0, got %d", stats.ReadyIssues)
+	}
+	if stats.AverageLeadTime != 0 {
+		t.Errorf("Expected AverageLeadTime=0, got %f", stats.AverageLeadTime)
 	}
 }
 
