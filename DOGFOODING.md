@@ -233,15 +233,16 @@ Track these to measure dogfooding progress:
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| Total runs | 7 | Run #7 completed 2025-10-18 |
-| Successful runs | 7 | All runs discovered issues or demonstrated bugs |
-| Quality gate pass | 6/7 | Run #7 REPL hung, but discovered 2 bugs |
-| Issues discovered | 2+ | vc-125 (REPL hang), vc-126 (heartbeat) |
-| Issues fixed | 2 | Both vc-125 and vc-126 closed |
+| Total runs | 10 | Run #10 completed 2025-10-18 afternoon |
+| Successful runs | 10 | All runs discovered issues or demonstrated architecture |
+| Quality gate pass | 6/10 | 60% pass rate - run #10 correctly blocked incomplete work |
+| Issues discovered | 10+ | vc-125, vc-126, vc-127-132 from runs #7-9 |
+| Issues fixed | 4 | vc-125, vc-126, vc-127, vc-130 closed |
 | Activity feed | ✅ | Working! Use `vc tail -f` for live monitoring |
 | GitOps enabled | ❌ | Intentionally disabled for safety |
-| Auto-mission select | ❌ | Human-guided for now |
-| Human intervention | ~40% | 3/7 runs needed manual cleanup |
+| Auto-mission select | ✅ | Working! Executor picks highest priority ready work |
+| Human intervention | ~30% | 3/10 runs needed manual cleanup |
+| AI supervision quality | ✅ | Run #10: AI caught agent claiming completion incorrectly |
 
 ## Safety and Rollback
 
@@ -337,6 +338,32 @@ You: git add -A && git commit -m "VC epic: user authentication"
 ## Mission Log
 
 Detailed record of all dogfooding runs:
+
+### Run #10 - 2025-10-18 Afternoon
+**Target**: vc-117 (Agent reports success but creates no files in sandboxed environments)
+**Result**: Zero completions, quality gates correctly blocked incomplete work
+**Duration**: 6m34s
+**Quality Gates**: Test FAIL, Lint FAIL, Build PASS (2/3 failed - correctly blocked)
+**Issues discovered**: 0 new (confirmed vc-131, vc-132 still blocking)
+**Issues fixed**: 0 (but validated vc-130 fix - test gate much faster!)
+**Human intervention**: Minimal (just started executor and monitored)
+**Key learning**: **AI supervision is more reliable than agent self-reporting.** Agent claimed "completed: true" but AI analysis correctly identified "completed: false" with specific evidence that acceptance criteria were not met. This validates the architecture's emphasis on AI supervision as a critical safety layer. Also confirmed executor auto-selects highest priority work (P0 over P1).
+
+### Run #9 - 2025-10-18 Morning
+**Target**: vc-117, vc-128
+**Result**: 0 completed, test gate timeout blocked vc-117, vc-128 interrupted
+**Duration**: ~30 minutes
+**Quality Gates**: Test gate timeout (5 minutes)
+**Issues discovered**: 4 bugs filed (vc-130, vc-131, vc-132, plus state transition bug)
+**Human intervention**: Yes (killed executor after timeout)
+**Key learning**: Test gate timeout was blocking all progress. Multiple database constraint bugs discovered.
+
+### Run #8 - 2025-10-18 Early Morning
+**Target**: vc-106 itself (meta-epic documentation)
+**Result**: Agent updated DOGFOODING.md successfully
+**Quality Gates**: Failed (executor killed, context canceled)
+**Issues discovered**: 3 documentation/UX improvements
+**Key learning**: vc-106 shouldn't be auto-claimable (P0 epic claimed instead of P1 task)
 
 ### Run #7 - 2025-10-18
 **Target**: vc-122 (CleanupStaleInstances bug)
