@@ -306,17 +306,25 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 
 		// If issue doesn't exist in main DB, it's a discovered issue - create it
 		if mainIssue == nil {
+			// Save the old sandbox ID before clearing it
+			oldSandboxID := sandboxIssue.ID
+
+			// Clear the ID to force fresh ID generation in main DB
+			// This prevents collisions between sandbox-generated IDs and main DB IDs
+			sandboxIssue.ID = ""
+
 			if err := mainDB.CreateIssue(ctx, sandboxIssue, "sandbox-discovered"); err != nil {
-				return fmt.Errorf("failed to create discovered issue %s: %w", sandboxIssue.ID, err)
+				return fmt.Errorf("failed to create discovered issue (was %s): %w", oldSandboxID, err)
 			}
 
-			// Track this as a discovered issue
+			// Track this as a discovered issue with its new ID
+			// sandboxIssue.ID is now the newly generated ID from main DB
 			discoveredIssues[sandboxIssue.ID] = sandboxIssue
 
-			// Copy labels for the new issue
-			labels, err := sandboxDB.GetLabels(ctx, sandboxIssue.ID)
+			// Copy labels from the sandbox issue (using old ID) to the new issue (using new ID)
+			labels, err := sandboxDB.GetLabels(ctx, oldSandboxID)
 			if err != nil {
-				return fmt.Errorf("failed to get labels for %s: %w", sandboxIssue.ID, err)
+				return fmt.Errorf("failed to get labels for %s: %w", oldSandboxID, err)
 			}
 			for _, label := range labels {
 				if err := mainDB.AddLabel(ctx, sandboxIssue.ID, label, "sandbox-discovered"); err != nil {

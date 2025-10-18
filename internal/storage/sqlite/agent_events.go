@@ -38,7 +38,7 @@ func (s *SQLiteStorage) StoreAgentEvent(ctx context.Context, event *events.Agent
 		event.SourceLine,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to store agent event: %w", err)
+		return fmt.Errorf("failed to store agent event (type=%s, issue=%s): %w", event.Type, event.IssueID, err)
 	}
 
 	return nil
