@@ -2,382 +2,259 @@
 
 **Status**: Active dogfooding in progress
 **Owner**: vc-106
+**Detailed run logs**: See `docs/dogfooding-run-*.md`
 
-## Overview
-
-VibeCoder (VC) is designed to run **autonomously for hours to days** once given an initial task graph. During dogfooding, VC works on its own codebase to find and fix issues, with human oversight only when needed.
-
-## The Vision: Autonomous Engineer-in-a-Box
-
-VC implements a recursive, self-expanding workflow:
-
-1. **VC claims ready work** from the beads queue atomically
-2. **VC executes** the full engineer-in-a-box cycle:
-   - Design → Code → Review → Test → Review → Quality Gates → Rebase → GitOps
-3. **VC expands nontrivial work** into epics with child issues as needed
-4. **VC files discovered issues** (bugs, missing features, improvements)
-5. **VC continues** claiming next ready work until queue is empty or blocked
-
-**Human intervention only needed when**:
-- Setting up initial task graph
-- Worker gets stuck (detected by watchdog)
-- Key architectural decision required (flagged by supervisor)
-- Monitoring discovers unexpected behavior
-
-## Dogfooding Process
-
-### Phase 1: Setup (Human)
+## Quick Start
 
 ```bash
-# 1. Ensure VC is built and ready
-cd ~/src/vc/vc
+# 1. Build and set API key
 go build ./cmd/vc
-
-# 2. Set API key for AI supervision
 export ANTHROPIC_API_KEY=your-key-here
 
-# 3. Choose starting work OR let VC choose
-# Option A: Human picks
-bd ready --limit 10
-bd show vc-X  # Review details
+# 2. Start executor (autonomous mode)
+./vc execute --enable-sandboxes
 
-# Option B: VC picks (coming soon - see Mission Selection below)
-```
-
-### Phase 2: Execution (VC Autonomous)
-
-```bash
-# Start VC - it will run autonomously
-./vc
-
-# In VC REPL:
-You: Let's continue working
-
-# VC will now:
-# - Claim ready work atomically
-# - Assess the task (AI supervision)
-# - Execute the work (spawn coding agent)
-# - Analyze results (AI supervision)
-# - File discovered issues
-# - Run quality gates
-# - Repeat until no ready work or blocked
-```
-
-### Phase 3: Monitoring (Human + Claude Code)
-
-**CRITICAL**: Monitor the activity feed to observe VC in action.
-
-```bash
-# In a separate terminal, tail the activity feed
+# 3. Monitor in separate terminal
 ./vc tail -f
-
-# OR view recent activity without following:
-./vc activity -n 20
-
-# Filter by specific issue:
-./vc tail -f --issue vc-123
-
-# View only errors:
-./vc activity --type error -n 50
+# OR: ./vc activity -n 20
 ```
 
-**What to watch for**:
-- Assessment quality (is AI supervision working?)
-- Agent progress (is work being completed?)
-- Discovered issues (is VC finding real problems?)
-- Quality gate results (are standards being enforced?)
-- Convergence (is VC making progress or spinning?)
+## The Vision
 
-**When to intervene**:
-- Worker stuck for >30min with no progress
-- Quality gates repeatedly failing
-- VC filing nonsensical issues
-- Execution diverging from goals
+VC autonomously works on its own codebase:
+1. Claims ready work atomically
+2. Executes full cycle: Design → Code → Test → Quality Gates → GitOps
+3. Files discovered issues
+4. Continues until queue empty or blocked
 
-### Phase 4: Triage (Human + VC)
+**Human intervenes only when**: Stuck >30min, gates fail repeatedly, or architectural decisions needed.
 
-After VC completes a mission or gets blocked:
+---
 
-```bash
-# Review what VC discovered
-bd list --status open --created-after "2 hours ago"
-
-# Categorize issues:
-# - P0: Critical bugs blocking further dogfooding → Fix manually now
-# - P1: Important features/bugs → Let VC tackle next
-# - P2: Nice-to-haves → Leave in backlog
-
-# Example: Promote critical issue
-bd update vc-NEW --priority P0
-
-# Example: Add to current epic
-bd dep add vc-NEW vc-106 --type parent-child
-```
-
-### Phase 5: Reset and Iterate
-
-**No GitOps yet is a FEATURE** - allows safe experimentation:
-
-```bash
-# Option A: Keep the changes if quality gates passed
-git add -A
-git commit -m "VC mission: completed vc-X"
-
-# Option B: Discard changes if VC got confused
-git reset --hard HEAD
-git clean -fd
-
-# Fix high-priority issues manually (or in Claude Code)
-# Then run next mission with updated VC
-```
-
-## Mission Selection
-
-### Current: Human-Guided Selection
-
-Start simple and progressively increase complexity:
-
-**Phase 1: Simple bugs** (single-file fixes)
-- vc-31: Fix activity feed timestamp display
-- vc-32: Handle missing issue fields gracefully
-
-**Phase 2: Feature additions** (new functionality, tests required)
-- Issues with clear requirements and acceptance criteria
-- Likely to spawn child issues (good for testing recursive expansion)
-
-**Phase 3: Complex refactoring** (multi-file, architectural changes)
-- Only after VC proves stable on simpler tasks
-- High supervision, frequent checkpoints
-
-### Future: VC Self-Selection (Not Yet Implemented)
-
-VC could autonomously choose next mission based on:
-- Ready work ordered by priority
-- Complexity estimation (simple first, hard later)
-- Success rate history (avoid repeatedly failing tasks)
-- Dependency chains (complete epics systematically)
-
-**When to enable**: After 10+ successful human-guided missions prove stability.
-
-## Activity Feed Monitoring
-
-**STATUS: ✅ WORKING** - Commands available and functional
-
-### Real-Time Monitoring
-
-The activity feed streams real-time events showing executor actions:
-
-```bash
-# Follow live updates (recommended for monitoring)
-./vc tail -f
-
-# Example output:
-ℹ️ [10:23:15] vc-31 issue_claimed: Issue vc-31 claimed by executor abc123
-ℹ️ [10:23:18] vc-31 assessment_started: Starting AI assessment for issue vc-31
-ℹ️ [10:23:45] vc-31 assessment_completed: AI assessment completed
-    strategy: Fix timestamp format in display layer
-    confidence: 0.9
-ℹ️ [10:24:12] vc-31 analysis_completed: AI analysis completed
-    issues_discovered: 0
-⚠️ [10:24:15] vc-31 quality_gates_failed: Quality gates failed
-```
-
-### Filtering and Analysis
-
-```bash
-# Show last N events
-./vc activity -n 50
-
-# Filter by issue
-./vc activity --issue vc-123 -n 20
-./vc tail -f --issue vc-123
-
-# Filter by type
-./vc activity --type error
-./vc activity --type git_operation -n 10
-
-# Filter by severity
-./vc activity --severity warning
-```
-
-### What's Logged
-
-Events include:
-- Issue claims and completions
-- AI assessments and analysis
-- Agent spawns and executions
-- File modifications and git operations
-- Test runs and build output
-- Context usage monitoring
-- Errors and warnings
-- Watchdog alerts and interventions
-
-## Success Metrics
-
-Track these to measure dogfooding progress:
-
-### Quantitative
-- **Missions completed**: Total issues VC closed
-- **Issues filed**: Bugs/features VC discovered
-- **Quality gate pass rate**: % of missions passing gates
-- **Time to completion**: Average mission duration
-- **Intervention rate**: How often human had to intervene
-
-### Qualitative
-- **Assessment quality**: Is AI supervision insightful?
-- **Issue quality**: Are discovered issues real and actionable?
-- **Code quality**: Does VC's code meet standards?
-- **Convergence**: Does VC finish work or spin endlessly?
-
-### Current Progress
+## Current Status (Updated 2025-10-18)
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| Total runs | 10 | Run #10 completed 2025-10-18 afternoon |
-| Successful runs | 10 | All runs discovered issues or demonstrated architecture |
-| Quality gate pass | 6/10 | 60% pass rate - run #10 correctly blocked incomplete work |
-| Issues discovered | 10+ | vc-125, vc-126, vc-127-132 from runs #7-9 |
-| Issues fixed | 4 | vc-125, vc-126, vc-127, vc-130 closed |
-| Activity feed | ✅ | Working! Use `vc tail -f` for live monitoring |
-| GitOps enabled | ❌ | Intentionally disabled for safety |
-| Auto-mission select | ✅ | Working! Executor picks highest priority ready work |
-| Human intervention | ~30% | 3/10 runs needed manual cleanup |
-| AI supervision quality | ✅ | Run #10: AI caught agent claiming completion incorrectly |
+| **Total runs** | 10 | See docs/dogfooding-run-*.md for details |
+| **Successful runs** | 10 | All demonstrated architecture or discovered issues |
+| **Quality gate pass** | 60% (6/10) | Run #10 correctly blocked incomplete work |
+| **Issues discovered** | 10+ | vc-125 through vc-136 |
+| **Issues fixed** | 4 | vc-125, vc-126, vc-127, vc-130 closed |
+| **Activity feed** | ✅ Working | `vc tail -f` for live monitoring |
+| **Auto-mission select** | ✅ Working | Executor picks highest priority |
+| **AI supervision** | ✅ Excellent | Catches agent errors (validated run #10) |
+| **GitOps** | ❌ Disabled | Intentional safety during bootstrap |
+| **Human intervention** | ~30% | 3/10 runs needed manual cleanup |
 
-## Safety and Rollback
+**Key achievements**:
+- Test gate timeout fixed (vc-130) - 1min vs 5min
+- AI supervision catches agent blind spots (run #10)
+- Executor auto-selects work by priority
+- Quality gates enforce standards
+
+**Current blockers**:
+- vc-131 (P1): Agent event storage CHECK constraint
+- vc-132 (P1): UNIQUE constraint on discovered issues
+
+---
+
+## Essential Commands
+
+### Starting a Run
+```bash
+./vc execute --enable-sandboxes --poll-interval 2
+```
+
+### Monitoring
+```bash
+# Live feed (recommended)
+./vc tail -f
+
+# Recent activity
+./vc activity -n 20
+
+# Filter by issue
+./vc activity --issue vc-123
+
+# Filter by type/severity
+./vc activity --type error
+```
+
+### Finding Work
+```bash
+bd ready              # Show ready issues
+bd show vc-X          # Issue details
+bd list --status open # All open issues
+```
+
+### Cleanup
+```bash
+# See docs/cleanup-artifacts.md for full script
+git worktree prune
+rm -rf .sandboxes/mission-*
+bd export -o .beads/issues.jsonl
+```
+
+---
+
+## Success Metrics
+
+### Quantitative
+- Missions completed: Total issues VC closed
+- Quality gate pass rate: % passing all gates
+- Issues discovered: Bugs/features VC found
+- Human intervention rate: % of runs needing help
+
+### Qualitative
+- Assessment quality: Is AI supervision insightful?
+- Issue quality: Are discovered issues actionable?
+- Convergence: Does VC finish work or spin?
+
+### Targets (for enabling GitOps)
+- [ ] 20+ successful missions
+- [ ] 90%+ quality gate pass rate
+- [ ] <10% human intervention rate
+- [ ] 24+ hour autonomous run on complex epic
+
+---
+
+## Recent Runs Summary
+
+### Run #10 (2025-10-18 PM) - AI Supervision Validation ✅
+- **Target**: vc-117 (P0, auto-selected)
+- **Result**: 0 completions, gates correctly blocked
+- **Duration**: 6m34s
+- **Key finding**: AI analysis caught agent claiming completion when acceptance criteria not met
+- **Validation**: Test gate timeout fixed, AI supervision working excellently
+- **Details**: `docs/dogfooding-run-10.md`
+
+### Run #9 (2025-10-18 AM) - Test Gate Timeout Discovery
+- **Target**: vc-117, vc-128
+- **Result**: 0 completions, blocked by test gate timeout
+- **Issues filed**: vc-130 (test gate), vc-131, vc-132
+- **Details**: `docs/dogfooding-run-9.md`
+
+### Run #8 (2025-10-18) - Meta-Epic Work
+- **Target**: vc-106 (documentation)
+- **Result**: Documentation updated
+- **Learning**: P0 epics shouldn't be auto-claimable
+
+### Run #7 (2025-10-18) - Self-Demonstrating Bug
+- **Target**: vc-122
+- **Result**: Bug manifested, 2 new issues discovered
+- **Issues**: vc-125, vc-126
+
+### Runs #1-6
+- 6 baseline runs establishing workflow
+- Metrics tracked in aggregate
+
+**Full history**: See Mission Log in `docs/dogfooding-archive.md`
+
+---
+
+## Key Learnings
+
+1. **AI supervision > agent self-reporting** (Run #10)
+   - Agent claimed "completed" but didn't meet acceptance criteria
+   - AI analysis correctly identified work incomplete
+   - Validates architecture's emphasis on supervision
+
+2. **Quality gates prevent bad merges** (Run #10)
+   - Blocked incomplete work correctly
+   - Test/lint gates caught issues
+
+3. **Watchdog detects anomalies** (Multiple runs)
+   - Stuck state detection working
+   - Threshold (0.75 confidence) may need tuning
+
+4. **Executor is resilient** (Run #10)
+   - Continues after blocking issues
+   - Auto-selects by priority correctly
+
+5. **Artifact cleanup needed** (After 10 runs)
+   - Sandboxes, branches, instances accumulate
+   - Automation filed: vc-133, vc-134, vc-135, vc-136
+
+---
+
+## Common Patterns & Workflows
+
+### Issue Status Convention
+- **`in_progress`**: ONLY for active VC executor work
+- **`open`**: Everything else (Claude Code, human work, ready work)
+- **Why**: Makes orphan detection trivial (stale in_progress = orphaned)
+
+### When VC Discovers Issues
+```bash
+# VC files issues during analysis
+# Human triages and prioritizes
+bd update vc-NEW --priority 1  # Promote if critical
+```
+
+### When VC Gets Stuck
+```bash
+# Watchdog detects stuck state
+# Manual intervention:
+bd update vc-X --status blocked --notes "Reason"
+# Executor continues with next ready work
+```
+
+### After Successful Run
+```bash
+# Review changes, merge if good
+git log
+git diff HEAD~1
+git push
+```
+
+---
+
+## Safety & Rollback
 
 ### Why No GitOps Yet
-
-**Intentional safety measure** during bootstrap:
-- VC may have bugs that break the codebase
+- VC may have bugs that break codebase
 - Easy rollback via `git reset --hard`
-- No risk of auto-committing broken code
-- Humans review all changes before merge
+- Human review all changes before merge
+- **Will enable after**: 20+ missions, 90%+ gate pass, reliable watchdog
 
-### When to Enable GitOps
-
-Only after:
-1. 20+ successful missions with 90%+ quality gate pass rate
-2. Activity feed monitoring proven reliable
-3. Watchdog detecting convergence issues
-4. Quality gates enforcing all standards
-5. Recursive expansion working correctly
-
-## Common Patterns
-
-### Issue Status Convention: `in_progress` is ONLY for VC Workers
-
-**CRITICAL RULE**: The `in_progress` status is **exclusively** for active VC worker/agent execution. Claude Code sessions and humans should **NEVER** use `in_progress`.
-
-**Why this matters**:
-- Makes orphan detection trivial: any `in_progress` with stale heartbeat = orphaned worker
-- Clear separation: `in_progress` = automated VC work, `open` = everything else
-- Prevents accidental orphaning when Claude Code sessions end
-
-**For human/Claude Code work**:
+### Rollback Process
 ```bash
-# Leave as 'open' and update notes to track progress
-bd update vc-X --notes "Working on this in Claude Code"
-bd update vc-X --notes "Progress: fixed bug, testing now"
+# If VC made bad changes:
+git reset --hard HEAD
+git clean -fd
+
+# Fix issue manually, then continue
 ```
 
-**For VC autonomous work**:
-```bash
-# VC automatically sets in_progress when claiming work
-# open → in_progress (VC claims) → closed (VC completes)
-# or back to open if orphaned/failed
-```
-
-### VC Discovers Missing Feature
-
-```
-You: Let's continue working
-VC: [Claims vc-31]
-VC: [During execution] Filed vc-107: Need better error messages in executor
-You: [Later] Good catch - let's make that P1
-```
-
-### VC Gets Stuck
-
-```
-[Activity feed shows no progress for 30min]
-You: [In VC REPL] What are you working on?
-VC: I'm stuck on vc-45 - missing test fixtures
-You: File an issue for the missing fixtures and move on
-VC: [Files vc-108, continues with next ready work]
-```
-
-### VC Completes Epic
-
-```
-VC: Completed vc-50 and all 5 child issues
-VC: Quality gates: PASS
-VC: Ready to merge
-You: [Reviews changes] Looks good!
-You: git add -A && git commit -m "VC epic: user authentication"
-```
+---
 
 ## Next Steps
 
-1. **Fix activity feed monitoring** (critical for observability)
-2. **Document current quality gates** (what's actually enforced?)
-3. **Track first 10 missions** in a log or separate epic
-4. **Measure success metrics** systematically
-5. **Consider VC self-selection** once stable
-6. **Enable GitOps** when safety proven
+### Immediate (before run #11)
+1. Fix vc-131 (P1) - Quality gate event storage
+2. Fix vc-132 (P1) - Discovered issue creation
+3. Target vc-131 or vc-132 for run #11
 
-## Questions and Refinements
+### Short-term
+1. Improve acceptance criteria enforcement
+2. Lower watchdog threshold (0.75 → 0.70?)
+3. Track completion accuracy metrics
 
-- Should VC prefer breadth-first (many issues) or depth-first (finish epics)?
-- What timeout triggers human intervention? (30min? 1hr?)
-- Should VC auto-prioritize discovered issues?
-- How to handle quality gate failures? (retry? file issue? skip?)
-
----
-
-## Mission Log
-
-Detailed record of all dogfooding runs:
-
-### Run #10 - 2025-10-18 Afternoon
-**Target**: vc-117 (Agent reports success but creates no files in sandboxed environments)
-**Result**: Zero completions, quality gates correctly blocked incomplete work
-**Duration**: 6m34s
-**Quality Gates**: Test FAIL, Lint FAIL, Build PASS (2/3 failed - correctly blocked)
-**Issues discovered**: 0 new (confirmed vc-131, vc-132 still blocking)
-**Issues fixed**: 0 (but validated vc-130 fix - test gate much faster!)
-**Human intervention**: Minimal (just started executor and monitored)
-**Key learning**: **AI supervision is more reliable than agent self-reporting.** Agent claimed "completed: true" but AI analysis correctly identified "completed: false" with specific evidence that acceptance criteria were not met. This validates the architecture's emphasis on AI supervision as a critical safety layer. Also confirmed executor auto-selects highest priority work (P0 over P1).
-
-### Run #9 - 2025-10-18 Morning
-**Target**: vc-117, vc-128
-**Result**: 0 completed, test gate timeout blocked vc-117, vc-128 interrupted
-**Duration**: ~30 minutes
-**Quality Gates**: Test gate timeout (5 minutes)
-**Issues discovered**: 4 bugs filed (vc-130, vc-131, vc-132, plus state transition bug)
-**Human intervention**: Yes (killed executor after timeout)
-**Key learning**: Test gate timeout was blocking all progress. Multiple database constraint bugs discovered.
-
-### Run #8 - 2025-10-18 Early Morning
-**Target**: vc-106 itself (meta-epic documentation)
-**Result**: Agent updated DOGFOODING.md successfully
-**Quality Gates**: Failed (executor killed, context canceled)
-**Issues discovered**: 3 documentation/UX improvements
-**Key learning**: vc-106 shouldn't be auto-claimable (P0 epic claimed instead of P1 task)
-
-### Run #7 - 2025-10-18
-**Target**: vc-122 (CleanupStaleInstances bug)
-**Result**: Partial success - bug demonstrated, 2 new bugs discovered, REPL hung
-**Issues discovered**: vc-125 (REPL hang), vc-126 (heartbeat NULL)
-**Issues fixed**: vc-125, vc-126, vc-122 (all closed)
-**Human intervention**: Yes (manual cleanup of stale claim, killed hung REPL)
-**Key learning**: The bug being tested (vc-122) manifested perfectly - self-demonstrating issue! State transition validation needed fixing, heartbeat mechanism not working properly.
-
-### Run #1-6
-**Status**: Completed prior to detailed logging
-**Result**: 6 successful runs establishing baseline workflow
-**Note**: Metrics tracked in aggregate, detailed logs not captured
+### Long-term
+1. Enable GitOps after stability proven
+2. Run 24+ hour autonomous sessions
+3. Self-hosting: VC handles all development
 
 ---
 
-**Remember**: The goal is for VC to run **autonomously** while we **observe and learn**. Human intervention should be the exception, not the rule. The more VC runs unsupervised, the more we prove the architecture works.
+## Reference Documentation
+
+- **Detailed run logs**: `docs/dogfooding-run-*.md`
+- **Cleanup guide**: `docs/cleanup-artifacts.md`
+- **Architecture**: `README.md`
+- **Bootstrap roadmap**: `BOOTSTRAP.md` (now in beads)
+- **AI agent guide**: `AGENTS.md`
+
+---
+
+**Remember**: The goal is for VC to run **autonomously** while we **observe and learn**. Human intervention should be the exception, not the rule.
