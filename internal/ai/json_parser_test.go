@@ -601,7 +601,7 @@ func TestParse_DisableCleanup(t *testing.T) {
 
 	// With cleanup disabled, code fences should cause parse to fail
 	result := Parse[map[string]any](input, ParseOptions{
-		EnableCleanup: false,
+		EnableCleanup: boolPtr(false),
 	})
 
 	if result.Success {
@@ -612,21 +612,21 @@ func TestParse_DisableCleanup(t *testing.T) {
 func TestParse_DisableCleanupWithContext(t *testing.T) {
 	input := "```json\n{\"test\": true}\n```"
 
-	// KNOWN LIMITATION (vc-248): Currently cannot disable cleanup when Context is provided
-	// The heuristic in Parse() only disables cleanup if Context is empty
+	// FIXED (vc-248): Can now disable cleanup even when Context is provided
+	// Using pointer types allows explicit intent: nil vs *false
 	result := Parse[map[string]any](input, ParseOptions{
 		Context:       "test context",
-		EnableCleanup: false, // This gets IGNORED when Context is set!
+		EnableCleanup: boolPtr(false), // Cleanup is now truly disabled
 	})
 
-	// Due to the limitation, cleanup is still enabled, so this should succeed
-	if !result.Success {
-		t.Errorf("Due to vc-248 limitation, cleanup cannot be disabled with Context set. "+
-			"Expected parse to succeed, got error: %s", result.Error)
+	// With cleanup disabled, code fences should NOT be removed, so parse should fail
+	if result.Success {
+		t.Error("Expected parse to fail with cleanup disabled (code fences not removed)")
 	}
 
-	// This test documents the current behavior - it should be updated when vc-248 is fixed
-	// After vc-248: this test should expect parse to FAIL (cleanup truly disabled)
+	if !containsString(result.Error, "invalid character") {
+		t.Errorf("Expected 'invalid character' error, got: %s", result.Error)
+	}
 }
 
 func TestParse_WithContext(t *testing.T) {
@@ -634,7 +634,7 @@ func TestParse_WithContext(t *testing.T) {
 
 	result := Parse[map[string]any](input, ParseOptions{
 		Context:   "test operation",
-		LogErrors: false, // Disable logs for cleaner test output
+		LogErrors: boolPtr(false), // Disable logs for cleaner test output
 	})
 
 	if result.Success {
@@ -651,8 +651,8 @@ func TestParse_MaxInputSize(t *testing.T) {
 	largeInput := `{"data": "` + string(make([]byte, 2000)) + `"}`
 
 	result := Parse[map[string]any](largeInput, ParseOptions{
-		MaxInputSize: 1000, // 1KB limit
-		LogErrors:    false,
+		MaxInputSize: intPtr(1000), // 1KB limit
+		LogErrors:    boolPtr(false),
 	})
 
 	if result.Success {
@@ -666,8 +666,8 @@ func TestParse_MaxInputSize(t *testing.T) {
 	// Verify it works when size is under limit
 	smallInput := `{"test": "data"}`
 	result2 := Parse[map[string]any](smallInput, ParseOptions{
-		MaxInputSize: 1000,
-		LogErrors:    false,
+		MaxInputSize: intPtr(1000),
+		LogErrors:    boolPtr(false),
 	})
 
 	if !result2.Success {
@@ -676,8 +676,8 @@ func TestParse_MaxInputSize(t *testing.T) {
 
 	// Verify unlimited works (MaxInputSize = 0)
 	result3 := Parse[map[string]any](largeInput, ParseOptions{
-		MaxInputSize: 0, // Unlimited
-		LogErrors:    false,
+		MaxInputSize: intPtr(0), // Unlimited
+		LogErrors:    boolPtr(false),
 	})
 
 	if result3.Success {
@@ -751,7 +751,7 @@ func TestParse_Dogfood_vc72_ErrorCase(t *testing.T) {
 
 	result := Parse[Analysis](input, ParseOptions{
 		Context:   "analysis response",
-		LogErrors: true,
+		LogErrors: boolPtr(true),
 	})
 
 	if !result.Success {

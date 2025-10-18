@@ -41,26 +41,25 @@ type ParseResult[T any] struct {
 
 // ParseOptions configures JSON parsing behavior.
 //
-// NOTE: Due to Go's zero-value semantics, bool fields cannot distinguish
-// between "not set" and "explicitly set to false". Current limitations:
-//   - EnableCleanup: Defaults to true when Context is provided
-//   - To disable cleanup: set EnableCleanup=false AND omit Context
-//   - LogErrors: Always copied from provided options (cannot detect "unset")
-//
-// TODO(vc-248): Refactor to use pointers for optional bool fields to properly
-// distinguish between "not set" and "explicitly set to false".
+// Optional fields use pointers to distinguish between "not set" (nil) and
+// "explicitly set to false" (*false). This allows proper defaults without heuristics.
 type ParseOptions struct {
 	Context       string // Context for error messages
-	EnableCleanup bool   // Enable AI response cleanup strategies (default: true)
-	LogErrors     bool   // Log parsing errors (default: true)
-	MaxInputSize  int    // Maximum input size in bytes (0 = unlimited, default: 10MB)
+	EnableCleanup *bool  // Enable AI response cleanup strategies (default: true, nil = use default)
+	LogErrors     *bool  // Log parsing errors (default: true, nil = use default)
+	MaxInputSize  *int   // Maximum input size in bytes (nil = use default of 10MB)
 }
 
-var defaultOptions = ParseOptions{
-	EnableCleanup: true,
-	LogErrors:     true,
-	MaxInputSize:  10 * 1024 * 1024, // 10MB default
-}
+// Default values for optional fields
+var (
+	defaultEnableCleanup = true
+	defaultLogErrors     = true
+	defaultMaxInputSize  = 10 * 1024 * 1024 // 10MB
+)
+
+// Helper functions for creating ParseOptions with common configurations
+func boolPtr(b bool) *bool { return &b }
+func intPtr(i int) *int    { return &i }
 
 // Parse attempts to parse JSON with multiple fallback strategies.
 // It handles common AI response formatting issues like code fences,
@@ -72,52 +71,49 @@ var defaultOptions = ParseOptions{
 //  3. Fix common JSON issues and retry
 //  4. Extract JSON from mixed content and retry
 func Parse[T any](text string, opts ...ParseOptions) ParseResult[T] {
-	// Start with defaults
-	options := defaultOptions
-
-	// Override with provided options (merge, don't replace)
+	// Resolve options with proper defaults (vc-248)
+	var options ParseOptions
 	if len(opts) > 0 {
-		provided := opts[0]
+		options = opts[0]
+	}
 
-		// Copy Context if provided
-		if provided.Context != "" {
-			options.Context = provided.Context
-		}
+	// Set Context (no default)
+	context := options.Context
 
-		// Copy LogErrors
-		options.LogErrors = provided.LogErrors
+	// Resolve EnableCleanup: use provided value or default
+	enableCleanup := defaultEnableCleanup
+	if options.EnableCleanup != nil {
+		enableCleanup = *options.EnableCleanup
+	}
 
-		// Only override MaxInputSize if explicitly set to non-zero
-		if provided.MaxInputSize != 0 {
-			options.MaxInputSize = provided.MaxInputSize
-		}
+	// Resolve LogErrors: use provided value or default
+	logErrors := defaultLogErrors
+	if options.LogErrors != nil {
+		logErrors = *options.LogErrors
+	}
 
-		// Handle EnableCleanup: Due to Go's zero-value semantics, we can't perfectly
-		// distinguish "not set" from "explicitly set to false". We use this heuristic:
-		// - If Context is set (common case), keep cleanup enabled by default
-		// - If Context is NOT set AND EnableCleanup is false, assume it's a test
-		//   that wants to explicitly disable cleanup
-		if provided.Context == "" && !provided.EnableCleanup {
-			options.EnableCleanup = false
-		}
+	// Resolve MaxInputSize: use provided value or default
+	maxInputSize := defaultMaxInputSize
+	if options.MaxInputSize != nil {
+		maxInputSize = *options.MaxInputSize
 	}
 
 	// Check size limit to prevent memory issues
-	if options.MaxInputSize > 0 && len(text) > options.MaxInputSize {
+	if maxInputSize > 0 && len(text) > maxInputSize {
 		preview := text
 		if len(text) > 1000 {
 			preview = text[:1000] + "..."
 		}
 		return createError[T](
-			fmt.Sprintf("input exceeds size limit (%d > %d bytes)", len(text), options.MaxInputSize),
+			fmt.Sprintf("input exceeds size limit (%d > %d bytes)", len(text), maxInputSize),
 			preview,
-			options.Context,
+			context,
 		)
 	}
 
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
-		return createError[T]("empty input", text, options.Context)
+		return createError[T]("empty input", text, context)
 	}
 
 	// Strategy 1: Direct JSON parse
@@ -130,15 +126,15 @@ func Parse[T any](text string, opts ...ParseOptions) ParseResult[T] {
 		}
 	}
 
-	if !options.EnableCleanup {
-		return createError[T](err.Error(), text, options.Context)
+	if !enableCleanup {
+		return createError[T](err.Error(), text, context)
 	}
 
-	if options.LogErrors {
+	if logErrors {
 		slog.Debug("Direct JSON parse failed, trying cleanup strategies",
 			"error", err.Error(),
 			"textPreview", truncate(text, 100),
-			"context", options.Context)
+			"context", context)
 	}
 
 	// Strategy 2: Remove code fences and try again
@@ -176,7 +172,7 @@ func Parse[T any](text string, opts ...ParseOptions) ParseResult[T] {
 		}
 	}
 
-	return createError[T]("all JSON parsing strategies failed", text, options.Context)
+	return createError[T]("all JSON parsing strategies failed", text, context)
 }
 
 // ParseWithValidation parses JSON and validates the result with a type guard.
@@ -205,29 +201,25 @@ func ParseWithValidation[T any](text string, validator func(any) bool, opts ...P
 		}
 	}
 
-	// Apply same option merging logic as Parse()
-	options := defaultOptions
+	// Resolve options for error logging (vc-248)
+	var options ParseOptions
 	if len(opts) > 0 {
-		provided := opts[0]
-		if provided.Context != "" {
-			options.Context = provided.Context
-		}
-		options.LogErrors = provided.LogErrors
-		if provided.MaxInputSize != 0 {
-			options.MaxInputSize = provided.MaxInputSize
-		}
-		if provided.Context == "" && !provided.EnableCleanup {
-			options.EnableCleanup = false
-		}
+		options = opts[0]
 	}
 
-	if options.LogErrors {
+	context := options.Context
+	logErrors := defaultLogErrors
+	if options.LogErrors != nil {
+		logErrors = *options.LogErrors
+	}
+
+	if logErrors {
 		slog.Warn("JSON validation failed",
 			"data", parseResult.Data,
-			"context", options.Context)
+			"context", context)
 	}
 
-	return createError[T]("type validation failed", text, options.Context)
+	return createError[T]("type validation failed", text, context)
 }
 
 // ParseOrDefault parses JSON and returns a fallback value on error.
@@ -237,27 +229,23 @@ func ParseOrDefault[T any](text string, fallback T, opts ...ParseOptions) T {
 		return result.Data
 	}
 
-	// Apply same option merging logic as Parse()
-	options := defaultOptions
+	// Resolve options for error logging (vc-248)
+	var options ParseOptions
 	if len(opts) > 0 {
-		provided := opts[0]
-		if provided.Context != "" {
-			options.Context = provided.Context
-		}
-		options.LogErrors = provided.LogErrors
-		if provided.MaxInputSize != 0 {
-			options.MaxInputSize = provided.MaxInputSize
-		}
-		if provided.Context == "" && !provided.EnableCleanup {
-			options.EnableCleanup = false
-		}
+		options = opts[0]
 	}
 
-	if options.LogErrors {
+	context := options.Context
+	logErrors := defaultLogErrors
+	if options.LogErrors != nil {
+		logErrors = *options.LogErrors
+	}
+
+	if logErrors {
 		slog.Debug("JSON parse failed, using fallback",
 			"error", result.Error,
 			"textPreview", truncate(text, 100),
-			"context", options.Context)
+			"context", context)
 	}
 
 	return fallback

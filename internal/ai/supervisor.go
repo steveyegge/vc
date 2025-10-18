@@ -553,7 +553,7 @@ func (s *Supervisor) AssessCompletion(ctx context.Context, issue *types.Issue, c
 	// Parse the response as JSON using resilient parser
 	parseResult := Parse[CompletionAssessment](responseText, ParseOptions{
 		Context:   "completion assessment response",
-		LogErrors: true,
+		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
 		return nil, fmt.Errorf("failed to parse completion assessment response: %s (response: %s)", parseResult.Error, responseText)
@@ -621,7 +621,7 @@ func (s *Supervisor) GenerateRecoveryStrategy(ctx context.Context, issue *types.
 	// Parse the response as JSON using resilient parser
 	parseResult := Parse[RecoveryStrategy](responseText, ParseOptions{
 		Context:   "recovery strategy response",
-		LogErrors: true,
+		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
 		return nil, fmt.Errorf("failed to parse recovery strategy response: %s (response: %s)", parseResult.Error, responseText)
@@ -689,7 +689,7 @@ func (s *Supervisor) AnalyzeCodeReviewNeed(ctx context.Context, issue *types.Iss
 	// Parse the response as JSON using resilient parser
 	parseResult := Parse[CodeReviewDecision](responseText, ParseOptions{
 		Context:   "code review decision response",
-		LogErrors: true,
+		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
 		return nil, fmt.Errorf("failed to parse code review decision response: %s (response: %s)", parseResult.Error, responseText)
@@ -757,7 +757,7 @@ func (s *Supervisor) AnalyzeTestCoverage(ctx context.Context, issue *types.Issue
 	// Parse the response as JSON using resilient parser
 	parseResult := Parse[TestSufficiencyAnalysis](responseText, ParseOptions{
 		Context:   "test coverage analysis response",
-		LogErrors: true,
+		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
 		return nil, fmt.Errorf("failed to parse test coverage analysis response: %s (response: %s)", parseResult.Error, responseText)
@@ -826,7 +826,7 @@ func (s *Supervisor) AnalyzeCodeQuality(ctx context.Context, issue *types.Issue,
 	// Parse the response as JSON using resilient parser
 	parseResult := Parse[CodeQualityAnalysis](responseText, ParseOptions{
 		Context:   "code quality analysis response",
-		LogErrors: true,
+		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
 		return nil, fmt.Errorf("failed to parse code quality analysis response: %s (response: %s)", parseResult.Error, responseText)
@@ -892,7 +892,7 @@ func (s *Supervisor) AssessIssueState(ctx context.Context, issue *types.Issue) (
 	// Parse the response as JSON using resilient parser
 	parseResult := Parse[Assessment](responseText, ParseOptions{
 		Context:   "assessment response",
-		LogErrors: true,
+		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
 		return nil, fmt.Errorf("failed to parse assessment response: %s (response: %s)", parseResult.Error, responseText)
@@ -951,7 +951,7 @@ func (s *Supervisor) AnalyzeExecutionResult(ctx context.Context, issue *types.Is
 	// Parse the response as JSON using resilient parser
 	parseResult := Parse[Analysis](responseText, ParseOptions{
 		Context:   "analysis response",
-		LogErrors: true,
+		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
 		return nil, fmt.Errorf("failed to parse analysis response: %s (response: %s)", parseResult.Error, responseText)
@@ -1891,7 +1891,7 @@ func (s *Supervisor) GeneratePlan(ctx context.Context, planningCtx *types.Planni
 	// Parse the response as JSON using resilient parser
 	parseResult := Parse[types.MissionPlan](responseText, ParseOptions{
 		Context:   "mission plan response",
-		LogErrors: true,
+		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
 		// Log full response for debugging, but truncate in error message
@@ -1983,7 +1983,7 @@ func (s *Supervisor) RefinePhase(ctx context.Context, phase *types.Phase, missio
 	}
 	parseResult := Parse[refinementResponse](responseText, ParseOptions{
 		Context:   "phase refinement response",
-		LogErrors: true,
+		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
 		// Log full response for debugging, but truncate in error message
@@ -2103,7 +2103,7 @@ func (s *Supervisor) ValidatePhaseStructure(ctx context.Context, phases []types.
 
 	parseResult := Parse[validationResult](responseText, ParseOptions{
 		Context:   "phase validation response",
-		LogErrors: true,
+		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
 		return fmt.Errorf("failed to parse phase validation response: %s (response: %s)", parseResult.Error, responseText)
