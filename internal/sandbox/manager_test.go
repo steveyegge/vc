@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -222,7 +223,7 @@ func TestManager_GetAndList(t *testing.T) {
 
 	// Create test missions
 	for i := 1; i <= 3; i++ {
-		missionID := "vc-test-" + string(rune('0'+i))
+		missionID := fmt.Sprintf("vc-%d", 3000+i)
 		mission := &types.Issue{
 			ID:        missionID,
 			IssueType: types.TypeTask,
@@ -250,7 +251,7 @@ func TestManager_GetAndList(t *testing.T) {
 
 	// Create two sandboxes
 	sandbox1, err := mgr.Create(ctx, SandboxConfig{
-		MissionID:   "vc-test-1",
+		MissionID:   "vc-3001",
 		ParentRepo:  repoPath,
 		BaseBranch:  "main",
 		SandboxRoot: sandboxRoot,
@@ -261,7 +262,7 @@ func TestManager_GetAndList(t *testing.T) {
 	defer mgr.Cleanup(ctx, sandbox1)
 
 	sandbox2, err := mgr.Create(ctx, SandboxConfig{
-		MissionID:   "vc-test-2",
+		MissionID:   "vc-3002",
 		ParentRepo:  repoPath,
 		BaseBranch:  "main",
 		SandboxRoot: sandboxRoot,
@@ -318,7 +319,7 @@ func TestManager_InspectState(t *testing.T) {
 
 	// Create test mission
 	mission := &types.Issue{
-		ID:        "vc-inspect-test",
+		ID:        "vc-4001",
 		IssueType: types.TypeTask,
 		Status:    types.StatusOpen,
 		Priority:  1,
@@ -342,7 +343,7 @@ func TestManager_InspectState(t *testing.T) {
 	}
 
 	sandbox, err := mgr.Create(ctx, SandboxConfig{
-		MissionID:   "vc-inspect-test",
+		MissionID:   "vc-4001",
 		ParentRepo:  repoPath,
 		BaseBranch:  "main",
 		SandboxRoot: sandboxRoot,
@@ -398,7 +399,7 @@ func TestManager_Cleanup(t *testing.T) {
 
 	// Create test missions for both subtests
 	mission1 := &types.Issue{
-		ID:        "vc-cleanup-test-1",
+		ID:        "vc-1001",
 		IssueType: types.TypeTask,
 		Status:    types.StatusOpen,
 		Priority:  1,
@@ -411,7 +412,7 @@ func TestManager_Cleanup(t *testing.T) {
 	}
 
 	mission2 := &types.Issue{
-		ID:        "vc-cleanup-test-2",
+		ID:        "vc-1002",
 		IssueType: types.TypeTask,
 		Status:    types.StatusOpen,
 		Priority:  1,
@@ -437,7 +438,7 @@ func TestManager_Cleanup(t *testing.T) {
 		}
 
 		sandbox, err := mgr.Create(ctx, SandboxConfig{
-			MissionID:   "vc-cleanup-test-1",
+			MissionID:   "vc-1001",
 			ParentRepo:  repoPath,
 			BaseBranch:  "main",
 			SandboxRoot: sandboxRoot,
@@ -480,7 +481,7 @@ func TestManager_Cleanup(t *testing.T) {
 		}
 
 		sandbox, err := mgr.Create(ctx, SandboxConfig{
-			MissionID:   "vc-cleanup-test-2",
+			MissionID:   "vc-1002",
 			ParentRepo:  repoPath,
 			BaseBranch:  "main",
 			SandboxRoot: sandboxRoot + "-preserve",
@@ -520,7 +521,7 @@ func TestManager_CleanupAll(t *testing.T) {
 
 	// Create test missions
 	for i := 1; i <= 3; i++ {
-		missionID := "vc-cleanupall-" + string(rune('0'+i))
+		missionID := fmt.Sprintf("vc-%d", 2000+i)
 		mission := &types.Issue{
 			ID:        missionID,
 			IssueType: types.TypeTask,
@@ -548,7 +549,7 @@ func TestManager_CleanupAll(t *testing.T) {
 
 	// Create three sandboxes
 	sandbox1, err := mgr.Create(ctx, SandboxConfig{
-		MissionID:   "vc-cleanupall-1",
+		MissionID:   "vc-2001",
 		ParentRepo:  repoPath,
 		BaseBranch:  "main",
 		SandboxRoot: sandboxRoot,
@@ -558,7 +559,7 @@ func TestManager_CleanupAll(t *testing.T) {
 	}
 
 	sandbox2, err := mgr.Create(ctx, SandboxConfig{
-		MissionID:   "vc-cleanupall-2",
+		MissionID:   "vc-2002",
 		ParentRepo:  repoPath,
 		BaseBranch:  "main",
 		SandboxRoot: sandboxRoot,
@@ -568,7 +569,7 @@ func TestManager_CleanupAll(t *testing.T) {
 	}
 
 	sandbox3, err := mgr.Create(ctx, SandboxConfig{
-		MissionID:   "vc-cleanupall-3",
+		MissionID:   "vc-2003",
 		ParentRepo:  repoPath,
 		BaseBranch:  "main",
 		SandboxRoot: sandboxRoot,

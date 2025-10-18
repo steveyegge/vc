@@ -342,16 +342,17 @@ func TestMergeResults(t *testing.T) {
 
 	// Create a discovered issue in sandbox (doesn't exist in main)
 	discovered := &types.Issue{
-		ID:          "vc-301",
 		Title:       "Discovered Issue",
 		Description: "Found during execution",
 		Status:      types.StatusOpen,
 		Priority:    2,
 		IssueType:   types.TypeTask,
 	}
+	// Don't set ID - let the sandbox DB auto-generate it
 	if err := sandboxDB.CreateIssue(ctx, discovered, "agent"); err != nil {
 		t.Fatalf("failed to create discovered issue: %v", err)
 	}
+	// Now discovered.ID contains the sandbox-generated ID
 
 	// Add a label to discovered issue
 	if err := sandboxDB.AddLabel(ctx, discovered.ID, "discovered", "agent"); err != nil {
@@ -373,20 +374,34 @@ func TestMergeResults(t *testing.T) {
 	}
 
 	// Verify discovered issue was created in main DB
-	mainDiscovered, err := mainDB.GetIssue(ctx, discovered.ID)
+	// The discovered issue will have a NEW ID in main DB (not the sandbox ID)
+	// Search for it by title to find the new ID
+	allIssues, err := mainDB.SearchIssues(ctx, "Discovered Issue", types.IssueFilter{})
 	if err != nil {
-		t.Fatalf("failed to get discovered issue: %v", err)
+		t.Fatalf("failed to search for discovered issue: %v", err)
+	}
+	if len(allIssues) == 0 {
+		t.Fatal("discovered issue was not merged to main DB")
+	}
+
+	// Find the discovered issue (should be the one that's not the mission)
+	var mainDiscovered *types.Issue
+	for _, issue := range allIssues {
+		if issue.ID != mission.ID && issue.Title == "Discovered Issue" {
+			mainDiscovered = issue
+			break
+		}
 	}
 	if mainDiscovered == nil {
-		t.Fatal("discovered issue was not merged")
+		t.Fatal("discovered issue was not found in main DB")
 	}
 	if mainDiscovered.Title != discovered.Title {
 		t.Errorf("discovered issue title mismatch: expected %s, got %s",
 			discovered.Title, mainDiscovered.Title)
 	}
 
-	// Verify labels were copied for discovered issue
-	labels, err := mainDB.GetLabels(ctx, discovered.ID)
+	// Verify labels were copied for discovered issue (using the new ID from main DB)
+	labels, err := mainDB.GetLabels(ctx, mainDiscovered.ID)
 	if err != nil {
 		t.Fatalf("failed to get labels: %v", err)
 	}
