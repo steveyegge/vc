@@ -23,6 +23,7 @@ type AgentType string
 const (
 	AgentTypeCody        AgentType = "cody"
 	AgentTypeClaudeCode  AgentType = "claude-code"
+	AgentTypeAmp         AgentType = "amp" // Sourcegraph Cody CLI (amp)
 )
 
 // AgentConfig holds configuration for spawning an agent
@@ -100,6 +101,8 @@ func SpawnAgent(ctx context.Context, cfg AgentConfig, prompt string) (*Agent, er
 		cmd = buildCodyCommand(cfg, prompt)
 	case AgentTypeClaudeCode:
 		cmd = buildClaudeCodeCommand(cfg, prompt)
+	case AgentTypeAmp:
+		cmd = buildAmpCommand(cfg, prompt)
 	default:
 		return nil, fmt.Errorf("unsupported agent type: %s", cfg.Type)
 	}
@@ -298,6 +301,17 @@ func buildClaudeCodeCommand(cfg AgentConfig, prompt string) *exec.Cmd {
 	args := []string{prompt}
 
 	return exec.Command("claude", args...)
+}
+
+// buildAmpCommand constructs the Sourcegraph amp (Cody CLI) command
+func buildAmpCommand(cfg AgentConfig, prompt string) *exec.Cmd {
+	// amp requires --execute for single-shot execution mode
+	args := []string{"--execute", prompt}
+	if cfg.StreamJSON {
+		args = append(args, "--stream-json")
+	}
+
+	return exec.Command("amp", args...)
 }
 
 // GetOutput returns a copy of the current output
