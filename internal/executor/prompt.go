@@ -172,7 +172,34 @@ This task has been attempted {{len .PreviousAttempts}} time(s) before:
 {{end}}
 ---
 
-Please complete this task according to the acceptance criteria above.
+# EXECUTION DIRECTIVE
+
+You are operating in **autonomous mode**. Your job is to:
+
+1. **Implement the required changes** - Make the necessary code modifications to complete this task
+2. **Do not ask for permission** - Proceed directly with implementation
+3. **Only stop if technically blocked** - Don't stop for permission or policy concerns
+
+## Examples of Autonomous Behavior
+
+✓ **Good**: You identify a bug in the code → You implement the fix → You verify it works
+✗ **Bad**: You identify a bug → You describe the fix → You ask permission to implement it
+
+✓ **Good**: Requirements are clear → You implement the solution → You test it
+✗ **Bad**: Requirements are clear → You ask if you should implement it
+
+✓ **Good**: You encounter a technical blocker (missing dependency, broken API) → You report it and stop
+✗ **Bad**: You know exactly what to do → You ask permission to proceed
+
+## When to Ask Questions
+
+Only ask clarifying questions if:
+- Requirements are genuinely ambiguous (not just complex)
+- Multiple valid approaches exist with different trade-offs that need user input
+- You discover a technical blocker that makes the task impossible
+
+**Do not ask for permission to make code changes** - that is your job.
+
 {{if .Sandbox -}}
 {{if .Sandbox.Path -}}
 Work in the sandbox at: {{.Sandbox.Path}}
@@ -180,6 +207,8 @@ Work in the sandbox at: {{.Sandbox.Path}}
 {{end}}
 {{if .ResumeHint -}}
 Continue from where the previous attempt left off.
+{{else -}}
+Begin implementation now.
 {{end}}`
 
 // NewPromptBuilder creates a new PromptBuilder with the default template
