@@ -43,6 +43,9 @@ type ContextMetrics struct {
 	burnRate            float64 // Percent per minute
 	estimatedExhaustion time.Time // When context will hit 100%
 	isExhausting        bool      // True if approaching exhaustion threshold
+
+	// Configuration
+	exhaustionThreshold float64 // Usage % that triggers exhaustion (default: 80.0)
 }
 
 // ContextDetector parses agent output for context usage signals
@@ -51,20 +54,49 @@ type ContextDetector struct {
 	store   EventStorer
 	metrics *ContextMetrics
 
+	// Configuration
+	defaultContextWindow int // Default context window size when not detectable (default: 200000)
+
 	// Regex patterns for parsing agent output
 	ampPattern         *regexp.Regexp // amp shows: "Context: 45000/200000 (22.5%)"
 	claudeCodePattern  *regexp.Regexp // claude-code shows: "approaching auto-compaction limit"
 	claudeCodePercent  *regexp.Regexp // claude-code shows: "Token usage: 150000/200000"
 }
 
+// ContextDetectorConfig holds configuration for ContextDetector
+type ContextDetectorConfig struct {
+	ExhaustionThreshold  float64 // Usage % that triggers exhaustion (default: 80.0)
+	DefaultContextWindow int     // Default context window when not detectable (default: 200000)
+}
+
 // NewContextDetector creates a new context usage detector
 func NewContextDetector(store EventStorer) *ContextDetector {
+	return NewContextDetectorWithConfig(store, nil)
+}
+
+// NewContextDetectorWithConfig creates a new context usage detector with custom config
+func NewContextDetectorWithConfig(store EventStorer, config *ContextDetectorConfig) *ContextDetector {
+	// Apply defaults
+	exhaustionThreshold := 80.0
+	defaultContextWindow := 200000
+
+	if config != nil {
+		if config.ExhaustionThreshold > 0 {
+			exhaustionThreshold = config.ExhaustionThreshold
+		}
+		if config.DefaultContextWindow > 0 {
+			defaultContextWindow = config.DefaultContextWindow
+		}
+	}
+
 	return &ContextDetector{
 		store: store,
 		metrics: &ContextMetrics{
-			history:    make([]ContextUsage, 0, 100),
-			maxHistory: 100,
+			history:             make([]ContextUsage, 0, 100),
+			maxHistory:          100,
+			exhaustionThreshold: exhaustionThreshold,
 		},
+		defaultContextWindow: defaultContextWindow,
 		// amp format: "Context: 45000/200000 (22.5%)"
 		ampPattern: regexp.MustCompile(`Context:\s*(\d+)/(\d+)\s*\((\d+(?:\.\d+)?)%\)`),
 		// claude-code format: "Token usage: 150000/200000"
@@ -98,9 +130,9 @@ func (cd *ContextDetector) ParseAgentOutput(ctx context.Context, output string, 
 		// Record the measurement
 		cd.recordUsage(usage)
 
-		// Emit context_usage event
+		// Emit context_usage event (best effort - don't fail if event storage fails)
 		if err := cd.emitContextEvent(ctx, usage); err != nil {
-			return true, fmt.Errorf("failed to emit context event: %w", err)
+			fmt.Printf("Warning: failed to emit context event: %v\n", err)
 		}
 
 		return true, nil
@@ -126,8 +158,9 @@ func (cd *ContextDetector) ParseAgentOutput(ctx context.Context, output string, 
 
 		cd.recordUsage(usage)
 
+		// Emit context_usage event (best effort - don't fail if event storage fails)
 		if err := cd.emitContextEvent(ctx, usage); err != nil {
-			return true, fmt.Errorf("failed to emit context event: %w", err)
+			fmt.Printf("Warning: failed to emit context event: %v\n", err)
 		}
 
 		return true, nil
@@ -143,8 +176,8 @@ func (cd *ContextDetector) ParseAgentOutput(ctx context.Context, output string, 
 				usage := ContextUsage{
 					Timestamp:    time.Now(),
 					UsagePercent: 85.0,
-					TotalTokens:  200000, // Claude Code default
-					UsedTokens:   170000, // Estimated
+					TotalTokens:  cd.defaultContextWindow,
+					UsedTokens:   int(0.85 * float64(cd.defaultContextWindow)),
 					RawMessage:   line,
 					AgentType:    "claude-code",
 					IssueID:      issueID,
@@ -154,8 +187,9 @@ func (cd *ContextDetector) ParseAgentOutput(ctx context.Context, output string, 
 
 				cd.recordUsage(usage)
 
+				// Emit context_usage event (best effort - don't fail if event storage fails)
 				if err := cd.emitContextEvent(ctx, usage); err != nil {
-					return true, fmt.Errorf("failed to emit context event: %w", err)
+					fmt.Printf("Warning: failed to emit context event: %v\n", err)
 				}
 
 				return true, nil
@@ -203,13 +237,24 @@ func (cd *ContextDetector) calculateBurnRateLocked() {
 
 	// Calculate time elapsed in minutes
 	elapsedMinutes := last.Timestamp.Sub(first.Timestamp).Minutes()
-	if elapsedMinutes == 0 {
+	// Use epsilon comparison to avoid division by zero or near-zero values
+	// Less than 0.001 minutes (0.06 seconds) is too short for meaningful burn rate
+	if elapsedMinutes < 0.001 {
 		cd.metrics.burnRate = 0.0
 		return
 	}
 
 	// Calculate percent change per minute
 	percentChange := last.UsagePercent - first.UsagePercent
+
+	// Handle negative burn rate (context compaction)
+	// When context is compacted, usage decreases, giving negative burn rate
+	// We clamp to 0 since negative burn rate doesn't help predict exhaustion
+	if percentChange < 0 {
+		cd.metrics.burnRate = 0.0
+		return
+	}
+
 	cd.metrics.burnRate = percentChange / elapsedMinutes
 
 	// Calculate estimated exhaustion time
@@ -223,9 +268,8 @@ func (cd *ContextDetector) calculateBurnRateLocked() {
 // checkExhaustionLocked checks if context is approaching exhaustion threshold
 // MUST be called with cd.metrics.mu held (write lock)
 func (cd *ContextDetector) checkExhaustionLocked() {
-	// Threshold: 80% usage
-	threshold := 80.0
-	cd.metrics.isExhausting = cd.metrics.currentUsagePercent >= threshold
+	// Use configured threshold (default: 80% usage)
+	cd.metrics.isExhausting = cd.metrics.currentUsagePercent >= cd.metrics.exhaustionThreshold
 }
 
 // GetMetrics returns current context metrics (thread-safe)

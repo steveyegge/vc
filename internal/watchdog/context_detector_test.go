@@ -185,44 +185,58 @@ func TestContextDetectorBurnRateCalculation(t *testing.T) {
 	store := &mockEventStore{}
 	detector := NewContextDetector(store)
 
-	// Simulate measurements over time
-	measurements := []struct {
-		output     string
-		delayMs    int
-		expectedBR float64 // Expected burn rate
-	}{
-		{"Context: 10000/200000 (5.0%)", 0, 0.0},      // First measurement - no burn rate yet
-		{"Context: 20000/200000 (10.0%)", 60000, 5.0}, // +5% in 1 minute = 5%/min
-		{"Context: 35000/200000 (17.5%)", 60000, 6.25}, // +12.5% in 2 minutes = 6.25%/min
+	// First measurement
+	detected, err := detector.ParseAgentOutput(ctx, "Context: 10000/200000 (5.0%)", "vc-123", "exec-1", "agent-1")
+	if err != nil {
+		t.Fatalf("First measurement failed: %v", err)
+	}
+	if !detected {
+		t.Fatal("Expected first measurement to be detected")
 	}
 
-	startTime := time.Now()
-	for i, m := range measurements {
-		// Simulate time passing
-		if m.delayMs > 0 {
-			time.Sleep(time.Millisecond * 10) // Small actual delay for testing
-		}
-
-		detected, err := detector.ParseAgentOutput(ctx, m.output, "vc-123", "exec-1", "agent-1")
-		if err != nil {
-			t.Fatalf("Measurement %d: ParseAgentOutput failed: %v", i, err)
-		}
-
-		if !detected {
-			t.Fatalf("Measurement %d: Expected context usage to be detected", i)
-		}
-
-		metrics := detector.GetMetrics()
-
-		// We can't reliably test burn rate with real time delays
-		// Just verify it's being calculated
-		if i > 0 && metrics.BurnRate == 0 {
-			t.Errorf("Measurement %d: Expected non-zero burn rate after multiple measurements", i)
-		}
+	metrics := detector.GetMetrics()
+	if metrics.BurnRate != 0.0 {
+		t.Errorf("Expected burn rate 0.0 for single measurement, got %.2f", metrics.BurnRate)
 	}
 
-	elapsed := time.Since(startTime)
-	t.Logf("Test completed in %v", elapsed)
+	// Second measurement after sufficient time (need > 0.001 minutes = 60ms)
+	time.Sleep(100 * time.Millisecond)
+
+	detected, err = detector.ParseAgentOutput(ctx, "Context: 20000/200000 (10.0%)", "vc-123", "exec-1", "agent-1")
+	if err != nil {
+		t.Fatalf("Second measurement failed: %v", err)
+	}
+	if !detected {
+		t.Fatal("Expected second measurement to be detected")
+	}
+
+	metrics = detector.GetMetrics()
+
+	// With two measurements, burn rate should be calculated
+	// We increased from 5% to 10% in ~100ms, so burn rate should be positive
+	if metrics.BurnRate <= 0 {
+		t.Errorf("Expected positive burn rate after two measurements with increased usage, got %.2f", metrics.BurnRate)
+	}
+
+	// Third measurement after more time
+	time.Sleep(100 * time.Millisecond)
+
+	detected, err = detector.ParseAgentOutput(ctx, "Context: 35000/200000 (17.5%)", "vc-123", "exec-1", "agent-1")
+	if err != nil {
+		t.Fatalf("Third measurement failed: %v", err)
+	}
+	if !detected {
+		t.Fatal("Expected third measurement to be detected")
+	}
+
+	metrics = detector.GetMetrics()
+
+	// Burn rate should still be positive (5% -> 17.5% over ~200ms)
+	if metrics.BurnRate <= 0 {
+		t.Errorf("Expected positive burn rate after third measurement, got %.2f", metrics.BurnRate)
+	}
+
+	t.Logf("Final burn rate: %.2f%%/min", metrics.BurnRate)
 }
 
 func TestContextDetectorExhaustionDetection(t *testing.T) {

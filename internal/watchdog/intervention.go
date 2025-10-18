@@ -569,10 +569,9 @@ func (ic *InterventionController) emitWatchdogEvent(ctx context.Context, result 
 func (ic *InterventionController) addToHistoryLocked(result *InterventionResult) {
 	ic.interventionHistory = append(ic.interventionHistory, *result)
 
-	// Enforce max history size
+	// Enforce max history size - keep only the last maxHistorySize entries
 	if len(ic.interventionHistory) > ic.maxHistorySize {
-		copy(ic.interventionHistory, ic.interventionHistory[len(ic.interventionHistory)-ic.maxHistorySize:])
-		ic.interventionHistory = ic.interventionHistory[:ic.maxHistorySize]
+		ic.interventionHistory = ic.interventionHistory[len(ic.interventionHistory)-ic.maxHistorySize:]
 	}
 }
 
