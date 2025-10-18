@@ -329,6 +329,124 @@ func TestCleanupStaleInstancesNoneStale(t *testing.T) {
 	}
 }
 
+func TestCleanupStaleInstancesReleasesClaimedIssues(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	now := time.Now()
+
+	// Create a stale executor instance
+	staleInstance := &types.ExecutorInstance{
+		InstanceID:    "stale-instance",
+		Hostname:      "host-1",
+		PID:           100,
+		Status:        types.ExecutorStatusRunning,
+		StartedAt:     now.Add(-10 * time.Minute),
+		LastHeartbeat: now.Add(-10 * time.Minute), // Stale (10 minutes old)
+		Version:       "0.1.0",
+		Metadata:      `{}`,
+	}
+
+	err := db.RegisterInstance(ctx, staleInstance)
+	if err != nil {
+		t.Fatalf("Failed to register stale instance: %v", err)
+	}
+
+	// Create a test issue
+	issue := &types.Issue{
+		ID:          "vc-test-1",
+		Title:       "Test Issue",
+		Description: "Test Description",
+		Status:      types.StatusOpen,
+		IssueType:   types.TypeTask,
+		Priority:    1,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	err = db.CreateIssue(ctx, issue, "test-actor")
+	if err != nil {
+		t.Fatalf("Failed to create test issue: %v", err)
+	}
+
+	// Have the stale instance claim the issue
+	err = db.ClaimIssue(ctx, issue.ID, staleInstance.InstanceID)
+	if err != nil {
+		t.Fatalf("Failed to claim issue: %v", err)
+	}
+
+	// Verify issue is claimed
+	execState, err := db.GetExecutionState(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get execution state: %v", err)
+	}
+	if execState == nil {
+		t.Fatal("Expected execution state to exist after claiming")
+	}
+	if execState.ExecutorInstanceID != staleInstance.InstanceID {
+		t.Errorf("Wrong executor claimed issue: got %s, want %s", execState.ExecutorInstanceID, staleInstance.InstanceID)
+	}
+
+	// Verify issue status is in_progress
+	claimedIssue, err := db.GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get issue: %v", err)
+	}
+	if claimedIssue.Status != types.StatusInProgress {
+		t.Errorf("Issue status should be in_progress after claiming, got %s", claimedIssue.Status)
+	}
+
+	// Cleanup stale instances (should release the claimed issue)
+	cleaned, err := db.CleanupStaleInstances(ctx, 300) // 5 minutes
+	if err != nil {
+		t.Fatalf("Failed to cleanup stale instances: %v", err)
+	}
+
+	if cleaned != 1 {
+		t.Errorf("Expected to cleanup 1 stale instance, cleaned %d", cleaned)
+	}
+
+	// Verify execution state was deleted
+	execState, err = db.GetExecutionState(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get execution state after cleanup: %v", err)
+	}
+	if execState != nil {
+		t.Error("Expected execution state to be deleted after cleanup")
+	}
+
+	// Verify issue status was reset to 'open'
+	releasedIssue, err := db.GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get issue after cleanup: %v", err)
+	}
+	if releasedIssue.Status != types.StatusOpen {
+		t.Errorf("Issue status should be open after cleanup, got %s", releasedIssue.Status)
+	}
+
+	// Verify a comment was added explaining the release
+	events, err := db.GetEvents(ctx, issue.ID, 10)
+	if err != nil {
+		t.Fatalf("Failed to get events: %v", err)
+	}
+
+	foundReleaseComment := false
+	for _, event := range events {
+		if event.Comment != nil && event.Actor == "system" && strings.Contains(*event.Comment, "automatically released") {
+			foundReleaseComment = true
+			if !strings.Contains(*event.Comment, staleInstance.InstanceID) {
+				t.Errorf("Release comment should mention instance ID, got: %s", *event.Comment)
+			}
+			break
+		}
+	}
+
+	if !foundReleaseComment {
+		t.Error("Expected to find a system comment explaining the release")
+	}
+}
+
 func TestRegisterInstanceValidation(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()

@@ -292,15 +292,9 @@ func TestErrorRecoveryAndResume(t *testing.T) {
 		t.Errorf("Expected 1 cleanup, got %d", cleaned)
 	}
 
-	// Release issue
-	if err := store.ReleaseIssue(ctx, task.ID); err != nil {
-		t.Fatalf("Failed to release issue: %v", err)
-	}
-
-	// Reset task to open
-	updates := map[string]interface{}{"status": types.StatusOpen}
-	if err := store.UpdateIssue(ctx, task.ID, updates, "test"); err != nil {
-		t.Fatalf("Failed to reset task to open: %v", err)
+	// Release issue and reopen for retry (atomically)
+	if err := store.ReleaseIssueAndReopen(ctx, task.ID, "test", "Simulating crash recovery - executor was cleaned up"); err != nil {
+		t.Fatalf("Failed to release and reopen issue: %v", err)
 	}
 
 	// Phase 2: New executor resumes work

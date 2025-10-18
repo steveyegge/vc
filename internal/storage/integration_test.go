@@ -388,23 +388,15 @@ func TestResumeAfterInterruption(t *testing.T) {
 				t.Fatalf("Failed to update executor1 heartbeat: %v", err)
 			}
 
-			// Cleanup stale instances
-			cleaned, err := store.CleanupStaleInstances(ctx, 300)
-			if err != nil {
-				t.Fatalf("Failed to cleanup stale instances: %v", err)
-			}
-			if cleaned != 1 {
-				t.Errorf("Expected to cleanup 1 stale instance, got %d", cleaned)
-			}
 
 			// Phase 2: New executor takes over
 			// In a real scenario, the watchdog would detect the stale executor
-			// and retrieve checkpoint data before releasing the issue
+			// and retrieve checkpoint data BEFORE cleanup releases the issue
 
-			// Retrieve checkpoint BEFORE releasing (this is what the watchdog would do)
+			// Retrieve checkpoint BEFORE cleanup (this is what the watchdog would do)
 			checkpointJSON, err := store.GetCheckpoint(ctx, issue.ID)
 			if err != nil {
-				t.Fatalf("Failed to get checkpoint before release: %v", err)
+				t.Fatalf("Failed to get checkpoint before cleanup: %v", err)
 			}
 
 			var savedCheckpoint map[string]interface{}
@@ -417,15 +409,14 @@ func TestResumeAfterInterruption(t *testing.T) {
 				t.Errorf("Expected saved checkpoint step 2, got %v", savedCheckpoint["step"])
 			}
 
-			// Now release the issue
-			if err := store.ReleaseIssue(ctx, issue.ID); err != nil {
-				t.Fatalf("Failed to release issue: %v", err)
+			// Now cleanup stale instances (this automatically releases issues and resets status to open)
+			cleaned, err := store.CleanupStaleInstances(ctx, 300)
+			if err != nil {
+				t.Fatalf("Failed to cleanup stale instances: %v", err)
 			}
-
-			// Update issue status back to open so it appears in ready work
-			updates := map[string]interface{}{"status": types.StatusOpen}
-			if err := store.UpdateIssue(ctx, issue.ID, updates, "test"); err != nil {
-				t.Fatalf("Failed to update issue status to open: %v", err)
+			if cleaned != 1 {
+				t.Errorf("Expected to cleanup 1 stale instance, got %d", cleaned)
+			}
 			}
 
 			// Create new executor (simulating restart or different instance)

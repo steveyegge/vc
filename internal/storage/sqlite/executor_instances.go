@@ -113,27 +113,136 @@ func (s *SQLiteStorage) GetActiveInstances(ctx context.Context) ([]*types.Execut
 }
 
 // CleanupStaleInstances marks instances as 'stopped' if their last_heartbeat
-// is older than staleThreshold seconds. Returns the number of instances cleaned up.
+// is older than staleThreshold seconds, and releases all issues claimed by those instances.
+// Returns the number of instances cleaned up.
 func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshold int) (int, error) {
 	// Calculate the cutoff time in Go, then compare
 	cutoffTime := time.Now().Add(-time.Duration(staleThreshold) * time.Second)
 
-	query := `
+	// Start a transaction to ensure atomic cleanup of instances and their claims
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// First, find all stale instances
+	staleQuery := `
+		SELECT instance_id
+		FROM executor_instances
+		WHERE status = 'running'
+		  AND last_heartbeat < ?
+	`
+
+	rows, err := tx.QueryContext(ctx, staleQuery, cutoffTime)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query stale instances: %w", err)
+	}
+
+	var staleInstanceIDs []string
+	for rows.Next() {
+		var instanceID string
+		if err := rows.Scan(&instanceID); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("failed to scan instance ID: %w", err)
+		}
+		staleInstanceIDs = append(staleInstanceIDs, instanceID)
+	}
+	rows.Close()
+
+	if err = rows.Err(); err != nil {
+		return 0, fmt.Errorf("error iterating stale instances: %w", err)
+	}
+
+	// If no stale instances found, return early
+	if len(staleInstanceIDs) == 0 {
+		return 0, nil
+	}
+
+	// For each stale instance, find and release all claimed issues
+	for _, instanceID := range staleInstanceIDs {
+		// Find all issues claimed by this stale instance
+		claimedIssuesQuery := `
+			SELECT issue_id
+			FROM issue_execution_state
+			WHERE executor_instance_id = ?
+		`
+
+		issueRows, err := tx.QueryContext(ctx, claimedIssuesQuery, instanceID)
+		if err != nil {
+			return 0, fmt.Errorf("failed to query claimed issues for instance %s: %w", instanceID, err)
+		}
+
+		var issueIDs []string
+		for issueRows.Next() {
+			var issueID string
+			if err := issueRows.Scan(&issueID); err != nil {
+				issueRows.Close()
+				return 0, fmt.Errorf("failed to scan issue ID: %w", err)
+			}
+			issueIDs = append(issueIDs, issueID)
+		}
+		issueRows.Close()
+
+		if err = issueRows.Err(); err != nil {
+			return 0, fmt.Errorf("error iterating claimed issues: %w", err)
+		}
+
+		// Release each claimed issue
+		for _, issueID := range issueIDs {
+			// Delete execution state
+			_, err = tx.ExecContext(ctx, `
+				DELETE FROM issue_execution_state
+				WHERE issue_id = ?
+			`, issueID)
+			if err != nil {
+				return 0, fmt.Errorf("failed to delete execution state for issue %s: %w", issueID, err)
+			}
+
+			// Reset issue status to 'open'
+			_, err = tx.ExecContext(ctx, `
+				UPDATE issues
+				SET status = ?, updated_at = ?
+				WHERE id = ?
+			`, types.StatusOpen, time.Now(), issueID)
+			if err != nil {
+				return 0, fmt.Errorf("failed to reset issue status for %s: %w", issueID, err)
+			}
+
+			// Add comment explaining why the issue was released
+			comment := fmt.Sprintf("Issue automatically released - executor instance %s became stale (no heartbeat for %d seconds)", instanceID, staleThreshold)
+			_, err = tx.ExecContext(ctx, `
+				INSERT INTO events (issue_id, event_type, actor, comment)
+				VALUES (?, ?, ?, ?)
+			`, issueID, types.EventStatusChanged, "system", comment)
+			if err != nil {
+				return 0, fmt.Errorf("failed to add release comment for issue %s: %w", issueID, err)
+			}
+		}
+	}
+
+	// Mark all stale instances as 'stopped'
+	updateQuery := `
 		UPDATE executor_instances
 		SET status = 'stopped'
 		WHERE status = 'running'
 		  AND last_heartbeat < ?
 	`
 
-	result, err := s.db.ExecContext(ctx, query, cutoffTime)
+	result, err := tx.ExecContext(ctx, updateQuery, cutoffTime)
 	if err != nil {
-		return 0, fmt.Errorf("failed to cleanup stale instances: %w", err)
+		return 0, fmt.Errorf("failed to mark stale instances as stopped: %w", err)
 	}
 
-	rows, err := result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
-	return int(rows), nil
+	// Commit the transaction
+	if err = tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return int(rowsAffected), nil
 }

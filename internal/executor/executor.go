@@ -36,9 +36,13 @@ type Executor struct {
 	doneCh chan struct{}
 	watchdogStopCh chan struct{} // Separate channel for watchdog shutdown
 	watchdogDoneCh chan struct{} // Signals when watchdog goroutine finished
+	cleanupStopCh  chan struct{} // Separate channel for cleanup goroutine shutdown
+	cleanupDoneCh  chan struct{} // Signals when cleanup goroutine finished
 
 	// Configuration
 	pollInterval        time.Duration
+	cleanupInterval     time.Duration
+	staleThreshold      time.Duration
 	heartbeatTicker     *time.Ticker
 	enableAISupervision bool
 	enableQualityGates  bool
@@ -56,13 +60,15 @@ type Config struct {
 	Version             string
 	PollInterval        time.Duration
 	HeartbeatPeriod     time.Duration
-	EnableAISupervision bool // Enable AI assessment and analysis (default: true)
-	EnableQualityGates  bool // Enable quality gates enforcement (default: true)
-	EnableSandboxes     bool // Enable sandbox isolation (default: false)
-	WorkingDir          string // Working directory for quality gates (default: ".")
-	SandboxRoot         string // Root directory for sandboxes (default: ".sandboxes")
-	ParentRepo          string // Parent repository path (default: ".")
-	DefaultBranch       string // Default git branch for sandboxes (default: "main")
+	CleanupInterval     time.Duration // How often to check for stale instances (default: 5 minutes)
+	StaleThreshold      time.Duration // How long before an instance is considered stale (default: 5 minutes)
+	EnableAISupervision bool          // Enable AI assessment and analysis (default: true)
+	EnableQualityGates  bool          // Enable quality gates enforcement (default: true)
+	EnableSandboxes     bool          // Enable sandbox isolation (default: false)
+	WorkingDir          string        // Working directory for quality gates (default: ".")
+	SandboxRoot         string        // Root directory for sandboxes (default: ".sandboxes")
+	ParentRepo          string        // Parent repository path (default: ".")
+	DefaultBranch       string        // Default git branch for sandboxes (default: "main")
 	WatchdogConfig      *watchdog.WatchdogConfig // Watchdog configuration (default: conservative defaults)
 }
 
@@ -72,6 +78,8 @@ func DefaultConfig() *Config {
 		Version:             "0.1.0",
 		PollInterval:        5 * time.Second,
 		HeartbeatPeriod:     30 * time.Second,
+		CleanupInterval:     5 * time.Minute,
+		StaleThreshold:      5 * time.Minute,
 		EnableAISupervision: true,
 		EnableQualityGates:  true,
 		EnableSandboxes:     false,
@@ -111,6 +119,18 @@ func New(cfg *Config) (*Executor, error) {
 		parentRepo = "."
 	}
 
+	// Set default cleanup interval if not specified
+	cleanupInterval := cfg.CleanupInterval
+	if cleanupInterval == 0 {
+		cleanupInterval = 5 * time.Minute
+	}
+
+	// Set default stale threshold if not specified
+	staleThreshold := cfg.StaleThreshold
+	if staleThreshold == 0 {
+		staleThreshold = 5 * time.Minute
+	}
+
 	e := &Executor{
 		store:               cfg.Store,
 		config:              cfg,
@@ -119,12 +139,16 @@ func New(cfg *Config) (*Executor, error) {
 		pid:                 os.Getpid(),
 		version:             cfg.Version,
 		pollInterval:        cfg.PollInterval,
+		cleanupInterval:     cleanupInterval,
+		staleThreshold:      staleThreshold,
 		enableAISupervision: cfg.EnableAISupervision,
 		enableQualityGates:  cfg.EnableQualityGates,
 		enableSandboxes:     cfg.EnableSandboxes,
 		workingDir:          workingDir,
 		stopCh:              make(chan struct{}),
 		doneCh:              make(chan struct{}),
+		cleanupStopCh:       make(chan struct{}),
+		cleanupDoneCh:       make(chan struct{}),
 	}
 
 	// Initialize sandbox manager if enabled
@@ -241,6 +265,11 @@ func (e *Executor) Start(ctx context.Context) error {
 			e.watchdogConfig.AIConfig.MinSeverityLevel)
 	}
 
+	// Start the cleanup loop
+	go e.cleanupLoop(ctx)
+	fmt.Printf("Cleanup: Started stale instance cleanup (check_interval=%v, stale_threshold=%v)\n",
+		e.cleanupInterval, e.staleThreshold)
+
 	return nil
 }
 
@@ -261,27 +290,23 @@ func (e *Executor) Stop(ctx context.Context) error {
 		close(e.watchdogStopCh)
 	}
 
-	// Wait for both event loop and watchdog to finish concurrently (vc-113)
+	// Stop cleanup goroutine
+	close(e.cleanupStopCh)
+
+	// Wait for event loop, watchdog, and cleanup to finish concurrently (vc-113, vc-122)
 	// This prevents sequential timeouts if one takes longer than expected
-	if e.watchdogConfig.IsEnabled() && e.analyzer != nil {
-		// Wait for both
-		eventDone := false
-		watchdogDone := false
-		for !eventDone || !watchdogDone {
-			select {
-			case <-e.doneCh:
-				eventDone = true
-			case <-e.watchdogDoneCh:
-				watchdogDone = true
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}
-	} else {
-		// Just wait for event loop
+	eventDone := false
+	watchdogDone := !e.watchdogConfig.IsEnabled() || e.analyzer == nil // Skip if not enabled
+	cleanupDone := false
+
+	for !eventDone || !watchdogDone || !cleanupDone {
 		select {
 		case <-e.doneCh:
-			// Event loop finished
+			eventDone = true
+		case <-e.watchdogDoneCh:
+			watchdogDone = true
+		case <-e.cleanupDoneCh:
+			cleanupDone = true
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -729,14 +754,10 @@ func (e *Executor) logEvent(ctx context.Context, eventType events.EventType, sev
 
 // releaseIssueWithError releases an issue and adds an error comment
 func (e *Executor) releaseIssueWithError(ctx context.Context, issueID, errMsg string) {
-	// Add error comment
-	if err := e.store.AddComment(ctx, issueID, e.instanceID, errMsg); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to add error comment: %v\n", err)
-	}
-
-	// Release the execution state
-	if err := e.store.ReleaseIssue(ctx, issueID); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to release issue: %v\n", err)
+	// Use atomic ReleaseIssueAndReopen to ensure issue returns to 'open' status
+	// This allows the issue to be retried instead of getting stuck in 'in_progress'
+	if err := e.store.ReleaseIssueAndReopen(ctx, issueID, e.instanceID, errMsg); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to release and reopen issue: %v\n", err)
 	}
 }
 
@@ -829,4 +850,58 @@ func (e *Executor) checkForAnomalies(ctx context.Context) error {
 		result.Message, result.EscalationIssueID)
 
 	return nil
+}
+
+// cleanupLoop runs periodic cleanup of stale executor instances in a background goroutine
+// When instances are marked as stale, their claimed issues are automatically released
+func (e *Executor) cleanupLoop(ctx context.Context) {
+	defer close(e.cleanupDoneCh)
+
+	ticker := time.NewTicker(e.cleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-e.cleanupStopCh:
+			return
+		case <-ticker.C:
+			// Check if we should stop before running cleanup
+			select {
+			case <-e.cleanupStopCh:
+				return
+			default:
+			}
+
+			// Run cleanup with cancellation support
+			// Use a channel to make cleanup interruptible
+			done := make(chan error, 1)
+			go func() {
+				staleThresholdSecs := int(e.staleThreshold.Seconds())
+				cleaned, err := e.store.CleanupStaleInstances(ctx, staleThresholdSecs)
+				if err != nil {
+					done <- err
+					return
+				}
+				if cleaned > 0 {
+					fmt.Printf("Cleanup: Marked %d stale instance(s) as stopped and released their claims\n", cleaned)
+				}
+				done <- nil
+			}()
+
+			// Wait for either completion or stop signal
+			select {
+			case err := <-done:
+				if err != nil {
+					// Log error but continue monitoring
+					fmt.Fprintf(os.Stderr, "cleanup: error cleaning up stale instances: %v\n", err)
+				}
+			case <-e.cleanupStopCh:
+				// Stop signal received while cleaning - exit immediately
+				// The goroutine will finish in the background
+				return
+			}
+		}
+	}
 }

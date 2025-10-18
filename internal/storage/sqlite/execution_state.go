@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/steveyegge/vc/internal/types"
@@ -248,6 +249,70 @@ func (s *SQLiteStorage) ReleaseIssue(ctx context.Context, issueID string) error 
 	}
 
 	return nil
+}
+
+// ReleaseIssueAndReopen atomically releases an issue from execution and resets its status to open
+// This is used when an error occurs during execution - the issue should become available for retry
+func (s *SQLiteStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, actor, errorComment string) error {
+	// Start transaction for atomic release + status update + comment
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Delete execution state
+	result, err := tx.ExecContext(ctx, `
+		DELETE FROM issue_execution_state
+		WHERE issue_id = ?
+	`, issueID)
+	if err != nil {
+		return fmt.Errorf("failed to release issue: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	// If no execution state existed, still continue to update status and add comment
+	// This handles cases where the state might have been cleaned up already
+	if rows == 0 {
+		// Just log a warning, don't fail - we still want to reset status and add comment
+		fmt.Fprintf(os.Stderr, "warning: no execution state found for issue %s during release\n", issueID)
+	}
+
+	// Update issue status back to open
+	now := time.Now()
+	_, err = tx.ExecContext(ctx, `
+		UPDATE issues SET status = ?, updated_at = ?
+		WHERE id = ?
+	`, types.StatusOpen, now, issueID)
+	if err != nil {
+		return fmt.Errorf("failed to update issue status: %w", err)
+	}
+
+	// Add error comment if provided
+	if errorComment != "" {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO events (issue_id, event_type, actor, comment, created_at)
+			VALUES (?, ?, ?, ?, ?)
+		`, issueID, types.EventCommented, actor, errorComment, now)
+		if err != nil {
+			return fmt.Errorf("failed to add error comment: %w", err)
+		}
+	}
+
+	// Record status change event
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO events (issue_id, event_type, actor, comment, created_at)
+		VALUES (?, ?, ?, ?, ?)
+	`, issueID, types.EventStatusChanged, actor, "Issue released due to error and reopened for retry", now)
+	if err != nil {
+		return fmt.Errorf("failed to record status change event: %w", err)
+	}
+
+	return tx.Commit()
 }
 
 // isValidStateTransition validates state machine transitions

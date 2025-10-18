@@ -184,6 +184,9 @@ func (m *mockStorage) GetCheckpoint(ctx context.Context, issueID string) (string
 func (m *mockStorage) ReleaseIssue(ctx context.Context, issueID string) error {
 	return nil
 }
+func (m *mockStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, actor, errorComment string) error {
+	return nil
+}
 func (m *mockStorage) Close() error {
 	return nil
 }

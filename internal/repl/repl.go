@@ -17,13 +17,15 @@ import (
 
 // REPL represents the interactive shell
 type REPL struct {
-	store        storage.Storage
-	rl           *readline.Instance
-	ctx          context.Context
-	actor        string
-	conversation *ConversationHandler
-	pendingPlans map[string]*types.MissionPlan // Mission plans awaiting approval
-	plansMu      sync.RWMutex                   // Protects pendingPlans map
+	store          storage.Storage
+	rl             *readline.Instance
+	ctx            context.Context
+	actor          string
+	conversation   *ConversationHandler
+	pendingPlans   map[string]*types.MissionPlan // Mission plans awaiting approval
+	plansMu        sync.RWMutex                   // Protects pendingPlans map
+	stopHeartbeat  chan struct{}                  // Signal to stop heartbeat goroutine
+	instanceID     string                         // Executor instance ID for this REPL
 }
 
 // Config holds REPL configuration
@@ -44,9 +46,10 @@ func New(cfg *Config) (*REPL, error) {
 	}
 
 	r := &REPL{
-		store:        cfg.Store,
-		actor:        actor,
-		pendingPlans: make(map[string]*types.MissionPlan),
+		store:         cfg.Store,
+		actor:         actor,
+		pendingPlans:  make(map[string]*types.MissionPlan),
+		stopHeartbeat: make(chan struct{}),
 	}
 
 	return r, nil
@@ -60,6 +63,12 @@ func (r *REPL) Run(ctx context.Context) error {
 	if err := r.registerExecutorInstance(ctx); err != nil {
 		return fmt.Errorf("failed to register executor instance: %w", err)
 	}
+
+	// Start heartbeat goroutine to keep executor instance alive
+	go r.heartbeatLoop(ctx)
+	defer func() {
+		close(r.stopHeartbeat) // Signal heartbeat to stop
+	}()
 
 	// Create readline instance
 	cyan := color.New(color.FgCyan).SprintFunc()
@@ -166,8 +175,10 @@ func (r *REPL) registerExecutorInstance(ctx context.Context) error {
 		hostname = "unknown"
 	}
 
+	r.instanceID = fmt.Sprintf("conversation-%s", r.actor)
+
 	instance := &types.ExecutorInstance{
-		InstanceID:    fmt.Sprintf("conversation-%s", r.actor),
+		InstanceID:    r.instanceID,
 		Hostname:      hostname,
 		PID:           os.Getpid(),
 		Status:        types.ExecutorStatusRunning,
@@ -178,4 +189,23 @@ func (r *REPL) registerExecutorInstance(ctx context.Context) error {
 	}
 
 	return r.store.RegisterInstance(ctx, instance)
+}
+
+// heartbeatLoop periodically updates the executor instance heartbeat
+func (r *REPL) heartbeatLoop(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-r.stopHeartbeat:
+			return
+		case <-ticker.C:
+			if err := r.store.UpdateHeartbeat(ctx, r.instanceID); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to update heartbeat: %v\n", err)
+			}
+		}
+	}
 }

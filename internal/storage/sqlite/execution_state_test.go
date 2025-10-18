@@ -503,6 +503,113 @@ func TestReleaseIssue(t *testing.T) {
 	}
 }
 
+func TestReleaseIssueAndReopen(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	now := time.Now()
+
+	// Setup executor and issue
+	executor := &types.ExecutorInstance{
+		InstanceID:    "executor-1",
+		Hostname:      "test-host",
+		PID:           12345,
+		Status:        types.ExecutorStatusRunning,
+		StartedAt:     now,
+		LastHeartbeat: now,
+		Version:       "0.1.0",
+		Metadata:      `{}`,
+	}
+	err := db.RegisterInstance(ctx, executor)
+	if err != nil {
+		t.Fatalf("Failed to register executor: %v", err)
+	}
+
+	issue := &types.Issue{
+		ID:          "test-issue-1",
+		Title:       "Test Issue",
+		Description: "Test description",
+		Status:      types.StatusOpen,
+		Priority:    1,
+		IssueType:   types.TypeTask,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	err = db.CreateIssue(ctx, issue, "test-actor")
+	if err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Claim the issue
+	err = db.ClaimIssue(ctx, issue.ID, executor.InstanceID)
+	if err != nil {
+		t.Fatalf("Failed to claim issue: %v", err)
+	}
+
+	// Verify issue is in_progress
+	retrievedIssue, err := db.GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get issue: %v", err)
+	}
+	if retrievedIssue.Status != types.StatusInProgress {
+		t.Errorf("Expected status in_progress, got %s", retrievedIssue.Status)
+	}
+
+	// Release and reopen the issue
+	errorComment := "Test error: agent execution failed"
+	err = db.ReleaseIssueAndReopen(ctx, issue.ID, executor.InstanceID, errorComment)
+	if err != nil {
+		t.Fatalf("Failed to release and reopen issue: %v", err)
+	}
+
+	// Verify execution state was removed
+	state, err := db.GetExecutionState(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get execution state: %v", err)
+	}
+	if state != nil {
+		t.Error("Expected execution state to be removed")
+	}
+
+	// Verify issue status was reset to open
+	retrievedIssue, err = db.GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get issue: %v", err)
+	}
+	if retrievedIssue.Status != types.StatusOpen {
+		t.Errorf("Expected status open, got %s", retrievedIssue.Status)
+	}
+
+	// Verify error comment was added
+	events, err := db.GetEvents(ctx, issue.ID, 100)
+	if err != nil {
+		t.Fatalf("Failed to get events: %v", err)
+	}
+	foundErrorComment := false
+	foundStatusChange := false
+	for _, event := range events {
+		if event.EventType == types.EventCommented && event.Comment != nil && *event.Comment == errorComment {
+			foundErrorComment = true
+		}
+		if event.EventType == types.EventStatusChanged && event.Comment != nil && *event.Comment == "Issue released due to error and reopened for retry" {
+			foundStatusChange = true
+		}
+	}
+	if !foundErrorComment {
+		t.Error("Expected error comment to be added")
+	}
+	if !foundStatusChange {
+		t.Error("Expected status change event to be recorded")
+	}
+
+	// Verify issue can be claimed again
+	err = db.ClaimIssue(ctx, issue.ID, executor.InstanceID)
+	if err != nil {
+		t.Errorf("Expected to be able to claim issue again, got error: %v", err)
+	}
+}
+
 func TestStateTransitionFlow(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()

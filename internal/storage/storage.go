@@ -63,6 +63,7 @@ type Storage interface {
 	SaveCheckpoint(ctx context.Context, issueID string, checkpointData interface{}) error
 	GetCheckpoint(ctx context.Context, issueID string) (string, error)
 	ReleaseIssue(ctx context.Context, issueID string) error
+	ReleaseIssueAndReopen(ctx context.Context, issueID, actor, errorComment string) error
 
 	// Execution History
 	GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error)

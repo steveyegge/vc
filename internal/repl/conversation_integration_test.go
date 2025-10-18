@@ -68,6 +68,13 @@ func (m *mockStorageIntegration) ReleaseIssue(ctx context.Context, issueID strin
 	return nil
 }
 
+func (m *mockStorageIntegration) ReleaseIssueAndReopen(ctx context.Context, issueID, actor, errorComment string) error {
+	if m.claimedIssues != nil {
+		delete(m.claimedIssues, issueID)
+	}
+	return nil
+}
+
 func (m *mockStorageIntegration) AddDependency(ctx context.Context, dep *types.Dependency, actor string) error {
 	m.addedDeps = append(m.addedDeps, dep)
 	return nil

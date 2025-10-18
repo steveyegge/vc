@@ -1086,11 +1086,8 @@ func (c *ConversationHandler) executeIssue(ctx context.Context, issue *types.Iss
 		return nil, fmt.Errorf("failed to claim issue %s: %w", issue.ID, err)
 	}
 
-	// Update execution state to executing
-	if err := c.storage.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateExecuting); err != nil {
-		// Log warning but continue
-		fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
-	}
+	// Note: Conversational mode doesn't use the full state machine (assess/analyze/gates)
+	// The issue is claimed (in_progress) which is sufficient for tracking
 
 	// Gather context for comprehensive prompt
 	gatherer := executor.NewContextGatherer(c.storage)
@@ -1209,14 +1206,10 @@ func (c *ConversationHandler) formatContinueLoopResult(completed, partial, faile
 
 // releaseIssueWithError releases an issue and adds an error comment
 func (c *ConversationHandler) releaseIssueWithError(ctx context.Context, issueID, actor, errMsg string) {
-	// Add error comment
-	if err := c.storage.AddComment(ctx, issueID, actor, errMsg); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to add error comment: %v\n", err)
-	}
-
-	// Release the execution state
-	if err := c.storage.ReleaseIssue(ctx, issueID); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to release issue: %v\n", err)
+	// Use atomic ReleaseIssueAndReopen to ensure issue returns to 'open' status
+	// This allows the issue to be retried instead of getting stuck in 'in_progress'
+	if err := c.storage.ReleaseIssueAndReopen(ctx, issueID, actor, errMsg); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to release and reopen issue: %v\n", err)
 	}
 }
 
