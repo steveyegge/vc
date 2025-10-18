@@ -22,6 +22,11 @@ func (s *SQLiteStorage) GetReadyWork(ctx context.Context, filter types.WorkFilte
 	whereClauses = append(whereClauses, "i.status = ?")
 	args = append(args, filter.Status)
 
+	// Exclude epic-type issues from ready work (vc-127)
+	// Epics are meta-tracking issues, not concrete implementable work
+	whereClauses = append(whereClauses, "i.issue_type != ?")
+	args = append(args, "epic")
+
 	if filter.Priority != nil {
 		whereClauses = append(whereClauses, "i.priority = ?")
 		args = append(args, *filter.Priority)
