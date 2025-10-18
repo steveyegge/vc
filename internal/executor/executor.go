@@ -261,43 +261,51 @@ func (e *Executor) Stop(ctx context.Context) error {
 		close(e.watchdogStopCh)
 	}
 
-	// Wait for event loop to finish
-	select {
-	case <-e.doneCh:
-		// Event loop finished
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
-	// Wait for watchdog to finish
+	// Wait for both event loop and watchdog to finish concurrently (vc-113)
+	// This prevents sequential timeouts if one takes longer than expected
 	if e.watchdogConfig.IsEnabled() && e.analyzer != nil {
+		// Wait for both
+		eventDone := false
+		watchdogDone := false
+		for !eventDone || !watchdogDone {
+			select {
+			case <-e.doneCh:
+				eventDone = true
+			case <-e.watchdogDoneCh:
+				watchdogDone = true
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	} else {
+		// Just wait for event loop
 		select {
-		case <-e.watchdogDoneCh:
-			// Watchdog finished
+		case <-e.doneCh:
+			// Event loop finished
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
 
-	// Mark instance as stopped
+	// Mark instance as stopped (vc-113: Don't fail shutdown if this fails)
 	// Get current instance to preserve all fields
 	instances, err := e.store.GetActiveInstances(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get active instances: %w", err)
-	}
-
-	var instance *types.ExecutorInstance
-	for _, inst := range instances {
-		if inst.InstanceID == e.instanceID {
-			instance = inst
-			break
+		fmt.Fprintf(os.Stderr, "warning: failed to get active instances during shutdown: %v\n", err)
+	} else {
+		var instance *types.ExecutorInstance
+		for _, inst := range instances {
+			if inst.InstanceID == e.instanceID {
+				instance = inst
+				break
+			}
 		}
-	}
 
-	if instance != nil {
-		instance.Status = types.ExecutorStatusStopped
-		if err := e.store.RegisterInstance(ctx, instance); err != nil {
-			return fmt.Errorf("failed to mark instance as stopped: %w", err)
+		if instance != nil {
+			instance.Status = types.ExecutorStatusStopped
+			if err := e.store.RegisterInstance(ctx, instance); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to mark instance as stopped: %v\n", err)
+			}
 		}
 	}
 
@@ -747,10 +755,31 @@ func (e *Executor) watchdogLoop(ctx context.Context) {
 		case <-e.watchdogStopCh:
 			return
 		case <-ticker.C:
-			// Run anomaly detection
-			if err := e.checkForAnomalies(ctx); err != nil {
-				// Log error but continue monitoring
-				fmt.Fprintf(os.Stderr, "watchdog: error checking for anomalies: %v\n", err)
+			// Check if we should stop before running potentially slow anomaly check (vc-113)
+			select {
+			case <-e.watchdogStopCh:
+				return
+			default:
+			}
+
+			// Run anomaly detection with cancellation support (vc-113)
+			// Use a channel to make check interruptible
+			done := make(chan error, 1)
+			go func() {
+				done <- e.checkForAnomalies(ctx)
+			}()
+
+			// Wait for either completion or stop signal
+			select {
+			case err := <-done:
+				if err != nil {
+					// Log error but continue monitoring
+					fmt.Fprintf(os.Stderr, "watchdog: error checking for anomalies: %v\n", err)
+				}
+			case <-e.watchdogStopCh:
+				// Stop signal received while checking - exit immediately
+				// The goroutine will finish in the background
+				return
 			}
 		}
 	}

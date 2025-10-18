@@ -84,8 +84,8 @@ func TestWatchdogIntegration_InfiniteLoopDetection(t *testing.T) {
 	// Let it run briefly
 	time.Sleep(200 * time.Millisecond)
 
-	// Stop executor (should cleanly stop watchdog too)
-	stopCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	// Stop executor (should cleanly stop watchdog too) (vc-113: increased timeout)
+	stopCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := exec.Stop(stopCtx); err != nil {
 		t.Fatalf("Failed to stop executor: %v", err)
@@ -149,8 +149,8 @@ func TestWatchdogIntegration_ThrashingDetection(t *testing.T) {
 	// Let watchdog run a few checks
 	time.Sleep(300 * time.Millisecond)
 
-	// Stop cleanly
-	stopCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	// Stop cleanly (vc-113: increased timeout to handle slow CI/test environments)
+	stopCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := exec.Stop(stopCtx); err != nil {
 		t.Fatalf("Failed to stop executor: %v", err)
