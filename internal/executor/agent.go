@@ -284,8 +284,16 @@ func (a *Agent) parseAndStoreEvents(line string) {
 
 // buildClaudeCodeCommand constructs the Claude Code CLI command
 func buildClaudeCodeCommand(cfg AgentConfig, prompt string) *exec.Cmd {
+	args := []string{}
+
+	// When running in a sandbox, bypass permission checks for autonomous operation (vc-114)
+	// This is safe because sandboxes are isolated environments
+	if cfg.Sandbox != nil {
+		args = append(args, "--dangerously-skip-permissions")
+	}
+
 	// Claude Code uses the message directly
-	args := []string{prompt}
+	args = append(args, prompt)
 
 	return exec.Command("claude", args...)
 }
