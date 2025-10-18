@@ -61,6 +61,12 @@ func TestNewRunner(t *testing.T) {
 }
 
 func TestRunTestGate_Success(t *testing.T) {
+	// vc-130: Skip this test in short mode to avoid recursive test execution
+	// This test runs "go test ./..." which would recursively run all tests including itself
+	if testing.Short() {
+		t.Skip("Skipping recursive test execution in short mode")
+	}
+
 	// Create temp db
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
@@ -150,6 +156,11 @@ func TestRunBuildGate_Success(t *testing.T) {
 }
 
 func TestRunAll(t *testing.T) {
+	// vc-130: Skip in short mode - runs "go test ./..." recursively
+	if testing.Short() {
+		t.Skip("Skipping recursive test execution in short mode")
+	}
+
 	// Create temp db
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")

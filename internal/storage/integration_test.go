@@ -417,7 +417,6 @@ func TestResumeAfterInterruption(t *testing.T) {
 			if cleaned != 1 {
 				t.Errorf("Expected to cleanup 1 stale instance, got %d", cleaned)
 			}
-			}
 
 			// Create new executor (simulating restart or different instance)
 			executors2 := createExecutors(t, ctx, store, 1)

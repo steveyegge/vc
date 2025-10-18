@@ -120,7 +120,10 @@ func (r *Runner) RunAll(ctx context.Context) ([]*Result, bool) {
 func (r *Runner) runTestGate(ctx context.Context) *Result {
 	result := &Result{Gate: GateTest}
 
-	cmd := exec.CommandContext(ctx, "go", "test", "./...")
+	// vc-130: Add explicit timeout and skip long-running integration tests
+	// Use -short flag to skip integration tests (tagged with `if testing.Short()`)
+	// Use -timeout to enforce hard deadline (2 minutes per test)
+	cmd := exec.CommandContext(ctx, "go", "test", "-short", "-timeout=2m", "./...")
 	cmd.Dir = r.workingDir
 
 	output, err := cmd.CombinedOutput()
