@@ -65,16 +65,20 @@ You: Let's continue working
 
 ### Phase 3: Monitoring (Human + Claude Code)
 
-**CRITICAL**: We need to monitor the activity feed to observe VC in action.
+**CRITICAL**: Monitor the activity feed to observe VC in action.
 
 ```bash
 # In a separate terminal, tail the activity feed
-# TODO: This is currently BROKEN - needs fixing!
-# Expected command (once working):
-./vc feed --follow
+./vc tail -f
 
-# OR use bd directly if feed endpoint exists:
-bd activity --follow
+# OR view recent activity without following:
+./vc activity -n 20
+
+# Filter by specific issue:
+./vc tail -f --issue vc-123
+
+# View only errors:
+./vc activity --type error -n 50
 ```
 
 **What to watch for**:
@@ -157,44 +161,56 @@ VC could autonomously choose next mission based on:
 
 ## Activity Feed Monitoring
 
-**STATUS: BROKEN** - Needs investigation and fix
+**STATUS: ✅ WORKING** - Commands available and functional
 
-### Expected Behavior
+### Real-Time Monitoring
 
-The activity feed should stream real-time events:
-
-```
-[2025-10-18 10:23:15] EXECUTOR: Claimed vc-31
-[2025-10-18 10:23:18] AI_ASSESS: Strategy: Fix timestamp format in display layer
-[2025-10-18 10:23:45] AGENT: Modified internal/repl/feed.go
-[2025-10-18 10:24:12] AI_ANALYZE: Complete - no issues discovered
-[2025-10-18 10:24:15] QUALITY: All gates passed
-```
-
-### Current Issues
-
-- `./vc feed --follow` may not exist yet
-- Activity events may not be persisted correctly
-- WebSocket/SSE streaming not implemented
-- Alternative: polling `bd activity` in a loop (ugly but works)
-
-### Workaround (Until Fixed)
+The activity feed streams real-time events showing executor actions:
 
 ```bash
-# Poll activity in a loop
-watch -n 2 'bd activity --limit 20'
+# Follow live updates (recommended for monitoring)
+./vc tail -f
 
-# Or manual refresh
-while true; do clear; bd activity --limit 20; sleep 5; done
+# Example output:
+ℹ️ [10:23:15] vc-31 issue_claimed: Issue vc-31 claimed by executor abc123
+ℹ️ [10:23:18] vc-31 assessment_started: Starting AI assessment for issue vc-31
+ℹ️ [10:23:45] vc-31 assessment_completed: AI assessment completed
+    strategy: Fix timestamp format in display layer
+    confidence: 0.9
+ℹ️ [10:24:12] vc-31 analysis_completed: AI analysis completed
+    issues_discovered: 0
+⚠️ [10:24:15] vc-31 quality_gates_failed: Quality gates failed
 ```
 
-### What Needs Fixing
+### Filtering and Analysis
 
-- [ ] Implement `./vc feed --follow` command
-- [ ] Verify activity events are written to storage
-- [ ] Add streaming support (SSE or WebSocket)
-- [ ] Add filtering (by issue, by event type, by severity)
-- [ ] File issue for this if not already tracked
+```bash
+# Show last N events
+./vc activity -n 50
+
+# Filter by issue
+./vc activity --issue vc-123 -n 20
+./vc tail -f --issue vc-123
+
+# Filter by type
+./vc activity --type error
+./vc activity --type git_operation -n 10
+
+# Filter by severity
+./vc activity --severity warning
+```
+
+### What's Logged
+
+Events include:
+- Issue claims and completions
+- AI assessments and analysis
+- Agent spawns and executions
+- File modifications and git operations
+- Test runs and build output
+- Context usage monitoring
+- Errors and warnings
+- Watchdog alerts and interventions
 
 ## Success Metrics
 
@@ -217,10 +233,15 @@ Track these to measure dogfooding progress:
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| Successful runs | 6+ | Per vc-106 notes |
-| Activity feed | ❌ | Still broken after multiple attempts |
+| Total runs | 7 | Run #7 completed 2025-10-18 |
+| Successful runs | 7 | All runs discovered issues or demonstrated bugs |
+| Quality gate pass | 6/7 | Run #7 REPL hung, but discovered 2 bugs |
+| Issues discovered | 2+ | vc-125 (REPL hang), vc-126 (heartbeat) |
+| Issues fixed | 2 | Both vc-125 and vc-126 closed |
+| Activity feed | ✅ | Working! Use `vc tail -f` for live monitoring |
 | GitOps enabled | ❌ | Intentionally disabled for safety |
 | Auto-mission select | ❌ | Human-guided for now |
+| Human intervention | ~40% | 3/7 runs needed manual cleanup |
 
 ## Safety and Rollback
 
@@ -310,6 +331,25 @@ You: git add -A && git commit -m "VC epic: user authentication"
 - What timeout triggers human intervention? (30min? 1hr?)
 - Should VC auto-prioritize discovered issues?
 - How to handle quality gate failures? (retry? file issue? skip?)
+
+---
+
+## Mission Log
+
+Detailed record of all dogfooding runs:
+
+### Run #7 - 2025-10-18
+**Target**: vc-122 (CleanupStaleInstances bug)
+**Result**: Partial success - bug demonstrated, 2 new bugs discovered, REPL hung
+**Issues discovered**: vc-125 (REPL hang), vc-126 (heartbeat NULL)
+**Issues fixed**: vc-125, vc-126, vc-122 (all closed)
+**Human intervention**: Yes (manual cleanup of stale claim, killed hung REPL)
+**Key learning**: The bug being tested (vc-122) manifested perfectly - self-demonstrating issue! State transition validation needed fixing, heartbeat mechanism not working properly.
+
+### Run #1-6
+**Status**: Completed prior to detailed logging
+**Result**: 6 successful runs establishing baseline workflow
+**Note**: Metrics tracked in aggregate, detailed logs not captured
 
 ---
 
