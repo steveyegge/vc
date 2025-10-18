@@ -300,8 +300,16 @@ func buildClaudeCodeCommand(cfg AgentConfig, prompt string) *exec.Cmd {
 
 // buildAmpCommand constructs the Sourcegraph amp CLI command
 func buildAmpCommand(cfg AgentConfig, prompt string) *exec.Cmd {
+	args := []string{}
+
+	// When running in a sandbox, bypass permission checks for autonomous operation (vc-117)
+	// This is safe because sandboxes are isolated environments
+	if cfg.Sandbox != nil {
+		args = append(args, "--dangerously-allow-all")
+	}
+
 	// amp requires --execute for single-shot execution mode
-	args := []string{"--execute", prompt}
+	args = append(args, "--execute", prompt)
 	if cfg.StreamJSON {
 		args = append(args, "--stream-json")
 	}
