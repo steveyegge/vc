@@ -8,7 +8,7 @@ import (
 	"github.com/steveyegge/vc/internal/types"
 )
 
-// TestBuildClaudeCodeCommand_WithoutSandbox verifies normal operation without sandbox
+// TestBuildClaudeCodeCommand_WithoutSandbox verifies autonomous operation without sandbox
 func TestBuildClaudeCodeCommand_WithoutSandbox(t *testing.T) {
 	cfg := AgentConfig{
 		Type:       AgentTypeClaudeCode,
@@ -26,9 +26,9 @@ func TestBuildClaudeCodeCommand_WithoutSandbox(t *testing.T) {
 		t.Fatal("Expected at least one argument (command name)")
 	}
 
-	// Should have command name and prompt only (no permission flags)
-	if len(cmd.Args) != 2 {
-		t.Errorf("Expected 2 args [command, prompt], got %d: %v", len(cmd.Args), cmd.Args)
+	// Should have command name, permission flag, and prompt (vc-117: always bypass for autonomous operation)
+	if len(cmd.Args) != 3 {
+		t.Errorf("Expected 3 args [command, flag, prompt], got %d: %v", len(cmd.Args), cmd.Args)
 	}
 
 	// Check the prompt is the last argument
@@ -36,11 +36,16 @@ func TestBuildClaudeCodeCommand_WithoutSandbox(t *testing.T) {
 		t.Errorf("Expected last arg to be prompt '%s', got '%s'", prompt, cmd.Args[len(cmd.Args)-1])
 	}
 
-	// Verify no permission flags present
+	// Verify permission bypass flag is always present (vc-117)
+	hasPermissionFlag := false
 	for _, arg := range cmd.Args {
 		if arg == "--dangerously-skip-permissions" {
-			t.Error("Did not expect --dangerously-skip-permissions flag without sandbox")
+			hasPermissionFlag = true
+			break
 		}
+	}
+	if !hasPermissionFlag {
+		t.Error("Expected --dangerously-skip-permissions flag for autonomous operation")
 	}
 }
 
@@ -85,7 +90,7 @@ func TestBuildClaudeCodeCommand_WithSandbox(t *testing.T) {
 	}
 }
 
-// TestBuildAmpCommand verifies amp command building (existing behavior)
+// TestBuildAmpCommand verifies amp command building with autonomous operation flags (vc-117)
 func TestBuildAmpCommand(t *testing.T) {
 	cfg := AgentConfig{
 		Type:       AgentTypeAmp,
@@ -99,19 +104,24 @@ func TestBuildAmpCommand(t *testing.T) {
 	cmd := buildAmpCommand(cfg, prompt)
 
 	// Verify command has correct args
-	// Should have: [command_path, --execute, prompt, --stream-json]
-	if len(cmd.Args) != 4 {
-		t.Errorf("Expected 4 args, got %d: %v", len(cmd.Args), cmd.Args)
+	// Should have: [command_path, --dangerously-allow-all, --execute, prompt, --stream-json]
+	if len(cmd.Args) != 5 {
+		t.Errorf("Expected 5 args, got %d: %v", len(cmd.Args), cmd.Args)
+	}
+
+	// Verify --dangerously-allow-all flag (vc-117: always bypass for autonomous operation)
+	if len(cmd.Args) < 2 || cmd.Args[1] != "--dangerously-allow-all" {
+		t.Error("Expected --dangerously-allow-all flag as first flag")
 	}
 
 	// Verify --execute flag
-	if len(cmd.Args) < 2 || cmd.Args[1] != "--execute" {
-		t.Error("Expected --execute flag as second argument")
+	if len(cmd.Args) < 3 || cmd.Args[2] != "--execute" {
+		t.Error("Expected --execute flag")
 	}
 
 	// Verify prompt
-	if len(cmd.Args) < 3 || cmd.Args[2] != prompt {
-		t.Errorf("Expected prompt '%s' as third argument, got '%s'", prompt, cmd.Args[2])
+	if len(cmd.Args) < 4 || cmd.Args[3] != prompt {
+		t.Errorf("Expected prompt '%s', got '%s'", prompt, cmd.Args[3])
 	}
 
 	// Verify --stream-json flag

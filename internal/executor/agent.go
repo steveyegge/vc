@@ -286,11 +286,13 @@ func (a *Agent) parseAndStoreEvents(line string) {
 func buildClaudeCodeCommand(cfg AgentConfig, prompt string) *exec.Cmd {
 	args := []string{}
 
-	// When running in a sandbox, bypass permission checks for autonomous operation (vc-114)
-	// This is safe because sandboxes are isolated environments
-	if cfg.Sandbox != nil {
-		args = append(args, "--dangerously-skip-permissions")
-	}
+	// Always bypass permission checks for autonomous agent operation (vc-117)
+	// This is required for VC to operate autonomously without human intervention
+	// Safe because:
+	// 1. When sandboxed: Isolated environment with no risk to main codebase
+	// 2. When not sandboxed: VC is designed to work autonomously on its own codebase
+	//    and the results go through quality gates before being committed
+	args = append(args, "--dangerously-skip-permissions")
 
 	// Claude Code uses the message directly
 	args = append(args, prompt)
@@ -302,11 +304,13 @@ func buildClaudeCodeCommand(cfg AgentConfig, prompt string) *exec.Cmd {
 func buildAmpCommand(cfg AgentConfig, prompt string) *exec.Cmd {
 	args := []string{}
 
-	// When running in a sandbox, bypass permission checks for autonomous operation (vc-117)
-	// This is safe because sandboxes are isolated environments
-	if cfg.Sandbox != nil {
-		args = append(args, "--dangerously-allow-all")
-	}
+	// Always bypass permission checks for autonomous agent operation (vc-117)
+	// This is required for VC to operate autonomously without human intervention
+	// Safe because:
+	// 1. When sandboxed: Isolated environment with no risk to main codebase
+	// 2. When not sandboxed: VC is designed to work autonomously on its own codebase
+	//    and the results go through quality gates before being committed
+	args = append(args, "--dangerously-allow-all")
 
 	// amp requires --execute for single-shot execution mode
 	args = append(args, "--execute", prompt)
