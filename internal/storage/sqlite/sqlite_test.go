@@ -331,6 +331,108 @@ func TestNewWithCorruptDatabase(t *testing.T) {
 	}
 }
 
+// TestForeignKeysEnabled verifies that foreign keys are enabled (vc-116)
+func TestForeignKeysEnabled(t *testing.T) {
+	// Create temp database
+	tmpfile, err := os.CreateTemp("", "test-*.db")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpfile.Name())
+	tmpfile.Close()
+
+	// Create new storage (which should enable foreign keys)
+	storage, err := New(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+
+	// Check that foreign keys are enabled
+	var fkEnabled int
+	err = storage.db.QueryRow("PRAGMA foreign_keys").Scan(&fkEnabled)
+	if err != nil {
+		t.Fatalf("Failed to check foreign keys: %v", err)
+	}
+
+	if fkEnabled != 1 {
+		t.Errorf("Expected foreign keys to be enabled (1), got %d", fkEnabled)
+	}
+}
+
+// TestCascadeDeleteWorks verifies ON DELETE CASCADE works (vc-116)
+func TestCascadeDeleteWorks(t *testing.T) {
+	// Create temp database
+	tmpfile, err := os.CreateTemp("", "test-*.db")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpfile.Name())
+	tmpfile.Close()
+
+	// Create new storage
+	storage, err := New(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+
+	// Insert a parent issue
+	_, err = storage.db.Exec(`
+		INSERT INTO issues (id, title, status, priority, issue_type, created_at, updated_at)
+		VALUES ('vc-100', 'Parent Issue', 'open', 1, 'task', datetime('now'), datetime('now'))
+	`)
+	if err != nil {
+		t.Fatalf("Failed to insert parent issue: %v", err)
+	}
+
+	// Insert child records that should cascade delete
+	_, err = storage.db.Exec(`
+		INSERT INTO events (issue_id, event_type, actor, comment)
+		VALUES ('vc-100', 'created', 'test', 'test event')
+	`)
+	if err != nil {
+		t.Fatalf("Failed to insert event: %v", err)
+	}
+
+	_, err = storage.db.Exec(`
+		INSERT INTO labels (issue_id, label)
+		VALUES ('vc-100', 'test-label')
+	`)
+	if err != nil {
+		t.Fatalf("Failed to insert label: %v", err)
+	}
+
+	// Verify records exist
+	var eventCount, labelCount int
+	storage.db.QueryRow("SELECT COUNT(*) FROM events WHERE issue_id = 'vc-100'").Scan(&eventCount)
+	storage.db.QueryRow("SELECT COUNT(*) FROM labels WHERE issue_id = 'vc-100'").Scan(&labelCount)
+
+	if eventCount != 1 {
+		t.Errorf("Expected 1 event, got %d", eventCount)
+	}
+	if labelCount != 1 {
+		t.Errorf("Expected 1 label, got %d", labelCount)
+	}
+
+	// Delete the parent issue
+	_, err = storage.db.Exec("DELETE FROM issues WHERE id = 'vc-100'")
+	if err != nil {
+		t.Fatalf("Failed to delete issue: %v", err)
+	}
+
+	// Verify child records were cascade deleted
+	storage.db.QueryRow("SELECT COUNT(*) FROM events WHERE issue_id = 'vc-100'").Scan(&eventCount)
+	storage.db.QueryRow("SELECT COUNT(*) FROM labels WHERE issue_id = 'vc-100'").Scan(&labelCount)
+
+	if eventCount != 0 {
+		t.Errorf("Expected events to be cascade deleted, but found %d", eventCount)
+	}
+	if labelCount != 0 {
+		t.Errorf("Expected labels to be cascade deleted, but found %d", labelCount)
+	}
+}
+
 // contains checks if a string contains a substring
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
