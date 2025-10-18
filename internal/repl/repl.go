@@ -25,6 +25,7 @@ type REPL struct {
 	pendingPlans   map[string]*types.MissionPlan // Mission plans awaiting approval
 	plansMu        sync.RWMutex                   // Protects pendingPlans map
 	stopHeartbeat  chan struct{}                  // Signal to stop heartbeat goroutine
+	stopCleanup    chan struct{}                  // Signal to stop cleanup goroutine
 	instanceID     string                         // Executor instance ID for this REPL
 }
 
@@ -50,6 +51,7 @@ func New(cfg *Config) (*REPL, error) {
 		actor:         actor,
 		pendingPlans:  make(map[string]*types.MissionPlan),
 		stopHeartbeat: make(chan struct{}),
+		stopCleanup:   make(chan struct{}),
 	}
 
 	return r, nil
@@ -68,6 +70,12 @@ func (r *REPL) Run(ctx context.Context) error {
 	go r.heartbeatLoop(ctx)
 	defer func() {
 		close(r.stopHeartbeat) // Signal heartbeat to stop
+	}()
+
+	// Start cleanup goroutine to clean up stale executor instances
+	go r.cleanupLoop(ctx)
+	defer func() {
+		close(r.stopCleanup) // Signal cleanup to stop
 	}()
 
 	// Create readline instance
@@ -205,6 +213,31 @@ func (r *REPL) heartbeatLoop(ctx context.Context) {
 		case <-ticker.C:
 			if err := r.store.UpdateHeartbeat(ctx, r.instanceID); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to update heartbeat: %v\n", err)
+			}
+		}
+	}
+}
+
+// cleanupLoop periodically cleans up stale executor instances
+// Runs every 5 minutes and releases issues claimed by dead executors
+func (r *REPL) cleanupLoop(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	staleThreshold := int((5 * time.Minute).Seconds()) // 5 minutes = 300 seconds
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-r.stopCleanup:
+			return
+		case <-ticker.C:
+			cleaned, err := r.store.CleanupStaleInstances(ctx, staleThreshold)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to cleanup stale instances: %v\n", err)
+			} else if cleaned > 0 {
+				fmt.Printf("Cleanup: Cleaned up %d stale executor instance(s)\n", cleaned)
 			}
 		}
 	}
