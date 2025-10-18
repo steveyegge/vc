@@ -28,6 +28,7 @@ Thumbs.db
 *.db
 *.db-shm
 *.db-wal
+.sandboxes/
 
 # Logs
 *.log
