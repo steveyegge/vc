@@ -21,8 +21,9 @@ Shows events from the agent_events table including:
 - Agent spawns and executions
 - File modifications and git operations
 - Test runs and build output
+- Context usage monitoring
 - Errors and warnings
-- Watchdog alerts
+- Watchdog alerts and interventions
 
 Use filters to narrow down events by issue, type, or severity.
 
@@ -31,6 +32,7 @@ Examples:
   vc activity -n 50                        # Show last 50 events
   vc activity --issue vc-123               # Show events for specific issue
   vc activity --type error                 # Show only error events
+  vc activity --type context_usage         # Show context usage events
   vc activity --severity warning           # Show warnings and above
   vc activity --type git_operation -n 10   # Show last 10 git operations`,
 	Run: func(cmd *cobra.Command, args []string) {
