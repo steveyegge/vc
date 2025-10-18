@@ -6,10 +6,28 @@
 
 ### Environment Setup
 
-- **GCE VM (claude-code-dev-vm)**: Beads is at `/workspace/beads/bd`
-- **Local development**: Beads is typically at `~/src/beads/bd`
+**Installing bd:**
 
-Ensure `bd` is in your PATH or use the full path to your beads installation.
+The `bd` command should be installed via Homebrew for the best experience:
+
+```bash
+# One-time setup: tap the local beads repository
+brew tap steveyegge/beads ~/src/homebrew-beads
+
+# Install bd (installs to /opt/homebrew/bin/bd)
+brew install bd
+
+# Verify installation
+bd version
+```
+
+This ensures you're always using the latest stable version from the homebrew tap.
+
+**Alternative environments:**
+- **GCE VM (claude-code-dev-vm)**: Beads is at `/workspace/beads/bd`
+- **Development from source**: Build from `~/src/beads/` with `go build ./cmd/bd`
+
+**For Claude Code sessions:** Simply use `bd` commands - the binary will be found automatically in `/opt/homebrew/bin/`.
 
 **AI Supervision Requirements:**
 - **`ANTHROPIC_API_KEY`**: Required for AI supervision (assessment and analysis)

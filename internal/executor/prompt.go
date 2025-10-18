@@ -209,7 +209,119 @@ Work in the sandbox at: {{.Sandbox.Path}}
 Continue from where the previous attempt left off.
 {{else -}}
 Begin implementation now.
-{{end}}`
+{{end}}
+
+---
+
+# STRUCTURED OUTPUT PROTOCOL
+
+**CRITICAL**: At the end of your execution, you MUST output a structured status report using this format:
+
+## Output Format
+
+Place your report between these markers:
+
+=== AGENT REPORT ===
+{
+  "status": "completed|blocked|partial|decomposed",
+  "summary": "Brief description of what happened"
+}
+=== END AGENT REPORT ===
+
+## Status Types
+
+### 1. COMPLETED - Task fully done
+` + "```" + `json
+{
+  "status": "completed",
+  "summary": "Implemented feature X, added tests, all acceptance criteria met",
+  "tests_added": true,
+  "files_modified": ["src/feature.go", "src/feature_test.go"]
+}
+` + "```" + `
+
+### 2. BLOCKED - Cannot proceed due to technical blocker
+` + "```" + `json
+{
+  "status": "blocked",
+  "summary": "Attempted to implement API integration but hit blockers",
+  "blockers": [
+    "Missing API key - ANTHROPIC_API_KEY not set in environment",
+    "Service endpoint unclear - documentation doesn't specify production URL"
+  ]
+}
+` + "```" + `
+
+### 3. PARTIAL - Some work done, specific items remain
+` + "```" + `json
+{
+  "status": "partial",
+  "summary": "Implemented core functionality, tests pending",
+  "completed": [
+    "Created data structures and validation logic",
+    "Added database migration",
+    "Implemented basic CRUD operations"
+  ],
+  "remaining": [
+    "Add unit tests for edge cases",
+    "Add integration tests with database",
+    "Update API documentation"
+  ]
+}
+` + "```" + `
+
+### 4. DECOMPOSED - Task too large, broke into smaller pieces
+` + "```" + `json
+{
+  "status": "decomposed",
+  "reasoning": "Task scope too large - implementing full user management requires 6 distinct subtasks",
+  "summary": "Analyzed requirements and created breakdown",
+  "epic": {
+    "title": "User Management System",
+    "description": "Complete user authentication and authorization system"
+  },
+  "children": [
+    {
+      "title": "Implement User data model",
+      "description": "Create User struct with validation, database schema",
+      "type": "task",
+      "priority": "P1"
+    },
+    {
+      "title": "Add authentication endpoints",
+      "description": "Login, logout, token validation APIs",
+      "type": "task",
+      "priority": "P1"
+    },
+    {
+      "title": "Implement authorization middleware",
+      "description": "Role-based access control for API endpoints",
+      "type": "task",
+      "priority": "P1"
+    }
+  ]
+}
+` + "```" + `
+
+## When to Use Each Status
+
+- **completed**: All acceptance criteria met, task is 100% done
+- **blocked**: Hit a technical blocker (missing dependency, API key, external service issue)
+- **partial**: Made significant progress but specific work remains (be DETAILED about what's left)
+- **decomposed**: Task is too large/complex - you're breaking it down autonomously into an epic with children
+
+## Rules
+
+1. **ALWAYS output a report** - The system parses this to determine next steps
+2. **Use valid JSON** - Escape quotes in strings, no trailing commas
+3. **Be SPECIFIC** - Don't say "add tests", say "add unit tests for UserAuth.validateToken edge cases"
+4. **Choose the right status** - Don't use "completed" if work remains
+5. **For decomposed**: Create 3-8 focused children, each should be completable in one execution
+
+The system will automatically:
+- Create follow-on issues from your lists (blocked, partial, decomposed)
+- Convert original task to epic if you use "decomposed"
+- Close the issue if you report "completed" and tests pass`
 
 // NewPromptBuilder creates a new PromptBuilder with the default template
 func NewPromptBuilder() (*PromptBuilder, error) {

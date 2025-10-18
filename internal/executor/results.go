@@ -171,7 +171,67 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 	fmt.Printf("Exit Code: %d\n", agentResult.ExitCode)
 	fmt.Printf("Duration: %v\n", agentResult.Duration)
 
-	// Step 2: AI Analysis (if supervisor available)
+	// Step 1.5: Try to parse structured agent report (vc-257)
+	// This happens BEFORE AI analysis - if agent provides structured output, use it
+	fullOutput := strings.Join(agentResult.Output, "\n")
+	agentReport, hasReport := ParseAgentReport(fullOutput)
+
+	if hasReport {
+		fmt.Printf("\n✓ Found structured agent report (status: %s)\n", agentReport.Status)
+
+		// Handle the structured report
+		reportHandler := NewAgentReportHandler(rp.store, rp.actor)
+		completed, err := reportHandler.HandleReport(ctx, issue, agentReport)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to handle agent report: %v (falling back to AI analysis)\n", err)
+			// Don't fail - fall through to AI analysis
+		} else {
+			// Structured report was handled successfully
+			result.Completed = completed
+
+			// For certain statuses, we can skip quality gates and AI analysis
+			switch agentReport.Status {
+			case AgentStatusBlocked:
+				// Issue is blocked - no need for gates/analysis
+				fmt.Printf("Issue blocked by agent - skipping quality gates\n")
+
+				// Release the execution state
+				if err := rp.store.ReleaseIssue(ctx, issue.ID); err != nil {
+					return nil, fmt.Errorf("failed to release blocked issue: %w", err)
+				}
+
+				result.Summary = fmt.Sprintf("Agent blocked: %s", agentReport.Summary)
+				result.GatesPassed = false
+				return result, nil
+
+			case AgentStatusDecomposed:
+				// Task was decomposed - epic created, children ready
+				fmt.Printf("Task decomposed into epic - executor will pick up children\n")
+
+				// Release the execution state
+				if err := rp.store.ReleaseIssue(ctx, issue.ID); err != nil {
+					return nil, fmt.Errorf("failed to release decomposed issue: %w", err)
+				}
+
+				result.Summary = fmt.Sprintf("Task decomposed: %s", agentReport.Summary)
+				result.Completed = false // Epic stays open
+				return result, nil
+
+			case AgentStatusPartial:
+				// Partial completion - follow-on issues created
+				// Still run quality gates on what was completed
+				fmt.Printf("Partial completion - continuing to quality gates\n")
+
+			case AgentStatusCompleted:
+				// Full completion - proceed to quality gates
+				fmt.Printf("Agent reports completion - continuing to quality gates\n")
+			}
+		}
+	} else {
+		fmt.Printf("\nℹ No structured agent report found - will use AI analysis\n")
+	}
+
+	// Step 2: AI Analysis (if supervisor available and no structured report handled)
 	var analysis *ai.Analysis
 	if rp.supervisor != nil {
 		// Update execution state to analyzing
