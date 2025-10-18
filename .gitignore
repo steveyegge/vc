@@ -32,3 +32,4 @@ Thumbs.db
 # Logs
 *.log
 logs/
+.beads/daemon.pid
