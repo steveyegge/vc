@@ -2,6 +2,7 @@ package repl
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -84,6 +85,18 @@ func (m *mockStorage) GetIssue(ctx context.Context, id string) (*types.Issue, er
 
 func (m *mockStorage) GetDependencies(ctx context.Context, issueID string) ([]*types.Issue, error) {
 	return m.dependencies[issueID], nil
+}
+
+func (m *mockStorage) GetDependencyRecords(ctx context.Context, issueID string) ([]*types.Dependency, error) {
+	return nil, nil
+}
+
+func (m *mockStorage) GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error) {
+	return nil, nil
+}
+
+func (m *mockStorage) RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error {
+	return nil
 }
 
 // Stub implementations for other storage interface methods
@@ -1135,6 +1148,56 @@ func TestExecuteTool(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "invalid tool input") {
 			t.Errorf("Expected 'invalid tool input' error, got: %v", err)
+		}
+	})
+
+	t.Run("handles JSON byte input from Anthropic SDK", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		// Simulate what Anthropic SDK sends: raw JSON bytes
+		jsonBytes := []byte(`{"limit":5}`)
+
+		// This should work - the SDK sends []byte, not map[string]interface{}
+		_, err := handler.executeTool(ctx, "get_ready_work", jsonBytes)
+		if err != nil {
+			t.Fatalf("executeTool should handle []byte input, got error: %v", err)
+		}
+	})
+
+	t.Run("handles json.RawMessage input", func(t *testing.T) {
+		mock := &mockStorage{}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		// Simulate json.RawMessage input
+		jsonRaw := json.RawMessage(`{"title":"Test Issue"}`)
+
+		_, err := handler.executeTool(ctx, "create_issue", jsonRaw)
+		if err != nil {
+			t.Fatalf("executeTool should handle json.RawMessage input, got error: %v", err)
+		}
+	})
+
+	t.Run("handles empty JSON object as bytes", func(t *testing.T) {
+		mock := &mockStorage{
+			statistics: &types.Statistics{
+				TotalIssues: 5,
+			},
+		}
+		handler := &ConversationHandler{storage: mock}
+		ctx := context.Background()
+
+		// Empty JSON object as bytes (common for tools with no parameters)
+		jsonBytes := []byte(`{}`)
+
+		result, err := handler.executeTool(ctx, "get_status", jsonBytes)
+		if err != nil {
+			t.Fatalf("executeTool should handle empty JSON object, got error: %v", err)
+		}
+		if !strings.Contains(result, "Project Status") {
+			t.Errorf("Expected status output, got: %s", result)
 		}
 	})
 }

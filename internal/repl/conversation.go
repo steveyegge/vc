@@ -405,8 +405,12 @@ func (c *ConversationHandler) SendMessage(ctx context.Context, userMessage strin
 					// Execute the tool
 					result, err := c.executeTool(ctx, toolUse.Name, toolUse.Input)
 					if err != nil {
+						// Log detailed error information for debugging
+						fmt.Fprintf(os.Stderr, "REPL tool execution error: tool=%s input=%v error=%v\n", toolUse.Name, toolUse.Input, err)
 						toolResults = append(toolResults, anthropic.NewToolResultBlock(toolUse.ID, fmt.Sprintf("Error: %v", err), true))
 					} else {
+						// Log successful tool execution for debugging
+						fmt.Fprintf(os.Stderr, "REPL tool execution success: tool=%s\n", toolUse.Name)
 						toolResults = append(toolResults, anthropic.NewToolResultBlock(toolUse.ID, result, false))
 					}
 				}
@@ -428,9 +432,25 @@ func (c *ConversationHandler) SendMessage(ctx context.Context, userMessage strin
 // This dispatcher routes tool calls from the AI to the appropriate handler function.
 // Each tool has typed validation and error handling.
 func (c *ConversationHandler) executeTool(ctx context.Context, name string, input interface{}) (string, error) {
-	inputMap, ok := input.(map[string]interface{})
-	if !ok {
-		return "", fmt.Errorf("invalid tool input format")
+	var inputMap map[string]interface{}
+
+	// The Anthropic SDK may provide input as different types:
+	// - map[string]interface{} (already decoded)
+	// - []byte (raw JSON)
+	// - json.RawMessage (JSON bytes)
+	switch v := input.(type) {
+	case map[string]interface{}:
+		inputMap = v
+	case []byte:
+		if err := json.Unmarshal(v, &inputMap); err != nil {
+			return "", fmt.Errorf("failed to unmarshal tool input from bytes: %w", err)
+		}
+	case json.RawMessage:
+		if err := json.Unmarshal(v, &inputMap); err != nil {
+			return "", fmt.Errorf("failed to unmarshal tool input from RawMessage: %w", err)
+		}
+	default:
+		return "", fmt.Errorf("invalid tool input format: expected map[string]interface{}, []byte, or json.RawMessage, got %T", input)
 	}
 
 	switch name {
