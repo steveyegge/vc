@@ -93,6 +93,14 @@ func (r *Runner) RunAll(ctx context.Context) ([]*Result, bool) {
 	}
 
 	for _, gate := range gates {
+		// Check if context is already cancelled before starting gate (vc-119)
+		if ctx.Err() != nil {
+			// Context cancelled - stop running gates and return what we have
+			fmt.Printf("Quality gates cancelled: %v\n", ctx.Err())
+			return results, false
+		}
+
+		fmt.Printf("Running %s gate...\n", gate.gateType)
 		result := gate.runFunc(ctx)
 		results = append(results, result)
 
@@ -101,6 +109,8 @@ func (r *Runner) RunAll(ctx context.Context) ([]*Result, bool) {
 			// Continue running remaining gates even if one fails
 			// This gives comprehensive feedback about all quality issues
 		}
+
+		fmt.Printf("Completed %s gate (passed=%v)\n", gate.gateType, result.Passed)
 	}
 
 	return results, allPassed
@@ -115,6 +125,16 @@ func (r *Runner) runTestGate(ctx context.Context) *Result {
 
 	output, err := cmd.CombinedOutput()
 	result.Output = string(output)
+
+	// Check if command was killed due to context cancellation (vc-119)
+	if ctx.Err() != nil {
+		result.Passed = false
+		result.Error = fmt.Errorf("go test cancelled: %w", ctx.Err())
+		if result.Output == "" {
+			result.Output = "Test execution cancelled due to timeout"
+		}
+		return result
+	}
 
 	if err != nil {
 		result.Passed = false
@@ -144,6 +164,16 @@ func (r *Runner) runLintGate(ctx context.Context) *Result {
 	output, err := cmd.CombinedOutput()
 	result.Output = string(output)
 
+	// Check if command was killed due to context cancellation (vc-119)
+	if ctx.Err() != nil {
+		result.Passed = false
+		result.Error = fmt.Errorf("golangci-lint cancelled: %w", ctx.Err())
+		if result.Output == "" {
+			result.Output = "Lint execution cancelled due to timeout"
+		}
+		return result
+	}
+
 	if err != nil {
 		result.Passed = false
 		result.Error = fmt.Errorf("golangci-lint failed: %w", err)
@@ -163,6 +193,16 @@ func (r *Runner) runBuildGate(ctx context.Context) *Result {
 
 	output, err := cmd.CombinedOutput()
 	result.Output = string(output)
+
+	// Check if command was killed due to context cancellation (vc-119)
+	if ctx.Err() != nil {
+		result.Passed = false
+		result.Error = fmt.Errorf("go build cancelled: %w", ctx.Err())
+		if result.Output == "" {
+			result.Output = "Build execution cancelled due to timeout"
+		}
+		return result
+	}
 
 	if err != nil {
 		result.Passed = false
