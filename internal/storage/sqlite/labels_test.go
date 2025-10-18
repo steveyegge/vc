@@ -257,3 +257,129 @@ func TestLabelOperationsAuditTrail(t *testing.T) {
 		t.Errorf("Expected 'label-2', got %s", labels[0])
 	}
 }
+
+// TestSearchIssuesWithLabels tests that SearchIssues correctly filters by labels (vc-118)
+// This test verifies the fix for the issue_labels → labels table name mismatch
+func TestSearchIssuesWithLabels(t *testing.T) {
+	store := setupTestDB(t)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Create test issues
+	issue1 := &types.Issue{
+		Title:       "Issue with label A",
+		Description: "Has label A",
+		IssueType:   types.TypeTask,
+		Status:      types.StatusOpen,
+		Priority:    1,
+	}
+	err := store.CreateIssue(ctx, issue1, "test-actor")
+	if err != nil {
+		t.Fatalf("Failed to create issue1: %v", err)
+	}
+
+	issue2 := &types.Issue{
+		Title:       "Issue with label B",
+		Description: "Has label B",
+		IssueType:   types.TypeTask,
+		Status:      types.StatusOpen,
+		Priority:    1,
+	}
+	err = store.CreateIssue(ctx, issue2, "test-actor")
+	if err != nil {
+		t.Fatalf("Failed to create issue2: %v", err)
+	}
+
+	issue3 := &types.Issue{
+		Title:       "Issue with both labels",
+		Description: "Has labels A and B",
+		IssueType:   types.TypeTask,
+		Status:      types.StatusOpen,
+		Priority:    1,
+	}
+	err = store.CreateIssue(ctx, issue3, "test-actor")
+	if err != nil {
+		t.Fatalf("Failed to create issue3: %v", err)
+	}
+
+	// Add labels
+	err = store.AddLabel(ctx, issue1.ID, "label-a", "test-actor")
+	if err != nil {
+		t.Fatalf("Failed to add label-a to issue1: %v", err)
+	}
+
+	err = store.AddLabel(ctx, issue2.ID, "label-b", "test-actor")
+	if err != nil {
+		t.Fatalf("Failed to add label-b to issue2: %v", err)
+	}
+
+	err = store.AddLabel(ctx, issue3.ID, "label-a", "test-actor")
+	if err != nil {
+		t.Fatalf("Failed to add label-a to issue3: %v", err)
+	}
+
+	err = store.AddLabel(ctx, issue3.ID, "label-b", "test-actor")
+	if err != nil {
+		t.Fatalf("Failed to add label-b to issue3: %v", err)
+	}
+
+	// Test 1: Search for issues with label-a
+	openStatus := types.StatusOpen
+	filter := types.IssueFilter{
+		Status: &openStatus,
+		Labels: []string{"label-a"},
+	}
+
+	results, err := store.SearchIssues(ctx, "", filter)
+	if err != nil {
+		t.Fatalf("SearchIssues with label-a failed: %v", err)
+	}
+
+	if len(results) != 2 {
+		t.Errorf("Expected 2 issues with label-a, got %d", len(results))
+	}
+
+	// Verify we got issue1 and issue3
+	foundIssue1 := false
+	foundIssue3 := false
+	for _, issue := range results {
+		if issue.ID == issue1.ID {
+			foundIssue1 = true
+		}
+		if issue.ID == issue3.ID {
+			foundIssue3 = true
+		}
+	}
+	if !foundIssue1 || !foundIssue3 {
+		t.Errorf("Expected to find issue1 and issue3, found1=%v found3=%v", foundIssue1, foundIssue3)
+	}
+
+	// Test 2: Search for issues with both label-a AND label-b (should only return issue3)
+	filter.Labels = []string{"label-a", "label-b"}
+
+	results, err = store.SearchIssues(ctx, "", filter)
+	if err != nil {
+		t.Fatalf("SearchIssues with label-a AND label-b failed: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Errorf("Expected 1 issue with both labels, got %d", len(results))
+	}
+
+	if len(results) > 0 && results[0].ID != issue3.ID {
+		t.Errorf("Expected to find issue3, got %s", results[0].ID)
+	}
+
+	// Test 3: Search for issues with nonexistent label
+	filter.Labels = []string{"nonexistent-label"}
+
+	results, err = store.SearchIssues(ctx, "", filter)
+	if err != nil {
+		t.Fatalf("SearchIssues with nonexistent label failed: %v", err)
+	}
+
+	if len(results) != 0 {
+		t.Errorf("Expected 0 issues with nonexistent label, got %d", len(results))
+	}
+}

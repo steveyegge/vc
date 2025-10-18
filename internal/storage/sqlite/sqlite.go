@@ -430,8 +430,8 @@ func (s *SQLiteStorage) SearchIssues(ctx context.Context, query string, filter t
 		for _, label := range filter.Labels {
 			whereClauses = append(whereClauses, `
 				EXISTS (
-					SELECT 1 FROM issue_labels il
-					WHERE il.issue_id = issues.id AND il.label = ?
+					SELECT 1 FROM labels l
+					WHERE l.issue_id = issues.id AND l.label = ?
 				)`)
 			args = append(args, label)
 		}
