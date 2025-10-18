@@ -243,6 +243,29 @@ Only after:
 
 ## Common Patterns
 
+### Issue Status Convention: `in_progress` is ONLY for VC Workers
+
+**CRITICAL RULE**: The `in_progress` status is **exclusively** for active VC worker/agent execution. Claude Code sessions and humans should **NEVER** use `in_progress`.
+
+**Why this matters**:
+- Makes orphan detection trivial: any `in_progress` with stale heartbeat = orphaned worker
+- Clear separation: `in_progress` = automated VC work, `open` = everything else
+- Prevents accidental orphaning when Claude Code sessions end
+
+**For human/Claude Code work**:
+```bash
+# Leave as 'open' and update notes to track progress
+bd update vc-X --notes "Working on this in Claude Code"
+bd update vc-X --notes "Progress: fixed bug, testing now"
+```
+
+**For VC autonomous work**:
+```bash
+# VC automatically sets in_progress when claiming work
+# open → in_progress (VC claims) → closed (VC completes)
+# or back to open if orphaned/failed
+```
+
 ### VC Discovers Missing Feature
 
 ```

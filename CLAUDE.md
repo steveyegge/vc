@@ -44,8 +44,8 @@ bd ready
 # 2. View issue details
 bd show vc-X
 
-# 3. Start working on it
-bd update vc-X --status in_progress
+# 3. Start working on it (leave as 'open', add notes)
+bd update vc-X --notes "Starting work in Claude Code session"
 ```
 
 **Important**: Use the `bd` command from your beads installation - the VC binary doesn't exist yet (that's what we're building!).
@@ -104,12 +104,15 @@ bd show vc-X
 
 ### Claiming Work
 
-```bash
-# Mark as in progress
-bd update vc-X --status in_progress --actor "your-name"
+**IMPORTANT**: The `in_progress` status is **ONLY** for active VC worker/agent execution. Claude Code sessions and humans should **NOT** use `in_progress`.
 
-# Add notes as you work
-bd update vc-X --notes "Working on executor loop..."
+```bash
+# For Claude Code / Human work: Leave as 'open' and update notes
+bd update vc-X --notes "Working on this in Claude Code session"
+bd update vc-X --notes "Progress: implemented X, testing Y"
+
+# ONLY VC workers set in_progress (automatic when VC claims work)
+# This makes orphan detection trivial: stale in_progress = orphaned worker
 ```
 
 ### Creating Issues
