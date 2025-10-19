@@ -41,9 +41,6 @@ func NewAIDeduplicator(supervisor *ai.Supervisor, store storage.Storage, config 
 }
 
 // CheckDuplicate checks if a candidate issue is a duplicate of any recent open issues
-//
-// This is a stub implementation that will be completed in the next issue.
-// For now, it returns a non-duplicate decision to maintain fail-safe behavior.
 func (d *AIDeduplicator) CheckDuplicate(ctx context.Context, candidate *types.Issue) (*DuplicateDecision, error) {
 	// Validate configuration
 	if err := d.config.Validate(); err != nil {
@@ -70,30 +67,73 @@ func (d *AIDeduplicator) CheckDuplicate(ctx context.Context, candidate *types.Is
 		}, nil
 	}
 
-	// TODO: Implement actual AI-powered duplicate detection
-	// This will be completed in the next issue (after vc-146)
-	//
-	// Steps:
-	// 1. Query recent open issues from storage (within lookback window)
-	// 2. Filter to MaxCandidates most relevant issues
-	// 3. Use AI supervisor to compare candidate against each existing issue
-	// 4. Return decision with highest confidence match
-	//
-	// For now, return non-duplicate decision (fail-safe behavior)
-	log.Printf("[DEDUP] CheckDuplicate stub: would check '%s' against recent issues", candidate.Title)
+	// Query recent open issues
+	// Note: GetReadyWork returns open issues with no blockers
+	// For deduplication, we actually want ALL open issues, but this is a reasonable approximation
+	filter := types.WorkFilter{
+		Status: types.StatusOpen,
+		Limit:  d.config.MaxCandidates,
+	}
+
+	existingIssues, err := d.store.GetReadyWork(ctx, filter)
+	if err != nil {
+		// Fail-safe: if we can't query existing issues, assume not duplicate
+		log.Printf("[DEDUP] Failed to query existing issues: %v (assuming not duplicate)", err)
+		return &DuplicateDecision{
+			IsDuplicate:   false,
+			Confidence:    0.0,
+			Reasoning:     fmt.Sprintf("Failed to query existing issues: %v", err),
+			ComparedCount: 0,
+		}, nil
+	}
+
+	// Compare against each existing issue
+	var bestMatch *DuplicateDecision
+	for _, existing := range existingIssues {
+		// Skip comparing against self
+		if existing.ID == candidate.ID {
+			continue
+		}
+
+		// Use AI to check if duplicate
+		resp, err := d.supervisor.CheckIssueDuplicate(ctx, candidate, existing)
+		if err != nil {
+			// Log error but continue checking other issues (fail-safe)
+			log.Printf("[DEDUP] AI check failed for %s vs %s: %v", candidate.ID, existing.ID, err)
+			continue
+		}
+
+		// Track best match
+		if bestMatch == nil || resp.Confidence > bestMatch.Confidence {
+			bestMatch = &DuplicateDecision{
+				IsDuplicate:   resp.IsDuplicate && resp.Confidence >= d.config.ConfidenceThreshold,
+				DuplicateOf:   existing.ID,
+				Confidence:    resp.Confidence,
+				Reasoning:     resp.Reasoning,
+				ComparedCount: len(existingIssues),
+			}
+		}
+
+		// If we found a high-confidence duplicate, we can stop
+		if resp.IsDuplicate && resp.Confidence >= d.config.ConfidenceThreshold {
+			break
+		}
+	}
+
+	// Return best match or non-duplicate if no matches found
+	if bestMatch != nil {
+		return bestMatch, nil
+	}
 
 	return &DuplicateDecision{
 		IsDuplicate:   false,
 		Confidence:    0.0,
-		Reasoning:     "Stub implementation - actual AI deduplication not yet implemented",
-		ComparedCount: 0,
+		Reasoning:     "No similar issues found",
+		ComparedCount: len(existingIssues),
 	}, nil
 }
 
 // DeduplicateBatch processes multiple issues at once for efficiency
-//
-// This is a stub implementation that will be completed in the next issue.
-// For now, it returns all candidates as unique to maintain fail-safe behavior.
 func (d *AIDeduplicator) DeduplicateBatch(ctx context.Context, candidates []*types.Issue) (*DeduplicationResult, error) {
 	startTime := time.Now()
 
@@ -129,29 +169,85 @@ func (d *AIDeduplicator) DeduplicateBatch(ctx context.Context, candidates []*typ
 		}
 	}
 
-	// TODO: Implement actual batch deduplication
-	// This will be completed in the next issue (after vc-146)
-	//
-	// Steps:
-	// 1. Query recent open issues from storage (within lookback window)
-	// 2. If EnableWithinBatchDedup, also compare candidates against each other
-	// 3. Batch AI API calls for efficiency
-	// 4. Build result with unique issues and duplicate mappings
-	//
-	// For now, return all as unique (fail-safe behavior)
-	log.Printf("[DEDUP] DeduplicateBatch stub: would process %d candidates", len(candidates))
+	// Track results
+	uniqueIssues := []*types.Issue{}
+	duplicatePairs := make(map[int]string)
+	withinBatchDuplicates := make(map[int]int)
+	comparisons := 0
+	aiCalls := 0
+
+	// Process each candidate
+	for i, candidate := range candidates {
+		// First check if it's a duplicate within the batch (if enabled)
+		isWithinBatchDup := false
+		if d.config.EnableWithinBatchDedup {
+			for j := 0; j < i; j++ {
+				// Skip if j is already marked as duplicate
+				if _, isDup := duplicatePairs[j]; isDup {
+					continue
+				}
+				if _, isDup := withinBatchDuplicates[j]; isDup {
+					continue
+				}
+
+				// Compare against earlier candidate
+				resp, err := d.supervisor.CheckIssueDuplicate(ctx, candidate, candidates[j])
+				aiCalls++
+				comparisons++
+
+				if err != nil {
+					log.Printf("[DEDUP] Within-batch check failed for %d vs %d: %v", i, j, err)
+					continue
+				}
+
+				if resp.IsDuplicate && resp.Confidence >= d.config.ConfidenceThreshold {
+					withinBatchDuplicates[i] = j
+					isWithinBatchDup = true
+					log.Printf("[DEDUP] Within-batch duplicate: %s is duplicate of %s (confidence: %.2f)",
+						candidate.ID, candidates[j].ID, resp.Confidence)
+					break
+				}
+			}
+		}
+
+		// If it's a within-batch duplicate, skip further checks
+		if isWithinBatchDup {
+			continue
+		}
+
+		// Check against existing issues in storage
+		decision, err := d.CheckDuplicate(ctx, candidate)
+		if err != nil {
+			// Fail-safe: treat as unique on error
+			log.Printf("[DEDUP] CheckDuplicate failed for %s: %v (treating as unique)", candidate.ID, err)
+			uniqueIssues = append(uniqueIssues, candidate)
+			continue
+		}
+
+		comparisons += decision.ComparedCount
+		// Approximate AI calls (CheckDuplicate may make multiple calls)
+		aiCalls += decision.ComparedCount
+
+		if decision.IsDuplicate {
+			duplicatePairs[i] = decision.DuplicateOf
+			log.Printf("[DEDUP] Duplicate found: %s is duplicate of %s (confidence: %.2f)",
+				candidate.ID, decision.DuplicateOf, decision.Confidence)
+		} else {
+			uniqueIssues = append(uniqueIssues, candidate)
+		}
+	}
 
 	result := &DeduplicationResult{
-		UniqueIssues:          candidates,
-		DuplicatePairs:        make(map[int]string),
-		WithinBatchDuplicates: make(map[int]int),
+		UniqueIssues:          uniqueIssues,
+		DuplicatePairs:        duplicatePairs,
+		WithinBatchDuplicates: withinBatchDuplicates,
 		Stats: DeduplicationStats{
 			TotalCandidates:           len(candidates),
-			UniqueCount:               len(candidates),
-			DuplicateCount:            0,
-			WithinBatchDuplicateCount: 0,
-			ComparisonsMade:           0,
-			AICallsMade:               0,
+			UniqueCount:               len(uniqueIssues),
+			DuplicateCount:            len(duplicatePairs),
+			WithinBatchDuplicateCount: len(withinBatchDuplicates),
+			ComparisonsMade:           comparisons,
+			AICallsMade:               aiCalls,
 			ProcessingTimeMs:          time.Since(startTime).Milliseconds(),
 		},
 	}

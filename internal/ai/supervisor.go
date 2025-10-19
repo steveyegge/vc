@@ -505,6 +505,14 @@ type TestSufficiencyAnalysis struct {
 	Confidence         float64           `json:"confidence"`          // Confidence in the analysis (0.0-1.0)
 }
 
+// DuplicateCheckResponse represents the AI's analysis of whether a candidate issue
+// is a duplicate of an existing issue
+type DuplicateCheckResponse struct {
+	IsDuplicate bool    `json:"is_duplicate"` // Is the candidate a duplicate?
+	Confidence  float64 `json:"confidence"`   // Confidence score (0.0-1.0)
+	Reasoning   string  `json:"reasoning"`    // Explanation of the determination
+}
+
 // AssessCompletion uses AI to determine if an epic or mission is truly complete.
 // This replaces the hardcoded "all children closed = complete" heuristic with AI decision-making.
 //
@@ -1574,11 +1582,129 @@ IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (`
 		truncationNote)
 }
 
+// buildDuplicateCheckPrompt builds the AI prompt for duplicate detection
+func (s *Supervisor) buildDuplicateCheckPrompt(candidate, existing *types.Issue) string {
+	return fmt.Sprintf(`You are analyzing whether two issues are duplicates.
+
+CANDIDATE ISSUE:
+ID: %s
+Title: %s
+Type: %s
+Priority: P%d
+Description: %s
+
+EXISTING ISSUE:
+ID: %s
+Title: %s
+Type: %s
+Priority: P%d
+Description: %s
+
+TASK:
+Determine if the CANDIDATE issue is a semantic duplicate of the EXISTING issue.
+
+IMPORTANT GUIDELINES:
+1. Consider SEMANTIC SIMILARITY, not just exact string matching
+2. Two issues are duplicates if they describe the SAME underlying problem/task
+3. Different wording is OK if they address the same issue
+4. Same file/function/line reference strongly suggests duplicate
+5. Different priority or type does NOT automatically mean non-duplicate
+6. If the EXISTING issue is an epic/container, check if CANDIDATE is a subset of its goals
+7. Small differences in scope may still be duplicates (e.g., "fix null check" vs "add validation")
+
+EXAMPLES OF DUPLICATES:
+- "Fix null pointer in parseConfig line 45" vs "Add null check to parseConfig:45"
+- "Improve error handling in auth" vs "Better error messages in authentication module"
+- "Update docs for API" vs "Document REST API endpoints"
+
+EXAMPLES OF NON-DUPLICATES:
+- "Fix login bug" vs "Add registration feature"
+- "Optimize database queries" vs "Fix database connection leak"
+- "Add tests for parser" vs "Fix parser crash on empty input"
+
+OUTPUT FORMAT (JSON only, no markdown):
+{
+  "is_duplicate": boolean,
+  "confidence": float (0.0-1.0),
+  "reasoning": "Brief explanation of why this is/isn't a duplicate"
+}
+
+CONFIDENCE SCORING:
+- 0.95-1.0: Exact same issue, possibly same file/line
+- 0.85-0.95: Very similar issue, same root cause
+- 0.70-0.85: Related issues, but different aspects
+- 0.50-0.70: Somewhat similar, different problems
+- 0.0-0.50: Different issues
+
+IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences.`,
+		candidate.ID, candidate.Title, candidate.IssueType, candidate.Priority, candidate.Description,
+		existing.ID, existing.Title, existing.IssueType, existing.Priority, existing.Description)
+}
+
 // logAIUsage logs AI API usage via comments
 func (s *Supervisor) logAIUsage(ctx context.Context, issueID, activity string, inputTokens, outputTokens int64, duration time.Duration) error {
 	comment := fmt.Sprintf("AI Usage (%s): input=%d tokens, output=%d tokens, duration=%v, model=%s",
 		activity, inputTokens, outputTokens, duration, s.model)
 	return s.store.AddComment(ctx, issueID, "ai-supervisor", comment)
+}
+
+// CheckIssueDuplicate uses AI to determine if a candidate issue is a duplicate
+// of an existing issue. This is used by the deduplication system to prevent
+// filing duplicate issues.
+//
+// Parameters:
+//   - ctx: Context for the API call
+//   - candidate: The issue to check for duplicates
+//   - existing: The existing issue to compare against
+//
+// Returns:
+//   - DuplicateCheckResponse with AI's determination and reasoning
+//   - Error if the API call fails
+//
+// The AI compares semantic similarity, considering:
+// - Title similarity (semantic, not just string matching)
+// - File/line references in descriptions
+// - Parent issue context (if any)
+// - Issue type and priority
+func (s *Supervisor) CheckIssueDuplicate(ctx context.Context, candidate, existing *types.Issue) (*DuplicateCheckResponse, error) {
+	startTime := time.Now()
+
+	// Build prompt
+	prompt := s.buildDuplicateCheckPrompt(candidate, existing)
+
+	// Call AI with retry
+	var responseText string
+	var err error
+
+	err = s.retryWithBackoff(ctx, "duplicate_check", func(ctx context.Context) error {
+		responseText, err = s.CallAI(ctx, prompt, "duplicate_check", s.model, 1000)
+		return err
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("AI duplicate check failed: %w", err)
+	}
+
+	// Parse response using resilient parser
+	parseResult := Parse[DuplicateCheckResponse](responseText, ParseOptions{
+		Context:   "duplicate check response",
+		LogErrors: boolPtr(true),
+	})
+	if !parseResult.Success {
+		return nil, fmt.Errorf("failed to parse duplicate check response: %s (response: %s)", parseResult.Error, responseText)
+	}
+	response := parseResult.Data
+
+	// Validate response
+	if response.Confidence < 0.0 || response.Confidence > 1.0 {
+		return nil, fmt.Errorf("invalid confidence score: %.2f (must be 0.0-1.0)", response.Confidence)
+	}
+
+	// Log AI usage (don't fail on logging errors)
+	duration := time.Since(startTime)
+	_ = s.logAIUsage(ctx, candidate.ID, fmt.Sprintf("duplicate_check vs %s", existing.ID), 0, 0, duration)
+
+	return &response, nil
 }
 
 // CreateDiscoveredIssues creates issues from the AI analysis
