@@ -336,6 +336,7 @@ func (cd *ContextDetector) emitContextEvent(ctx context.Context, usage ContextUs
 			"agent_type":    usage.AgentType,
 			"raw_message":   usage.RawMessage,
 		},
+		SourceLine: 0, // Not applicable for context usage events
 	}
 
 	// Create the event
