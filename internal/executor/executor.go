@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/ai"
+	"github.com/steveyegge/vc/internal/deduplication"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/storage"
@@ -670,9 +671,16 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		fmt.Sprintf("Starting results processing for issue %s", issue.ID),
 		map[string]interface{}{})
 
+	// Create deduplicator if AI supervision is enabled (vc-145)
+	var dedup deduplication.Deduplicator
+	if e.supervisor != nil {
+		dedup = deduplication.NewAIDeduplicator(e.supervisor, e.store, deduplication.DefaultConfig())
+	}
+
 	processor, err := NewResultsProcessor(&ResultsProcessorConfig{
 		Store:              e.store,
 		Supervisor:         e.supervisor,
+		Deduplicator:       dedup,
 		EnableQualityGates: e.enableQualityGates,
 		WorkingDir:         e.workingDir,
 		Actor:              e.instanceID,

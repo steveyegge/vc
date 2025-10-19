@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/ai"
+	"github.com/steveyegge/vc/internal/deduplication"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/gates"
 	"github.com/steveyegge/vc/internal/git"
@@ -29,6 +30,7 @@ const (
 type ResultsProcessor struct {
 	store              storage.Storage
 	supervisor         *ai.Supervisor
+	deduplicator       deduplication.Deduplicator // Can be nil to disable deduplication
 	gitOps             git.GitOperations
 	messageGen         *git.MessageGenerator
 	enableQualityGates bool
@@ -40,9 +42,10 @@ type ResultsProcessor struct {
 // ResultsProcessorConfig holds configuration for the results processor
 type ResultsProcessorConfig struct {
 	Store              storage.Storage
-	Supervisor         *ai.Supervisor      // Can be nil to disable AI analysis
-	GitOps             git.GitOperations   // Can be nil to disable auto-commit
-	MessageGen         *git.MessageGenerator // Can be nil to disable auto-commit
+	Supervisor         *ai.Supervisor            // Can be nil to disable AI analysis
+	Deduplicator       deduplication.Deduplicator // Can be nil to disable deduplication
+	GitOps             git.GitOperations         // Can be nil to disable auto-commit
+	MessageGen         *git.MessageGenerator     // Can be nil to disable auto-commit
 	EnableQualityGates bool
 	EnableAutoCommit   bool
 	WorkingDir         string
@@ -74,6 +77,7 @@ func NewResultsProcessor(cfg *ResultsProcessorConfig) (*ResultsProcessor, error)
 	return &ResultsProcessor{
 		store:              cfg.Store,
 		supervisor:         cfg.Supervisor,
+		deduplicator:       cfg.Deduplicator,
 		gitOps:             cfg.GitOps,
 		messageGen:         cfg.MessageGen,
 		enableQualityGates: cfg.EnableQualityGates,
@@ -267,7 +271,21 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			// File discovered issues from analysis (vc-143)
 			// These are issues discovered during execution, independent of quality gates
 			if len(analysis.DiscoveredIssues) > 0 {
-				createdIDs, err := rp.supervisor.CreateDiscoveredIssues(ctx, issue, analysis.DiscoveredIssues)
+				// Deduplicate discovered issues (vc-145/vc-147)
+				discoveredToCreate := analysis.DiscoveredIssues
+				if rp.deduplicator != nil {
+					uniqueDiscovered, dedupStats := rp.deduplicateDiscoveredIssues(ctx, issue, analysis.DiscoveredIssues)
+					if len(uniqueDiscovered) < len(analysis.DiscoveredIssues) {
+						fmt.Printf("🔍 Deduplication: %d discovered issues → %d unique (filtered %d duplicates)\n",
+							len(analysis.DiscoveredIssues), len(uniqueDiscovered),
+							len(analysis.DiscoveredIssues)-len(uniqueDiscovered))
+						fmt.Printf("   Stats: %d comparisons, %d AI calls, %dms\n",
+							dedupStats.ComparisonsMade, dedupStats.AICallsMade, dedupStats.ProcessingTimeMs)
+					}
+					discoveredToCreate = uniqueDiscovered
+				}
+
+				createdIDs, err := rp.supervisor.CreateDiscoveredIssues(ctx, issue, discoveredToCreate)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Warning: failed to create discovered issues: %v\n", err)
 				} else if len(createdIDs) > 0 {
@@ -1456,4 +1474,75 @@ func (rp *ResultsProcessor) isVCRepo() bool {
 	}
 
 	return false
+}
+
+// deduplicateDiscoveredIssues uses the deduplicator to filter out duplicate discovered issues
+// Returns the unique issues to create and deduplication statistics
+func (rp *ResultsProcessor) deduplicateDiscoveredIssues(ctx context.Context, parentIssue *types.Issue, discovered []ai.DiscoveredIssue) ([]ai.DiscoveredIssue, deduplication.DeduplicationStats) {
+	// Convert discovered issues to types.Issue for deduplication
+	candidates := make([]*types.Issue, len(discovered))
+	for i, disc := range discovered {
+		// Map priority
+		priority := 2
+		switch disc.Priority {
+		case "P0":
+			priority = 0
+		case "P1":
+			priority = 1
+		case "P2":
+			priority = 2
+		case "P3":
+			priority = 3
+		}
+
+		// Map type
+		issueType := types.TypeTask
+		switch disc.Type {
+		case "bug":
+			issueType = types.TypeBug
+		case "task":
+			issueType = types.TypeTask
+		case "feature", "enhancement":
+			issueType = types.TypeFeature
+		case "epic":
+			issueType = types.TypeEpic
+		case "chore":
+			issueType = types.TypeChore
+		}
+
+		candidates[i] = &types.Issue{
+			Title:       disc.Title,
+			Description: disc.Description,
+			IssueType:   issueType,
+			Priority:    priority,
+			Status:      types.StatusOpen,
+		}
+	}
+
+	// Deduplicate
+	result, err := rp.deduplicator.DeduplicateBatch(ctx, candidates)
+	if err != nil {
+		// Fail-safe: on error, return all discovered issues
+		fmt.Fprintf(os.Stderr, "Warning: deduplication failed, creating all discovered issues: %v\n", err)
+		return discovered, deduplication.DeduplicationStats{}
+	}
+
+	// Build list of unique discovered issues to create
+	// We need to map back from unique issues to original DiscoveredIssue objects
+	uniqueDiscovered := []ai.DiscoveredIssue{}
+	createdSet := make(map[int]bool)
+
+	// Mark which indices were created (unique issues)
+	for _, uniqueIssue := range result.UniqueIssues {
+		// Find the original index by matching title
+		for i, candidate := range candidates {
+			if candidate.Title == uniqueIssue.Title && !createdSet[i] {
+				uniqueDiscovered = append(uniqueDiscovered, discovered[i])
+				createdSet[i] = true
+				break
+			}
+		}
+	}
+
+	return uniqueDiscovered, result.Stats
 }
