@@ -290,6 +290,21 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 
 	// Step 3: Quality Gates (if enabled and agent succeeded)
 	if agentResult.Success && rp.enableQualityGates {
+		// Check if we're in the VC repo (vc-144: skip gates for non-VC repos)
+		if !rp.isVCRepo() {
+			fmt.Printf("⚠ Skipping quality gates (not in VC repo, working dir: %s)\n", rp.workingDir)
+			// Log quality gates skipped
+			rp.logEvent(ctx, events.EventTypeQualityGatesSkipped, events.SeverityInfo, issue.ID,
+				"Quality gates skipped (not in VC repository)",
+				map[string]interface{}{
+					"working_dir": rp.workingDir,
+					"reason":      "non-vc-repo",
+				})
+			result.GatesPassed = true // Don't block on skipped gates
+			// Skip to next step
+			goto SkipGates
+		}
+
 		// Update execution state to gates
 		if err := rp.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateGates); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
@@ -460,6 +475,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			})
 	}
 
+SkipGates:
 	// Step 3.5: Test Coverage Analysis (vc-217)
 	// After quality gates pass, analyze test coverage and file test improvement issues
 	if agentResult.Success && result.GatesPassed && rp.supervisor != nil && rp.gitOps != nil {
@@ -1415,4 +1431,29 @@ func isValidUTF8(s string) bool {
 		// If we can iterate without panic, it's valid UTF-8
 	}
 	return true
+}
+
+// isVCRepo checks if the working directory is the VC repository
+// This is used to determine if quality gates should run (vc-144)
+func (rp *ResultsProcessor) isVCRepo() bool {
+	// Check for VC-specific markers:
+	// 1. cmd/vc directory (main package)
+	// 2. internal/executor directory
+	// 3. go.mod with module path containing "steveyegge/vc"
+
+	// Simple heuristic: check if cmd/vc exists
+	cmdVCPath := filepath.Join(rp.workingDir, "cmd", "vc")
+	if _, err := os.Stat(cmdVCPath); err == nil {
+		return true
+	}
+
+	// Also check go.mod for module path
+	goModPath := filepath.Join(rp.workingDir, "go.mod")
+	if data, err := os.ReadFile(goModPath); err == nil {
+		if strings.Contains(string(data), "github.com/steveyegge/vc") {
+			return true
+		}
+	}
+
+	return false
 }
