@@ -96,7 +96,11 @@ func (r *REPL) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create readline: %w", err)
 	}
-	defer rl.Close()
+	defer func() {
+		if err := rl.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to close readline: %v\n", err)
+		}
+	}()
 
 	r.rl = rl
 
@@ -172,7 +176,9 @@ func (r *REPL) printWelcome() {
 func (r *REPL) cmdExit(args []string) error {
 	green := color.New(color.FgGreen).SprintFunc()
 	fmt.Printf("\n%s Goodbye!\n", green("✓"))
-	r.rl.Close()
+	if err := r.rl.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to close readline: %v\n", err)
+	}
 	return io.EOF // Signal to exit the loop
 }
 

@@ -61,12 +61,16 @@ func initSandboxDB(ctx context.Context, sandboxPath, missionID, parentDBPath str
 	// Set issue_prefix to 'vc' to match the main database
 	// This prevents sandbox-created issues from using the wrong prefix
 	if err := store.SetConfig(ctx, "issue_prefix", "vc"); err != nil {
-		store.Close()
+		if closeErr := store.Close(); closeErr != nil {
+			log.Printf("warning: failed to close store after config error: %v", closeErr)
+		}
 		return "", fmt.Errorf("failed to set issue_prefix config: %w", err)
 	}
 
 	// Close the storage connection before opening a raw connection for metadata
-	store.Close()
+	if err := store.Close(); err != nil {
+		log.Printf("warning: failed to close store: %v", err)
+	}
 
 	// Store metadata in a custom table
 	if err := storeSandboxMetadata(ctx, dbPath, missionID, parentDBPath); err != nil {
@@ -82,7 +86,11 @@ func storeSandboxMetadata(ctx context.Context, dbPath, missionID, parentDBPath s
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Printf("warning: failed to close database: %v", err)
+		}
+	}()
 
 	// Create metadata table
 	_, err = db.ExecContext(ctx, `
