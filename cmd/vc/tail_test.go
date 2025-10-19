@@ -18,7 +18,11 @@ func TestTailCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
-	defer testStore.Close()
+	defer func() {
+		if err := testStore.Close(); err != nil {
+			t.Errorf("Failed to close test store: %v", err)
+		}
+	}()
 
 	ctx := context.Background()
 

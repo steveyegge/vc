@@ -742,7 +742,11 @@ func TestExecutorSandboxIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sandbox: %v", err)
 	}
-	defer exec.sandboxMgr.Cleanup(ctx, sb)
+	defer func() {
+		if err := exec.sandboxMgr.Cleanup(ctx, sb); err != nil {
+			t.Errorf("Failed to cleanup sandbox: %v", err)
+		}
+	}()
 
 	// Verify sandbox was created
 	if sb == nil {

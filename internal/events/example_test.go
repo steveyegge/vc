@@ -45,7 +45,7 @@ func ExampleAgentEvent_SetFileModifiedData() {
 		FilePath:  "main.go",
 		Operation: "modified",
 	}
-	event.SetFileModifiedData(fileData)
+	_ = event.SetFileModifiedData(fileData) // Intentionally ignore error in example
 
 	// Retrieve data in a type-safe way
 	retrieved, _ := event.GetFileModifiedData()

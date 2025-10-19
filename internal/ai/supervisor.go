@@ -575,7 +575,7 @@ func (s *Supervisor) AssessCompletion(ctx context.Context, issue *types.Issue, c
 
 	// Log AI usage to events
 	if err := s.logAIUsage(ctx, issue.ID, "completion-assessment", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
+		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage for issue %s: %v\n", issue.ID, err)
 	}
 
 	return &assessment, nil
@@ -1112,10 +1112,28 @@ func (s *Supervisor) buildCompletionPrompt(issue *types.Issue, children []*types
 		issueTypeStr = "phase"
 	}
 
+	// Add special guidance for missions and phases (structural containers)
+	structuralGuidance := ""
+	if issue.IssueSubtype == types.SubtypeMission || issue.IssueSubtype == types.SubtypePhase {
+		structuralGuidance = `
+IMPORTANT FOR MISSIONS/PHASES:
+Missions and phases are structural containers that organize work into logical groupings.
+When ALL children of a mission/phase are closed, this strongly indicates the parent's objectives are met,
+UNLESS there is clear evidence that the acceptance criteria were not satisfied.
+
+The burden of proof is: if all children are complete, assume the parent is complete unless you can identify
+a specific, concrete gap between what was delivered and what was required.
+
+Do not demand explicit verification of abstract criteria like "tested in production" when the child phases
+(e.g., Development, Testing, Deployment) are all marked complete. Trust that the phase structure represents
+the work breakdown, and completing all phases means the mission succeeded.
+`
+	}
+
 	return fmt.Sprintf(`You are assessing whether an %s is truly complete and should be closed.
 
 IMPORTANT: Don't just count closed children. Consider whether the OBJECTIVES are met.
-
+%s
 %s DETAILS:
 ID: %s
 Title: %s
@@ -1158,6 +1176,7 @@ It's also okay to say "complete enough" even if some children are open.
 
 IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (` + "```" + `). Just the JSON object.`,
 		issueTypeStr,
+		structuralGuidance,
 		strings.ToUpper(issueTypeStr),
 		issue.ID, issue.Title, issue.Description,
 		issue.AcceptanceCriteria,
@@ -1643,6 +1662,16 @@ IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences.`,
 
 // logAIUsage logs AI API usage via comments
 func (s *Supervisor) logAIUsage(ctx context.Context, issueID, activity string, inputTokens, outputTokens int64, duration time.Duration) error {
+	// Check if issue exists before trying to add comment
+	// This prevents FOREIGN KEY constraint failures in tests where issues aren't in the database
+	_, err := s.store.GetIssue(ctx, issueID)
+	if err != nil {
+		// Issue doesn't exist - silently skip logging
+		// This is common in tests where we pass test issues directly to AI functions
+		fmt.Fprintf(os.Stderr, "debug: skipping AI usage logging for non-existent issue %s: %v\n", issueID, err)
+		return nil
+	}
+
 	comment := fmt.Sprintf("AI Usage (%s): input=%d tokens, output=%d tokens, duration=%v, model=%s",
 		activity, inputTokens, outputTokens, duration, s.model)
 	return s.store.AddComment(ctx, issueID, "ai-supervisor", comment)

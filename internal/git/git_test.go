@@ -18,7 +18,7 @@ func TestGitOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Initialize a git repository
 	cmd := exec.Command("git", "init")
@@ -210,7 +210,7 @@ func TestGitOperations_ErrorCases(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create temp dir: %v", err)
 		}
-		defer os.RemoveAll(tmpDir)
+		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		// Initialize a git repository
 		cmd := exec.Command("git", "init")
@@ -238,7 +238,7 @@ func TestGitOperations_ErrorCases(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create temp dir: %v", err)
 		}
-		defer os.RemoveAll(tmpDir)
+		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		// Don't initialize git repo
 		opts := CommitOptions{
@@ -257,7 +257,7 @@ func TestGitOperations_ErrorCases(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create temp dir: %v", err)
 		}
-		defer os.RemoveAll(tmpDir)
+		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		_, err = git.GetDiff(ctx, tmpDir, false)
 		if err == nil {
@@ -270,7 +270,7 @@ func TestGitOperations_ErrorCases(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create temp dir: %v", err)
 		}
-		defer os.RemoveAll(tmpDir)
+		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		// Initialize a git repository
 		cmd := exec.Command("git", "init")
@@ -298,7 +298,7 @@ func TestCommitMessageValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Initialize a git repository
 	cmd := exec.Command("git", "init")
@@ -387,7 +387,7 @@ func TestRebaseOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Initialize a git repository
 	initRepo(t, tmpDir)
@@ -443,8 +443,10 @@ func TestRebaseOperations(t *testing.T) {
 	// Test 2: Rebase with conflicts
 	t.Run("RebaseWithConflicts", func(t *testing.T) {
 		// Reset the repo
-		os.RemoveAll(tmpDir)
-		os.MkdirAll(tmpDir, 0755)
+		_ = os.RemoveAll(tmpDir)
+		if err := os.MkdirAll(tmpDir, 0755); err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
 		initRepo(t, tmpDir)
 
 		// Create initial commit on main
@@ -503,8 +505,10 @@ func TestRebaseOperations(t *testing.T) {
 	// Test 3: Continue rebase after resolving conflicts
 	t.Run("ContinueRebaseAfterResolution", func(t *testing.T) {
 		// Reset the repo
-		os.RemoveAll(tmpDir)
-		os.MkdirAll(tmpDir, 0755)
+		_ = os.RemoveAll(tmpDir)
+		if err := os.MkdirAll(tmpDir, 0755); err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
 		initRepo(t, tmpDir)
 
 		// Create a conflict scenario
@@ -565,8 +569,10 @@ func TestRebaseOperations(t *testing.T) {
 	// Test 4: Abort rebase
 	t.Run("AbortRebase", func(t *testing.T) {
 		// Reset the repo
-		os.RemoveAll(tmpDir)
-		os.MkdirAll(tmpDir, 0755)
+		_ = os.RemoveAll(tmpDir)
+		if err := os.MkdirAll(tmpDir, 0755); err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
 		initRepo(t, tmpDir)
 
 		// Create a conflict scenario
@@ -632,7 +638,7 @@ func TestRebaseOperations(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create temp dir: %v", err)
 		}
-		defer os.RemoveAll(nonRepoDir)
+		defer func() { _ = os.RemoveAll(nonRepoDir) }()
 
 		_, err = git.Rebase(ctx, nonRepoDir, RebaseOptions{
 			BaseBranch: "main",
@@ -708,7 +714,7 @@ func TestConflictResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	git, err := NewGit(ctx)
 	if err != nil {
@@ -918,8 +924,8 @@ no markers here`
 		file1 := filepath.Join(tmpDir, "file1.txt")
 		file2 := filepath.Join(tmpDir, "file2.txt")
 
-		os.WriteFile(file1, []byte("resolved content"), 0644)
-		os.WriteFile(file2, []byte("<<<<<<< conflict"), 0644)
+		_ = os.WriteFile(file1, []byte("resolved content"), 0644)
+		_ = os.WriteFile(file2, []byte("<<<<<<< conflict"), 0644)
 
 		resolved, err := git.ValidateConflictResolution(ctx, tmpDir, []string{"file1.txt", "file2.txt"})
 		if err != nil {

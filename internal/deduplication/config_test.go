@@ -156,18 +156,18 @@ func TestConfigFromEnv(t *testing.T) {
 				"VC_DEDUP_TIMEOUT_SECS",
 			}
 			for _, key := range clearEnv {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key) // Intentionally ignore error in test cleanup
 			}
 
 			// Set test environment variables
 			for key, value := range tt.envVars {
-				os.Setenv(key, value)
+				_ = os.Setenv(key, value) // Intentionally ignore error in test setup
 			}
 
 			// Cleanup after test
 			defer func() {
 				for _, key := range clearEnv {
-					os.Unsetenv(key)
+					_ = os.Unsetenv(key) // Intentionally ignore error in test cleanup
 				}
 			}()
 

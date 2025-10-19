@@ -780,7 +780,7 @@ func TestCircuitBreakerHalfOpenState(t *testing.T) {
 		time.Sleep(60 * time.Millisecond)
 
 		// Transition to half-open
-		cb.Allow()
+		_ = cb.Allow() // Intentionally ignore error to transition state
 
 		// Should allow requests in half-open
 		if err := cb.Allow(); err != nil {
@@ -796,7 +796,7 @@ func TestCircuitBreakerHalfOpenState(t *testing.T) {
 			cb.RecordFailure()
 		}
 		time.Sleep(60 * time.Millisecond)
-		cb.Allow()
+		_ = cb.Allow() // Intentionally ignore error to transition state
 
 		if cb.GetState() != CircuitHalfOpen {
 			t.Fatal("Should be in HALF_OPEN state")
@@ -828,7 +828,7 @@ func TestCircuitBreakerHalfOpenState(t *testing.T) {
 			cb.RecordFailure()
 		}
 		time.Sleep(60 * time.Millisecond)
-		cb.Allow()
+		_ = cb.Allow() // Intentionally ignore error to transition state
 
 		if cb.GetState() != CircuitHalfOpen {
 			t.Fatal("Should be in HALF_OPEN state")
@@ -860,7 +860,7 @@ func TestCircuitBreakerThreadSafety(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < operationsPerGoroutine; j++ {
 				// Mix of operations
-				cb.Allow()
+				_ = cb.Allow() // Intentionally ignore error in concurrency test
 				if j%3 == 0 {
 					cb.RecordSuccess()
 				} else if j%7 == 0 {
@@ -1045,7 +1045,7 @@ func TestCircuitBreakerStateTransitions(t *testing.T) {
 
 		// Wait for timeout and transition to HALF_OPEN
 		time.Sleep(60 * time.Millisecond)
-		cb.Allow() // Should log transition
+		_ = cb.Allow() // Should log transition, intentionally ignore error
 
 		// HALF_OPEN -> CLOSED
 		cb.RecordSuccess() // Should log transition
@@ -1056,7 +1056,7 @@ func TestCircuitBreakerStateTransitions(t *testing.T) {
 
 		// Wait and OPEN -> HALF_OPEN
 		time.Sleep(60 * time.Millisecond)
-		cb.Allow()
+		_ = cb.Allow() // Intentionally ignore error to transition state
 
 		// HALF_OPEN -> OPEN (failure in half-open)
 		cb.RecordFailure() // Should log transition
