@@ -348,8 +348,8 @@ func TestUpdateExecutionStateInvalidTransition(t *testing.T) {
 		t.Fatalf("Failed to claim issue: %v", err)
 	}
 
-	// Try to skip to executing (should fail - must go through assessing)
-	err = db.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateExecuting)
+	// Try to skip directly to gates (should fail - not a valid transition from claimed)
+	err = db.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateGates)
 	if err == nil {
 		t.Error("Expected error for invalid state transition")
 	}
@@ -364,6 +364,12 @@ func TestUpdateExecutionStateInvalidTransition(t *testing.T) {
 	}
 	if state.State != types.ExecutionStateClaimed {
 		t.Errorf("State changed unexpectedly: got %s, want %s", state.State, types.ExecutionStateClaimed)
+	}
+
+	// Also test that claimed -> executing is now VALID (to support skipping assessment)
+	err = db.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateExecuting)
+	if err != nil {
+		t.Errorf("Expected claimed -> executing to be valid, got error: %v", err)
 	}
 }
 

@@ -318,21 +318,28 @@ func (s *SQLiteStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, acto
 // isValidStateTransition validates state machine transitions
 func isValidStateTransition(from, to types.ExecutionState) bool {
 	// Define valid state transitions
+	// NOTE: This allows skipping optional phases (assessing, analyzing, gates)
+	// to support configurations where AI supervision or quality gates are disabled
 	validTransitions := map[types.ExecutionState][]types.ExecutionState{
 		types.ExecutionStateClaimed: {
-			types.ExecutionStateAssessing,
+			types.ExecutionStateAssessing, // Normal path: assessment enabled
+			types.ExecutionStateExecuting, // Skip assessment: AI supervision disabled
+			types.ExecutionStateCompleted, // Skip all phases: everything disabled (edge case)
 		},
 		types.ExecutionStateAssessing: {
-			types.ExecutionStateExecuting,
+			types.ExecutionStateExecuting, // Normal path: proceed to execution
 		},
 		types.ExecutionStateExecuting: {
-			types.ExecutionStateAnalyzing,
+			types.ExecutionStateAnalyzing, // Normal path: AI analysis enabled
+			types.ExecutionStateGates,     // Skip analysis: AI supervision disabled but gates enabled
+			types.ExecutionStateCompleted, // Skip analysis and gates: both disabled
 		},
 		types.ExecutionStateAnalyzing: {
-			types.ExecutionStateGates,
+			types.ExecutionStateGates,     // Normal path: quality gates enabled
+			types.ExecutionStateCompleted, // Skip gates: quality gates disabled
 		},
 		types.ExecutionStateGates: {
-			types.ExecutionStateCompleted,
+			types.ExecutionStateCompleted, // Normal path: gates passed or failed
 		},
 		types.ExecutionStateCompleted: {
 			// Terminal state - no transitions
