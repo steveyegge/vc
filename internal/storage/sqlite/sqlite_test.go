@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/steveyegge/vc/internal/types"
 )
 
 // TestGetNextIDWithEmptyTable verifies getNextID returns 1 for empty table
@@ -321,15 +322,124 @@ func TestNewWithCorruptDatabase(t *testing.T) {
 	}
 	db.Close()
 
-	// Now try to open with New() - should fail during getNextID
-	_, err = New(tmpfile.Name())
-	if err == nil {
-		t.Error("Expected New() to fail with malformed issue ID in database")
+	// With the new atomic counter approach (vc-164), New() should succeed
+	// because the migration gracefully handles malformed IDs by filtering them out
+	storage, err := New(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("Expected New() to succeed with malformed ID in database (should be filtered out), got: %v", err)
 	}
-	// Could be either format error or parse error depending on the exact format
-	if !contains(err.Error(), "invalid issue ID format") && !contains(err.Error(), "failed to parse issue number") {
-		t.Errorf("Expected error about invalid ID format or parsing, got: %v", err)
+	defer storage.Close()
+
+	// The counter should be initialized to 0 since the malformed ID is filtered out
+	// The prefix is derived from the database filename (test-*.db), not from the malformed ID
+	// Let's verify by creating a new issue and checking that it gets ID 1
+	ctx := context.Background()
+	issue := &types.Issue{
+		Title:      "Test issue",
+		Status:     types.StatusOpen,
+		Priority:   1,
+		IssueType:  types.TypeTask,
 	}
+	err = storage.CreateIssue(ctx, issue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// The ID should end with "-1" since the counter starts from 0 (no valid IDs found)
+	// The prefix comes from the temp file name which is "test-<random>.db"
+	if len(issue.ID) < 2 || issue.ID[len(issue.ID)-2:] != "-1" {
+		t.Errorf("Expected ID to end with '-1', got: %s", issue.ID)
+	}
+}
+
+// TestParallelIssueCreation verifies that concurrent CreateIssue calls
+// generate unique IDs with no race conditions (vc-164)
+func TestParallelIssueCreation(t *testing.T) {
+	// Create temp database
+	tmpfile, err := os.CreateTemp("", "vc-*.db")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpfile.Name())
+	tmpfile.Close()
+
+	storage, err := New(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+
+	ctx := context.Background()
+	const numIssues = 20
+
+	// Create issues in parallel using goroutines
+	errors := make(chan error, numIssues)
+	ids := make(chan string, numIssues)
+
+	for i := 0; i < numIssues; i++ {
+		go func(n int) {
+			issue := &types.Issue{
+				Title:     "Parallel test issue",
+				Status:    types.StatusOpen,
+				Priority:  2,
+				IssueType: types.TypeTask,
+			}
+			err := storage.CreateIssue(ctx, issue, "test-user")
+			if err != nil {
+				errors <- err
+				return
+			}
+			ids <- issue.ID
+			errors <- nil
+		}(i)
+	}
+
+	// Collect results
+	var collectedIDs []string
+	var failureCount int
+	for i := 0; i < numIssues; i++ {
+		if err := <-errors; err != nil {
+			t.Errorf("CreateIssue failed in parallel test: %v", err)
+			failureCount++
+		}
+	}
+
+	close(ids)
+	for id := range ids {
+		collectedIDs = append(collectedIDs, id)
+	}
+
+	// Verify no failures occurred
+	if failureCount > 0 {
+		t.Fatalf("Expected 0 failures, got %d", failureCount)
+	}
+
+	// Verify we got the expected number of IDs
+	if len(collectedIDs) != numIssues {
+		t.Fatalf("Expected %d IDs, got %d", numIssues, len(collectedIDs))
+	}
+
+	// Verify all IDs are unique (no duplicates from race conditions)
+	seen := make(map[string]bool)
+	for _, id := range collectedIDs {
+		if seen[id] {
+			t.Fatalf("Duplicate ID detected: %s (CRITICAL: race condition in ID generation!)", id)
+		}
+		seen[id] = true
+	}
+
+	// Verify all issues can be retrieved (they actually exist in the database)
+	for _, id := range collectedIDs {
+		issue, err := storage.GetIssue(ctx, id)
+		if err != nil {
+			t.Errorf("Failed to retrieve issue %s: %v", id, err)
+		}
+		if issue == nil {
+			t.Errorf("Issue %s not found in database", id)
+		}
+	}
+
+	t.Logf("Successfully created %d issues in parallel with unique IDs", numIssues)
 }
 
 // TestForeignKeysEnabled verifies that foreign keys are enabled (vc-116)

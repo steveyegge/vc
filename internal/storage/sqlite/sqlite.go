@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -18,9 +17,7 @@ import (
 // SQLiteStorage implements the Storage interface using SQLite
 type SQLiteStorage struct {
 	db          *sql.DB
-	nextID      int
-	idMu        sync.Mutex // Protects nextID from concurrent access
-	issuePrefix string     // Prefix for issue IDs (e.g., "vc-", "bd-")
+	issuePrefix string // Prefix for issue IDs (e.g., "vc-", "bd-")
 }
 
 // New creates a new SQLite storage backend
@@ -53,6 +50,11 @@ func New(path string) (*SQLiteStorage, error) {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
+	// Migrate existing databases to add issue_counters table if missing
+	if err := migrateIssueCountersTable(db); err != nil {
+		return nil, fmt.Errorf("failed to migrate issue_counters table: %w", err)
+	}
+
 	// Check config table for issue_prefix (takes precedence over filename-based prefix)
 	// This allows sandboxes and other databases to override the prefix
 	var configPrefix string
@@ -66,20 +68,14 @@ func New(path string) (*SQLiteStorage, error) {
 	}
 	// Otherwise use the filename-based prefix set above
 
-	// Get next ID
-	nextID, err := getNextID(db)
-	if err != nil {
-		return nil, err
-	}
-
 	return &SQLiteStorage{
 		db:          db,
-		nextID:      nextID,
 		issuePrefix: issuePrefix,
 	}, nil
 }
 
-// getNextID determines the next issue ID to use
+// getNextID determines the next issue ID to use (DEPRECATED - kept for backwards compatibility)
+// New code should rely on the atomic counter in issue_counters table
 func getNextID(db *sql.DB) (int, error) {
 	var maxID sql.NullString
 	err := db.QueryRow("SELECT MAX(id) FROM issues").Scan(&maxID)
@@ -107,6 +103,66 @@ func getNextID(db *sql.DB) (int, error) {
 	return num + 1, nil
 }
 
+// migrateIssueCountersTable checks if the issue_counters table needs initialization.
+// This ensures existing databases created before the atomic counter feature get migrated automatically.
+// The table may already exist (created by schema), but be empty - in that case we still need to sync.
+func migrateIssueCountersTable(db *sql.DB) error {
+	// Check if the table exists (it should, created by schema)
+	var tableName string
+	err := db.QueryRow(`
+		SELECT name FROM sqlite_master
+		WHERE type='table' AND name='issue_counters'
+	`).Scan(&tableName)
+
+	tableExists := err == nil
+
+	if !tableExists {
+		if err != sql.ErrNoRows {
+			return fmt.Errorf("failed to check for issue_counters table: %w", err)
+		}
+		// Table doesn't exist, create it (shouldn't happen with schema, but handle it)
+		_, err := db.Exec(`
+			CREATE TABLE issue_counters (
+				prefix TEXT PRIMARY KEY,
+				last_id INTEGER NOT NULL DEFAULT 0
+			)
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create issue_counters table: %w", err)
+		}
+	}
+
+	// Check if table is empty - if so, we need to sync from existing issues
+	var count int
+	err = db.QueryRow(`SELECT COUNT(*) FROM issue_counters`).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to count issue_counters: %w", err)
+	}
+
+	if count == 0 {
+		// Table is empty, sync counters from existing issues to prevent ID collisions
+		// This is safe to do during migration since it's a one-time operation
+		_, err = db.Exec(`
+			INSERT INTO issue_counters (prefix, last_id)
+			SELECT
+				substr(id, 1, instr(id, '-') - 1) as prefix,
+				MAX(CAST(substr(id, instr(id, '-') + 1) AS INTEGER)) as max_id
+			FROM issues
+			WHERE instr(id, '-') > 0
+			  AND substr(id, instr(id, '-') + 1) GLOB '[0-9]*'
+			GROUP BY prefix
+			ON CONFLICT(prefix) DO UPDATE SET
+				last_id = MAX(last_id, excluded.last_id)
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to sync counters during migration: %w", err)
+		}
+	}
+
+	// Table exists and is initialized (either was already populated, or we just synced it)
+	return nil
+}
+
 // CreateIssue creates a new issue
 func (s *SQLiteStorage) CreateIssue(ctx context.Context, issue *types.Issue, actor string) error {
 	// Validate issue before creating
@@ -119,45 +175,80 @@ func (s *SQLiteStorage) CreateIssue(ctx context.Context, issue *types.Issue, act
 	issue.CreatedAt = now
 	issue.UpdatedAt = now
 
-	// Start transaction BEFORE generating ID to avoid races
-	tx, err := s.db.BeginTx(ctx, nil)
+	// Acquire a dedicated connection for the transaction.
+	// This is necessary because we need to execute raw SQL ("BEGIN IMMEDIATE", "COMMIT")
+	// on the same connection, and database/sql's connection pool would otherwise
+	// use different connections for different queries.
+	conn, err := s.db.Conn(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		return fmt.Errorf("failed to acquire connection: %w", err)
 	}
-	defer tx.Rollback()
+	defer conn.Close()
 
-	// Generate ID if not set (inside transaction for atomicity)
+	// Start IMMEDIATE transaction to acquire write lock early and prevent race conditions.
+	// IMMEDIATE acquires a RESERVED lock immediately, preventing other IMMEDIATE or EXCLUSIVE
+	// transactions from starting. This serializes ID generation across concurrent writers.
+	//
+	// We use raw Exec instead of BeginTx because database/sql doesn't support transaction
+	// modes in BeginTx, and the sqlite3 driver's BeginTx always uses DEFERRED mode.
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return fmt.Errorf("failed to begin immediate transaction: %w", err)
+	}
+
+	// Track commit state for defer cleanup
+	// Use context.Background() for ROLLBACK to ensure cleanup happens even if ctx is canceled
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+		}
+	}()
+
+	// Generate ID if not set (inside transaction to prevent race conditions)
 	if issue.ID == "" {
-		// Query MAX(id) within the transaction to get the latest ID
-		// Only consider IDs with our prefix to avoid conflicts with test IDs
-		var maxID sql.NullString
-		err := tx.QueryRowContext(ctx,
-			"SELECT MAX(id) FROM issues WHERE id LIKE ? || '%'",
-			s.issuePrefix).Scan(&maxID)
+		// Get prefix from issuePrefix (already set during initialization)
+		// Remove trailing "-" for consistency with config table format
+		prefix := strings.TrimSuffix(s.issuePrefix, "-")
+
+		// Atomically initialize counter (if needed) and get next ID (within transaction)
+		// This ensures the counter starts from the max existing ID, not 1
+		// CRITICAL: We rely on BEGIN IMMEDIATE above to serialize this operation across processes
+		//
+		// The query works as follows:
+		// 1. Try to INSERT with last_id = MAX(existing IDs) or 0 if none exist, then +1
+		// 2. ON CONFLICT: update last_id to MAX(existing last_id, new calculated last_id) + 1
+		// 3. RETURNING gives us the final incremented value
+		//
+		// This atomically handles three cases:
+		// - Counter doesn't exist: initialize from existing issues and return next ID
+		// - Counter exists but lower than max ID: update to max and return next ID
+		// - Counter exists and correct: just increment and return next ID
+		var nextID int
+		err = conn.QueryRowContext(ctx, `
+			INSERT INTO issue_counters (prefix, last_id)
+			SELECT ?, COALESCE(MAX(CAST(substr(id, LENGTH(?) + 2) AS INTEGER)), 0) + 1
+			FROM issues
+			WHERE id LIKE ? || '-%'
+			  AND substr(id, LENGTH(?) + 2) GLOB '[0-9]*'
+			ON CONFLICT(prefix) DO UPDATE SET
+				last_id = MAX(
+					last_id,
+					(SELECT COALESCE(MAX(CAST(substr(id, LENGTH(?) + 2) AS INTEGER)), 0)
+					 FROM issues
+					 WHERE id LIKE ? || '-%'
+					   AND substr(id, LENGTH(?) + 2) GLOB '[0-9]*')
+				) + 1
+			RETURNING last_id
+		`, prefix, prefix, prefix, prefix, prefix, prefix, prefix).Scan(&nextID)
 		if err != nil {
-			return fmt.Errorf("failed to query max ID: %w", err)
+			return fmt.Errorf("failed to generate next ID for prefix %s: %w", prefix, err)
 		}
 
-		// Calculate next ID
-		nextNum := 1
-		if maxID.Valid && maxID.String != "" {
-			parts := strings.Split(maxID.String, "-")
-			if len(parts) < 2 {
-				return fmt.Errorf("invalid issue ID format: %s", maxID.String)
-			}
-			// Take the last part as the number (handles multi-part IDs)
-			var num int
-			if _, err := fmt.Sscanf(parts[len(parts)-1], "%d", &num); err != nil {
-				return fmt.Errorf("failed to parse issue number from %s: %w", maxID.String, err)
-			}
-			nextNum = num + 1
-		}
-
-		issue.ID = fmt.Sprintf("%s%d", s.issuePrefix, nextNum)
+		issue.ID = fmt.Sprintf("%s-%d", prefix, nextID)
 	}
 
 	// Insert issue
-	_, err = tx.ExecContext(ctx, `
+	_, err = conn.ExecContext(ctx, `
 		INSERT INTO issues (
 			id, title, description, design, acceptance_criteria, notes,
 			status, priority, issue_type, assignee, estimated_minutes,
@@ -176,7 +267,7 @@ func (s *SQLiteStorage) CreateIssue(ctx context.Context, issue *types.Issue, act
 	// Record creation event
 	eventData, _ := json.Marshal(issue)
 	eventDataStr := string(eventData)
-	_, err = tx.ExecContext(ctx, `
+	_, err = conn.ExecContext(ctx, `
 		INSERT INTO events (issue_id, event_type, actor, new_value)
 		VALUES (?, ?, ?, ?)
 	`, issue.ID, types.EventCreated, actor, eventDataStr)
@@ -184,7 +275,13 @@ func (s *SQLiteStorage) CreateIssue(ctx context.Context, issue *types.Issue, act
 		return fmt.Errorf("failed to record event: %w", err)
 	}
 
-	return tx.Commit()
+	// Commit the transaction
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	committed = true
+
+	return nil
 }
 
 // GetIssue retrieves an issue by ID

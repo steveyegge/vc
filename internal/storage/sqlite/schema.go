@@ -187,4 +187,12 @@ CREATE TABLE IF NOT EXISTS config (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- Issue counters table
+-- Stores atomic counters for issue ID generation per prefix
+-- Uses INSERT...ON CONFLICT DO UPDATE for race-free ID generation
+CREATE TABLE IF NOT EXISTS issue_counters (
+    prefix TEXT PRIMARY KEY,
+    last_id INTEGER NOT NULL DEFAULT 0
+);
 `
