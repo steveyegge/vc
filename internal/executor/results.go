@@ -263,6 +263,19 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			fmt.Printf("Discovered Issues: %d\n", len(analysis.DiscoveredIssues))
 			fmt.Printf("Quality Issues: %d\n", len(analysis.QualityIssues))
 			fmt.Printf("Summary: %s\n", analysis.Summary)
+
+			// File discovered issues from analysis (vc-143)
+			// These are issues discovered during execution, independent of quality gates
+			if len(analysis.DiscoveredIssues) > 0 {
+				createdIDs, err := rp.supervisor.CreateDiscoveredIssues(ctx, issue, analysis.DiscoveredIssues)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to create discovered issues: %v\n", err)
+				} else if len(createdIDs) > 0 {
+					fmt.Printf("✓ Created %d discovered issue(s) from analysis: %v\n", len(createdIDs), createdIDs)
+					result.DiscoveredIssues = createdIDs
+				}
+			}
+
 			// Log analysis success
 			rp.logEvent(ctx, events.EventTypeAnalysisCompleted, events.SeverityInfo, issue.ID,
 				fmt.Sprintf("AI analysis completed for issue %s", issue.ID),
