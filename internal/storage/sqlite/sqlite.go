@@ -114,25 +114,47 @@ func (s *SQLiteStorage) CreateIssue(ctx context.Context, issue *types.Issue, act
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
-	// Generate ID if not set (thread-safe)
-	if issue.ID == "" {
-		s.idMu.Lock()
-		issue.ID = fmt.Sprintf("%s%d", s.issuePrefix, s.nextID)
-		s.nextID++
-		s.idMu.Unlock()
-	}
-
 	// Set timestamps
 	now := time.Now()
 	issue.CreatedAt = now
 	issue.UpdatedAt = now
 
-	// Start transaction
+	// Start transaction BEFORE generating ID to avoid races
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
+
+	// Generate ID if not set (inside transaction for atomicity)
+	if issue.ID == "" {
+		// Query MAX(id) within the transaction to get the latest ID
+		// Only consider IDs with our prefix to avoid conflicts with test IDs
+		var maxID sql.NullString
+		err := tx.QueryRowContext(ctx,
+			"SELECT MAX(id) FROM issues WHERE id LIKE ? || '%'",
+			s.issuePrefix).Scan(&maxID)
+		if err != nil {
+			return fmt.Errorf("failed to query max ID: %w", err)
+		}
+
+		// Calculate next ID
+		nextNum := 1
+		if maxID.Valid && maxID.String != "" {
+			parts := strings.Split(maxID.String, "-")
+			if len(parts) < 2 {
+				return fmt.Errorf("invalid issue ID format: %s", maxID.String)
+			}
+			// Take the last part as the number (handles multi-part IDs)
+			var num int
+			if _, err := fmt.Sscanf(parts[len(parts)-1], "%d", &num); err != nil {
+				return fmt.Errorf("failed to parse issue number from %s: %w", maxID.String, err)
+			}
+			nextNum = num + 1
+		}
+
+		issue.ID = fmt.Sprintf("%s%d", s.issuePrefix, nextNum)
+	}
 
 	// Insert issue
 	_, err = tx.ExecContext(ctx, `
