@@ -359,8 +359,8 @@ func TestMergeResults(t *testing.T) {
 		t.Fatalf("failed to add label: %v", err)
 	}
 
-	// Merge results
-	if err := mergeResults(ctx, sandboxDB, mainDB, mission.ID); err != nil {
+	// Merge results (without deduplicator for this test)
+	if err := mergeResults(ctx, sandboxDB, mainDB, mission.ID, nil); err != nil {
 		t.Fatalf("mergeResults failed: %v", err)
 	}
 
@@ -448,8 +448,8 @@ func TestMergeResultsWithComments(t *testing.T) {
 		t.Fatalf("failed to add comment: %v", err)
 	}
 
-	// Merge results
-	if err := mergeResults(ctx, sandboxDB, mainDB, mission.ID); err != nil {
+	// Merge results (without deduplicator for this test)
+	if err := mergeResults(ctx, sandboxDB, mainDB, mission.ID, nil); err != nil {
 		t.Fatalf("mergeResults failed: %v", err)
 	}
 

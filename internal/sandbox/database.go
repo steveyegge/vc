@@ -5,11 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/steveyegge/vc/internal/deduplication"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -255,12 +257,16 @@ const maxEventsToMerge = 100
 // mergeResults merges completed work from the sandbox database back to the main database.
 // This includes:
 // - Status updates for issues that were worked on
-// - New issues that were discovered during execution
+// - New issues that were discovered during execution (after deduplication)
 // - Comments and events from the sandbox
 // - Execution history
 //
+// The deduplicator parameter is optional. If nil, all discovered issues will be filed without
+// deduplication (fail-safe behavior). If provided, discovered issues will be deduplicated
+// against recent open issues in the main database before filing.
+//
 // Note: This does NOT merge code changes - those are handled by git operations.
-func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missionID string) error {
+func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missionID string, deduplicator deduplication.Deduplicator) error {
 	// Get the mission from sandbox to see its final state
 	sandboxMission, err := sandboxDB.GetIssue(ctx, missionID)
 	if err != nil {
@@ -296,10 +302,8 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 		return fmt.Errorf("failed to search sandbox issues: %w", err)
 	}
 
-	// Track discovered issues to add dependencies in second pass
-	discoveredIssues := make(map[string]*types.Issue)
-
-	// First pass: Create all discovered issues and their labels, update existing issues
+	// Collect all discovered issues (issues in sandbox that don't exist in main DB)
+	var candidateDiscoveredIssues []*types.Issue
 	for _, sandboxIssue := range sandboxIssues {
 		// Skip the original mission
 		if sandboxIssue.ID == missionID {
@@ -312,35 +316,112 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 			return fmt.Errorf("failed to check issue %s in main DB: %w", sandboxIssue.ID, err)
 		}
 
-		// If issue doesn't exist in main DB, it's a discovered issue - create it
+		// If issue doesn't exist in main DB, it's a discovered issue
 		if mainIssue == nil {
-			// Save the old sandbox ID before clearing it
-			oldSandboxID := sandboxIssue.ID
+			candidateDiscoveredIssues = append(candidateDiscoveredIssues, sandboxIssue)
+		}
+	}
 
-			// Clear the ID to force fresh ID generation in main DB
-			// This prevents collisions between sandbox-generated IDs and main DB IDs
-			sandboxIssue.ID = ""
+	// Run deduplication on discovered issues if deduplicator is provided
+	var issuesToFile []*types.Issue
+	var dedupStats *deduplication.DeduplicationStats
+	if deduplicator != nil && len(candidateDiscoveredIssues) > 0 {
+		log.Printf("[SANDBOX] Running deduplication on %d discovered issues", len(candidateDiscoveredIssues))
 
-			if err := mainDB.CreateIssue(ctx, sandboxIssue, "sandbox-discovered"); err != nil {
-				return fmt.Errorf("failed to create discovered issue (was %s): %w", oldSandboxID, err)
-			}
+		result, err := deduplicator.DeduplicateBatch(ctx, candidateDiscoveredIssues)
+		if err != nil {
+			// Fail-safe: if deduplication fails, file all issues with warning
+			log.Printf("[SANDBOX] WARNING: Deduplication failed (%v), filing all issues", err)
+			issuesToFile = candidateDiscoveredIssues
+		} else {
+			issuesToFile = result.UniqueIssues
+			dedupStats = &result.Stats
 
-			// Track this as a discovered issue with its new ID
-			// sandboxIssue.ID is now the newly generated ID from main DB
-			discoveredIssues[sandboxIssue.ID] = sandboxIssue
+			// Log deduplication results
+			log.Printf("[SANDBOX] Deduplication complete: %d unique, %d duplicates, %d within-batch duplicates",
+				result.Stats.UniqueCount, result.Stats.DuplicateCount, result.Stats.WithinBatchDuplicateCount)
 
-			// Copy labels from the sandbox issue (using old ID) to the new issue (using new ID)
-			labels, err := sandboxDB.GetLabels(ctx, oldSandboxID)
-			if err != nil {
-				return fmt.Errorf("failed to get labels for %s: %w", oldSandboxID, err)
-			}
-			for _, label := range labels {
-				if err := mainDB.AddLabel(ctx, sandboxIssue.ID, label, "sandbox-discovered"); err != nil {
-					return fmt.Errorf("failed to add label %s to %s: %w", label, sandboxIssue.ID, err)
+			// Add cross-reference comments for duplicates
+			for idx, existingID := range result.DuplicatePairs {
+				candidate := candidateDiscoveredIssues[idx]
+				comment := fmt.Sprintf("Skipped filing duplicate issue during sandbox merge: '%s' (duplicate of %s)",
+					candidate.Title, existingID)
+				if err := mainDB.AddComment(ctx, existingID, "sandbox-dedup", comment); err != nil {
+					log.Printf("[SANDBOX] WARNING: Failed to add cross-reference comment to %s: %v", existingID, err)
 				}
 			}
-		} else if mainIssue.Status != sandboxIssue.Status {
-			// Issue exists but status changed - update it
+
+			// Add comments for within-batch duplicates
+			for dupIdx, origIdx := range result.WithinBatchDuplicates {
+				duplicate := candidateDiscoveredIssues[dupIdx]
+				original := candidateDiscoveredIssues[origIdx]
+				log.Printf("[SANDBOX] Within-batch duplicate: '%s' is duplicate of '%s'",
+					duplicate.Title, original.Title)
+			}
+		}
+	} else if deduplicator == nil {
+		log.Printf("[SANDBOX] No deduplicator provided, filing all %d discovered issues", len(candidateDiscoveredIssues))
+		issuesToFile = candidateDiscoveredIssues
+	} else {
+		// No discovered issues to deduplicate
+		issuesToFile = candidateDiscoveredIssues
+	}
+
+	// Log final statistics
+	if dedupStats != nil {
+		log.Printf("[SANDBOX] Dedup stats: %d candidates -> %d filed, %d duplicates skipped (processing time: %dms)",
+			dedupStats.TotalCandidates, dedupStats.UniqueCount,
+			dedupStats.DuplicateCount+dedupStats.WithinBatchDuplicateCount,
+			dedupStats.ProcessingTimeMs)
+	}
+
+	// Track discovered issues to add dependencies in second pass
+	discoveredIssues := make(map[string]*types.Issue)
+
+	// First pass: Create deduplicated discovered issues and their labels
+	for _, sandboxIssue := range issuesToFile {
+		// Save the old sandbox ID before clearing it
+		oldSandboxID := sandboxIssue.ID
+
+		// Clear the ID to force fresh ID generation in main DB
+		// This prevents collisions between sandbox-generated IDs and main DB IDs
+		sandboxIssue.ID = ""
+
+		if err := mainDB.CreateIssue(ctx, sandboxIssue, "sandbox-discovered"); err != nil {
+			return fmt.Errorf("failed to create discovered issue (was %s): %w", oldSandboxID, err)
+		}
+
+		// Track this as a discovered issue with its new ID
+		// sandboxIssue.ID is now the newly generated ID from main DB
+		discoveredIssues[sandboxIssue.ID] = sandboxIssue
+
+		// Copy labels from the sandbox issue (using old ID) to the new issue (using new ID)
+		labels, err := sandboxDB.GetLabels(ctx, oldSandboxID)
+		if err != nil {
+			return fmt.Errorf("failed to get labels for %s: %w", oldSandboxID, err)
+		}
+		for _, label := range labels {
+			if err := mainDB.AddLabel(ctx, sandboxIssue.ID, label, "sandbox-discovered"); err != nil {
+				return fmt.Errorf("failed to add label %s to %s: %w", label, sandboxIssue.ID, err)
+			}
+		}
+	}
+
+	// Update status for existing issues that were worked on in the sandbox
+	for _, sandboxIssue := range sandboxIssues {
+		// Skip the mission (already handled above)
+		if sandboxIssue.ID == missionID {
+			continue
+		}
+
+		// Check if this is an existing issue (not a discovered one)
+		mainIssue, err := mainDB.GetIssue(ctx, sandboxIssue.ID)
+		if err != nil {
+			return fmt.Errorf("failed to check issue %s in main DB: %w", sandboxIssue.ID, err)
+		}
+
+		// If issue exists and status changed, update it
+		if mainIssue != nil && mainIssue.Status != sandboxIssue.Status {
 			updates := map[string]interface{}{
 				"status": sandboxIssue.Status,
 			}

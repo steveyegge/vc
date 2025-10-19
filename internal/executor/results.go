@@ -705,9 +705,23 @@ SkipGates:
 				fmt.Fprintf(os.Stderr, "warning: failed to add analysis comment: %v\n", err)
 			}
 
-			// Create discovered issues
+			// Create discovered issues (vc-149: deduplicate first)
 			if len(analysis.DiscoveredIssues) > 0 {
-				createdIDs, err := rp.supervisor.CreateDiscoveredIssues(ctx, issue, analysis.DiscoveredIssues)
+				// Deduplicate discovered issues if deduplicator is available
+				discoveredToCreate := analysis.DiscoveredIssues
+				if rp.deduplicator != nil {
+					uniqueDiscovered, dedupStats := rp.deduplicateDiscoveredIssues(ctx, issue, analysis.DiscoveredIssues)
+					if len(uniqueDiscovered) < len(analysis.DiscoveredIssues) {
+						fmt.Printf("🔍 Deduplication: %d discovered issues → %d unique (filtered %d duplicates)\n",
+							len(analysis.DiscoveredIssues), len(uniqueDiscovered),
+							len(analysis.DiscoveredIssues)-len(uniqueDiscovered))
+						fmt.Printf("   Stats: %d comparisons, %d AI calls, %dms\n",
+							dedupStats.ComparisonsMade, dedupStats.AICallsMade, dedupStats.ProcessingTimeMs)
+					}
+					discoveredToCreate = uniqueDiscovered
+				}
+
+				createdIDs, err := rp.supervisor.CreateDiscoveredIssues(ctx, issue, discoveredToCreate)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "warning: failed to create discovered issues: %v\n", err)
 				} else {

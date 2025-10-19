@@ -152,23 +152,7 @@ func New(cfg *Config) (*Executor, error) {
 		cleanupDoneCh:       make(chan struct{}),
 	}
 
-	// Initialize sandbox manager if enabled
-	if cfg.EnableSandboxes {
-		sandboxMgr, err := sandbox.NewManager(sandbox.Config{
-			SandboxRoot: sandboxRoot,
-			ParentRepo:  parentRepo,
-			MainDB:      cfg.Store,
-		})
-		if err != nil {
-			// Don't fail - just disable sandboxes
-			fmt.Fprintf(os.Stderr, "Warning: failed to initialize sandbox manager: %v (continuing without sandboxes)\n", err)
-			e.enableSandboxes = false
-		} else {
-			e.sandboxMgr = sandboxMgr
-		}
-	}
-
-	// Initialize AI supervisor if enabled
+	// Initialize AI supervisor if enabled (do this before sandbox manager to provide deduplicator)
 	if cfg.EnableAISupervision {
 		supervisor, err := ai.NewSupervisor(&ai.Config{
 			Store: cfg.Store,
@@ -179,6 +163,29 @@ func New(cfg *Config) (*Executor, error) {
 			e.enableAISupervision = false
 		} else {
 			e.supervisor = supervisor
+		}
+	}
+
+	// Initialize sandbox manager if enabled
+	if cfg.EnableSandboxes {
+		// Create deduplicator if we have a supervisor (vc-148)
+		var dedup deduplication.Deduplicator
+		if e.supervisor != nil {
+			dedup = deduplication.NewAIDeduplicator(e.supervisor, cfg.Store, deduplication.DefaultConfig())
+		}
+
+		sandboxMgr, err := sandbox.NewManager(sandbox.Config{
+			SandboxRoot:  sandboxRoot,
+			ParentRepo:   parentRepo,
+			MainDB:       cfg.Store,
+			Deduplicator: dedup, // Pass deduplicator for sandbox merge deduplication
+		})
+		if err != nil {
+			// Don't fail - just disable sandboxes
+			fmt.Fprintf(os.Stderr, "Warning: failed to initialize sandbox manager: %v (continuing without sandboxes)\n", err)
+			e.enableSandboxes = false
+		} else {
+			e.sandboxMgr = sandboxMgr
 		}
 	}
 

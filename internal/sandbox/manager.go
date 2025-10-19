@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/steveyegge/vc/internal/deduplication"
 	"github.com/steveyegge/vc/internal/storage"
 )
 
@@ -51,6 +52,10 @@ type Config struct {
 
 	// MainDB is the main beads database storage instance
 	MainDB storage.Storage
+
+	// Deduplicator is used to prevent filing duplicate issues when merging sandbox results
+	// Optional: if nil, all discovered issues will be filed without deduplication
+	Deduplicator deduplication.Deduplicator
 
 	// PreserveOnFailure determines if failed sandboxes should be kept for debugging
 	PreserveOnFailure bool
@@ -275,7 +280,7 @@ func (m *manager) Cleanup(ctx context.Context, sandbox *Sandbox) error {
 	} else {
 		// Merge results to main database if sandbox completed successfully
 		if sandbox.Status == SandboxStatusCompleted || sandbox.Status == SandboxStatusActive {
-			if err := mergeResults(ctx, sandboxDB, m.config.MainDB, sandbox.MissionID); err != nil {
+			if err := mergeResults(ctx, sandboxDB, m.config.MainDB, sandbox.MissionID, m.config.Deduplicator); err != nil {
 				sandboxDB.Close()
 				return fmt.Errorf("failed to merge results: %w", err)
 			}
