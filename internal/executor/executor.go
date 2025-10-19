@@ -563,7 +563,10 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 
 	// Create a cancelable context for the agent so watchdog can intervene
 	agentCtx, agentCancel := context.WithCancel(ctx)
-	defer agentCancel() // Always cancel when we're done
+	defer func() {
+		fmt.Printf("[DEBUG vc-177] agentCancel called for issue %s\n", issue.ID)
+		agentCancel() // Always cancel when we're done
+	}()
 
 	// Register agent context with intervention controller for watchdog
 	if e.intervention != nil {

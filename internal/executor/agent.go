@@ -149,6 +149,13 @@ func SpawnAgent(ctx context.Context, cfg AgentConfig, prompt string) (*Agent, er
 
 // Wait waits for the agent to complete and returns the result
 func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
+	// Check if parent context is already done (debugging for vc-177)
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("agent wait called with already-cancelled context: %w", ctx.Err())
+	default:
+	}
+
 	// Create a context with timeout
 	timeoutCtx, cancel := context.WithTimeout(ctx, a.config.Timeout)
 	defer cancel()
@@ -161,8 +168,18 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 
 	select {
 	case <-timeoutCtx.Done():
+		// Check why context was cancelled
+		if ctx.Err() != nil {
+			// Parent context was cancelled, not timeout
+			if err := a.Kill(); err != nil {
+				return nil, fmt.Errorf("agent execution cancelled (parent context): %w (kill failed: %v)", ctx.Err(), err)
+			}
+			return nil, fmt.Errorf("agent execution cancelled (parent context): %w", ctx.Err())
+		}
 		// Timeout - kill the process
-		a.Kill()
+		if err := a.Kill(); err != nil {
+			return nil, fmt.Errorf("agent execution timed out after %v (kill failed: %w)", a.config.Timeout, err)
+		}
 		return nil, fmt.Errorf("agent execution timed out after %v", a.config.Timeout)
 	case err := <-errCh:
 		// Process completed
