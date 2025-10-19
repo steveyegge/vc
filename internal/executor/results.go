@@ -379,19 +379,30 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 					})
 			}
 
-			// Check if we timed out
+			// Check if we timed out or were cancelled (vc-128)
 			timedOut := gateCtx.Err() == context.DeadlineExceeded
+			cancelled := gateCtx.Err() == context.Canceled || ctx.Err() == context.Canceled
+
 			if timedOut {
 				fmt.Fprintf(os.Stderr, "Warning: quality gates timed out after 5 minutes\n")
 				result.GatesPassed = false
 				allPassed = false // Override allPassed on timeout
+			} else if cancelled {
+				// Executor is shutting down - don't mark as failed, return issue to open
+				fmt.Fprintf(os.Stderr, "Warning: quality gates cancelled due to executor shutdown\n")
+				result.GatesPassed = false
+				allPassed = false // Don't pass gates on cancellation
+				// Don't handle gate results - let the executor release the issue
 			} else {
 				result.GatesPassed = allPassed
 			}
 
 			// Handle gate results (creates blocking issues on failure)
-			if err := gateRunner.HandleGateResults(ctx, issue, gateResults, allPassed); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to handle gate results: %v\n", err)
+			// Skip this on cancellation - let executor release issue back to open (vc-128)
+			if !cancelled {
+				if err := gateRunner.HandleGateResults(ctx, issue, gateResults, allPassed); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to handle gate results: %v\n", err)
+				}
 			}
 
 			// Build completion event data
@@ -399,6 +410,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				"all_passed": allPassed,
 				"gates_run":  len(gateResults),
 				"timeout":    timedOut,
+				"cancelled":  cancelled,
 			}
 
 			// Count passed and failed gates
@@ -422,6 +434,11 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				severity = events.SeverityError
 				message = fmt.Sprintf("Quality gates timed out after 5 minutes for issue %s", issue.ID)
 				gateData["error"] = "deadline exceeded"
+			} else if cancelled {
+				// Cancellation due to shutdown is not an error - it's expected (vc-128)
+				severity = events.SeverityInfo
+				message = fmt.Sprintf("Quality gates cancelled for issue %s due to executor shutdown", issue.ID)
+				gateData["error"] = "context cancelled"
 			} else if !allPassed {
 				severity = events.SeverityWarning
 			}
@@ -429,7 +446,8 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			// Always emit completion event (vc-245)
 			rp.logEvent(ctx, events.EventTypeQualityGatesCompleted, severity, issue.ID, message, gateData)
 
-			if !allPassed {
+			// Skip blocking logic if cancelled - executor will release issue (vc-128)
+			if !cancelled && !allPassed {
 				fmt.Printf("\n=== Quality Gates Failed ===\n")
 				fmt.Printf("Issue %s marked as blocked due to failing quality gates\n", issue.ID)
 

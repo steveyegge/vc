@@ -1,9 +1,12 @@
 package deduplication
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/steveyegge/vc/internal/ai"
+	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -561,6 +564,176 @@ func TestDefaultConfig(t *testing.T) {
 	if config.IncludeClosedIssues {
 		t.Errorf("expected IncludeClosedIssues to be false by default")
 	}
+}
+
+// TestNewAIDeduplicatorValidation tests the constructor validation logic
+func TestNewAIDeduplicatorValidation(t *testing.T) {
+	ctx := context.Background()
+
+	// Create a valid in-memory storage for tests
+	cfg := storage.DefaultConfig()
+	cfg.Path = ":memory:"
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("failed to create test storage: %v", err)
+	}
+	defer store.Close()
+
+	// Note: We can't easily create a real supervisor without an Anthropic API client,
+	// so we focus on testing nil validation. Config validation is tested separately
+	// in TestConfigValidation, and it's already called by the constructor.
+
+	tests := []struct {
+		name        string
+		supervisor  *ai.Supervisor
+		store       storage.Storage
+		config      Config
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "nil supervisor",
+			supervisor:  nil,
+			store:       store,
+			config:      DefaultConfig(),
+			expectError: true,
+			errorMsg:    "supervisor cannot be nil",
+		},
+		{
+			name:        "nil store",
+			supervisor:  nil, // Still nil since we can't create a real one
+			store:       nil,
+			config:      DefaultConfig(),
+			expectError: true,
+			errorMsg:    "nil", // Will match either "supervisor" or "store" error
+		},
+		{
+			name:       "invalid config gets validated",
+			supervisor: nil,
+			store:      store,
+			config: Config{
+				ConfidenceThreshold: 1.5, // Invalid - will be caught after supervisor check
+				LookbackWindow:      7 * 24 * time.Hour,
+				MaxCandidates:       50,
+				BatchSize:           10,
+				MinTitleLength:      10,
+				MaxRetries:          2,
+				RequestTimeout:      30 * time.Second,
+			},
+			expectError: true,
+			errorMsg:    "nil", // Supervisor validation happens first
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dedup, err := NewAIDeduplicator(tt.supervisor, tt.store, tt.config)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error containing '%s', got nil", tt.errorMsg)
+				} else if tt.errorMsg != "" && !contains(err.Error(), tt.errorMsg) {
+					t.Errorf("expected error containing '%s', got '%s'", tt.errorMsg, err.Error())
+				}
+				if dedup != nil {
+					t.Errorf("expected nil deduplicator on error, got non-nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if dedup == nil {
+					t.Errorf("expected non-nil deduplicator on success, got nil")
+				}
+			}
+		})
+	}
+}
+
+// TestNewAIDeduplicatorConfigValidation tests that config validation is called
+// This test verifies the validation is invoked; specific validation rules are
+// tested in TestConfigValidation
+func TestNewAIDeduplicatorConfigValidation(t *testing.T) {
+	ctx := context.Background()
+
+	// Create a valid in-memory storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = ":memory:"
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("failed to create test storage: %v", err)
+	}
+	defer store.Close()
+
+	// Create a mock supervisor by creating an empty one (unsafe, but for testing validation)
+	// We just need a non-nil pointer to test config validation
+	mockSupervisor := &ai.Supervisor{}
+
+	// Test invalid configs
+	invalidConfigs := []struct {
+		name   string
+		config Config
+	}{
+		{
+			name: "confidence too high",
+			config: Config{
+				ConfidenceThreshold: 1.5,
+				LookbackWindow:      7 * 24 * time.Hour,
+				MaxCandidates:       50,
+				BatchSize:           10,
+				MinTitleLength:      10,
+				MaxRetries:          2,
+				RequestTimeout:      30 * time.Second,
+			},
+		},
+		{
+			name: "max candidates too large",
+			config: Config{
+				ConfidenceThreshold: 0.85,
+				LookbackWindow:      7 * 24 * time.Hour,
+				MaxCandidates:       1000,
+				BatchSize:           10,
+				MinTitleLength:      10,
+				MaxRetries:          2,
+				RequestTimeout:      30 * time.Second,
+			},
+		},
+		{
+			name: "negative lookback",
+			config: Config{
+				ConfidenceThreshold: 0.85,
+				LookbackWindow:      -1 * time.Hour,
+				MaxCandidates:       50,
+				BatchSize:           10,
+				MinTitleLength:      10,
+				MaxRetries:          2,
+				RequestTimeout:      30 * time.Second,
+			},
+		},
+	}
+
+	for _, tt := range invalidConfigs {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewAIDeduplicator(mockSupervisor, store, tt.config)
+			if err == nil {
+				t.Errorf("expected error for invalid config, got nil")
+			}
+			if !contains(err.Error(), "invalid config") {
+				t.Errorf("expected error to contain 'invalid config', got: %v", err)
+			}
+		})
+	}
+
+	// Test valid config succeeds (doesn't panic from nil fields in mock supervisor)
+	t.Run("valid config", func(t *testing.T) {
+		dedup, err := NewAIDeduplicator(mockSupervisor, store, DefaultConfig())
+		if err != nil {
+			t.Errorf("unexpected error with valid config: %v", err)
+		}
+		if dedup == nil {
+			t.Errorf("expected non-nil deduplicator with valid config")
+		}
+	})
 }
 
 // contains checks if a string contains a substring (helper for tests)

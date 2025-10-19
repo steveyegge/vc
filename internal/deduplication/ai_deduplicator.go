@@ -24,30 +24,43 @@ var _ Deduplicator = (*AIDeduplicator)(nil)
 // NewAIDeduplicator creates a new AI-powered deduplicator
 //
 // Parameters:
-//   - supervisor: The AI supervisor for making duplicate detection API calls
-//   - store: The storage layer for querying existing issues
-//   - config: Configuration for deduplication behavior
+//   - supervisor: The AI supervisor for making duplicate detection API calls (must be non-nil)
+//   - store: The storage layer for querying existing issues (must be non-nil)
+//   - config: Configuration for deduplication behavior (must be valid)
+//
+// Returns an error if any dependencies are nil or if config validation fails.
 //
 // Example:
 //
 //	supervisor := ai.NewSupervisor(client, store, "claude-3-5-sonnet-20241022", ai.DefaultRetryConfig())
-//	dedup := NewAIDeduplicator(supervisor, store, DefaultConfig())
-func NewAIDeduplicator(supervisor *ai.Supervisor, store storage.Storage, config Config) *AIDeduplicator {
+//	dedup, err := NewAIDeduplicator(supervisor, store, DefaultConfig())
+//	if err != nil {
+//	    return fmt.Errorf("failed to create deduplicator: %w", err)
+//	}
+func NewAIDeduplicator(supervisor *ai.Supervisor, store storage.Storage, config Config) (*AIDeduplicator, error) {
+	// Validate dependencies
+	if supervisor == nil {
+		return nil, fmt.Errorf("supervisor cannot be nil")
+	}
+	if store == nil {
+		return nil, fmt.Errorf("store cannot be nil")
+	}
+
+	// Validate configuration
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
 	return &AIDeduplicator{
 		supervisor: supervisor,
 		store:      store,
 		config:     config,
-	}
+	}, nil
 }
 
 // CheckDuplicate checks if a candidate issue is a duplicate of any recent open issues
 func (d *AIDeduplicator) CheckDuplicate(ctx context.Context, candidate *types.Issue) (*DuplicateDecision, error) {
-	// Validate configuration
-	if err := d.config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
-	}
-
-	// Validate candidate issue
+	// Validate candidate issue (config is already validated in constructor)
 	if candidate == nil {
 		return nil, fmt.Errorf("candidate issue cannot be nil")
 	}
@@ -137,12 +150,7 @@ func (d *AIDeduplicator) CheckDuplicate(ctx context.Context, candidate *types.Is
 func (d *AIDeduplicator) DeduplicateBatch(ctx context.Context, candidates []*types.Issue) (*DeduplicationResult, error) {
 	startTime := time.Now()
 
-	// Validate configuration
-	if err := d.config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
-	}
-
-	// Validate candidates
+	// Validate candidates (config is already validated in constructor)
 	if len(candidates) == 0 {
 		return &DeduplicationResult{
 			UniqueIssues:          []*types.Issue{},

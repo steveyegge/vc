@@ -2,6 +2,8 @@ package deduplication
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -136,4 +138,120 @@ func (c Config) String() string {
 		c.EnableWithinBatchDedup, c.FailOpen, c.IncludeClosedIssues, c.MinTitleLength,
 		c.MaxRetries, c.RequestTimeout,
 	)
+}
+
+// ConfigFromEnv creates a Config from environment variables, falling back to defaults
+//
+// Environment variables:
+//   - VC_DEDUP_CONFIDENCE_THRESHOLD: Minimum confidence (0.0-1.0) to mark as duplicate (default: 0.85)
+//   - VC_DEDUP_LOOKBACK_DAYS: How many days to look back for duplicates (default: 7)
+//   - VC_DEDUP_MAX_CANDIDATES: Maximum number of issues to compare against (default: 50)
+//   - VC_DEDUP_BATCH_SIZE: Number of comparisons per AI call (default: 10)
+//   - VC_DEDUP_WITHIN_BATCH: Enable within-batch deduplication (default: true)
+//   - VC_DEDUP_FAIL_OPEN: File issue on dedup failure (default: true)
+//   - VC_DEDUP_INCLUDE_CLOSED: Include closed issues in comparison (default: false)
+//   - VC_DEDUP_MIN_TITLE_LENGTH: Minimum title length for dedup (default: 10)
+//   - VC_DEDUP_MAX_RETRIES: Maximum retry attempts (default: 2)
+//   - VC_DEDUP_TIMEOUT_SECS: Request timeout in seconds (default: 30)
+//
+// Returns an error if any environment variable has an invalid value.
+func ConfigFromEnv() (Config, error) {
+	cfg := DefaultConfig()
+
+	// Parse environment variables with validation
+	if err := parseEnvFloat("VC_DEDUP_CONFIDENCE_THRESHOLD", &cfg.ConfidenceThreshold); err != nil {
+		return cfg, err
+	}
+	if err := parseEnvDuration("VC_DEDUP_LOOKBACK_DAYS", &cfg.LookbackWindow, 24*time.Hour); err != nil {
+		return cfg, err
+	}
+	if err := parseEnvInt("VC_DEDUP_MAX_CANDIDATES", &cfg.MaxCandidates); err != nil {
+		return cfg, err
+	}
+	if err := parseEnvInt("VC_DEDUP_BATCH_SIZE", &cfg.BatchSize); err != nil {
+		return cfg, err
+	}
+	if err := parseEnvBool("VC_DEDUP_WITHIN_BATCH", &cfg.EnableWithinBatchDedup); err != nil {
+		return cfg, err
+	}
+	if err := parseEnvBool("VC_DEDUP_FAIL_OPEN", &cfg.FailOpen); err != nil {
+		return cfg, err
+	}
+	if err := parseEnvBool("VC_DEDUP_INCLUDE_CLOSED", &cfg.IncludeClosedIssues); err != nil {
+		return cfg, err
+	}
+	if err := parseEnvInt("VC_DEDUP_MIN_TITLE_LENGTH", &cfg.MinTitleLength); err != nil {
+		return cfg, err
+	}
+	if err := parseEnvInt("VC_DEDUP_MAX_RETRIES", &cfg.MaxRetries); err != nil {
+		return cfg, err
+	}
+	if err := parseEnvDuration("VC_DEDUP_TIMEOUT_SECS", &cfg.RequestTimeout, time.Second); err != nil {
+		return cfg, err
+	}
+
+	// Validate the final configuration
+	if err := cfg.Validate(); err != nil {
+		return cfg, fmt.Errorf("invalid configuration from environment: %w", err)
+	}
+
+	return cfg, nil
+}
+
+// parseEnvFloat parses a float64 from an environment variable
+func parseEnvFloat(key string, dest *float64) error {
+	value := os.Getenv(key)
+	if value == "" {
+		return nil // Use default
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return fmt.Errorf("invalid value for %s: %w", key, err)
+	}
+	*dest = parsed
+	return nil
+}
+
+// parseEnvInt parses an int from an environment variable
+func parseEnvInt(key string, dest *int) error {
+	value := os.Getenv(key)
+	if value == "" {
+		return nil // Use default
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("invalid value for %s: %w", key, err)
+	}
+	*dest = parsed
+	return nil
+}
+
+// parseEnvBool parses a bool from an environment variable
+func parseEnvBool(key string, dest *bool) error {
+	value := os.Getenv(key)
+	if value == "" {
+		return nil // Use default
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fmt.Errorf("invalid value for %s: %w", key, err)
+	}
+	*dest = parsed
+	return nil
+}
+
+// parseEnvDuration parses a duration from an environment variable
+// The multiplier is used to convert the numeric value to a duration
+// (e.g., for days: multiplier = 24*time.Hour)
+func parseEnvDuration(key string, dest *time.Duration, multiplier time.Duration) error {
+	value := os.Getenv(key)
+	if value == "" {
+		return nil // Use default
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("invalid value for %s: %w", key, err)
+	}
+	*dest = time.Duration(parsed) * multiplier
+	return nil
 }

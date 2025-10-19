@@ -70,7 +70,8 @@ type Config struct {
 	SandboxRoot         string        // Root directory for sandboxes (default: ".sandboxes")
 	ParentRepo          string        // Parent repository path (default: ".")
 	DefaultBranch       string        // Default git branch for sandboxes (default: "main")
-	WatchdogConfig      *watchdog.WatchdogConfig // Watchdog configuration (default: conservative defaults)
+	WatchdogConfig      *watchdog.WatchdogConfig   // Watchdog configuration (default: conservative defaults)
+	DeduplicationConfig *deduplication.Config      // Deduplication configuration (default: sensible defaults, nil = use defaults)
 }
 
 // DefaultConfig returns default executor configuration
@@ -171,14 +172,27 @@ func New(cfg *Config) (*Executor, error) {
 		// Create deduplicator if we have a supervisor (vc-148)
 		var dedup deduplication.Deduplicator
 		if e.supervisor != nil {
-			dedup = deduplication.NewAIDeduplicator(e.supervisor, cfg.Store, deduplication.DefaultConfig())
+			// Get deduplication config from executor config or use defaults
+			dedupConfig := deduplication.DefaultConfig()
+			if cfg.DeduplicationConfig != nil {
+				dedupConfig = *cfg.DeduplicationConfig
+			}
+
+			var err error
+			dedup, err = deduplication.NewAIDeduplicator(e.supervisor, cfg.Store, dedupConfig)
+			if err != nil {
+				// Don't fail - just continue without deduplication
+				fmt.Fprintf(os.Stderr, "Warning: failed to create deduplicator: %v (continuing without deduplication)\n", err)
+				dedup = nil
+			}
 		}
 
 		sandboxMgr, err := sandbox.NewManager(sandbox.Config{
-			SandboxRoot:  sandboxRoot,
-			ParentRepo:   parentRepo,
-			MainDB:       cfg.Store,
-			Deduplicator: dedup, // Pass deduplicator for sandbox merge deduplication
+			SandboxRoot:         sandboxRoot,
+			ParentRepo:          parentRepo,
+			MainDB:              cfg.Store,
+			Deduplicator:        dedup, // Pass deduplicator for sandbox merge deduplication
+			DeduplicationConfig: cfg.DeduplicationConfig,
 		})
 		if err != nil {
 			// Don't fail - just disable sandboxes
@@ -681,7 +695,21 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	// Create deduplicator if AI supervision is enabled (vc-145)
 	var dedup deduplication.Deduplicator
 	if e.supervisor != nil {
-		dedup = deduplication.NewAIDeduplicator(e.supervisor, e.store, deduplication.DefaultConfig())
+		// Get deduplication config from executor config or use defaults
+		dedupConfig := deduplication.DefaultConfig()
+		if e.config != nil && e.config.DeduplicationConfig != nil {
+			dedupConfig = *e.config.DeduplicationConfig
+		}
+
+		var err error
+		dedup, err = deduplication.NewAIDeduplicator(e.supervisor, e.store, dedupConfig)
+		if err != nil {
+			// Log warning but continue without deduplication (fail-safe behavior)
+			e.logEvent(ctx, events.EventTypeError, events.SeverityWarning, issue.ID,
+				fmt.Sprintf("Failed to create deduplicator: %v (continuing without deduplication)", err),
+				map[string]interface{}{"error": err.Error()})
+			dedup = nil
+		}
 	}
 
 	processor, err := NewResultsProcessor(&ResultsProcessorConfig{

@@ -57,6 +57,10 @@ type Config struct {
 	// Optional: if nil, all discovered issues will be filed without deduplication
 	Deduplicator deduplication.Deduplicator
 
+	// DeduplicationConfig is the configuration for deduplication behavior
+	// Optional: if nil, defaults will be used
+	DeduplicationConfig *deduplication.Config
+
 	// PreserveOnFailure determines if failed sandboxes should be kept for debugging
 	PreserveOnFailure bool
 
