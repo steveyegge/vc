@@ -114,6 +114,7 @@ func (s *SQLiteStorage) GetActiveInstances(ctx context.Context) ([]*types.Execut
 
 // CleanupStaleInstances marks instances as 'stopped' if their last_heartbeat
 // is older than staleThreshold seconds, and releases all issues claimed by those instances.
+// Also releases claims from already-stopped instances (orphaned claims).
 // Returns the number of instances cleaned up.
 func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshold int) (int, error) {
 	// Calculate the cutoff time in Go, then compare
@@ -126,7 +127,7 @@ func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshol
 	}
 	defer tx.Rollback()
 
-	// First, find all stale instances
+	// First, find all stale instances (running but heartbeat is old)
 	staleQuery := `
 		SELECT instance_id
 		FROM executor_instances
@@ -154,13 +155,45 @@ func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshol
 		return 0, fmt.Errorf("error iterating stale instances: %w", err)
 	}
 
-	// If no stale instances found, return early
-	if len(staleInstanceIDs) == 0 {
+	// Also find instances that are already stopped but still have claims (orphaned claims)
+	orphanedQuery := `
+		SELECT DISTINCT executor_instance_id
+		FROM issue_execution_state
+		WHERE executor_instance_id IN (
+			SELECT instance_id FROM executor_instances WHERE status = 'stopped'
+		)
+	`
+
+	orphanedRows, err := tx.QueryContext(ctx, orphanedQuery)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query orphaned claims: %w", err)
+	}
+
+	var orphanedInstanceIDs []string
+	for orphanedRows.Next() {
+		var instanceID string
+		if err := orphanedRows.Scan(&instanceID); err != nil {
+			orphanedRows.Close()
+			return 0, fmt.Errorf("failed to scan orphaned instance ID: %w", err)
+		}
+		orphanedInstanceIDs = append(orphanedInstanceIDs, instanceID)
+	}
+	orphanedRows.Close()
+
+	if err = orphanedRows.Err(); err != nil {
+		return 0, fmt.Errorf("error iterating orphaned instances: %w", err)
+	}
+
+	// Combine both lists (stale and orphaned)
+	allInstanceIDs := append(staleInstanceIDs, orphanedInstanceIDs...)
+
+	// If no instances to clean up, return early
+	if len(allInstanceIDs) == 0 {
 		return 0, nil
 	}
 
-	// For each stale instance, find and release all claimed issues
-	for _, instanceID := range staleInstanceIDs {
+	// For each instance (stale or orphaned), find and release all claimed issues
+	for _, instanceID := range allInstanceIDs {
 		// Find all issues claimed by this stale instance
 		claimedIssuesQuery := `
 			SELECT issue_id
@@ -210,7 +243,20 @@ func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshol
 			}
 
 			// Add comment explaining why the issue was released
-			comment := fmt.Sprintf("Issue automatically released - executor instance %s became stale (no heartbeat for %d seconds)", instanceID, staleThreshold)
+			var comment string
+			// Check if this is a stale instance or an orphaned claim
+			isStale := false
+			for _, staleID := range staleInstanceIDs {
+				if staleID == instanceID {
+					isStale = true
+					break
+				}
+			}
+			if isStale {
+				comment = fmt.Sprintf("Issue automatically released - executor instance %s became stale (no heartbeat for %d seconds)", instanceID, staleThreshold)
+			} else {
+				comment = fmt.Sprintf("Issue automatically released - executor instance %s was already stopped but claim remained (orphaned)", instanceID)
+			}
 			_, err = tx.ExecContext(ctx, `
 				INSERT INTO events (issue_id, event_type, actor, comment)
 				VALUES (?, ?, ?, ?)
@@ -221,7 +267,7 @@ func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshol
 		}
 	}
 
-	// Mark all stale instances as 'stopped'
+	// Mark all stale instances as 'stopped' (orphaned instances are already stopped)
 	updateQuery := `
 		UPDATE executor_instances
 		SET status = 'stopped'
@@ -229,14 +275,9 @@ func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshol
 		  AND last_heartbeat < ?
 	`
 
-	result, err := tx.ExecContext(ctx, updateQuery, cutoffTime)
+	_, err = tx.ExecContext(ctx, updateQuery, cutoffTime)
 	if err != nil {
 		return 0, fmt.Errorf("failed to mark stale instances as stopped: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
 	// Commit the transaction
@@ -244,5 +285,6 @@ func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshol
 		return 0, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	return int(rowsAffected), nil
+	// Return total number of instances cleaned (stale + orphaned)
+	return len(allInstanceIDs), nil
 }
