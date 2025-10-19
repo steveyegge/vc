@@ -717,7 +717,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		Supervisor:         e.supervisor,
 		Deduplicator:       dedup,
 		EnableQualityGates: e.enableQualityGates,
-		WorkingDir:         e.workingDir,
+		WorkingDir:         workingDir, // Use sandbox path if sandboxing is enabled (vc-117)
 		Actor:              e.instanceID,
 	})
 	if err != nil {
