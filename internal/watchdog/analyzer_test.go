@@ -56,6 +56,8 @@ func (m *mockStorage) ReleaseIssue(ctx context.Context, issueID string) error { 
 func (m *mockStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, actor, errorComment string) error { return nil }
 func (m *mockStorage) GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error) { return nil, nil }
 func (m *mockStorage) RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error { return nil }
+func (m *mockStorage) GetConfig(ctx context.Context, key string) (string, error) { return "", nil }
+func (m *mockStorage) SetConfig(ctx context.Context, key, value string) error { return nil }
 
 // createTestSupervisor creates a supervisor for testing
 // If ANTHROPIC_API_KEY is set, uses real AI calls; otherwise uses a test key (which will fail API calls)

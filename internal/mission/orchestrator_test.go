@@ -214,6 +214,12 @@ func (m *MockStorage) GetExecutionHistory(ctx context.Context, issueID string) (
 func (m *MockStorage) RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error {
 	return nil
 }
+func (m *MockStorage) GetConfig(ctx context.Context, key string) (string, error) {
+	return "", nil
+}
+func (m *MockStorage) SetConfig(ctx context.Context, key, value string) error {
+	return nil
+}
 
 func TestGenerateAndStorePlan_RequiresApproval(t *testing.T) {
 	ctx := context.Background()

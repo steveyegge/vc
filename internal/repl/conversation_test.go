@@ -190,6 +190,12 @@ func (m *mockStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, actor,
 func (m *mockStorage) Close() error {
 	return nil
 }
+func (m *mockStorage) GetConfig(ctx context.Context, key string) (string, error) {
+	return "", nil
+}
+func (m *mockStorage) SetConfig(ctx context.Context, key, value string) error {
+	return nil
+}
 
 // TestToolGetStatus tests the get_status tool
 func TestToolGetStatus(t *testing.T) {

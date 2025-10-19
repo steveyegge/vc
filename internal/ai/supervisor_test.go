@@ -181,6 +181,12 @@ func (m *mockStorage) GetAgentEventsByIssue(ctx context.Context, issueID string)
 func (m *mockStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*events.AgentEvent, error) {
 	return nil, nil
 }
+func (m *mockStorage) GetConfig(ctx context.Context, key string) (string, error) {
+	return "", nil
+}
+func (m *mockStorage) SetConfig(ctx context.Context, key, value string) error {
+	return nil
+}
 
 func min(a, b int) int {
 	if a < b {
