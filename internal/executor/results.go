@@ -162,7 +162,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			})
 
 		// Release the execution state
-		if releaseErr := rp.store.ReleaseIssue(ctx, issue.ID); releaseErr != nil {
+		if releaseErr := rp.releaseExecutionState(ctx, issue.ID); releaseErr != nil {
 			return nil, fmt.Errorf("failed to release issue after summarization failure: %w", releaseErr)
 		}
 
@@ -200,7 +200,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				fmt.Printf("Issue blocked by agent - skipping quality gates\n")
 
 				// Release the execution state
-				if err := rp.store.ReleaseIssue(ctx, issue.ID); err != nil {
+				if err := rp.releaseExecutionState(ctx, issue.ID); err != nil {
 					return nil, fmt.Errorf("failed to release blocked issue: %w", err)
 				}
 
@@ -213,7 +213,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				fmt.Printf("Task decomposed into epic - executor will pick up children\n")
 
 				// Release the execution state
-				if err := rp.store.ReleaseIssue(ctx, issue.ID); err != nil {
+				if err := rp.releaseExecutionState(ctx, issue.ID); err != nil {
 					return nil, fmt.Errorf("failed to release decomposed issue: %w", err)
 				}
 
@@ -488,7 +488,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				}
 
 				// Release the execution state
-				if err := rp.store.ReleaseIssue(ctx, issue.ID); err != nil {
+				if err := rp.releaseExecutionState(ctx, issue.ID); err != nil {
 					return nil, fmt.Errorf("failed to release blocked issue: %w", err)
 				}
 
@@ -768,7 +768,7 @@ SkipGates:
 		}
 
 		// Release the execution state
-		if err := rp.store.ReleaseIssue(ctx, issue.ID); err != nil {
+		if err := rp.releaseExecutionState(ctx, issue.ID); err != nil {
 			return nil, fmt.Errorf("failed to release issue: %w", err)
 		}
 
@@ -788,7 +788,7 @@ SkipGates:
 		}
 
 		// Leave issue in in_progress state but release execution lock
-		if err := rp.store.ReleaseIssue(ctx, issue.ID); err != nil {
+		if err := rp.releaseExecutionState(ctx, issue.ID); err != nil {
 			return nil, fmt.Errorf("failed to release issue: %w", err)
 		}
 
@@ -833,6 +833,26 @@ func (rp *ResultsProcessor) extractSummary(ctx context.Context, issue *types.Iss
 	}
 
 	return summary, nil
+}
+
+// releaseExecutionState releases the execution state for an issue.
+// If the execution state is already gone (e.g., cleaned up by CleanupStaleInstances due to stale heartbeat),
+// this is treated as success since the goal (release the state) has been achieved.
+// This prevents race conditions where cleanup releases state while execution is finishing.
+func (rp *ResultsProcessor) releaseExecutionState(ctx context.Context, issueID string) error {
+	err := rp.store.ReleaseIssue(ctx, issueID)
+	if err != nil {
+		// Check if error is "execution state not found"
+		// This can happen if CleanupStaleInstances already released the state
+		if strings.Contains(err.Error(), "execution state not found") {
+			// Log warning but don't fail - state was already released by cleanup
+			fmt.Fprintf(os.Stderr, "info: execution state for %s was already released (likely by cleanup loop)\n", issueID)
+			return nil
+		}
+		// Other errors should still be propagated
+		return err
+	}
+	return nil
 }
 
 // buildAnalysisComment creates a formatted comment from AI analysis
