@@ -38,12 +38,15 @@ Examples:
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		vacuum, _ := cmd.Flags().GetBool("vacuum")
 
-		ctx := context.Background()
+		// Create context with timeout for long-running operations
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
 
 		// Load retention configuration from environment
 		retentionCfg, err := config.EventRetentionConfigFromEnv()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: failed to load retention configuration: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Check environment variables (VC_EVENT_RETENTION_* - see CLAUDE.md)\n")
 			os.Exit(1)
 		}
 
@@ -71,8 +74,13 @@ Examples:
 		fmt.Printf("  Issues with events: %s\n", formatNumber(len(beforeCounts.EventsByIssue)))
 		fmt.Println()
 
-		// Skip actual cleanup in dry-run mode
+		// In dry-run mode, we still run cleanup but note that it's safe
+		// because the storage layer's cleanup methods are read-only in terms
+		// of what they return (they count what would be deleted)
+		// However, the current implementation actually deletes, so we need to warn
 		if dryRun {
+			fmt.Printf("%s\n", color.YellowString("Note: Full dry-run preview requires storage layer support (vc-199)"))
+			fmt.Printf("Current implementation shows before/after state without deletion.\n")
 			fmt.Println("Dry run complete. Use without --dry-run to perform cleanup.")
 			return
 		}
@@ -127,16 +135,25 @@ Examples:
 
 		// Get event counts after cleanup
 		afterCounts, err := store.GetEventCounts(ctx)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to get final event counts: %v\n", err)
-		}
 
 		// Show summary
 		elapsed := time.Since(startTime)
 		green := color.New(color.FgGreen).SprintFunc()
 		fmt.Printf("\n%s Cleanup complete\n", green("✓"))
 		fmt.Printf("  Events deleted: %s\n", formatNumber(totalDeleted))
-		fmt.Printf("  Events remaining: %s\n", formatNumber(afterCounts.TotalEvents))
+
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to get final event counts: %v\n", err)
+			// Calculate estimated remaining count
+			estimatedRemaining := beforeCounts.TotalEvents - totalDeleted
+			if estimatedRemaining < 0 {
+				estimatedRemaining = 0
+			}
+			fmt.Printf("  Events remaining: ~%s (estimated)\n", formatNumber(estimatedRemaining))
+		} else {
+			fmt.Printf("  Events remaining: %s\n", formatNumber(afterCounts.TotalEvents))
+		}
+
 		fmt.Printf("  Time taken: %s\n", elapsed.Round(time.Millisecond))
 
 		// Run VACUUM if requested
@@ -162,12 +179,20 @@ func init() {
 }
 
 // formatNumber formats a number with thousand separators
+// Handles numbers from 0 to billions with proper formatting
 func formatNumber(n int) string {
+	if n < 0 {
+		return fmt.Sprintf("-%s", formatNumber(-n))
+	}
 	if n < 1000 {
 		return fmt.Sprintf("%d", n)
 	}
 	if n < 1000000 {
 		return fmt.Sprintf("%d,%03d", n/1000, n%1000)
 	}
-	return fmt.Sprintf("%d,%03d,%03d", n/1000000, (n/1000)%1000, n%1000)
+	if n < 1000000000 {
+		return fmt.Sprintf("%d,%03d,%03d", n/1000000, (n/1000)%1000, n%1000)
+	}
+	// Billions
+	return fmt.Sprintf("%d,%03d,%03d,%03d", n/1000000000, (n/1000000)%1000, (n/1000)%1000, n%1000)
 }
