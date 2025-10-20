@@ -189,10 +189,9 @@ func TestEventCleanupDisabled(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	// Create executor with cleanup disabled
-	retentionCfg := config.EventRetentionConfig{
-		CleanupEnabled: false,
-	}
+	// Create executor with cleanup disabled (use valid defaults, just disable cleanup)
+	retentionCfg := config.DefaultEventRetentionConfig()
+	retentionCfg.CleanupEnabled = false
 
 	cfg := DefaultConfig()
 	cfg.Store = store

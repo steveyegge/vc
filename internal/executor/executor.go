@@ -1034,6 +1034,12 @@ func (e *Executor) eventCleanupLoop(ctx context.Context) {
 		retentionCfg = *e.config.EventRetentionConfig
 	}
 
+	// Validate configuration at startup to fail fast
+	if err := retentionCfg.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "Event cleanup: Invalid configuration: %v (cleanup disabled)\n", err)
+		return
+	}
+
 	// Skip cleanup if disabled
 	if !retentionCfg.CleanupEnabled {
 		fmt.Printf("Event cleanup: Disabled via configuration\n")
@@ -1047,6 +1053,11 @@ func (e *Executor) eventCleanupLoop(ctx context.Context) {
 
 	fmt.Printf("Event cleanup: Started (interval=%v, retention=%dd, per_issue_limit=%d, global_limit=%d)\n",
 		cleanupInterval, retentionCfg.RetentionDays, retentionCfg.PerIssueLimitEvents, retentionCfg.GlobalLimitEvents)
+
+	// Run cleanup immediately on startup (before first ticker)
+	if err := e.runEventCleanup(ctx, retentionCfg); err != nil {
+		fmt.Fprintf(os.Stderr, "event cleanup: initial cleanup failed: %v\n", err)
+	}
 
 	for {
 		select {
@@ -1062,23 +1073,10 @@ func (e *Executor) eventCleanupLoop(ctx context.Context) {
 			default:
 			}
 
-			// Run cleanup with cancellation support
-			done := make(chan error, 1)
-			go func() {
-				done <- e.runEventCleanup(ctx, retentionCfg)
-			}()
-
-			// Wait for either completion or stop signal
-			select {
-			case err := <-done:
-				if err != nil {
-					// Log error but continue monitoring
-					fmt.Fprintf(os.Stderr, "event cleanup: error during cleanup: %v\n", err)
-				}
-			case <-e.eventCleanupStopCh:
-				// Stop signal received while cleaning - exit immediately
-				// The goroutine will finish in the background
-				return
+			// Run cleanup directly (blocking) - it's okay to block the loop
+			// since cleanup should be relatively quick and we want clean shutdown
+			if err := e.runEventCleanup(ctx, retentionCfg); err != nil {
+				fmt.Fprintf(os.Stderr, "event cleanup: error during cleanup: %v\n", err)
 			}
 		}
 	}
