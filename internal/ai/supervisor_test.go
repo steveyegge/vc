@@ -188,6 +188,18 @@ func (m *mockStorage) SetConfig(ctx context.Context, key, value string) error {
 	return nil
 }
 
+func (m *mockStorage) CleanupEventsByAge(ctx context.Context, maxAgeDays int, perIssueLimit int, globalLimit int) (int, error) {
+	return 0, nil
+}
+
+func (m *mockStorage) CleanupEventsByGlobalLimit(ctx context.Context, globalLimit int, batchSize int) (int, error) {
+	return 0, nil
+}
+
+func (m *mockStorage) CleanupEventsByIssueLimit(ctx context.Context, perIssueLimit int, batchSize int) (int, error) {
+	return 0, nil
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
