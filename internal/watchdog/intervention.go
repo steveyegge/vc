@@ -509,9 +509,9 @@ func (ic *InterventionController) updateEscalationIssue(ctx context.Context, iss
 	)
 
 	// Build updates map
+	// Note: updated_at is automatically managed by storage layer, don't pass it explicitly
 	updates := map[string]interface{}{
 		"description": issue.Description + newObservation,
-		"updated_at":  now,
 	}
 
 	// Update priority if severity increased

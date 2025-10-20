@@ -450,6 +450,23 @@ type Analysis struct {
 	QualityIssues    []string `json:"quality_issues"`    // Quality problems detected
 	Summary          string   `json:"summary"`           // Overall summary
 	Confidence       float64  `json:"confidence"`        // Confidence in the analysis (0.0-1.0)
+
+	// Enhanced validation fields (vc-179)
+	ScopeValidation       *ScopeValidation              `json:"scope_validation,omitempty"`        // Did agent work on correct task?
+	AcceptanceCriteriaMet map[string]*CriterionResult   `json:"acceptance_criteria_met,omitempty"` // Per-criterion validation
+}
+
+// ScopeValidation tracks whether the agent worked on the correct task
+type ScopeValidation struct {
+	OnTask      bool   `json:"on_task"`     // Did the agent work on THIS issue's task?
+	Explanation string `json:"explanation"` // What did the agent actually do?
+}
+
+// CriterionResult tracks whether a specific acceptance criterion was met
+type CriterionResult struct {
+	Met      bool   `json:"met"`               // Was this criterion met?
+	Evidence string `json:"evidence,omitempty"` // Evidence from agent output (if met)
+	Reason   string `json:"reason,omitempty"`   // Explanation (if not met)
 }
 
 // DiscoveredIssue represents a new issue discovered during execution
@@ -1046,12 +1063,47 @@ Acceptance Criteria: %s
 
 Agent Execution Status: %s
 
-Agent Output (last 2000 chars):
+Agent Output (last 8000 chars):
 %s
 
-Please analyze the execution and provide a structured response as a JSON object:
+CRITICAL: Your primary job is to verify the agent did the RIGHT work, not just ANY work.
+
+Please analyze the execution systematically:
+
+1. SCOPE VALIDATION (Most Important!)
+   - Did the agent work on THIS issue's task, or did it work on something else?
+   - Compare what the agent did vs. what the Description and Acceptance Criteria asked for
+   - If the agent did unrelated work, mark as NOT completed
+
+2. ACCEPTANCE CRITERIA VALIDATION
+   Quote each acceptance criterion and explicitly state whether it was met:
+   %s
+
+   For each criterion:
+   - Was it addressed? (yes/no)
+   - What evidence from the agent output shows it was met?
+   - If not met, why not?
+
+3. QUALITY ASSESSMENT
+   - Are there any code quality issues? (lint errors, test failures, missing error handling, etc.)
+   - Did the agent introduce new bugs or technical debt?
+   - Are there missing tests or documentation?
+
+4. WORK DISCOVERED
+   - What follow-on work was mentioned but not completed?
+   - Were any new bugs, tasks, or improvements discovered?
+
+Provide your analysis as a JSON object:
 {
   "completed": true,
+  "scope_validation": {
+    "on_task": true,
+    "explanation": "Agent worked on X which matches the issue requirements"
+  },
+  "acceptance_criteria_met": {
+    "criterion_1": {"met": true, "evidence": "..."},
+    "criterion_2": {"met": false, "reason": "..."}
+  },
   "punted_items": ["Work that was deferred", ...],
   "discovered_issues": [
     {
@@ -1066,18 +1118,15 @@ Please analyze the execution and provide a structured response as a JSON object:
   "confidence": 0.9
 }
 
-Focus on:
-1. Was the issue fully completed according to acceptance criteria?
-2. What work was mentioned but not completed?
-3. Were any new bugs, tasks, or improvements discovered?
-4. Are there any quality issues (missing tests, poor code structure, etc.)?
-5. What was actually accomplished?
-
-Be thorough in identifying discovered work - this is how we prevent things from falling through the cracks.
+RULES:
+1. Set "completed": false if the agent worked on the WRONG task (even if the work was good)
+2. Set "completed": false if ANY acceptance criterion was not met
+3. Be SPECIFIC in quality_issues - don't say "add tests", say "add unit tests for function X"
+4. If agent output was truncated, note this in the summary
 
 IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (` + "```" + `). Just the JSON object.`,
 		issue.ID, issue.Title, issue.Description, issue.AcceptanceCriteria,
-		successStr, truncateString(agentOutput, 2000))
+		successStr, truncateString(agentOutput, 8000), issue.AcceptanceCriteria)
 }
 
 // buildCompletionPrompt builds the prompt for assessing epic/mission completion

@@ -32,6 +32,8 @@ Mission Goal:
 
 **Issue**: {{.Issue.ID}} - {{.Issue.Title}}
 
+⚠️ **CRITICAL**: Your job is to complete THIS SPECIFIC TASK ONLY. Do NOT work on related features, cleanup, or improvements unless explicitly mentioned in the acceptance criteria below.
+
 {{if .Issue.Description -}}
 ## Description
 {{.Issue.Description}}
@@ -45,6 +47,8 @@ Mission Goal:
 {{if .Issue.AcceptanceCriteria -}}
 ## Acceptance Criteria
 {{.Issue.AcceptanceCriteria}}
+
+**IMPORTANT**: These criteria define success. ALL criteria must be met. Do not add extra work beyond what's required.
 
 {{end}}
 {{if .Sandbox -}}
