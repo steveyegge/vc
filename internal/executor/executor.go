@@ -44,7 +44,6 @@ type Executor struct {
 	pollInterval        time.Duration
 	cleanupInterval     time.Duration
 	staleThreshold      time.Duration
-	heartbeatTicker     *time.Ticker
 	enableAISupervision bool
 	enableQualityGates  bool
 	enableSandboxes     bool

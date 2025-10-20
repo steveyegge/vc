@@ -542,7 +542,7 @@ SkipGates:
 				testComment := fmt.Sprintf("**Test Coverage Analysis**\n\n%s\n\nSufficient Coverage: %v\nConfidence: %.0f%%\nTest Issues Found: %d",
 					testAnalysis.Summary, testAnalysis.SufficientCoverage, testAnalysis.Confidence*100, len(testAnalysis.TestIssues))
 				if len(testAnalysis.UncoveredAreas) > 0 {
-					testComment += fmt.Sprintf("\n\nUncovered Areas:\n")
+					testComment += "\n\nUncovered Areas:\n"
 					for _, area := range testAnalysis.UncoveredAreas {
 						testComment += fmt.Sprintf("- %s\n", area)
 					}
@@ -872,9 +872,9 @@ func (rp *ResultsProcessor) buildSummary(issue *types.Issue, agentResult *AgentR
 	summary.WriteString(fmt.Sprintf("Success: %v\n", agentResult.Success))
 
 	if procResult.Completed {
-		summary.WriteString(fmt.Sprintf("Status: ✓ Closed\n"))
+		summary.WriteString("Status: ✓ Closed\n")
 	} else {
-		summary.WriteString(fmt.Sprintf("Status: Still open (incomplete)\n"))
+		summary.WriteString("Status: Still open (incomplete)\n")
 	}
 
 	if analysis != nil {

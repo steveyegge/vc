@@ -97,12 +97,13 @@ func (et *EventTracker) CommitChanges(ctx context.Context, repoPath string, opts
 	commitHash, err := et.git.CommitChanges(ctx, repoPath, opts)
 
 	// Track git commit operation
-	severity := events.SeverityInfo
-	message := "Git commit successful"
+	var severity events.EventSeverity
+	var message string
 	if err != nil {
 		severity = events.SeverityError
 		message = fmt.Sprintf("Git commit failed: %v", err)
 	} else {
+		severity = events.SeverityInfo
 		message = fmt.Sprintf("Git commit successful: %s", commitHash[:min(8, len(commitHash))])
 	}
 
@@ -215,16 +216,17 @@ func (et *EventTracker) ValidateConflictResolution(ctx context.Context, repoPath
 	resolved, err := et.git.ValidateConflictResolution(ctx, repoPath, files)
 
 	// Track validation operation
-	severity := events.SeverityInfo
-	message := "Validated conflict resolution"
+	var severity events.EventSeverity
+	var message string
 	if err != nil {
 		severity = events.SeverityError
 		message = fmt.Sprintf("Failed to validate: %v", err)
 	} else if resolved {
+		severity = events.SeverityInfo
 		message = "All conflicts resolved"
 	} else {
-		message = "Conflicts still present"
 		severity = events.SeverityWarning
+		message = "Conflicts still present"
 	}
 
 	eventData := map[string]interface{}{

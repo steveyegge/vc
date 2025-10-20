@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -170,7 +171,7 @@ func TestValidatePlan(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a mock supervisor (we only need ValidatePlan which doesn't use fields)
 			s := &Supervisor{}
-			err := s.ValidatePlan(nil, tt.plan)
+			err := s.ValidatePlan(context.Background(), tt.plan)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidatePlan() error = %v, wantErr %v", err, tt.wantErr)
