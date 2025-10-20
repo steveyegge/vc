@@ -1,6 +1,7 @@
 package health
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -41,21 +42,28 @@ type AISupervisor interface {
 }
 
 // NewFileSizeMonitor creates a file size monitor with sensible defaults.
-func NewFileSizeMonitor(rootPath string, supervisor AISupervisor) *FileSizeMonitor {
+// Returns an error if the rootPath is invalid or cannot be resolved to an absolute path.
+func NewFileSizeMonitor(rootPath string, supervisor AISupervisor) (*FileSizeMonitor, error) {
+	// Validate and clean the root path to prevent path traversal vulnerabilities
+	absPath, err := filepath.Abs(rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid root path %q: %w", rootPath, err)
+	}
+
 	return &FileSizeMonitor{
-		RootPath:         rootPath,
+		RootPath:         absPath,
 		OutlierThreshold: 2.5,
 		FileExtensions:   []string{".go"},
 		ExcludePatterns: []string{
 			"vendor/",
 			".git/",
 			"_test.go",
-			".pb.go",      // Generated protobuf
-			".gen.go",     // Other generated code
+			".pb.go",  // Generated protobuf
+			".gen.go", // Other generated code
 			"testdata/",
 		},
 		Supervisor: supervisor,
-	}
+	}, nil
 }
 
 // Name implements HealthMonitor.
@@ -88,7 +96,16 @@ func (m *FileSizeMonitor) Cost() CostEstimate {
 }
 
 // Check implements HealthMonitor.
+// Note: The codebase parameter is currently unused. This monitor performs its own
+// file scanning and statistical analysis independent of pre-computed codebase context.
+// Future optimization: Consider using codebase.FileSizeDistribution if available
+// to avoid redundant scanning.
 func (m *FileSizeMonitor) Check(ctx context.Context, codebase CodebaseContext) (*MonitorResult, error) {
+	// Validate that AI supervisor is configured
+	if m.Supervisor == nil {
+		return nil, fmt.Errorf("AI supervisor is required for file size monitoring")
+	}
+
 	startTime := time.Now()
 
 	// 1. Scan codebase and gather file size statistics
@@ -173,9 +190,29 @@ func (m *FileSizeMonitor) scanFiles(ctx context.Context) ([]fileSize, error) {
 		}
 
 		// Skip excluded patterns
-		relPath, _ := filepath.Rel(m.RootPath, path)
+		relPath, err := filepath.Rel(m.RootPath, path)
+		if err != nil {
+			// Skip files where relative path cannot be determined
+			// This should be rare but prevents silent failures
+			return nil
+		}
 		for _, pattern := range m.ExcludePatterns {
-			if strings.Contains(relPath, pattern) {
+			// Match pattern at path component boundaries to avoid false matches
+			// e.g., "vendor/" matches "vendor/foo" but not "vendorized/bar"
+			// "_test.go" matches "foo_test.go" but not "testing.go"
+			matched := false
+			if strings.HasPrefix(relPath, pattern) {
+				// Pattern at start of path (e.g., "vendor/foo.go")
+				matched = true
+			} else if strings.Contains(relPath, "/"+pattern) {
+				// Pattern after a path separator (e.g., "src/vendor/foo.go")
+				matched = true
+			} else if strings.HasSuffix(relPath, pattern) {
+				// Suffix match for file patterns (e.g., "_test.go", ".pb.go")
+				matched = true
+			}
+
+			if matched {
 				if info.IsDir() {
 					return filepath.SkipDir
 				}
@@ -217,23 +254,22 @@ func (m *FileSizeMonitor) scanFiles(ctx context.Context) ([]fileSize, error) {
 	return sizes, err
 }
 
-// countLines counts lines in a file.
+// countLines counts lines in a file using streaming to avoid memory exhaustion.
 func countLines(path string) (int, error) {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return 0, err
 	}
+	defer f.Close()
 
+	scanner := bufio.NewScanner(f)
 	count := 0
-	for _, b := range data {
-		if b == '\n' {
-			count++
-		}
+	for scanner.Scan() {
+		count++
 	}
 
-	// Add 1 if file doesn't end with newline
-	if len(data) > 0 && data[len(data)-1] != '\n' {
-		count++
+	if err := scanner.Err(); err != nil {
+		return 0, err
 	}
 
 	return count, nil
@@ -271,9 +307,15 @@ func (m *FileSizeMonitor) calculateDistribution(sizes []fileSize) Distribution {
 	}
 	stdDev := math.Sqrt(variance / float64(len(lines)))
 
-	// Percentiles
+	// Percentiles with bounds checking for small datasets
 	p95Idx := int(float64(len(sorted)) * 0.95)
+	if p95Idx >= len(sorted) {
+		p95Idx = len(sorted) - 1
+	}
 	p99Idx := int(float64(len(sorted)) * 0.99)
+	if p99Idx >= len(sorted) {
+		p99Idx = len(sorted) - 1
+	}
 
 	return Distribution{
 		Mean:   mean,
