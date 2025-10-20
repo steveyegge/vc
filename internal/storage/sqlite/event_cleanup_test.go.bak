@@ -1,0 +1,474 @@
+package sqlite
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/steveyegge/vc/internal/events"
+	"github.com/steveyegge/vc/internal/types"
+)
+
+// createTestIssue is a helper to create a test issue for foreign key constraints
+func createTestIssue(t *testing.T, storage *SQLiteStorage, issueID string) {
+	t.Helper()
+	ctx := context.Background()
+	testIssue := &types.Issue{
+		ID:          issueID,
+		Title:       "Test issue " + issueID,
+		Description: "Test",
+		Status:      types.StatusOpen,
+		IssueType:   types.TypeTask,
+		Priority:    2,
+	}
+	if err := storage.CreateIssue(ctx, testIssue, "test"); err != nil {
+		t.Fatalf("failed to create test issue %s: %v", issueID, err)
+	}
+}
+
+func TestCleanupEventsByAge(t *testing.T) {
+	ctx := context.Background()
+	storage, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	defer func() { _ = storage.Close() }()
+
+	// Create test issue (required for foreign key constraint)
+	createTestIssue(t, storage, "test-1")
+
+	// Create test events with different ages and severities
+	now := time.Now()
+	testEvents := []*events.AgentEvent{
+		// Old regular events (should be deleted)
+		{ID: "evt-1", Type: "test_run", Timestamp: now.AddDate(0, 0, -40), IssueID: "test-1", ExecutorID: "exec-1", AgentID: "agent-1", Severity: "info", Message: "old info", Data: make(map[string]interface{})},
+		{ID: "evt-2", Type: "test_run", Timestamp: now.AddDate(0, 0, -35), IssueID: "test-1", ExecutorID: "exec-1", AgentID: "agent-1", Severity: "warning", Message: "old warning", Data: make(map[string]interface{})},
+
+		// Recent regular events (should be kept)
+		{ID: "evt-3", Type: "test_run", Timestamp: now.AddDate(0, 0, -20), IssueID: "test-1", ExecutorID: "exec-1", AgentID: "agent-1", Severity: "info", Message: "recent info", Data: make(map[string]interface{})},
+		{ID: "evt-4", Type: "test_run", Timestamp: now.AddDate(0, 0, -10), IssueID: "test-1", ExecutorID: "exec-1", AgentID: "agent-1", Severity: "warning", Message: "recent warning", Data: make(map[string]interface{})},
+
+		// Old critical events (should be kept with longer retention)
+		{ID: "evt-5", Type: "error", Timestamp: now.AddDate(0, 0, -100), IssueID: "test-1", ExecutorID: "exec-1", AgentID: "agent-1", Severity: "error", Message: "old error", Data: make(map[string]interface{})},
+		{ID: "evt-6", Type: "error", Timestamp: now.AddDate(0, 0, -95), IssueID: "test-1", ExecutorID: "exec-1", AgentID: "agent-1", Severity: "critical", Message: "old critical", Data: make(map[string]interface{})},
+
+		// Very old critical events (should be deleted)
+		{ID: "evt-7", Type: "error", Timestamp: now.AddDate(0, 0, -100), IssueID: "test-1", ExecutorID: "exec-1", AgentID: "agent-1", Severity: "error", Message: "very old error", Data: make(map[string]interface{})},
+	}
+
+	for _, event := range testEvents {
+		if err := storage.StoreAgentEvent(ctx, event); err != nil {
+			t.Fatalf("failed to store event %s: %v", event.ID, err)
+		}
+	}
+
+	// Cleanup with 30 days for regular, 90 days for critical
+	deleted, err := storage.CleanupEventsByAge(ctx, 30, 90, 10)
+	if err != nil {
+		t.Fatalf("CleanupEventsByAge failed: %v", err)
+	}
+
+	// Should delete the 2 old regular events
+	if deleted != 2 {
+		t.Errorf("CleanupEventsByAge deleted %d events, want 2", deleted)
+	}
+
+	// Verify remaining events
+	allEvents, err := storage.GetRecentAgentEvents(ctx, 100)
+	if err != nil {
+		t.Fatalf("failed to get events: %v", err)
+	}
+
+	if len(allEvents) != 5 {
+		t.Errorf("got %d remaining events, want 5", len(allEvents))
+	}
+
+	// Verify the old regular events were deleted
+	for _, event := range allEvents {
+		if event.ID == "evt-1" || event.ID == "evt-2" {
+			t.Errorf("event %s should have been deleted", event.ID)
+		}
+	}
+}
+
+func TestCleanupEventsByIssueLimit(t *testing.T) {
+	ctx := context.Background()
+	storage, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	defer func() { _ = storage.Close() }()
+
+	// Create test issue
+	createTestIssue(t, storage, "issue-1")
+
+	now := time.Now()
+
+	// Create 15 events for issue-1 (10 regular, 5 critical)
+	for i := 0; i < 10; i++ {
+		event := &events.AgentEvent{
+			ID:         fmt.Sprintf("evt-regular-%d", i),
+			Type:       "test_run",
+			Timestamp:  now.Add(time.Duration(-i) * time.Minute),
+			IssueID:    "issue-1",
+			ExecutorID: "exec-1",
+			AgentID:    "agent-1",
+			Severity:   "info",
+			Message:    fmt.Sprintf("event %d", i),
+			Data:       make(map[string]interface{}),
+		}
+		if err := storage.StoreAgentEvent(ctx, event); err != nil {
+			t.Fatalf("failed to store event: %v", err)
+		}
+	}
+
+	for i := 0; i < 5; i++ {
+		event := &events.AgentEvent{
+			ID:         fmt.Sprintf("evt-critical-%d", i),
+			Type:       "error",
+			Timestamp:  now.Add(time.Duration(-i) * time.Minute),
+			IssueID:    "issue-1",
+			ExecutorID: "exec-1",
+			AgentID:    "agent-1",
+			Severity:   "error",
+			Message:    fmt.Sprintf("error %d", i),
+			Data:       make(map[string]interface{}),
+		}
+		if err := storage.StoreAgentEvent(ctx, event); err != nil {
+			t.Fatalf("failed to store event: %v", err)
+		}
+	}
+
+	// Cleanup with limit of 10 events per issue
+	deleted, err := storage.CleanupEventsByIssueLimit(ctx, 10, 5)
+	if err != nil {
+		t.Fatalf("CleanupEventsByIssueLimit failed: %v", err)
+	}
+
+	// Should delete 5 oldest regular events (15 total - 10 limit)
+	// Critical events are protected
+	if deleted != 5 {
+		t.Errorf("CleanupEventsByIssueLimit deleted %d events, want 5", deleted)
+	}
+
+	// Verify remaining events
+	allEvents, err := storage.GetAgentEventsByIssue(ctx, "issue-1")
+	if err != nil {
+		t.Fatalf("failed to get events: %v", err)
+	}
+
+	if len(allEvents) != 10 {
+		t.Errorf("got %d remaining events, want 10", len(allEvents))
+	}
+
+	// Verify all critical events are still present
+	criticalCount := 0
+	for _, event := range allEvents {
+		if event.Severity == "error" || event.Severity == "critical" {
+			criticalCount++
+		}
+	}
+	if criticalCount != 5 {
+		t.Errorf("got %d critical events, want 5", criticalCount)
+	}
+}
+
+func TestCleanupEventsByIssueLimit_Unlimited(t *testing.T) {
+	ctx := context.Background()
+	storage, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	defer func() { _ = storage.Close() }()
+
+	now := time.Now()
+
+	// Create 20 events
+	for i := 0; i < 20; i++ {
+		event := &events.AgentEvent{
+			ID:         fmt.Sprintf("evt-%d", i),
+			Type:       "test_run",
+			Timestamp:  now.Add(time.Duration(-i) * time.Minute),
+			IssueID:    "issue-1",
+			ExecutorID: "exec-1",
+			AgentID:    "agent-1",
+			Severity:   "info",
+			Message:    fmt.Sprintf("event %d", i),
+			Data:       make(map[string]interface{}),
+		}
+		if err := storage.StoreAgentEvent(ctx, event); err != nil {
+			t.Fatalf("failed to store event: %v", err)
+		}
+	}
+
+	// Cleanup with limit of 0 (unlimited)
+	deleted, err := storage.CleanupEventsByIssueLimit(ctx, 0, 10)
+	if err != nil {
+		t.Fatalf("CleanupEventsByIssueLimit failed: %v", err)
+	}
+
+	// Should delete nothing
+	if deleted != 0 {
+		t.Errorf("CleanupEventsByIssueLimit deleted %d events, want 0 (unlimited)", deleted)
+	}
+
+	// Verify all events still present
+	allEvents, err := storage.GetAgentEventsByIssue(ctx, "issue-1")
+	if err != nil {
+		t.Fatalf("failed to get events: %v", err)
+	}
+
+	if len(allEvents) != 20 {
+		t.Errorf("got %d remaining events, want 20", len(allEvents))
+	}
+}
+
+func TestCleanupEventsByGlobalLimit(t *testing.T) {
+	ctx := context.Background()
+	storage, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	defer func() { _ = storage.Close() }()
+
+	now := time.Now()
+
+	// Create 150 events (100 regular, 50 critical)
+	for i := 0; i < 100; i++ {
+		event := &events.AgentEvent{
+			ID:         fmt.Sprintf("evt-regular-%d", i),
+			Type:       "test_run",
+			Timestamp:  now.Add(time.Duration(-i) * time.Minute),
+			IssueID:    "issue-1",
+			ExecutorID: "exec-1",
+			AgentID:    "agent-1",
+			Severity:   "info",
+			Message:    fmt.Sprintf("event %d", i),
+			Data:       make(map[string]interface{}),
+		}
+		if err := storage.StoreAgentEvent(ctx, event); err != nil {
+			t.Fatalf("failed to store event: %v", err)
+		}
+	}
+
+	for i := 0; i < 50; i++ {
+		event := &events.AgentEvent{
+			ID:         fmt.Sprintf("evt-critical-%d", i),
+			Type:       "error",
+			Timestamp:  now.Add(time.Duration(-i) * time.Minute),
+			IssueID:    "issue-1",
+			ExecutorID: "exec-1",
+			AgentID:    "agent-1",
+			Severity:   "error",
+			Message:    fmt.Sprintf("error %d", i),
+			Data:       make(map[string]interface{}),
+		}
+		if err := storage.StoreAgentEvent(ctx, event); err != nil {
+			t.Fatalf("failed to store event: %v", err)
+		}
+	}
+
+	// Cleanup with global limit of 100
+	deleted, err := storage.CleanupEventsByGlobalLimit(ctx, 100, 10)
+	if err != nil {
+		t.Fatalf("CleanupEventsByGlobalLimit failed: %v", err)
+	}
+
+	// Should delete 50 oldest regular events (150 total - 100 limit)
+	if deleted != 50 {
+		t.Errorf("CleanupEventsByGlobalLimit deleted %d events, want 50", deleted)
+	}
+
+	// Verify remaining events
+	allEvents, err := storage.GetRecentAgentEvents(ctx, 200)
+	if err != nil {
+		t.Fatalf("failed to get events: %v", err)
+	}
+
+	if len(allEvents) != 100 {
+		t.Errorf("got %d remaining events, want 100", len(allEvents))
+	}
+
+	// Verify all critical events are still present
+	criticalCount := 0
+	for _, event := range allEvents {
+		if event.Severity == "error" || event.Severity == "critical" {
+			criticalCount++
+		}
+	}
+	if criticalCount != 50 {
+		t.Errorf("got %d critical events, want 50 (all should be preserved)", criticalCount)
+	}
+}
+
+func TestCleanupEventsByGlobalLimit_UnderLimit(t *testing.T) {
+	ctx := context.Background()
+	storage, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	defer func() { _ = storage.Close() }()
+
+	now := time.Now()
+
+	// Create 50 events
+	for i := 0; i < 50; i++ {
+		event := &events.AgentEvent{
+			ID:         fmt.Sprintf("evt-%d", i),
+			Type:       "test_run",
+			Timestamp:  now.Add(time.Duration(-i) * time.Minute),
+			IssueID:    "issue-1",
+			ExecutorID: "exec-1",
+			AgentID:    "agent-1",
+			Severity:   "info",
+			Message:    fmt.Sprintf("event %d", i),
+			Data:       make(map[string]interface{}),
+		}
+		if err := storage.StoreAgentEvent(ctx, event); err != nil {
+			t.Fatalf("failed to store event: %v", err)
+		}
+	}
+
+	// Cleanup with global limit of 100 (we only have 50)
+	deleted, err := storage.CleanupEventsByGlobalLimit(ctx, 100, 10)
+	if err != nil {
+		t.Fatalf("CleanupEventsByGlobalLimit failed: %v", err)
+	}
+
+	// Should delete nothing
+	if deleted != 0 {
+		t.Errorf("CleanupEventsByGlobalLimit deleted %d events, want 0 (under limit)", deleted)
+	}
+}
+
+func TestGetEventCounts(t *testing.T) {
+	ctx := context.Background()
+	storage, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	defer func() { _ = storage.Close() }()
+
+	now := time.Now()
+
+	// Create events with different issues, severities, and types
+	testEvents := []*events.AgentEvent{
+		{ID: "evt-1", Type: "test_run", Timestamp: now, IssueID: "issue-1", ExecutorID: "exec-1", AgentID: "agent-1", Severity: "info", Message: "test", Data: make(map[string]interface{})},
+		{ID: "evt-2", Type: "test_run", Timestamp: now, IssueID: "issue-1", ExecutorID: "exec-1", AgentID: "agent-1", Severity: "warning", Message: "test", Data: make(map[string]interface{})},
+		{ID: "evt-3", Type: "error", Timestamp: now, IssueID: "issue-2", ExecutorID: "exec-1", AgentID: "agent-1", Severity: "error", Message: "error", Data: make(map[string]interface{})},
+		{ID: "evt-4", Type: "build_output", Timestamp: now, IssueID: "issue-2", ExecutorID: "exec-1", AgentID: "agent-1", Severity: "info", Message: "build", Data: make(map[string]interface{})},
+		{ID: "evt-5", Type: "test_run", Timestamp: now, IssueID: "issue-3", ExecutorID: "exec-1", AgentID: "agent-1", Severity: "critical", Message: "critical", Data: make(map[string]interface{})},
+	}
+
+	for _, event := range testEvents {
+		if err := storage.StoreAgentEvent(ctx, event); err != nil {
+			t.Fatalf("failed to store event %s: %v", event.ID, err)
+		}
+	}
+
+	// Get event counts
+	counts, err := storage.GetEventCounts(ctx)
+	if err != nil {
+		t.Fatalf("GetEventCounts failed: %v", err)
+	}
+
+	// Verify total
+	if counts.TotalEvents != 5 {
+		t.Errorf("TotalEvents = %d, want 5", counts.TotalEvents)
+	}
+
+	// Verify by issue
+	if counts.EventsByIssue["issue-1"] != 2 {
+		t.Errorf("EventsByIssue[issue-1] = %d, want 2", counts.EventsByIssue["issue-1"])
+	}
+	if counts.EventsByIssue["issue-2"] != 2 {
+		t.Errorf("EventsByIssue[issue-2] = %d, want 2", counts.EventsByIssue["issue-2"])
+	}
+	if counts.EventsByIssue["issue-3"] != 1 {
+		t.Errorf("EventsByIssue[issue-3] = %d, want 1", counts.EventsByIssue["issue-3"])
+	}
+
+	// Verify by severity
+	if counts.EventsBySeverity["info"] != 2 {
+		t.Errorf("EventsBySeverity[info] = %d, want 2", counts.EventsBySeverity["info"])
+	}
+	if counts.EventsBySeverity["warning"] != 1 {
+		t.Errorf("EventsBySeverity[warning] = %d, want 1", counts.EventsBySeverity["warning"])
+	}
+	if counts.EventsBySeverity["error"] != 1 {
+		t.Errorf("EventsBySeverity[error] = %d, want 1", counts.EventsBySeverity["error"])
+	}
+	if counts.EventsBySeverity["critical"] != 1 {
+		t.Errorf("EventsBySeverity[critical] = %d, want 1", counts.EventsBySeverity["critical"])
+	}
+
+	// Verify by type
+	if counts.EventsByType["test_run"] != 3 {
+		t.Errorf("EventsByType[test_run] = %d, want 3", counts.EventsByType["test_run"])
+	}
+	if counts.EventsByType["error"] != 1 {
+		t.Errorf("EventsByType[error] = %d, want 1", counts.EventsByType["error"])
+	}
+	if counts.EventsByType["build_output"] != 1 {
+		t.Errorf("EventsByType[build_output] = %d, want 1", counts.EventsByType["build_output"])
+	}
+}
+
+func TestVacuumDatabase(t *testing.T) {
+	ctx := context.Background()
+	storage, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	defer func() { _ = storage.Close() }()
+
+	// Vacuum should not fail on empty database
+	err = storage.VacuumDatabase(ctx)
+	if err != nil {
+		t.Errorf("VacuumDatabase failed: %v", err)
+	}
+
+	// Add some data and vacuum again
+	now := time.Now()
+	event := &events.AgentEvent{
+		ID:         "evt-1",
+		Type:       "test_run",
+		Timestamp:  now,
+		IssueID:    "issue-1",
+		ExecutorID: "exec-1",
+		AgentID:    "agent-1",
+		Severity:   "info",
+		Message:    "test",
+		Data:       make(map[string]interface{}),
+	}
+	if err := storage.StoreAgentEvent(ctx, event); err != nil {
+		t.Fatalf("failed to store event: %v", err)
+	}
+
+	err = storage.VacuumDatabase(ctx)
+	if err != nil {
+		t.Errorf("VacuumDatabase failed after adding data: %v", err)
+	}
+}
+
+func TestCleanupEventsByAge_ContextCancellation(t *testing.T) {
+	storage, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	defer func() { _ = storage.Close() }()
+
+	// Create a cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Cleanup should respect context cancellation
+	_, err = storage.CleanupEventsByAge(ctx, 30, 90, 10)
+	if err == nil {
+		t.Error("CleanupEventsByAge should fail with cancelled context")
+	}
+	if err != context.Canceled {
+		t.Errorf("Expected context.Canceled error, got: %v", err)
+	}
+}

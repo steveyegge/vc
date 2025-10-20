@@ -16,6 +16,13 @@ type Storage interface {
 	GetAgentEventsByIssue(ctx context.Context, issueID string) ([]*events.AgentEvent, error)
 	GetRecentAgentEvents(ctx context.Context, limit int) ([]*events.AgentEvent, error)
 
+	// Event Cleanup - retention policy enforcement (vc-194)
+	CleanupEventsByAge(ctx context.Context, retentionDays, criticalRetentionDays, batchSize int) (int, error)
+	CleanupEventsByIssueLimit(ctx context.Context, perIssueLimit, batchSize int) (int, error)
+	CleanupEventsByGlobalLimit(ctx context.Context, globalLimit, batchSize int) (int, error)
+	GetEventCounts(ctx context.Context) (*sqlite.EventCounts, error)
+	VacuumDatabase(ctx context.Context) error
+
 	// Issues
 	CreateIssue(ctx context.Context, issue *types.Issue, actor string) error
 	GetIssue(ctx context.Context, id string) (*types.Issue, error)
