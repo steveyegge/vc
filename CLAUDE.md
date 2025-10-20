@@ -842,3 +842,110 @@ WHERE type = 'deduplication_batch_completed'
 ```
 
 ---
+
+## 🗄️ Event Retention and Cleanup (Future Work)
+
+**Status:** Not yet implemented. Punted until database size becomes a real issue (vc-184, vc-198).
+
+### Why Punted?
+
+Following the lesson learned from deduplication metrics (vc-151), we're deferring event retention infrastructure until we have real production data showing it's needed. This avoids building observability for theoretical future problems.
+
+### When to Implement
+
+Implement event retention when:
+- `.beads/vc.db` exceeds 100MB
+- Query performance degrades noticeably
+- Developers complain about database size
+- Event table has >100k rows
+
+Until then: **YAGNI** (You Aren't Gonna Need It).
+
+### Design (From vc-184)
+
+When we do implement this, here's the plan:
+
+**Retention Policy Tiers:**
+- **Regular events** (progress, file_modified, etc.): 30 days
+- **Critical events** (error, watchdog_alert): 180 days
+- **Per-issue limit**: 1000 events max per issue
+- **Global limit**: Configurable, default 50k events
+
+**Configuration (Proposed Environment Variables):**
+```bash
+# Event retention in days (default: 30)
+export VC_EVENT_RETENTION_DAYS=30
+
+# Critical event retention in days (default: 180)
+export VC_EVENT_CRITICAL_RETENTION_DAYS=180
+
+# Per-issue event limit (default: 1000, 0 = unlimited)
+export VC_EVENT_PER_ISSUE_LIMIT=1000
+
+# Global event limit (default: 50000, 0 = unlimited)
+export VC_EVENT_GLOBAL_LIMIT=50000
+
+# Cleanup frequency in hours (default: 24)
+export VC_EVENT_CLEANUP_INTERVAL_HOURS=24
+
+# Batch size for cleanup (default: 1000)
+export VC_EVENT_CLEANUP_BATCH_SIZE=1000
+```
+
+**Cleanup Strategy:**
+- Run as background goroutine in executor
+- Execute every 24 hours (configurable)
+- Transaction-based deletion in batches of 1000
+- Log cleanup metrics (events deleted, time taken)
+
+**CLI Command (Not Yet Implemented):**
+```bash
+# Manual cleanup trigger
+vc cleanup events --dry-run  # Preview what would be deleted
+vc cleanup events             # Execute cleanup
+vc cleanup events --force     # Bypass safety checks
+```
+
+**Monitoring Queries (For Future Use):**
+
+Check event table size:
+```sql
+SELECT COUNT(*) as total_events,
+       COUNT(DISTINCT issue_id) as issues_with_events,
+       MIN(timestamp) as oldest_event,
+       MAX(timestamp) as newest_event
+FROM agent_events;
+```
+
+Events per issue distribution:
+```sql
+SELECT issue_id,
+       COUNT(*) as event_count,
+       MIN(timestamp) as first_event,
+       MAX(timestamp) as last_event
+FROM agent_events
+GROUP BY issue_id
+ORDER BY event_count DESC
+LIMIT 20;
+```
+
+Event types by age:
+```sql
+SELECT type,
+       COUNT(*) as count,
+       AVG(julianday('now') - julianday(timestamp)) as avg_age_days
+FROM agent_events
+GROUP BY type
+ORDER BY avg_age_days DESC;
+```
+
+### Related Issues
+
+- vc-183: Agent Events Retention and Cleanup [OPEN - Low Priority]
+- vc-184: Design event retention policy [CLOSED - Design complete]
+- vc-193 through vc-197: Implementation tasks [OPEN - Punted]
+- vc-199: Tests for event retention [OPEN - Punted]
+
+**Remember:** Build this when you need it, not before. Let real usage drive the requirements.
+
+---
