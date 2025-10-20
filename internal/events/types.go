@@ -63,6 +63,10 @@ const (
 	EventTypeDeduplicationBatchCompleted EventType = "deduplication_batch_completed"
 	// EventTypeDeduplicationDecision indicates an individual duplicate decision was made
 	EventTypeDeduplicationDecision EventType = "deduplication_decision"
+
+	// Event retention and cleanup events (vc-196)
+	// EventTypeEventCleanupCompleted indicates event cleanup cycle completed
+	EventTypeEventCleanupCompleted EventType = "event_cleanup_completed"
 )
 
 // EventSeverity represents the severity level of an event.
@@ -180,6 +184,28 @@ type DeduplicationDecisionData struct {
 	WithinBatchDuplicate bool `json:"within_batch_duplicate,omitempty"`
 	// WithinBatchOriginal is the title of the original issue (for within-batch duplicates)
 	WithinBatchOriginal string `json:"within_batch_original,omitempty"`
+}
+
+// EventCleanupCompletedData contains structured data for event cleanup completion events (vc-196).
+type EventCleanupCompletedData struct {
+	// EventsDeleted is the total number of events deleted
+	EventsDeleted int `json:"events_deleted"`
+	// TimeBasedDeleted is the number of events deleted by time-based retention
+	TimeBasedDeleted int `json:"time_based_deleted"`
+	// PerIssueDeleted is the number of events deleted by per-issue limit
+	PerIssueDeleted int `json:"per_issue_deleted"`
+	// GlobalLimitDeleted is the number of events deleted by global safety limit
+	GlobalLimitDeleted int `json:"global_limit_deleted"`
+	// ProcessingTimeMs is the time taken for cleanup in milliseconds
+	ProcessingTimeMs int64 `json:"processing_time_ms"`
+	// VacuumRan indicates whether VACUUM was executed
+	VacuumRan bool `json:"vacuum_ran"`
+	// EventsRemaining is the total number of events remaining after cleanup
+	EventsRemaining int `json:"events_remaining"`
+	// Success indicates whether cleanup succeeded
+	Success bool `json:"success"`
+	// Error contains the error message if cleanup failed
+	Error string `json:"error,omitempty"`
 }
 
 // EventStore defines the interface for storing and retrieving agent events.

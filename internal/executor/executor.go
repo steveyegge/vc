@@ -1089,18 +1089,25 @@ func (e *Executor) runEventCleanup(ctx context.Context, cfg config.EventRetentio
 	// Track metrics for logging
 	var timeBasedDeleted, perIssueDeleted, globalLimitDeleted int
 	var vacuumRan bool
+	var cleanupErr error
 
 	// Step 1: Time-based cleanup (delete old events)
 	deleted, err := e.store.CleanupEventsByAge(ctx, cfg.RetentionDays, cfg.RetentionCriticalDays, cfg.CleanupBatchSize)
 	if err != nil {
-		return fmt.Errorf("time-based cleanup failed: %w", err)
+		cleanupErr = fmt.Errorf("time-based cleanup failed: %w", err)
+		// Log error event and return
+		e.logCleanupEvent(ctx, 0, 0, 0, 0, time.Since(startTime).Milliseconds(), false, 0, false, cleanupErr.Error())
+		return cleanupErr
 	}
 	timeBasedDeleted = deleted
 
 	// Step 2: Per-issue limit cleanup (enforce per-issue event caps)
 	deleted, err = e.store.CleanupEventsByIssueLimit(ctx, cfg.PerIssueLimitEvents, cfg.CleanupBatchSize)
 	if err != nil {
-		return fmt.Errorf("per-issue limit cleanup failed: %w", err)
+		cleanupErr = fmt.Errorf("per-issue limit cleanup failed: %w", err)
+		// Log error event with partial results
+		e.logCleanupEvent(ctx, timeBasedDeleted, timeBasedDeleted, 0, 0, time.Since(startTime).Milliseconds(), false, 0, false, cleanupErr.Error())
+		return cleanupErr
 	}
 	perIssueDeleted = deleted
 
@@ -1109,7 +1116,10 @@ func (e *Executor) runEventCleanup(ctx context.Context, cfg config.EventRetentio
 	triggerThreshold := int(float64(cfg.GlobalLimitEvents) * 0.95)
 	deleted, err = e.store.CleanupEventsByGlobalLimit(ctx, triggerThreshold, cfg.CleanupBatchSize)
 	if err != nil {
-		return fmt.Errorf("global limit cleanup failed: %w", err)
+		cleanupErr = fmt.Errorf("global limit cleanup failed: %w", err)
+		// Log error event with partial results
+		e.logCleanupEvent(ctx, timeBasedDeleted+perIssueDeleted, timeBasedDeleted, perIssueDeleted, 0, time.Since(startTime).Milliseconds(), false, 0, false, cleanupErr.Error())
+		return cleanupErr
 	}
 	globalLimitDeleted = deleted
 
@@ -1126,29 +1136,78 @@ func (e *Executor) runEventCleanup(ctx context.Context, cfg config.EventRetentio
 	}
 
 	// Get remaining event count for metrics
+	eventsRemaining := 0
 	counts, err := e.store.GetEventCounts(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "event cleanup: warning: failed to get event counts: %v\n", err)
+	} else if counts != nil {
+		eventsRemaining = counts.TotalEvents
 	}
 
 	processingTimeMs := time.Since(startTime).Milliseconds()
 
-	// Log cleanup metrics by storing structured cleanup event
-	// Note: We can't use logEvent() since it requires a non-empty issue_id
-	// Instead, we just log to stdout for observability
-	// In the future, we could create a separate cleanup_events table if needed
+	// Log cleanup metrics as structured agent event (vc-196)
+	e.logCleanupEvent(ctx, totalDeleted, timeBasedDeleted, perIssueDeleted, globalLimitDeleted, processingTimeMs, vacuumRan, eventsRemaining, true, "")
 
+	// Also log to stdout for visibility
 	if totalDeleted > 0 || vacuumRan {
 		fmt.Printf("Event cleanup: Deleted %d events (time_based=%d, per_issue=%d, global_limit=%d) in %dms",
 			totalDeleted, timeBasedDeleted, perIssueDeleted, globalLimitDeleted, processingTimeMs)
 		if vacuumRan {
 			fmt.Printf(" [VACUUM ran]")
 		}
-		if counts != nil {
-			fmt.Printf(" (remaining=%d)", counts.TotalEvents)
-		}
-		fmt.Println()
+		fmt.Printf(" (remaining=%d)\n", eventsRemaining)
 	}
 
 	return nil
+}
+
+// logCleanupEvent creates and stores a structured event for cleanup metrics (vc-196)
+func (e *Executor) logCleanupEvent(ctx context.Context, totalDeleted, timeBasedDeleted, perIssueDeleted, globalLimitDeleted int, processingTimeMs int64, vacuumRan bool, eventsRemaining int, success bool, errorMsg string) {
+	// Skip logging if context is cancelled (e.g., during shutdown)
+	if ctx.Err() != nil {
+		return
+	}
+
+	data := map[string]interface{}{
+		"events_deleted":       totalDeleted,
+		"time_based_deleted":   timeBasedDeleted,
+		"per_issue_deleted":    perIssueDeleted,
+		"global_limit_deleted": globalLimitDeleted,
+		"processing_time_ms":   processingTimeMs,
+		"vacuum_ran":           vacuumRan,
+		"events_remaining":     eventsRemaining,
+		"success":              success,
+	}
+
+	if errorMsg != "" {
+		data["error"] = errorMsg
+	}
+
+	message := fmt.Sprintf("Event cleanup completed: deleted %d events in %dms", totalDeleted, processingTimeMs)
+	if !success {
+		message = fmt.Sprintf("Event cleanup failed: %s", errorMsg)
+	}
+
+	event := &events.AgentEvent{
+		ID:         uuid.New().String(),
+		Type:       events.EventTypeEventCleanupCompleted,
+		Timestamp:  time.Now(),
+		IssueID:    "SYSTEM", // System-level event, not tied to a specific issue
+		ExecutorID: e.instanceID,
+		AgentID:    "",       // Not produced by a coding agent
+		Severity:   events.SeverityInfo,
+		Message:    message,
+		Data:       data,
+		SourceLine: 0, // Not applicable for executor-level events
+	}
+
+	if !success {
+		event.Severity = events.SeverityError
+	}
+
+	if err := e.store.StoreAgentEvent(ctx, event); err != nil {
+		// Log error but don't fail cleanup
+		fmt.Fprintf(os.Stderr, "warning: failed to store cleanup event: %v\n", err)
+	}
 }
