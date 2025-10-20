@@ -149,16 +149,11 @@ func SpawnAgent(ctx context.Context, cfg AgentConfig, prompt string) (*Agent, er
 
 // Wait waits for the agent to complete and returns the result
 func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
-	startWait := time.Now()
-	fmt.Printf("[DEBUG vc-177] agent.Wait() called for issue %s, timeout=%v\n", a.config.Issue.ID, a.config.Timeout)
-
-	// Check if parent context is already done (debugging for vc-177)
+	// Check if parent context is already done
 	select {
 	case <-ctx.Done():
-		fmt.Printf("[DEBUG vc-177] Parent context already cancelled: %v\n", ctx.Err())
 		return nil, fmt.Errorf("agent wait called with already-cancelled context: %w", ctx.Err())
 	default:
-		fmt.Printf("[DEBUG vc-177] Parent context is active\n")
 	}
 
 	// Create a context with timeout
@@ -168,40 +163,28 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 	// Wait for process to complete or timeout
 	errCh := make(chan error, 1)
 	go func() {
-		fmt.Printf("[DEBUG vc-177] Starting cmd.Wait() for issue %s\n", a.config.Issue.ID)
-		waitStart := time.Now()
-		err := a.cmd.Wait()
-		waitDuration := time.Since(waitStart)
-		fmt.Printf("[DEBUG vc-177] cmd.Wait() returned after %v for issue %s, err=%v\n",
-			waitDuration, a.config.Issue.ID, err)
-		errCh <- err
+		errCh <- a.cmd.Wait()
 	}()
 
 	select {
 	case <-timeoutCtx.Done():
-		elapsed := time.Since(startWait)
 		// Check why timeout context was cancelled
 		// context.DeadlineExceeded means actual timeout
 		// context.Canceled means parent context was cancelled
 		if timeoutCtx.Err() == context.DeadlineExceeded {
 			// Actual timeout - kill the process
-			fmt.Printf("[DEBUG vc-177] Agent timeout after %v (expected timeout: %v)\n", elapsed, a.config.Timeout)
 			if err := a.Kill(); err != nil {
 				return nil, fmt.Errorf("agent execution timed out after %v (kill failed: %w)", a.config.Timeout, err)
 			}
 			return nil, fmt.Errorf("agent execution timed out after %v", a.config.Timeout)
 		}
 		// Parent context was cancelled (not a timeout)
-		fmt.Printf("[DEBUG vc-177] Parent context cancelled after %v (not timeout): %v\n", elapsed, timeoutCtx.Err())
 		if err := a.Kill(); err != nil {
-			return nil, fmt.Errorf("agent execution cancelled (parent context after %v): %w (kill failed: %v)", elapsed, timeoutCtx.Err(), err)
+			return nil, fmt.Errorf("agent execution cancelled (parent context): %w (kill failed: %v)", timeoutCtx.Err(), err)
 		}
-		return nil, fmt.Errorf("agent execution cancelled (parent context after %v): %w", elapsed, timeoutCtx.Err())
+		return nil, fmt.Errorf("agent execution cancelled (parent context): %w", timeoutCtx.Err())
 	case err := <-errCh:
 		// Process completed
-		elapsed := time.Since(startWait)
-		fmt.Printf("[DEBUG vc-177] Agent process completed after %v, err=%v\n", elapsed, err)
-
 		a.mu.Lock()
 		defer a.mu.Unlock()
 
@@ -210,7 +193,6 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 		if err != nil {
 			if exitErr, ok := err.(*exec.ExitError); ok {
 				a.result.ExitCode = exitErr.ExitCode()
-				fmt.Printf("[DEBUG vc-177] Agent exited with code %d\n", a.result.ExitCode)
 			}
 			a.result.Success = false
 			// Return the agent's result even if it failed - the error will be handled by caller
@@ -218,7 +200,6 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 		} else {
 			a.result.ExitCode = 0
 			a.result.Success = true
-			fmt.Printf("[DEBUG vc-177] Agent completed successfully\n")
 		}
 
 		return &a.result, nil

@@ -798,7 +798,64 @@ func (e *Executor) logEvent(ctx context.Context, eventType events.EventType, sev
 }
 
 // releaseIssueWithError releases an issue and adds an error comment
+// If there are too many consecutive failures, the issue is marked as blocked instead of reopened
 func (e *Executor) releaseIssueWithError(ctx context.Context, issueID, errMsg string) {
+	const maxConsecutiveFailures = 3 // Block after 3 consecutive failures
+
+	// Get execution history to check for consecutive failures
+	history, err := e.store.GetExecutionHistory(ctx, issueID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to get execution history for %s: %v\n", issueID, err)
+		// Fall through to reopen - safer to retry than block on error
+	}
+
+	// Count recent consecutive failures
+	consecutiveFailures := 0
+	for i := len(history) - 1; i >= 0; i-- {
+		attempt := history[i]
+		// Only count completed attempts
+		if attempt.Success == nil {
+			continue // Skip incomplete attempts
+		}
+		if !*attempt.Success {
+			consecutiveFailures++
+		} else {
+			break // Stop counting at first success
+		}
+	}
+
+	// Check if we should block due to too many failures
+	if consecutiveFailures >= maxConsecutiveFailures {
+		fmt.Fprintf(os.Stderr, "Issue %s has %d consecutive failures, marking as blocked\n",
+			issueID, consecutiveFailures)
+
+		// Mark as blocked instead of reopening
+		blockReason := fmt.Sprintf("Blocked after %d consecutive execution failures. Last error: %s",
+			consecutiveFailures, errMsg)
+
+		// Release execution state and mark as blocked
+		if err := e.store.ReleaseIssue(ctx, issueID); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to release issue %s: %v\n", issueID, err)
+		}
+
+		if err := e.store.UpdateIssue(ctx, issueID, map[string]interface{}{
+			"status": types.StatusBlocked,
+		}, "executor"); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to mark issue %s as blocked: %v\n", issueID, err)
+		}
+
+		if err := e.store.AddComment(ctx, issueID, "executor", blockReason); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to add comment to %s: %v\n", issueID, err)
+		}
+		return
+	}
+
+	// Not enough failures yet, reopen for retry
+	if consecutiveFailures > 0 {
+		fmt.Fprintf(os.Stderr, "Issue %s has %d consecutive failures, reopening for retry\n",
+			issueID, consecutiveFailures)
+	}
+
 	// Use atomic ReleaseIssueAndReopen to ensure issue returns to 'open' status
 	// This allows the issue to be retried instead of getting stuck in 'in_progress'
 	if err := e.store.ReleaseIssueAndReopen(ctx, issueID, e.instanceID, errMsg); err != nil {
