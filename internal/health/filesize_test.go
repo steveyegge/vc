@@ -768,3 +768,140 @@ func TestFileSizeMonitor_Percentiles_SmallDatasets(t *testing.T) {
 		})
 	}
 }
+
+// ========== Tests for vc-213 (Missing Coverage) ==========
+
+// Test #1: Context cancellation during file scan
+func TestFileSizeMonitor_Check_ContextCancellation(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "filesize-cancel-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create many files to ensure scan takes some time
+	for i := 0; i < 100; i++ {
+		content := "package main\n\nfunc main() {}\n"
+		filename := filepath.Join(tmpDir, fmt.Sprintf("file%d.go", i))
+		err = os.WriteFile(filename, []byte(content), 0644)
+		require.NoError(t, err)
+	}
+
+	mockAI := &mockSupervisor{
+		response: `{"problematic_files": [], "justified_files": []}`,
+	}
+
+	monitor, err := NewFileSizeMonitor(tmpDir, mockAI)
+	require.NoError(t, err)
+
+	// Create context that we'll cancel
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	// Should get context canceled error
+	result, err := monitor.Check(ctx, CodebaseContext{})
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "context")
+}
+
+// Test #4: Invalid JSON from AI
+func TestFileSizeMonitor_EvaluateOutliers_InvalidJSON(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "filesize-json-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create small files and one large outlier
+	for i := 0; i < 10; i++ {
+		content := "package main\n\nfunc main() {}\n"
+		filename := filepath.Join(tmpDir, fmt.Sprintf("small%d.go", i))
+		err = os.WriteFile(filename, []byte(content), 0644)
+		require.NoError(t, err)
+	}
+
+	// Create large outlier
+	large := "package main\n\n"
+	for i := 0; i < 500; i++ {
+		large += "// Comment\n"
+	}
+	err = os.WriteFile(filepath.Join(tmpDir, "large.go"), []byte(large), 0644)
+	require.NoError(t, err)
+
+	// Mock AI that returns invalid JSON
+	mockAI := &mockSupervisor{
+		response: `{invalid json: this is not valid JSON at all}`,
+	}
+
+	monitor, err := NewFileSizeMonitor(tmpDir, mockAI)
+	require.NoError(t, err)
+	monitor.OutlierThreshold = 2.0
+
+	ctx := context.Background()
+	result, err := monitor.Check(ctx, CodebaseContext{})
+
+	// Should get error due to invalid JSON parsing
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "parsing")
+}
+
+// Test #6: All files same size (stddev=0)
+func TestFileSizeMonitor_FindOutliers_ZeroStdDev(t *testing.T) {
+	monitor, err := NewFileSizeMonitor("/tmp", nil)
+	require.NoError(t, err)
+
+	// All files exactly the same size
+	sizes := []fileSize{
+		{Path: "a.go", Lines: 100},
+		{Path: "b.go", Lines: 100},
+		{Path: "c.go", Lines: 100},
+		{Path: "d.go", Lines: 100},
+		{Path: "e.go", Lines: 100},
+	}
+
+	dist := monitor.calculateDistribution(sizes)
+
+	// Verify stddev is 0
+	assert.Equal(t, 0.0, dist.StdDev)
+
+	// Should not panic and should return no outliers
+	outliers := monitor.findOutliers(sizes, dist)
+	assert.Len(t, outliers, 0, "No outliers when all files are same size")
+}
+
+// Test #6b: Verify IsUpperOutlier handles zero stddev
+func TestDistribution_IsUpperOutlier_ZeroStdDev(t *testing.T) {
+	dist := Distribution{
+		Mean:   100.0,
+		StdDev: 0.0, // All values identical
+	}
+
+	// Should return false (not panic) when stddev is 0
+	assert.False(t, dist.IsUpperOutlier(100, 2.0))
+	assert.False(t, dist.IsUpperOutlier(200, 2.0))
+	assert.False(t, dist.IsUpperOutlier(50, 2.0))
+}
+
+// Test #8: Relative path calculation failure
+func TestFileSizeMonitor_ScanFiles_RelPathHandling(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "filesize-relpath-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create test file
+	err = os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte("package main\n"), 0644)
+	require.NoError(t, err)
+
+	// Normal case - should work fine
+	monitor, err := NewFileSizeMonitor(tmpDir, nil)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	sizes, err := monitor.scanFiles(ctx)
+	require.NoError(t, err)
+	assert.Len(t, sizes, 1)
+	assert.Equal(t, "test.go", sizes[0].Path)
+
+	// Note: It's difficult to force filepath.Rel to fail in practice,
+	// as the code already validates the root path in NewFileSizeMonitor.
+	// The error handling in scanFiles is defensive programming.
+	// We verify normal behavior here and rely on code inspection for error path.
+}
