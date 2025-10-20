@@ -180,21 +180,23 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 	select {
 	case <-timeoutCtx.Done():
 		elapsed := time.Since(startWait)
-		// Check why context was cancelled
-		if ctx.Err() != nil {
-			// Parent context was cancelled, not timeout
-			fmt.Printf("[DEBUG vc-177] Parent context cancelled after %v (not timeout): %v\n", elapsed, ctx.Err())
+		// Check why timeout context was cancelled
+		// context.DeadlineExceeded means actual timeout
+		// context.Canceled means parent context was cancelled
+		if timeoutCtx.Err() == context.DeadlineExceeded {
+			// Actual timeout - kill the process
+			fmt.Printf("[DEBUG vc-177] Agent timeout after %v (expected timeout: %v)\n", elapsed, a.config.Timeout)
 			if err := a.Kill(); err != nil {
-				return nil, fmt.Errorf("agent execution cancelled (parent context after %v): %w (kill failed: %v)", elapsed, ctx.Err(), err)
+				return nil, fmt.Errorf("agent execution timed out after %v (kill failed: %w)", a.config.Timeout, err)
 			}
-			return nil, fmt.Errorf("agent execution cancelled (parent context after %v): %w", elapsed, ctx.Err())
+			return nil, fmt.Errorf("agent execution timed out after %v", a.config.Timeout)
 		}
-		// Timeout - kill the process
-		fmt.Printf("[DEBUG vc-177] Agent timeout after %v (expected timeout: %v)\n", elapsed, a.config.Timeout)
+		// Parent context was cancelled (not a timeout)
+		fmt.Printf("[DEBUG vc-177] Parent context cancelled after %v (not timeout): %v\n", elapsed, timeoutCtx.Err())
 		if err := a.Kill(); err != nil {
-			return nil, fmt.Errorf("agent execution timed out after %v (kill failed: %w)", a.config.Timeout, err)
+			return nil, fmt.Errorf("agent execution cancelled (parent context after %v): %w (kill failed: %v)", elapsed, timeoutCtx.Err(), err)
 		}
-		return nil, fmt.Errorf("agent execution timed out after %v", a.config.Timeout)
+		return nil, fmt.Errorf("agent execution cancelled (parent context after %v): %w", elapsed, timeoutCtx.Err())
 	case err := <-errCh:
 		// Process completed
 		elapsed := time.Since(startWait)

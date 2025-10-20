@@ -1662,11 +1662,11 @@ IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences.`,
 func (s *Supervisor) logAIUsage(ctx context.Context, issueID, activity string, inputTokens, outputTokens int64, duration time.Duration) error {
 	// Check if issue exists before trying to add comment
 	// This prevents FOREIGN KEY constraint failures in tests where issues aren't in the database
-	_, err := s.store.GetIssue(ctx, issueID)
-	if err != nil {
+	issue, err := s.store.GetIssue(ctx, issueID)
+	if err != nil || issue == nil {
 		// Issue doesn't exist - silently skip logging
 		// This is common in tests where we pass test issues directly to AI functions
-		fmt.Fprintf(os.Stderr, "debug: skipping AI usage logging for non-existent issue %s: %v\n", issueID, err)
+		// Note: GetIssue returns (nil, nil) when issue not found, so check both err and issue
 		return nil
 	}
 
