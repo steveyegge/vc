@@ -164,7 +164,9 @@ CREATE TABLE IF NOT EXISTS agent_events (
         'analysis_started', 'analysis_completed',
         'quality_gates_started', 'quality_gates_progress', 'quality_gates_completed', 'quality_gates_skipped',
         -- Deduplication events (vc-151)
-        'deduplication_batch_started', 'deduplication_batch_completed', 'deduplication_decision'
+        'deduplication_batch_started', 'deduplication_batch_completed', 'deduplication_decision',
+        -- Event cleanup events (vc-195)
+        'event_cleanup_completed'
     )),
     timestamp DATETIME NOT NULL,
     issue_id TEXT NOT NULL,

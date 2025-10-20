@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/ai"
+	"github.com/steveyegge/vc/internal/config"
 	"github.com/steveyegge/vc/internal/deduplication"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/sandbox"
@@ -35,10 +36,12 @@ type Executor struct {
 	// Control channels
 	stopCh chan struct{}
 	doneCh chan struct{}
-	watchdogStopCh chan struct{} // Separate channel for watchdog shutdown
-	watchdogDoneCh chan struct{} // Signals when watchdog goroutine finished
-	cleanupStopCh  chan struct{} // Separate channel for cleanup goroutine shutdown
-	cleanupDoneCh  chan struct{} // Signals when cleanup goroutine finished
+	watchdogStopCh      chan struct{} // Separate channel for watchdog shutdown
+	watchdogDoneCh      chan struct{} // Signals when watchdog goroutine finished
+	cleanupStopCh       chan struct{} // Separate channel for cleanup goroutine shutdown
+	cleanupDoneCh       chan struct{} // Signals when cleanup goroutine finished
+	eventCleanupStopCh  chan struct{} // Separate channel for event cleanup shutdown
+	eventCleanupDoneCh  chan struct{} // Signals when event cleanup goroutine finished
 
 	// Configuration
 	pollInterval        time.Duration
@@ -56,21 +59,22 @@ type Executor struct {
 
 // Config holds executor configuration
 type Config struct {
-	Store               storage.Storage
-	Version             string
-	PollInterval        time.Duration
-	HeartbeatPeriod     time.Duration
-	CleanupInterval     time.Duration // How often to check for stale instances (default: 5 minutes)
-	StaleThreshold      time.Duration // How long before an instance is considered stale (default: 5 minutes)
-	EnableAISupervision bool          // Enable AI assessment and analysis (default: true)
-	EnableQualityGates  bool          // Enable quality gates enforcement (default: true)
-	EnableSandboxes     bool          // Enable sandbox isolation (default: false)
-	WorkingDir          string        // Working directory for quality gates (default: ".")
-	SandboxRoot         string        // Root directory for sandboxes (default: ".sandboxes")
-	ParentRepo          string        // Parent repository path (default: ".")
-	DefaultBranch       string        // Default git branch for sandboxes (default: "main")
-	WatchdogConfig      *watchdog.WatchdogConfig   // Watchdog configuration (default: conservative defaults)
-	DeduplicationConfig *deduplication.Config      // Deduplication configuration (default: sensible defaults, nil = use defaults)
+	Store                storage.Storage
+	Version              string
+	PollInterval         time.Duration
+	HeartbeatPeriod      time.Duration
+	CleanupInterval      time.Duration // How often to check for stale instances (default: 5 minutes)
+	StaleThreshold       time.Duration // How long before an instance is considered stale (default: 5 minutes)
+	EnableAISupervision  bool          // Enable AI assessment and analysis (default: true)
+	EnableQualityGates   bool          // Enable quality gates enforcement (default: true)
+	EnableSandboxes      bool          // Enable sandbox isolation (default: false)
+	WorkingDir           string        // Working directory for quality gates (default: ".")
+	SandboxRoot          string        // Root directory for sandboxes (default: ".sandboxes")
+	ParentRepo           string        // Parent repository path (default: ".")
+	DefaultBranch        string        // Default git branch for sandboxes (default: "main")
+	WatchdogConfig       *watchdog.WatchdogConfig   // Watchdog configuration (default: conservative defaults)
+	DeduplicationConfig  *deduplication.Config      // Deduplication configuration (default: sensible defaults, nil = use defaults)
+	EventRetentionConfig *config.EventRetentionConfig // Event retention and cleanup configuration (default: sensible defaults, nil = use defaults)
 }
 
 // DefaultConfig returns default executor configuration
@@ -150,6 +154,8 @@ func New(cfg *Config) (*Executor, error) {
 		doneCh:              make(chan struct{}),
 		cleanupStopCh:       make(chan struct{}),
 		cleanupDoneCh:       make(chan struct{}),
+		eventCleanupStopCh:  make(chan struct{}),
+		eventCleanupDoneCh:  make(chan struct{}),
 	}
 
 	// Initialize AI supervisor if enabled (do this before sandbox manager to provide deduplicator)
@@ -291,6 +297,9 @@ func (e *Executor) Start(ctx context.Context) error {
 	fmt.Printf("Cleanup: Started stale instance cleanup (check_interval=%v, stale_threshold=%v)\n",
 		e.cleanupInterval, e.staleThreshold)
 
+	// Start the event cleanup loop
+	go e.eventCleanupLoop(ctx)
+
 	return nil
 }
 
@@ -314,13 +323,17 @@ func (e *Executor) Stop(ctx context.Context) error {
 	// Stop cleanup goroutine
 	close(e.cleanupStopCh)
 
-	// Wait for event loop, watchdog, and cleanup to finish concurrently (vc-113, vc-122)
+	// Stop event cleanup goroutine
+	close(e.eventCleanupStopCh)
+
+	// Wait for event loop, watchdog, cleanup, and event cleanup to finish concurrently (vc-113, vc-122, vc-195)
 	// This prevents sequential timeouts if one takes longer than expected
 	eventDone := false
 	watchdogDone := !e.watchdogConfig.IsEnabled() || e.analyzer == nil // Skip if not enabled
 	cleanupDone := false
+	eventCleanupDone := false
 
-	for !eventDone || !watchdogDone || !cleanupDone {
+	for !eventDone || !watchdogDone || !cleanupDone || !eventCleanupDone {
 		select {
 		case <-e.doneCh:
 			eventDone = true
@@ -328,6 +341,8 @@ func (e *Executor) Stop(ctx context.Context) error {
 			watchdogDone = true
 		case <-e.cleanupDoneCh:
 			cleanupDone = true
+		case <-e.eventCleanupDoneCh:
+			eventCleanupDone = true
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -1006,4 +1021,136 @@ func (e *Executor) cleanupLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// eventCleanupLoop runs periodic cleanup of old events in a background goroutine
+// This enforces event retention policies to prevent database bloat
+func (e *Executor) eventCleanupLoop(ctx context.Context) {
+	defer close(e.eventCleanupDoneCh)
+
+	// Get event retention config (from executor config or defaults)
+	retentionCfg := config.DefaultEventRetentionConfig()
+	if e.config != nil && e.config.EventRetentionConfig != nil {
+		retentionCfg = *e.config.EventRetentionConfig
+	}
+
+	// Skip cleanup if disabled
+	if !retentionCfg.CleanupEnabled {
+		fmt.Printf("Event cleanup: Disabled via configuration\n")
+		return
+	}
+
+	// Create ticker with configured interval
+	cleanupInterval := time.Duration(retentionCfg.CleanupIntervalHours) * time.Hour
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
+
+	fmt.Printf("Event cleanup: Started (interval=%v, retention=%dd, per_issue_limit=%d, global_limit=%d)\n",
+		cleanupInterval, retentionCfg.RetentionDays, retentionCfg.PerIssueLimitEvents, retentionCfg.GlobalLimitEvents)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-e.eventCleanupStopCh:
+			return
+		case <-ticker.C:
+			// Check if we should stop before running cleanup
+			select {
+			case <-e.eventCleanupStopCh:
+				return
+			default:
+			}
+
+			// Run cleanup with cancellation support
+			done := make(chan error, 1)
+			go func() {
+				done <- e.runEventCleanup(ctx, retentionCfg)
+			}()
+
+			// Wait for either completion or stop signal
+			select {
+			case err := <-done:
+				if err != nil {
+					// Log error but continue monitoring
+					fmt.Fprintf(os.Stderr, "event cleanup: error during cleanup: %v\n", err)
+				}
+			case <-e.eventCleanupStopCh:
+				// Stop signal received while cleaning - exit immediately
+				// The goroutine will finish in the background
+				return
+			}
+		}
+	}
+}
+
+// runEventCleanup executes one cycle of event cleanup
+func (e *Executor) runEventCleanup(ctx context.Context, cfg config.EventRetentionConfig) error {
+	startTime := time.Now()
+
+	// Track metrics for logging
+	var timeBasedDeleted, perIssueDeleted, globalLimitDeleted int
+	var vacuumRan bool
+
+	// Step 1: Time-based cleanup (delete old events)
+	deleted, err := e.store.CleanupEventsByAge(ctx, cfg.RetentionDays, cfg.RetentionCriticalDays, cfg.CleanupBatchSize)
+	if err != nil {
+		return fmt.Errorf("time-based cleanup failed: %w", err)
+	}
+	timeBasedDeleted = deleted
+
+	// Step 2: Per-issue limit cleanup (enforce per-issue event caps)
+	deleted, err = e.store.CleanupEventsByIssueLimit(ctx, cfg.PerIssueLimitEvents, cfg.CleanupBatchSize)
+	if err != nil {
+		return fmt.Errorf("per-issue limit cleanup failed: %w", err)
+	}
+	perIssueDeleted = deleted
+
+	// Step 3: Global limit cleanup (enforce global safety limit)
+	// Trigger aggressive cleanup at 95% of configured limit
+	triggerThreshold := int(float64(cfg.GlobalLimitEvents) * 0.95)
+	deleted, err = e.store.CleanupEventsByGlobalLimit(ctx, triggerThreshold, cfg.CleanupBatchSize)
+	if err != nil {
+		return fmt.Errorf("global limit cleanup failed: %w", err)
+	}
+	globalLimitDeleted = deleted
+
+	totalDeleted := timeBasedDeleted + perIssueDeleted + globalLimitDeleted
+
+	// Step 4: Optional VACUUM to reclaim disk space
+	if cfg.CleanupVacuum && totalDeleted > 0 {
+		if err := e.store.VacuumDatabase(ctx); err != nil {
+			// Don't fail the whole cleanup if VACUUM fails
+			fmt.Fprintf(os.Stderr, "event cleanup: warning: VACUUM failed: %v\n", err)
+		} else {
+			vacuumRan = true
+		}
+	}
+
+	// Get remaining event count for metrics
+	counts, err := e.store.GetEventCounts(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "event cleanup: warning: failed to get event counts: %v\n", err)
+	}
+
+	processingTimeMs := time.Since(startTime).Milliseconds()
+
+	// Log cleanup metrics by storing structured cleanup event
+	// Note: We can't use logEvent() since it requires a non-empty issue_id
+	// Instead, we just log to stdout for observability
+	// In the future, we could create a separate cleanup_events table if needed
+
+	if totalDeleted > 0 || vacuumRan {
+		fmt.Printf("Event cleanup: Deleted %d events (time_based=%d, per_issue=%d, global_limit=%d) in %dms",
+			totalDeleted, timeBasedDeleted, perIssueDeleted, globalLimitDeleted, processingTimeMs)
+		if vacuumRan {
+			fmt.Printf(" [VACUUM ran]")
+		}
+		if counts != nil {
+			fmt.Printf(" (remaining=%d)", counts.TotalEvents)
+		}
+		fmt.Println()
+	}
+
+	return nil
 }
