@@ -159,8 +159,10 @@ type Distribution struct {
 	Count  int
 }
 
-// IsOutlier returns true if the value is N standard deviations from mean.
-func (d Distribution) IsOutlier(value float64, numStdDevs float64) bool {
+// IsUpperOutlier returns true if the value is N standard deviations above the mean.
+// This only detects upper tail outliers (values significantly larger than average).
+// For lower tail detection, check if value < mean - (numStdDevs * stdDev).
+func (d Distribution) IsUpperOutlier(value float64, numStdDevs float64) bool {
 	if d.StdDev == 0 {
 		return false
 	}

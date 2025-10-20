@@ -31,7 +31,7 @@
 // GOOD (ZFC-compliant):
 //
 //	philosophy := "Large files are harder to understand and modify"
-//	if distribution.IsOutlier(fileLines, 2.0) {
+//	if distribution.IsUpperOutlier(fileLines, 2.0) {
 //	    context := fmt.Sprintf("File has %d lines (mean: %.0f, stddev: %.0f)",
 //	        fileLines, distribution.Mean, distribution.StdDev)
 //	    reasoning := "This file is a statistical outlier (>2σ from mean). " +

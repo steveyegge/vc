@@ -144,8 +144,16 @@ func (m *FileSizeMonitor) Check(ctx context.Context, codebase CodebaseContext) (
 		}, nil
 	}
 
+	// Limit outliers sent to AI to prevent token limit issues and timeouts
+	const maxOutliersForAI = 50
+	outliersForAI := outliers
+	if len(outliers) > maxOutliersForAI {
+		outliersForAI = outliers[:maxOutliersForAI]
+		// Outliers are already sorted by size descending, so we get the largest ones
+	}
+
 	// 4. Build AI prompt and get evaluation
-	evaluation, err := m.evaluateOutliers(ctx, outliers, dist)
+	evaluation, err := m.evaluateOutliers(ctx, outliersForAI, dist)
 	if err != nil {
 		return nil, fmt.Errorf("evaluating outliers: %w", err)
 	}
@@ -382,7 +390,12 @@ func (m *FileSizeMonitor) evaluateOutliers(ctx context.Context, outliers []fileS
 	// Parse JSON response
 	var eval outlierEvaluation
 	if err := json.Unmarshal([]byte(response), &eval); err != nil {
-		return nil, fmt.Errorf("parsing AI response: %w (response: %s)", err, response)
+		// Truncate response in error message to avoid huge logs
+		truncated := response
+		if len(response) > 500 {
+			truncated = response[:500] + "... (truncated)"
+		}
+		return nil, fmt.Errorf("parsing AI response: %w (response: %s)", err, truncated)
 	}
 
 	return &eval, nil
@@ -412,7 +425,9 @@ func (m *FileSizeMonitor) buildPrompt(outliers []fileSize, dist Distribution) st
 	}
 	sb.WriteString("\n")
 
-	sb.WriteString("## Guidance (Late 2025)\n")
+	// Use dynamic year to prevent prompt from becoming stale
+	year := time.Now().Year()
+	sb.WriteString(fmt.Sprintf("## Guidance (%d)\n", year))
 	sb.WriteString("Most Go projects: 100-500 lines typical, 1000+ warrants review.\n")
 	sb.WriteString("However, judgment should adapt to THIS codebase's patterns.\n\n")
 

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -241,7 +243,9 @@ func TestFileSizeMonitor_BuildPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "200 lines") // Mean
 	assert.Contains(t, prompt, "large1.go: 1000 lines")
 	assert.Contains(t, prompt, "large2.go: 800 lines")
-	assert.Contains(t, prompt, "Late 2025")
+	// Verify dynamic year is included (not hardcoded "Late 2025")
+	currentYear := fmt.Sprintf("%d", time.Now().Year())
+	assert.Contains(t, prompt, currentYear)
 	assert.Contains(t, prompt, "problematic_files")
 	assert.Contains(t, prompt, "justified_files")
 	assert.Contains(t, prompt, "JSON")
@@ -573,6 +577,147 @@ func TestFileSizeMonitor_PatternMatching(t *testing.T) {
 	assert.False(t, foundFiles["types.pb.go"], "types.pb.go should be excluded")
 	assert.False(t, foundFiles["handler.gen.go"], "handler.gen.go should be excluded")
 	assert.False(t, foundFiles[filepath.Join("testdata", "helper.go")], "testdata/helper.go should be excluded")
+}
+
+// ========== Tests for vc-212 Fixes ==========
+
+// capturePromptSupervisor is a mock that captures the prompt sent to AI
+type capturePromptSupervisor struct {
+	capturedPrompt string
+	response       string
+}
+
+func (m *capturePromptSupervisor) CallAI(ctx context.Context, prompt string, operation string, model string, maxTokens int) (string, error) {
+	m.capturedPrompt = prompt
+	return m.response, nil
+}
+
+// Test Fix #8: Outlier limit for AI (max 50)
+func TestFileSizeMonitor_OutlierLimit(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "filesize-limit-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create many small files to establish baseline
+	for i := 0; i < 100; i++ {
+		content := "package main\n\nfunc main() {}\n"
+		filename := filepath.Join(tmpDir, fmt.Sprintf("small%d.go", i))
+		err = os.WriteFile(filename, []byte(content), 0644)
+		require.NoError(t, err)
+	}
+
+	// Create 60 large outlier files
+	for i := 0; i < 60; i++ {
+		large := "package main\n\n"
+		for j := 0; j < 500; j++ {
+			large += "// Comment line\n"
+		}
+		filename := filepath.Join(tmpDir, fmt.Sprintf("large%d.go", i))
+		err = os.WriteFile(filename, []byte(large), 0644)
+		require.NoError(t, err)
+	}
+
+	// Use custom mock that captures prompt
+	mockAI := &capturePromptSupervisor{
+		response: `{
+			"problematic_files": [],
+			"justified_files": []
+		}`,
+	}
+
+	monitor, err := NewFileSizeMonitor(tmpDir, mockAI)
+	require.NoError(t, err)
+	monitor.OutlierThreshold = 2.0 // Ensure we get many outliers
+
+	ctx := context.Background()
+	result, err := monitor.Check(ctx, CodebaseContext{})
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+
+	// Verify that prompt contains at most 50 outliers, not all 60
+	// Count occurrences of "large" in the outlier list section
+	outlierCount := 0
+	for i := 0; i < 60; i++ {
+		contains := fmt.Sprintf("large%d.go", i)
+		if strings.Contains(mockAI.capturedPrompt, contains) {
+			outlierCount++
+		}
+	}
+	assert.LessOrEqual(t, outlierCount, 50, "Should limit outliers sent to AI to 50")
+}
+
+// Test Fix #9: Dynamic year in prompt
+func TestFileSizeMonitor_DynamicYear(t *testing.T) {
+	monitor, err := NewFileSizeMonitor("/tmp", nil)
+	require.NoError(t, err)
+
+	outliers := []fileSize{
+		{Path: "large.go", Lines: 1000},
+	}
+
+	dist := Distribution{
+		Mean:   200.0,
+		Median: 180.0,
+		StdDev: 50.0,
+		P95:    350.0,
+		P99:    450.0,
+		Count:  100,
+	}
+
+	prompt := monitor.buildPrompt(outliers, dist)
+
+	// Should NOT contain hardcoded "Late 2025"
+	assert.NotContains(t, prompt, "Late 2025")
+
+	// Should contain current year
+	currentYear := time.Now().Year()
+	yearStr := fmt.Sprintf("%d", currentYear)
+	assert.Contains(t, prompt, yearStr)
+}
+
+// Test Fix #10: Error message truncation
+func TestFileSizeMonitor_ErrorTruncation(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "filesize-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create small files to establish baseline
+	for i := 0; i < 10; i++ {
+		content := "package main\n\nfunc main() {}\n"
+		filename := filepath.Join(tmpDir, fmt.Sprintf("small%d.go", i))
+		err = os.WriteFile(filename, []byte(content), 0644)
+		require.NoError(t, err)
+	}
+
+	// Create large outlier
+	large := "package main\n\n"
+	for i := 0; i < 500; i++ {
+		large += "// Comment\n"
+	}
+	err = os.WriteFile(filepath.Join(tmpDir, "large.go"), []byte(large), 0644)
+	require.NoError(t, err)
+
+	// Mock AI that returns huge invalid JSON (>500 chars)
+	hugeResponse := "INVALID JSON: " + strings.Repeat("X", 1000)
+	mockAI := &mockSupervisor{
+		response: hugeResponse,
+	}
+
+	monitor, err := NewFileSizeMonitor(tmpDir, mockAI)
+	require.NoError(t, err)
+	monitor.OutlierThreshold = 2.0
+
+	ctx := context.Background()
+	result, err := monitor.Check(ctx, CodebaseContext{})
+
+	// Should get error due to invalid JSON
+	assert.Error(t, err)
+	assert.Nil(t, result)
+
+	// Error message should be truncated to ~500 chars, not the full 1000+
+	errMsg := err.Error()
+	assert.LessOrEqual(t, len(errMsg), 700, "Error message should be truncated")
+	assert.Contains(t, errMsg, "truncated", "Error should indicate truncation")
 }
 
 // Test Fix #6: Percentile calculation with small datasets
