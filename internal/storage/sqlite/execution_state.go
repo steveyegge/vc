@@ -19,7 +19,7 @@ func (s *SQLiteStorage) ClaimIssue(ctx context.Context, issueID, executorInstanc
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Check if issue is already claimed
 	var existingExecutor string
@@ -259,7 +259,7 @@ func (s *SQLiteStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, acto
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Delete execution state
 	result, err := tx.ExecContext(ctx, `

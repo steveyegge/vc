@@ -124,7 +124,7 @@ func applySQLiteMigration(db *sql.DB, migration Migration) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Execute migration SQL
 	if _, err := tx.Exec(migration.Up); err != nil {
@@ -147,7 +147,7 @@ func rollbackSQLiteMigration(db *sql.DB, migration Migration) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Execute rollback SQL
 	if _, err := tx.Exec(migration.Down); err != nil {

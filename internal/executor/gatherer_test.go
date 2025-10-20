@@ -17,7 +17,7 @@ func TestNewContextGatherer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	gatherer := NewContextGatherer(store)
 	if gatherer == nil {
@@ -33,7 +33,7 @@ func TestGetParentMission(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	gatherer := NewContextGatherer(store)
 
@@ -112,7 +112,7 @@ func TestGetRelatedIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	gatherer := NewContextGatherer(store)
 
@@ -244,7 +244,7 @@ func TestGetPreviousAttempts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	gatherer := NewContextGatherer(store)
 
@@ -326,7 +326,7 @@ func TestAnalyzeResumeState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	gatherer := NewContextGatherer(store)
 
@@ -430,7 +430,7 @@ func TestGatherContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	gatherer := NewContextGatherer(store)
 

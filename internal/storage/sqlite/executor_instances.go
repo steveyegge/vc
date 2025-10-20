@@ -84,7 +84,7 @@ func (s *SQLiteStorage) GetActiveInstances(ctx context.Context) ([]*types.Execut
 	if err != nil {
 		return nil, fmt.Errorf("failed to query active instances: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var instances []*types.ExecutorInstance
 	for rows.Next() {
@@ -125,7 +125,7 @@ func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshol
 	if err != nil {
 		return 0, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// First, find all stale instances (running but heartbeat is old)
 	staleQuery := `
@@ -144,12 +144,12 @@ func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshol
 	for rows.Next() {
 		var instanceID string
 		if err := rows.Scan(&instanceID); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return 0, fmt.Errorf("failed to scan instance ID: %w", err)
 		}
 		staleInstanceIDs = append(staleInstanceIDs, instanceID)
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	if err = rows.Err(); err != nil {
 		return 0, fmt.Errorf("error iterating stale instances: %w", err)
@@ -173,12 +173,12 @@ func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshol
 	for orphanedRows.Next() {
 		var instanceID string
 		if err := orphanedRows.Scan(&instanceID); err != nil {
-			orphanedRows.Close()
+			_ = orphanedRows.Close()
 			return 0, fmt.Errorf("failed to scan orphaned instance ID: %w", err)
 		}
 		orphanedInstanceIDs = append(orphanedInstanceIDs, instanceID)
 	}
-	orphanedRows.Close()
+	_ = orphanedRows.Close()
 
 	if err = orphanedRows.Err(); err != nil {
 		return 0, fmt.Errorf("error iterating orphaned instances: %w", err)
@@ -210,12 +210,12 @@ func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshol
 		for issueRows.Next() {
 			var issueID string
 			if err := issueRows.Scan(&issueID); err != nil {
-				issueRows.Close()
+				_ = issueRows.Close()
 				return 0, fmt.Errorf("failed to scan issue ID: %w", err)
 			}
 			issueIDs = append(issueIDs, issueID)
 		}
-		issueRows.Close()
+		_ = issueRows.Close()
 
 		if err = issueRows.Err(); err != nil {
 			return 0, fmt.Errorf("error iterating claimed issues: %w", err)

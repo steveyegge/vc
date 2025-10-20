@@ -42,7 +42,7 @@ func createWorktree(ctx context.Context, cfg SandboxConfig, branchName string) (
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Clean up if worktree creation failed but directory was created
-		os.RemoveAll(worktreePath)
+		_ = os.RemoveAll(worktreePath) // Best-effort cleanup
 		return "", fmt.Errorf("git worktree add failed: %w (output: %s)", err, string(output))
 	}
 
@@ -50,7 +50,7 @@ func createWorktree(ctx context.Context, cfg SandboxConfig, branchName string) (
 	absPath, err := filepath.Abs(worktreePath)
 	if err != nil {
 		// Try to clean up the worktree we just created
-		removeWorktree(ctx, cfg.ParentRepo, worktreePath)
+		_ = removeWorktree(ctx, cfg.ParentRepo, worktreePath) // Best-effort cleanup
 		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
@@ -89,7 +89,7 @@ func removeWorktree(ctx context.Context, parentRepo, worktreePath string) error 
 		if parentRepo != "" {
 			pruneCmd.Dir = parentRepo
 		}
-		pruneCmd.Run() // Ignore errors from prune
+		_ = pruneCmd.Run() // Ignore errors from prune
 
 		return nil
 	}

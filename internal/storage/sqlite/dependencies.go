@@ -41,7 +41,7 @@ func (s *SQLiteStorage) AddDependency(ctx context.Context, dep *types.Dependency
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Insert dependency
 	_, err = tx.ExecContext(ctx, `
@@ -113,7 +113,7 @@ func (s *SQLiteStorage) RemoveDependency(ctx context.Context, issueID, dependsOn
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.ExecContext(ctx, `
 		DELETE FROM dependencies WHERE issue_id = ? AND depends_on_id = ?
@@ -148,7 +148,7 @@ func (s *SQLiteStorage) GetDependencies(ctx context.Context, issueID string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dependencies: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanIssues(rows)
 }
@@ -167,7 +167,7 @@ func (s *SQLiteStorage) GetDependents(ctx context.Context, issueID string) ([]*t
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dependents: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanIssues(rows)
 }
@@ -185,7 +185,7 @@ func (s *SQLiteStorage) GetDependencyRecords(ctx context.Context, issueID string
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dependency records: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var deps []*types.Dependency
 	for rows.Next() {
@@ -245,7 +245,7 @@ func (s *SQLiteStorage) GetDependencyTree(ctx context.Context, issueID string, m
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dependency tree: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var nodes []*types.TreeNode
 	for rows.Next() {
@@ -318,7 +318,7 @@ func (s *SQLiteStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect cycles: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var cycles [][]*types.Issue
 	seen := make(map[string]bool)

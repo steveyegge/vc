@@ -22,7 +22,7 @@ func TestEventLoggingOrderInErrorPaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create executor
 	execCfg := DefaultConfig()
@@ -122,7 +122,7 @@ func TestEventLoggingInMultipleErrorPaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create executor
 	execCfg := DefaultConfig()
@@ -313,7 +313,7 @@ func TestEventDataNoRedundancy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create executor
 	execCfg := DefaultConfig()
@@ -434,7 +434,7 @@ func TestEventSeverityConsistency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create executor
 	execCfg := DefaultConfig()
@@ -534,7 +534,7 @@ func TestContextCancellationHandling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create executor
 	execCfg := DefaultConfig()
@@ -650,7 +650,7 @@ func TestAgentIDFieldDocumentation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create executor
 	execCfg := DefaultConfig()
@@ -755,7 +755,7 @@ func BenchmarkEventLogging(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create executor
 	execCfg := DefaultConfig()
@@ -804,7 +804,7 @@ func TestOutputParserIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create test issue
 	issue := &types.Issue{

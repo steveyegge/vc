@@ -11,7 +11,7 @@ import (
 // an event when the label already exists (vc-27)
 func TestAddLabelSkipsEventWhenLabelExists(t *testing.T) {
 	store := setupTestDB(t)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 
@@ -86,7 +86,7 @@ func TestAddLabelSkipsEventWhenLabelExists(t *testing.T) {
 // record an event when the label doesn't exist (vc-27)
 func TestRemoveLabelSkipsEventWhenLabelDoesntExist(t *testing.T) {
 	store := setupTestDB(t)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 
@@ -173,7 +173,7 @@ func TestRemoveLabelSkipsEventWhenLabelDoesntExist(t *testing.T) {
 // TestLabelOperationsAuditTrail tests the complete audit trail for label operations
 func TestLabelOperationsAuditTrail(t *testing.T) {
 	store := setupTestDB(t)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 
@@ -262,7 +262,7 @@ func TestLabelOperationsAuditTrail(t *testing.T) {
 // This test verifies the fix for the issue_labels → labels table name mismatch
 func TestSearchIssuesWithLabels(t *testing.T) {
 	store := setupTestDB(t)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 

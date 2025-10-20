@@ -577,7 +577,7 @@ func TestNewAIDeduplicatorValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create test storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Note: We can't easily create a real supervisor without an Anthropic API client,
 	// so we focus on testing nil validation. Config validation is tested separately
@@ -663,7 +663,7 @@ func TestNewAIDeduplicatorConfigValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create test storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create a mock supervisor by creating an empty one (unsafe, but for testing validation)
 	// We just need a non-nil pointer to test config validation

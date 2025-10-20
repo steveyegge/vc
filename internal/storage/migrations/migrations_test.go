@@ -28,7 +28,7 @@ func TestSQLiteMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create migration manager
 	manager := NewManager()

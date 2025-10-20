@@ -28,7 +28,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error opening storage: %v\n", err)
 		os.Exit(1)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Run cleanup with 5 minute threshold (matching executor default)
 	staleThresholdSecs := int((5 * time.Minute).Seconds())

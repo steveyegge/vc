@@ -21,7 +21,7 @@ func TestExecutorStateTransitions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create executor with AI supervision disabled (to avoid needing API key in tests)
 	execCfg := DefaultConfig()
@@ -173,7 +173,7 @@ func TestExecutorWithAISupervisionEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Test 1: Create executor with AI supervision explicitly disabled
 	execCfg := DefaultConfig()
@@ -209,7 +209,7 @@ func TestExecutorStateSequence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create executor
 	execCfg := DefaultConfig()
@@ -331,7 +331,7 @@ func TestExecutorDoubleClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create two executors
 	execCfg1 := DefaultConfig()

@@ -20,7 +20,7 @@ func TestInterventionController_PauseAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create intervention controller
 	ic, err := NewInterventionController(&InterventionControllerConfig{
@@ -161,7 +161,7 @@ func TestInterventionController_KillAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create intervention controller
 	ic, err := NewInterventionController(&InterventionControllerConfig{
@@ -253,7 +253,7 @@ func TestInterventionController_Intervene(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ic, err := NewInterventionController(&InterventionControllerConfig{
 		Store:              store,
@@ -368,7 +368,7 @@ func TestInterventionController_NoActiveAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ic, err := NewInterventionController(&InterventionControllerConfig{
 		Store:              store,
@@ -409,7 +409,7 @@ func TestInterventionController_ClearAgentContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ic, err := NewInterventionController(&InterventionControllerConfig{
 		Store:              store,
@@ -447,7 +447,7 @@ func TestInterventionController_InterventionHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create controller with small history size for testing
 	ic, err := NewInterventionController(&InterventionControllerConfig{

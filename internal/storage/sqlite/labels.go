@@ -13,7 +13,7 @@ func (s *SQLiteStorage) AddLabel(ctx context.Context, issueID, label, actor stri
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	result, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO labels (issue_id, label)
@@ -48,7 +48,7 @@ func (s *SQLiteStorage) RemoveLabel(ctx context.Context, issueID, label, actor s
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	result, err := tx.ExecContext(ctx, `
 		DELETE FROM labels WHERE issue_id = ? AND label = ?
@@ -84,7 +84,7 @@ func (s *SQLiteStorage) GetLabels(ctx context.Context, issueID string) ([]string
 	if err != nil {
 		return nil, fmt.Errorf("failed to get labels: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var labels []string
 	for rows.Next() {
@@ -112,7 +112,7 @@ func (s *SQLiteStorage) GetIssuesByLabel(ctx context.Context, label string) ([]*
 	if err != nil {
 		return nil, fmt.Errorf("failed to get issues by label: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanIssues(rows)
 }

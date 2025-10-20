@@ -21,7 +21,7 @@ func TestResultsProcessorAnalysisEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create test issue
 	issue := &types.Issue{
@@ -202,7 +202,7 @@ func TestResultsProcessorQualityGatesSkippedEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create test issue
 	issue := &types.Issue{
@@ -413,7 +413,7 @@ func TestResultsProcessorEventDataNoRedundancy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create test issue
 	issue := &types.Issue{
@@ -508,7 +508,7 @@ func TestResultsProcessorEventSeverityConsistency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create test issue
 	issue := &types.Issue{
@@ -600,7 +600,7 @@ func TestResultsProcessorContextCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create test issue
 	issue := &types.Issue{

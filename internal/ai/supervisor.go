@@ -1112,23 +1112,21 @@ func (s *Supervisor) buildCompletionPrompt(issue *types.Issue, children []*types
 		issueTypeStr = "phase"
 	}
 
-	// Add special guidance for missions and phases (structural containers)
-	structuralGuidance := ""
-	if issue.IssueSubtype == types.SubtypeMission || issue.IssueSubtype == types.SubtypePhase {
-		structuralGuidance = `
-IMPORTANT FOR MISSIONS/PHASES:
-Missions and phases are structural containers that organize work into logical groupings.
-When ALL children of a mission/phase are closed, this strongly indicates the parent's objectives are met,
+	// Add guidance for all structural containers (epics, missions, phases)
+	// When all children are closed, the burden of proof shifts to finding concrete gaps
+	structuralGuidance := `
+IMPORTANT PRINCIPLE:
+Epics, missions, and phases are structural containers that organize work into logical groupings.
+When ALL children are closed, this strongly indicates the parent's objectives are met,
 UNLESS there is clear evidence that the acceptance criteria were not satisfied.
 
 The burden of proof is: if all children are complete, assume the parent is complete unless you can identify
 a specific, concrete gap between what was delivered and what was required.
 
-Do not demand explicit verification of abstract criteria like "tested in production" when the child phases
-(e.g., Development, Testing, Deployment) are all marked complete. Trust that the phase structure represents
-the work breakdown, and completing all phases means the mission succeeded.
+Do not invent hypothetical missing work. If all tracked child issues are closed, trust that the work
+breakdown was reasonable and the objectives have been met. Only vote to keep open if there's a clear,
+demonstrable gap in what was delivered vs. what the acceptance criteria explicitly require.
 `
-	}
 
 	return fmt.Sprintf(`You are assessing whether an %s is truly complete and should be closed.
 

@@ -25,7 +25,7 @@ func (s *SQLiteStorage) GetExecutionHistory(ctx context.Context, issueID string)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query execution history: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var attempts []*types.ExecutionAttempt
 	for rows.Next() {

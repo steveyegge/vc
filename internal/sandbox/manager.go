@@ -140,7 +140,7 @@ func (m *manager) Create(ctx context.Context, cfg SandboxConfig) (*Sandbox, erro
 	// Create branch in worktree
 	if err := createBranch(ctx, worktreePath, branchName, cfg.BaseBranch); err != nil {
 		// Clean up worktree on failure
-		removeWorktree(ctx, cfg.ParentRepo, worktreePath)
+		_ = removeWorktree(ctx, cfg.ParentRepo, worktreePath) // Best-effort cleanup
 		return nil, fmt.Errorf("failed to create branch: %w", err)
 	}
 
@@ -156,7 +156,7 @@ func (m *manager) Create(ctx context.Context, cfg SandboxConfig) (*Sandbox, erro
 	beadsDBPath, err := initSandboxDB(ctx, worktreePath, cfg.MissionID, mainDBPath)
 	if err != nil {
 		// Clean up on failure
-		removeWorktree(ctx, cfg.ParentRepo, worktreePath)
+		_ = removeWorktree(ctx, cfg.ParentRepo, worktreePath) // Best-effort cleanup
 		return nil, fmt.Errorf("failed to initialize sandbox database: %w", err)
 	}
 
@@ -167,15 +167,15 @@ func (m *manager) Create(ctx context.Context, cfg SandboxConfig) (*Sandbox, erro
 	sandboxDB, err := storage.NewStorage(ctx, sandboxDBCfg)
 	if err != nil {
 		// Clean up on failure
-		removeWorktree(ctx, cfg.ParentRepo, worktreePath)
+		_ = removeWorktree(ctx, cfg.ParentRepo, worktreePath) // Best-effort cleanup
 		return nil, fmt.Errorf("failed to open sandbox database: %w", err)
 	}
-	defer sandboxDB.Close()
+	defer func() { _ = sandboxDB.Close() }()
 
 	// Copy mission and dependencies to sandbox database
 	if err := copyCoreIssues(ctx, m.config.MainDB, sandboxDB, cfg.MissionID); err != nil {
 		// Clean up on failure
-		removeWorktree(ctx, cfg.ParentRepo, worktreePath)
+		_ = removeWorktree(ctx, cfg.ParentRepo, worktreePath) // Best-effort cleanup
 		return nil, fmt.Errorf("failed to copy core issues: %w", err)
 	}
 
@@ -285,11 +285,11 @@ func (m *manager) Cleanup(ctx context.Context, sandbox *Sandbox) error {
 		// Merge results to main database if sandbox completed successfully
 		if sandbox.Status == SandboxStatusCompleted || sandbox.Status == SandboxStatusActive {
 			if err := mergeResults(ctx, sandboxDB, m.config.MainDB, sandbox.MissionID, m.config.Deduplicator); err != nil {
-				sandboxDB.Close()
+				_ = sandboxDB.Close() // Best-effort cleanup
 				return fmt.Errorf("failed to merge results: %w", err)
 			}
 		}
-		sandboxDB.Close()
+		_ = sandboxDB.Close() // Best-effort cleanup
 	}
 
 	// Determine if we should remove the sandbox directory

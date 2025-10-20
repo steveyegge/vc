@@ -21,7 +21,7 @@ func setupTestRepo(t *testing.T) (string, func()) {
 	}
 
 	cleanup := func() {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir) // Cleanup
 	}
 
 	// Initialize git repo
@@ -90,7 +90,7 @@ func TestValidateGitRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	if err := validateGitRepo(tmpDir); err == nil {
 		t.Error("validateGitRepo should fail for non-git directory")
@@ -108,7 +108,7 @@ func TestCreateWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sandbox root: %v", err)
 	}
-	defer os.RemoveAll(sandboxRoot)
+	defer func() { _ = os.RemoveAll(sandboxRoot) }()
 
 	cfg := SandboxConfig{
 		MissionID:   "test-123",
@@ -162,7 +162,7 @@ func TestRemoveWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sandbox root: %v", err)
 	}
-	defer os.RemoveAll(sandboxRoot)
+	defer func() { _ = os.RemoveAll(sandboxRoot) }()
 
 	cfg := SandboxConfig{
 		MissionID:   "test-456",
@@ -204,7 +204,7 @@ func TestGetGitStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sandbox root: %v", err)
 	}
-	defer os.RemoveAll(sandboxRoot)
+	defer func() { _ = os.RemoveAll(sandboxRoot) }()
 
 	cfg := SandboxConfig{
 		MissionID:   "test-789",
@@ -218,7 +218,7 @@ func TestGetGitStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createWorktree failed: %v", err)
 	}
-	defer removeWorktree(ctx, repo, worktreePath)
+	defer func() { _ = removeWorktree(ctx, repo, worktreePath) }()
 
 	// Get status (should be empty initially)
 	status, err := getGitStatus(ctx, worktreePath)
@@ -262,7 +262,7 @@ func TestGetModifiedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sandbox root: %v", err)
 	}
-	defer os.RemoveAll(sandboxRoot)
+	defer func() { _ = os.RemoveAll(sandboxRoot) }()
 
 	cfg := SandboxConfig{
 		MissionID:   "test-101",
@@ -276,7 +276,7 @@ func TestGetModifiedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createWorktree failed: %v", err)
 	}
-	defer removeWorktree(ctx, repo, worktreePath)
+	defer func() { _ = removeWorktree(ctx, repo, worktreePath) }()
 
 	// Get modified files (should be empty initially)
 	files, err := getModifiedFiles(ctx, worktreePath)
@@ -336,7 +336,7 @@ func TestCreateBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sandbox root: %v", err)
 	}
-	defer os.RemoveAll(sandboxRoot)
+	defer func() { _ = os.RemoveAll(sandboxRoot) }()
 
 	cfg := SandboxConfig{
 		MissionID:   "test-202",
@@ -350,7 +350,7 @@ func TestCreateBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createWorktree failed: %v", err)
 	}
-	defer removeWorktree(ctx, repo, worktreePath)
+	defer func() { _ = removeWorktree(ctx, repo, worktreePath) }()
 
 	// Create branch
 	branchName := "mission-test-202"
@@ -392,7 +392,7 @@ func TestCreateWorktreeWithInvalidRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sandbox root: %v", err)
 	}
-	defer os.RemoveAll(sandboxRoot)
+	defer func() { _ = os.RemoveAll(sandboxRoot) }()
 
 	cfg := SandboxConfig{
 		MissionID:   "test-invalid",
@@ -420,7 +420,7 @@ func TestIntegrationWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sandbox root: %v", err)
 	}
-	defer os.RemoveAll(sandboxRoot)
+	defer func() { _ = os.RemoveAll(sandboxRoot) }()
 
 	cfg := SandboxConfig{
 		MissionID:   "integration-test",
@@ -487,7 +487,7 @@ func TestGetModifiedFilesWithSpaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sandbox root: %v", err)
 	}
-	defer os.RemoveAll(sandboxRoot)
+	defer func() { _ = os.RemoveAll(sandboxRoot) }()
 
 	cfg := SandboxConfig{
 		MissionID:   "test-spaces",
@@ -501,7 +501,7 @@ func TestGetModifiedFilesWithSpaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createWorktree failed: %v", err)
 	}
-	defer removeWorktree(ctx, repo, worktreePath)
+	defer func() { _ = removeWorktree(ctx, repo, worktreePath) }()
 
 	// Create file with spaces in name
 	fileWithSpaces := filepath.Join(worktreePath, "file with spaces.txt")
@@ -541,7 +541,7 @@ func TestGetModifiedFilesWithRenames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sandbox root: %v", err)
 	}
-	defer os.RemoveAll(sandboxRoot)
+	defer func() { _ = os.RemoveAll(sandboxRoot) }()
 
 	cfg := SandboxConfig{
 		MissionID:   "test-rename",
@@ -555,7 +555,7 @@ func TestGetModifiedFilesWithRenames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createWorktree failed: %v", err)
 	}
-	defer removeWorktree(ctx, repo, worktreePath)
+	defer func() { _ = removeWorktree(ctx, repo, worktreePath) }()
 
 	// Create a branch
 	if err := createBranch(ctx, worktreePath, "test-branch", "HEAD"); err != nil {
@@ -596,7 +596,7 @@ func TestCreateBranchWithInvalidNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sandbox root: %v", err)
 	}
-	defer os.RemoveAll(sandboxRoot)
+	defer func() { _ = os.RemoveAll(sandboxRoot) }()
 
 	cfg := SandboxConfig{
 		MissionID:   "test-invalid-branch",
@@ -610,7 +610,7 @@ func TestCreateBranchWithInvalidNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createWorktree failed: %v", err)
 	}
-	defer removeWorktree(ctx, repo, worktreePath)
+	defer func() { _ = removeWorktree(ctx, repo, worktreePath) }()
 
 	// Test invalid branch names
 	invalidNames := []string{

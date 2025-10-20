@@ -20,7 +20,7 @@ func TestShutdownWithoutActiveWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create executor configuration (no issues, so no work to process)
 	execCfg := DefaultConfig()
@@ -69,7 +69,7 @@ func TestShutdownTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create executor configuration
 	execCfg := DefaultConfig()

@@ -20,7 +20,7 @@ func TestNewRunner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Test successful creation
 	cfg := &Config{
@@ -75,7 +75,7 @@ func TestRunTestGate_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	runner := &Runner{
 		store:      store,
@@ -105,7 +105,7 @@ func TestRunLintGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	runner := &Runner{
 		store:      store,
@@ -135,7 +135,7 @@ func TestRunBuildGate_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	runner := &Runner{
 		store:      store,
@@ -169,7 +169,7 @@ func TestRunAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	runner := &Runner{
 		store:      store,
@@ -205,7 +205,7 @@ func TestCreateBlockingIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 
@@ -307,7 +307,7 @@ func TestHandleGateResults_AllPassed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 
@@ -373,7 +373,7 @@ func TestHandleGateResults_SomeFailed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 
@@ -521,7 +521,7 @@ func TestHandleGateResults_WithAI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create AI supervisor
 	supervisor, err := ai.NewSupervisor(&ai.Config{
@@ -607,7 +607,7 @@ func TestHandleGateResults_WithAI_CriticalFailures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create AI supervisor
 	supervisor, err := ai.NewSupervisor(&ai.Config{
@@ -686,7 +686,7 @@ func TestHandleGateResults_NoAI_Fallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 

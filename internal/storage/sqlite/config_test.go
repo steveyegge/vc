@@ -13,7 +13,7 @@ func TestConfigMethods(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Test GetConfig on non-existent key (should return empty string)
 	value, err := db.GetConfig(ctx, "nonexistent")
@@ -60,7 +60,7 @@ func TestIssuePrefixFromConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Set custom issue_prefix
 	if err := db.SetConfig(ctx, "issue_prefix", "custom"); err != nil {
@@ -68,13 +68,13 @@ func TestIssuePrefixFromConfig(t *testing.T) {
 	}
 
 	// Close and reopen to test prefix loading
-	db.Close()
+	_ = db.Close()
 
 	db, err = New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to reopen database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Set the prefix again for the new database
 	if err := db.SetConfig(ctx, "issue_prefix", "custom"); err != nil {

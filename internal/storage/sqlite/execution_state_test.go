@@ -11,7 +11,7 @@ import (
 
 func TestClaimIssue(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -85,7 +85,7 @@ func TestClaimIssue(t *testing.T) {
 
 func TestClaimIssueDoubleClaim(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -164,7 +164,7 @@ func TestClaimIssueDoubleClaim(t *testing.T) {
 
 func TestClaimIssueNonExistent(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -197,7 +197,7 @@ func TestClaimIssueNonExistent(t *testing.T) {
 
 func TestClaimIssueNonOpenStatus(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -246,7 +246,7 @@ func TestClaimIssueNonOpenStatus(t *testing.T) {
 
 func TestUpdateExecutionState(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -306,7 +306,7 @@ func TestUpdateExecutionState(t *testing.T) {
 
 func TestUpdateExecutionStateInvalidTransition(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -375,7 +375,7 @@ func TestUpdateExecutionStateInvalidTransition(t *testing.T) {
 
 func TestSaveAndGetCheckpoint(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -445,7 +445,7 @@ func TestSaveAndGetCheckpoint(t *testing.T) {
 
 func TestReleaseIssue(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -511,7 +511,7 @@ func TestReleaseIssue(t *testing.T) {
 
 func TestReleaseIssueAndReopen(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -618,7 +618,7 @@ func TestReleaseIssueAndReopen(t *testing.T) {
 
 func TestStateTransitionFlow(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()

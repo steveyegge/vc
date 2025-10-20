@@ -22,7 +22,7 @@ func TestMultiExecutorClaiming(t *testing.T) {
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
-			defer store.Close()
+			defer func() { _ = store.Close() }()
 
 			// Create 3 executors
 			executors := createExecutors(t, ctx, store, 3)
@@ -109,7 +109,7 @@ func TestRaceConditionPrevention(t *testing.T) {
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
-			defer store.Close()
+			defer func() { _ = store.Close() }()
 
 			// Create 2 executors
 			executors := createExecutors(t, ctx, store, 2)
@@ -185,7 +185,7 @@ func TestCheckpointSaveAndRestore(t *testing.T) {
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
-			defer store.Close()
+			defer func() { _ = store.Close() }()
 
 			// Create executor and issue
 			executors := createExecutors(t, ctx, store, 1)
@@ -259,7 +259,7 @@ func TestStaleInstanceCleanup(t *testing.T) {
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
-			defer store.Close()
+			defer func() { _ = store.Close() }()
 
 			now := time.Now()
 
@@ -348,7 +348,7 @@ func TestResumeAfterInterruption(t *testing.T) {
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
-			defer store.Close()
+			defer func() { _ = store.Close() }()
 
 			// Phase 1: Executor 1 starts work
 			executors := createExecutors(t, ctx, store, 1)
@@ -509,7 +509,7 @@ func TestCompleteExecutorWorkflow(t *testing.T) {
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
-			defer store.Close()
+			defer func() { _ = store.Close() }()
 
 			// Create executor
 			executors := createExecutors(t, ctx, store, 1)
@@ -593,7 +593,7 @@ func TestEpicChildDependencyDirection(t *testing.T) {
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
-			defer store.Close()
+			defer func() { _ = store.Close() }()
 
 			// Create an epic
 			epic := &types.Issue{
@@ -721,11 +721,11 @@ func setupStorage(t *testing.T, backend string) Storage {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	// Clean up the temp file after the test
 	t.Cleanup(func() {
-		os.Remove(tmpfile.Name())
+		_ = os.Remove(tmpfile.Name())
 	})
 
 	cfg := DefaultConfig()
@@ -803,7 +803,7 @@ func TestGetMissionWithApprovalMetadata(t *testing.T) {
 
 			ctx := context.Background()
 			store := setupStorage(t, backend)
-			defer store.Close()
+			defer func() { _ = store.Close() }()
 
 			// Create a mission (epic issue type)
 			mission := &types.Issue{

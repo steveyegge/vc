@@ -23,7 +23,7 @@ func TestFullWorkflowEndToEnd(t *testing.T) {
 
 	ctx := context.Background()
 	store := setupTestStorage(t, ctx)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	exec := setupTestExecutor(t, store, false)
 
@@ -132,7 +132,7 @@ func TestSandboxIsolation(t *testing.T) {
 
 	ctx := context.Background()
 	store := setupTestStorage(t, ctx)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	exec := setupTestExecutor(t, store, false)
 
@@ -225,7 +225,7 @@ func TestErrorRecoveryAndResume(t *testing.T) {
 
 	ctx := context.Background()
 	store := setupTestStorage(t, ctx)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	exec1 := setupTestExecutor(t, store, false)
 
@@ -358,7 +358,7 @@ func TestQualityGateBlocking(t *testing.T) {
 
 	ctx := context.Background()
 	store := setupTestStorage(t, ctx)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	exec := setupTestExecutor(t, store, false)
 
@@ -490,7 +490,7 @@ func TestMultiTaskCoordination(t *testing.T) {
 
 	ctx := context.Background()
 	store := setupTestStorage(t, ctx)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	exec := setupTestExecutor(t, store, false)
 
@@ -676,7 +676,7 @@ func TestExecutorSandboxIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create executor with sandboxes enabled
 	sandboxRoot := filepath.Join(parentRepo, ".sandboxes")
@@ -853,10 +853,10 @@ func setupTestStorage(t *testing.T, ctx context.Context) storage.Storage {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	tmpfile.Close()
+	_ = tmpfile.Close()
 	
 	t.Cleanup(func() {
-		os.Remove(tmpfile.Name())
+		_ = os.Remove(tmpfile.Name())
 	})
 
 	cfg := storage.DefaultConfig()

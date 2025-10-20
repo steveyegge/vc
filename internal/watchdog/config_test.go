@@ -180,21 +180,21 @@ func TestLoadFromEnv(t *testing.T) {
 	defer func() {
 		for key, val := range originalEnv {
 			if val == "" {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key)
 			} else {
-				os.Setenv(key, val)
+				_ = os.Setenv(key, val)
 			}
 		}
 	}()
 
 	// Set test env vars
-	os.Setenv("VC_WATCHDOG_ENABLED", "false")
-	os.Setenv("VC_WATCHDOG_CHECK_INTERVAL", "45s")
-	os.Setenv("VC_WATCHDOG_TELEMETRY_WINDOW", "150")
-	os.Setenv("VC_WATCHDOG_MIN_CONFIDENCE", "0.80")
-	os.Setenv("VC_WATCHDOG_MIN_SEVERITY", "medium")
-	os.Setenv("VC_WATCHDOG_AUTO_KILL", "no")
-	os.Setenv("VC_WATCHDOG_MAX_RETRIES", "7")
+	_ = os.Setenv("VC_WATCHDOG_ENABLED", "false")
+	_ = os.Setenv("VC_WATCHDOG_CHECK_INTERVAL", "45s")
+	_ = os.Setenv("VC_WATCHDOG_TELEMETRY_WINDOW", "150")
+	_ = os.Setenv("VC_WATCHDOG_MIN_CONFIDENCE", "0.80")
+	_ = os.Setenv("VC_WATCHDOG_MIN_SEVERITY", "medium")
+	_ = os.Setenv("VC_WATCHDOG_AUTO_KILL", "no")
+	_ = os.Setenv("VC_WATCHDOG_MAX_RETRIES", "7")
 
 	// Load from env
 	cfg := LoadFromEnv()

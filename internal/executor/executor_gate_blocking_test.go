@@ -89,7 +89,7 @@ func TestQualityGateBlockingIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create test gate provider that fails on first run, passes on second
 	testProvider := NewTestGateProvider(1) // Fail until run 1 (i.e., fail once)
@@ -341,7 +341,7 @@ func TestQualityGateBlockingWithStoreValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create executor
 	execCfg := DefaultConfig()

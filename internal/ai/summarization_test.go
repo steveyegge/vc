@@ -165,7 +165,7 @@ func TestSummarizeAgentOutput_ErrorHandling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test store: %v", err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(func() { _ = store.Close() })
 
 	cfg := &Config{
 		Store:  store,
@@ -208,7 +208,7 @@ func createTestSupervisor(t *testing.T) (*Supervisor, error) {
 	if err != nil {
 		return nil, err
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(func() { _ = store.Close() })
 
 	cfg := &Config{
 		Store: store,

@@ -18,7 +18,7 @@ func TestInitSandboxDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Initialize sandbox DB
 	parentDBPath := filepath.Join(t.TempDir(), "parent.db")
@@ -43,7 +43,7 @@ func TestInitSandboxDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open created database: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Verify issue_prefix is set to 'vc' (vc-139 fix)
 	prefix, err := store.GetConfig(ctx, "issue_prefix")
@@ -81,7 +81,7 @@ func TestCopyCoreIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create main DB: %v", err)
 	}
-	defer mainDB.Close()
+	defer func() { _ = mainDB.Close() }()
 
 	// Create sandbox database
 	sandboxDBPath := filepath.Join(t.TempDir(), "sandbox.db")
@@ -89,7 +89,7 @@ func TestCopyCoreIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create sandbox DB: %v", err)
 	}
-	defer sandboxDB.Close()
+	defer func() { _ = sandboxDB.Close() }()
 
 	// Create a mission with dependencies
 	mission := &types.Issue{
@@ -222,14 +222,14 @@ func TestCopyCoreIssuesRecursive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create main DB: %v", err)
 	}
-	defer mainDB.Close()
+	defer func() { _ = mainDB.Close() }()
 
 	// Create sandbox database
 	sandboxDB, err := storage.NewStorage(ctx, &storage.Config{Path: ":memory:"})
 	if err != nil {
 		t.Fatalf("failed to create sandbox DB: %v", err)
 	}
-	defer sandboxDB.Close()
+	defer func() { _ = sandboxDB.Close() }()
 
 	// Create a chain of dependencies: mission -> dep1 -> dep2
 	mission := &types.Issue{
@@ -308,14 +308,14 @@ func TestMergeResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create main DB: %v", err)
 	}
-	defer mainDB.Close()
+	defer func() { _ = mainDB.Close() }()
 
 	// Create sandbox database
 	sandboxDB, err := storage.NewStorage(ctx, &storage.Config{Path: ":memory:"})
 	if err != nil {
 		t.Fatalf("failed to create sandbox DB: %v", err)
 	}
-	defer sandboxDB.Close()
+	defer func() { _ = sandboxDB.Close() }()
 
 	// Create a mission in both databases
 	mission := &types.Issue{
@@ -418,14 +418,14 @@ func TestMergeResultsWithComments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create main DB: %v", err)
 	}
-	defer mainDB.Close()
+	defer func() { _ = mainDB.Close() }()
 
 	// Create sandbox database
 	sandboxDB, err := storage.NewStorage(ctx, &storage.Config{Path: ":memory:"})
 	if err != nil {
 		t.Fatalf("failed to create sandbox DB: %v", err)
 	}
-	defer sandboxDB.Close()
+	defer func() { _ = sandboxDB.Close() }()
 
 	// Create a mission
 	mission := &types.Issue{

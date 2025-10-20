@@ -33,7 +33,7 @@ func setupTestDB(t *testing.T, repoPath string) (storage.Storage, func()) {
 	}
 
 	cleanup := func() {
-		store.Close()
+		_ = store.Close() // Cleanup
 	}
 
 	return store, cleanup
@@ -196,7 +196,7 @@ func TestManager_Create(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open sandbox DB: %v", err)
 	}
-	defer sandboxDB.Close()
+	defer func() { _ = sandboxDB.Close() }()
 
 	sandboxMission, err := sandboxDB.GetIssue(ctx, "vc-100")
 	if err != nil {
@@ -259,7 +259,7 @@ func TestManager_GetAndList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sandbox1: %v", err)
 	}
-	defer mgr.Cleanup(ctx, sandbox1)
+	defer func() { _ = mgr.Cleanup(ctx, sandbox1) }()
 
 	sandbox2, err := mgr.Create(ctx, SandboxConfig{
 		MissionID:   "vc-3002",
@@ -270,7 +270,7 @@ func TestManager_GetAndList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sandbox2: %v", err)
 	}
-	defer mgr.Cleanup(ctx, sandbox2)
+	defer func() { _ = mgr.Cleanup(ctx, sandbox2) }()
 
 	// Test Get
 	t.Run("Get existing sandbox", func(t *testing.T) {
@@ -351,7 +351,7 @@ func TestManager_InspectState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sandbox: %v", err)
 	}
-	defer mgr.Cleanup(ctx, sandbox)
+	defer func() { _ = mgr.Cleanup(ctx, sandbox) }()
 
 	// Modify a file in the sandbox
 	testFile := filepath.Join(sandbox.GitWorktree, "test.txt")
@@ -506,7 +506,7 @@ func TestManager_Cleanup(t *testing.T) {
 		}
 
 		// Clean up manually for next test
-		removeWorktree(ctx, repoPath, worktreePath)
+		_ = removeWorktree(ctx, repoPath, worktreePath) // Cleanup
 	})
 }
 
@@ -604,6 +604,6 @@ func TestManager_CleanupAll(t *testing.T) {
 		t.Error("Recent sandbox3 was incorrectly cleaned up")
 	} else {
 		// Clean up remaining sandbox
-		mgr.Cleanup(ctx, sandbox3)
+		_ = mgr.Cleanup(ctx, sandbox3) // Cleanup
 	}
 }

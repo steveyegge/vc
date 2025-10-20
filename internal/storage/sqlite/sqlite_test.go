@@ -17,14 +17,14 @@ func TestGetNextIDWithEmptyTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	_ = tmpfile.Close()
 
 	db, err := sql.Open("sqlite3", tmpfile.Name())
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create issues table
 	_, err = db.Exec(`
@@ -68,14 +68,14 @@ func TestGetNextIDWithExistingIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	_ = tmpfile.Close()
 
 	db, err := sql.Open("sqlite3", tmpfile.Name())
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create issues table
 	_, err = db.Exec(`
@@ -146,14 +146,14 @@ func TestGetNextIDWithInvalidFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	_ = tmpfile.Close()
 
 	db, err := sql.Open("sqlite3", tmpfile.Name())
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create issues table
 	_, err = db.Exec(`
@@ -252,14 +252,14 @@ func TestGetNextIDWithDatabaseError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	tmpfile.Close()
-	os.Remove(tmpfile.Name()) // Remove file so it doesn't exist
+	_ = tmpfile.Close()
+	_ = os.Remove(tmpfile.Name()) // Remove file so it doesn't exist
 
 	db, err := sql.Open("sqlite3", tmpfile.Name())
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Attempt getNextID on non-existent table - should propagate error
 	_, err = getNextID(db)
@@ -278,8 +278,8 @@ func TestNewWithCorruptDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	_ = tmpfile.Close()
 
 	// Create database with schema
 	db, err := sql.Open("sqlite3", tmpfile.Name())
@@ -320,7 +320,7 @@ func TestNewWithCorruptDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to insert malformed issue: %v", err)
 	}
-	db.Close()
+	_ = db.Close()
 
 	// With the new atomic counter approach (vc-164), New() should succeed
 	// because the migration gracefully handles malformed IDs by filtering them out
@@ -328,7 +328,7 @@ func TestNewWithCorruptDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected New() to succeed with malformed ID in database (should be filtered out), got: %v", err)
 	}
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	// The counter should be initialized to 0 since the malformed ID is filtered out
 	// The prefix is derived from the database filename (test-*.db), not from the malformed ID
@@ -360,14 +360,14 @@ func TestParallelIssueCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	_ = tmpfile.Close()
 
 	storage, err := New(tmpfile.Name())
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	const numIssues = 20
@@ -449,15 +449,15 @@ func TestForeignKeysEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	_ = tmpfile.Close()
 
 	// Create new storage (which should enable foreign keys)
 	storage, err := New(tmpfile.Name())
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	// Check that foreign keys are enabled
 	var fkEnabled int
@@ -478,15 +478,15 @@ func TestCascadeDeleteWorks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	_ = tmpfile.Close()
 
 	// Create new storage
 	storage, err := New(tmpfile.Name())
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	// Insert a parent issue
 	_, err = storage.db.Exec(`
@@ -516,8 +516,8 @@ func TestCascadeDeleteWorks(t *testing.T) {
 
 	// Verify records exist
 	var eventCount, labelCount int
-	storage.db.QueryRow("SELECT COUNT(*) FROM events WHERE issue_id = 'vc-100'").Scan(&eventCount)
-	storage.db.QueryRow("SELECT COUNT(*) FROM labels WHERE issue_id = 'vc-100'").Scan(&labelCount)
+	_ = storage.db.QueryRow("SELECT COUNT(*) FROM events WHERE issue_id = 'vc-100'").Scan(&eventCount)
+	_ = storage.db.QueryRow("SELECT COUNT(*) FROM labels WHERE issue_id = 'vc-100'").Scan(&labelCount)
 
 	if eventCount != 1 {
 		t.Errorf("Expected 1 event, got %d", eventCount)
@@ -533,8 +533,8 @@ func TestCascadeDeleteWorks(t *testing.T) {
 	}
 
 	// Verify child records were cascade deleted
-	storage.db.QueryRow("SELECT COUNT(*) FROM events WHERE issue_id = 'vc-100'").Scan(&eventCount)
-	storage.db.QueryRow("SELECT COUNT(*) FROM labels WHERE issue_id = 'vc-100'").Scan(&labelCount)
+	_ = storage.db.QueryRow("SELECT COUNT(*) FROM events WHERE issue_id = 'vc-100'").Scan(&eventCount)
+	_ = storage.db.QueryRow("SELECT COUNT(*) FROM labels WHERE issue_id = 'vc-100'").Scan(&labelCount)
 
 	if eventCount != 0 {
 		t.Errorf("Expected events to be cascade deleted, but found %d", eventCount)
@@ -553,15 +553,15 @@ func TestGetStatisticsWithEmptyDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	_ = tmpfile.Close()
 
 	// Create new storage (will initialize schema with empty tables)
 	storage, err := New(tmpfile.Name())
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	// Get statistics on empty database - should not error
 	ctx := context.Background()

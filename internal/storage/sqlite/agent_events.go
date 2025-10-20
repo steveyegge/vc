@@ -89,7 +89,7 @@ func (s *SQLiteStorage) GetAgentEvents(ctx context.Context, filter events.EventF
 	if err != nil {
 		return nil, fmt.Errorf("failed to query agent events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return s.scanEvents(rows)
 }
@@ -108,7 +108,7 @@ func (s *SQLiteStorage) GetAgentEventsByIssue(ctx context.Context, issueID strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to query agent events by issue: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return s.scanEvents(rows)
 }
@@ -127,7 +127,7 @@ func (s *SQLiteStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]
 	if err != nil {
 		return nil, fmt.Errorf("failed to query recent agent events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return s.scanEvents(rows)
 }

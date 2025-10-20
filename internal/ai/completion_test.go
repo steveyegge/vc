@@ -191,7 +191,7 @@ func TestAssessCompletion_ErrorHandling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test store: %v", err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(func() { _ = store.Close() })
 
 	cfg := &Config{
 		Store:  store,

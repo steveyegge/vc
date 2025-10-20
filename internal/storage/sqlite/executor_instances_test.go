@@ -12,7 +12,7 @@ import (
 
 func TestRegisterInstance(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -57,7 +57,7 @@ func TestRegisterInstance(t *testing.T) {
 
 func TestRegisterInstanceUpsert(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -107,7 +107,7 @@ func TestRegisterInstanceUpsert(t *testing.T) {
 
 func TestUpdateHeartbeat(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -155,7 +155,7 @@ func TestUpdateHeartbeat(t *testing.T) {
 
 func TestUpdateHeartbeatNonExistent(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -168,7 +168,7 @@ func TestUpdateHeartbeatNonExistent(t *testing.T) {
 
 func TestGetActiveInstances(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -234,7 +234,7 @@ func TestGetActiveInstances(t *testing.T) {
 
 func TestCleanupStaleInstances(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -297,7 +297,7 @@ func TestCleanupStaleInstances(t *testing.T) {
 
 func TestCleanupStaleInstancesNoneStale(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -331,7 +331,7 @@ func TestCleanupStaleInstancesNoneStale(t *testing.T) {
 
 func TestCleanupStaleInstancesReleasesClaimedIssues(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -449,7 +449,7 @@ func TestCleanupStaleInstancesReleasesClaimedIssues(t *testing.T) {
 
 func TestRegisterInstanceValidation(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 	now := time.Now()
@@ -582,7 +582,7 @@ func setupTestDB(t *testing.T) *SQLiteStorage {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	// Create storage
 	storage, err := New(tmpfile.Name())
@@ -592,8 +592,8 @@ func setupTestDB(t *testing.T) *SQLiteStorage {
 
 	// Cleanup function
 	t.Cleanup(func() {
-		storage.Close()
-		os.Remove(tmpfile.Name())
+		_ = storage.Close()
+		_ = os.Remove(tmpfile.Name())
 	})
 
 	return storage
