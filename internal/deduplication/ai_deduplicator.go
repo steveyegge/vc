@@ -100,36 +100,71 @@ func (d *AIDeduplicator) CheckDuplicate(ctx context.Context, candidate *types.Is
 		}, nil
 	}
 
-	// Compare against each existing issue
-	var bestMatch *DuplicateDecision
+	// Filter out self-comparison
+	filteredIssues := []*types.Issue{}
 	for _, existing := range existingIssues {
-		// Skip comparing against self
-		if existing.ID == candidate.ID {
-			continue
+		if existing.ID != candidate.ID {
+			filteredIssues = append(filteredIssues, existing)
 		}
+	}
 
-		// Use AI to check if duplicate
-		resp, err := d.supervisor.CheckIssueDuplicate(ctx, candidate, existing)
+	if len(filteredIssues) == 0 {
+		return &DuplicateDecision{
+			IsDuplicate:   false,
+			Confidence:    0.0,
+			Reasoning:     "No existing issues to compare against",
+			ComparedCount: 0,
+		}, nil
+	}
+
+	// Process in batches for efficiency
+	var bestMatch *DuplicateDecision
+	totalCompared := 0
+
+	for i := 0; i < len(filteredIssues); i += d.config.BatchSize {
+		// Get batch slice
+		end := i + d.config.BatchSize
+		if end > len(filteredIssues) {
+			end = len(filteredIssues)
+		}
+		batch := filteredIssues[i:end]
+
+		// Use batch AI check (single API call for entire batch)
+		batchResp, err := d.supervisor.CheckIssueDuplicateBatch(ctx, candidate, batch)
 		if err != nil {
-			// Log error but continue checking other issues (fail-safe)
-			log.Printf("[DEDUP] AI check failed for %s vs %s: %v", candidate.ID, existing.ID, err)
+			// Log error but continue checking other batches (fail-safe)
+			log.Printf("[DEDUP] Batch AI check failed for %s vs batch: %v", candidate.ID, err)
 			continue
 		}
 
-		// Track best match
-		if bestMatch == nil || resp.Confidence > bestMatch.Confidence {
-			bestMatch = &DuplicateDecision{
-				IsDuplicate:   resp.IsDuplicate && resp.Confidence >= d.config.ConfidenceThreshold,
-				DuplicateOf:   existing.ID,
-				Confidence:    resp.Confidence,
-				Reasoning:     resp.Reasoning,
-				ComparedCount: len(existingIssues),
-			}
-		}
+		totalCompared += len(batch)
 
-		// If we found a high-confidence duplicate, we can stop
-		if resp.IsDuplicate && resp.Confidence >= d.config.ConfidenceThreshold {
-			break
+		// Process results from this batch
+		for _, result := range batchResp.Results {
+			// Track best match across all batches
+			// Design decision: We honor BOTH the AI's semantic IsDuplicate judgment
+			// AND validate it meets our confidence threshold. This means:
+			// - If AI says IsDuplicate=false with confidence=0.95, we respect that
+			//   semantic judgment (e.g., similar but distinct issues)
+			// - If AI says IsDuplicate=true but confidence=0.70, we reject it (below threshold)
+			// This dual-check prevents false positives while trusting AI's semantic analysis.
+			if bestMatch == nil || result.Confidence > bestMatch.Confidence {
+				bestMatch = &DuplicateDecision{
+					IsDuplicate:   result.IsDuplicate && result.Confidence >= d.config.ConfidenceThreshold,
+					DuplicateOf:   result.ExistingIssueID,
+					Confidence:    result.Confidence,
+					Reasoning:     result.Reasoning,
+					ComparedCount: totalCompared,
+				}
+			}
+
+			// If we found a high-confidence duplicate, we can stop early
+			if result.IsDuplicate && result.Confidence >= d.config.ConfidenceThreshold {
+				log.Printf("[DEDUP] High-confidence duplicate found: %s is duplicate of %s (%.2f)",
+					candidate.ID, result.ExistingIssueID, result.Confidence)
+				bestMatch.ComparedCount = totalCompared
+				return bestMatch, nil
+			}
 		}
 	}
 
@@ -142,7 +177,7 @@ func (d *AIDeduplicator) CheckDuplicate(ctx context.Context, candidate *types.Is
 		IsDuplicate:   false,
 		Confidence:    0.0,
 		Reasoning:     "No similar issues found",
-		ComparedCount: len(existingIssues),
+		ComparedCount: totalCompared,
 	}, nil
 }
 
@@ -233,8 +268,10 @@ func (d *AIDeduplicator) DeduplicateBatch(ctx context.Context, candidates []*typ
 		}
 
 		comparisons += decision.ComparedCount
-		// Approximate AI calls (CheckDuplicate may make multiple calls)
-		aiCalls += decision.ComparedCount
+		// Calculate actual AI calls made (CheckDuplicate uses batching)
+		// Number of batches = ceil(ComparedCount / BatchSize)
+		batchCount := (decision.ComparedCount + d.config.BatchSize - 1) / d.config.BatchSize
+		aiCalls += batchCount
 
 		if decision.IsDuplicate {
 			duplicatePairs[i] = decision.DuplicateOf

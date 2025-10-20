@@ -521,8 +521,8 @@ func TestConfigString(t *testing.T) {
 	// Check that key fields are present in the string representation
 	expectedSubstrings := []string{
 		"Threshold: 0.85",
-		"MaxCandidates: 50",
-		"BatchSize: 10",
+		"MaxCandidates: 25",
+		"BatchSize: 50",
 		"FailOpen: true",
 	}
 
@@ -549,11 +549,11 @@ func TestDefaultConfig(t *testing.T) {
 	if config.LookbackWindow != 7*24*time.Hour {
 		t.Errorf("expected default lookback window 7 days, got %v", config.LookbackWindow)
 	}
-	if config.MaxCandidates != 50 {
-		t.Errorf("expected default max candidates 50, got %d", config.MaxCandidates)
+	if config.MaxCandidates != 25 {
+		t.Errorf("expected default max candidates 25, got %d", config.MaxCandidates)
 	}
-	if config.BatchSize != 10 {
-		t.Errorf("expected default batch size 10, got %d", config.BatchSize)
+	if config.BatchSize != 50 {
+		t.Errorf("expected default batch size 50, got %d", config.BatchSize)
 	}
 	if !config.EnableWithinBatchDedup {
 		t.Errorf("expected EnableWithinBatchDedup to be true by default")

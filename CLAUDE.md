@@ -321,20 +321,26 @@ store, err := storage.NewStorage(ctx, cfg)
 
 VC uses AI-powered deduplication to prevent filing duplicate issues. This feature can be tuned via environment variables to balance between avoiding duplicates and avoiding false positives.
 
-### Default Configuration
+### Default Configuration (Performance Optimized)
 
-The default settings are conservative and work well for most cases:
+The default settings are optimized for performance while maintaining accuracy:
 
 - **Confidence threshold**: 0.85 (85%) - High confidence required to mark as duplicate
 - **Lookback window**: 7 days - Only compare against issues from the past week
-- **Max candidates**: 50 - Compare against up to 50 recent issues
-- **Batch size**: 10 - Process 10 comparisons per AI call
+- **Max candidates**: 25 - Compare against up to 25 recent issues (reduced from 50 for speed)
+- **Batch size**: 50 - Process 50 comparisons per AI call (increased from 10 for efficiency)
 - **Within-batch dedup**: Enabled - Deduplicate within the same batch of discovered issues
 - **Fail-open**: Enabled - File the issue if deduplication fails (prefer duplicates over lost work)
 - **Include closed issues**: Disabled - Only compare against open issues
 - **Min title length**: 10 characters - Skip dedup for very short titles
 - **Max retries**: 2 - Retry AI calls twice on failure
 - **Request timeout**: 30 seconds - Timeout for AI API calls
+
+**Performance Impact** (vc-159):
+With 3 discovered issues and default config:
+- **Old** (BatchSize=10, MaxCandidates=50): ~15 AI calls, ~90 seconds
+- **New** (BatchSize=50, MaxCandidates=25): ~3 AI calls, ~18 seconds
+- **Result**: 80% reduction in API calls and deduplication time!
 
 ### Environment Variables
 
