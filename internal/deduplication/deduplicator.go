@@ -102,6 +102,24 @@ func (d *DuplicateDecision) Validate() error {
 	return nil
 }
 
+// DecisionDetail captures the full details of an individual deduplication decision (vc-151)
+type DecisionDetail struct {
+	// Index is the candidate's index in the original batch
+	Index int `json:"index"`
+	// CandidateTitle is the title of the candidate issue
+	CandidateTitle string `json:"candidate_title"`
+	// IsDuplicate indicates whether this candidate was marked as a duplicate
+	IsDuplicate bool `json:"is_duplicate"`
+	// DuplicateOf is the ID of the existing issue (for regular duplicates)
+	DuplicateOf string `json:"duplicate_of,omitempty"`
+	// WithinBatchOriginalIndex is the index of the original (for within-batch duplicates)
+	WithinBatchOriginalIndex int `json:"within_batch_original_index,omitempty"`
+	// Confidence is the AI's confidence score (0.0 to 1.0)
+	Confidence float64 `json:"confidence"`
+	// Reasoning explains why the AI made this determination
+	Reasoning string `json:"reasoning,omitempty"`
+}
+
 // DeduplicationResult represents the result of batch deduplication
 type DeduplicationResult struct {
 	// UniqueIssues are the issues that are not duplicates
@@ -118,6 +136,10 @@ type DeduplicationResult struct {
 	// Value: index in the original candidates slice (first occurrence)
 	// This handles duplicates within the batch itself
 	WithinBatchDuplicates map[int]int `json:"within_batch_duplicates,omitempty"`
+
+	// Decisions contains detailed information about each individual decision (vc-151)
+	// This enables full observability including confidence scores and reasoning
+	Decisions []DecisionDetail `json:"decisions,omitempty"`
 
 	// Statistics about the deduplication process
 	Stats DeduplicationStats `json:"stats"`

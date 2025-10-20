@@ -12,6 +12,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/steveyegge/vc/internal/deduplication"
+	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -336,10 +337,15 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 	if deduplicator != nil && len(candidateDiscoveredIssues) > 0 {
 		log.Printf("[SANDBOX] Running deduplication on %d discovered issues", len(candidateDiscoveredIssues))
 
+		// vc-151: Log deduplication batch started event
+		logSandboxDeduplicationBatchStarted(ctx, mainDB, missionID, len(candidateDiscoveredIssues))
+
 		result, err := deduplicator.DeduplicateBatch(ctx, candidateDiscoveredIssues)
 		if err != nil {
 			// Fail-safe: if deduplication fails, file all issues with warning
 			log.Printf("[SANDBOX] WARNING: Deduplication failed (%v), filing all issues", err)
+			// vc-151: Log deduplication failure
+			logSandboxDeduplicationBatchCompleted(ctx, mainDB, missionID, nil, err)
 			issuesToFile = candidateDiscoveredIssues
 		} else {
 			issuesToFile = result.UniqueIssues
@@ -348,6 +354,9 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 			// Log deduplication results
 			log.Printf("[SANDBOX] Deduplication complete: %d unique, %d duplicates, %d within-batch duplicates",
 				result.Stats.UniqueCount, result.Stats.DuplicateCount, result.Stats.WithinBatchDuplicateCount)
+
+			// vc-151: Log deduplication success with stats and decisions
+			logSandboxDeduplicationBatchCompleted(ctx, mainDB, missionID, result, nil)
 
 			// Add cross-reference comments for duplicates
 			for idx, existingID := range result.DuplicatePairs {
@@ -492,4 +501,152 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 	}
 
 	return nil
+}
+
+// logSandboxDeduplicationBatchStarted logs a deduplication batch start event from sandbox merge (vc-151)
+func logSandboxDeduplicationBatchStarted(ctx context.Context, store storage.Storage, issueID string, candidateCount int) {
+	// Skip logging if context is cancelled
+	if ctx.Err() != nil {
+		return
+	}
+
+	event, err := events.NewDeduplicationBatchStartedEvent(
+		issueID,
+		"sandbox-dedup",
+		"deduplication",
+		events.SeverityInfo,
+		fmt.Sprintf("[Sandbox merge] Starting deduplication of %d discovered issues", candidateCount),
+		events.DeduplicationBatchStartedData{
+			CandidateCount: candidateCount,
+			ParentIssueID:  issueID,
+		},
+	)
+	if err != nil {
+		log.Printf("[SANDBOX] warning: failed to create deduplication batch started event: %v", err)
+		return
+	}
+
+	if err := store.StoreAgentEvent(ctx, event); err != nil {
+		log.Printf("[SANDBOX] warning: failed to store deduplication batch started event: %v", err)
+	}
+}
+
+// logSandboxDeduplicationBatchCompleted logs a deduplication batch completion event from sandbox merge (vc-151)
+func logSandboxDeduplicationBatchCompleted(ctx context.Context, store storage.Storage, issueID string, result *deduplication.DeduplicationResult, dedupErr error) {
+	// Skip logging if context is cancelled
+	if ctx.Err() != nil {
+		return
+	}
+
+	var batchEvent *events.AgentEvent
+	var eventErr error
+
+	if dedupErr != nil {
+		// Deduplication failed
+		batchEvent, eventErr = events.NewDeduplicationBatchCompletedEvent(
+			issueID,
+			"sandbox-dedup",
+			"deduplication",
+			events.SeverityError,
+			fmt.Sprintf("[Sandbox merge] Deduplication failed: %v", dedupErr),
+			events.DeduplicationBatchCompletedData{
+				Success: false,
+				Error:   dedupErr.Error(),
+			},
+		)
+	} else {
+		// Deduplication succeeded
+		severity := events.SeverityInfo
+		if result.Stats.DuplicateCount > 0 || result.Stats.WithinBatchDuplicateCount > 0 {
+			severity = events.SeverityWarning // Duplicates found - worth highlighting
+		}
+
+		batchEvent, eventErr = events.NewDeduplicationBatchCompletedEvent(
+			issueID,
+			"sandbox-dedup",
+			"deduplication",
+			severity,
+			fmt.Sprintf("[Sandbox merge] Deduplication completed: %d unique, %d duplicates, %d within-batch duplicates",
+				result.Stats.UniqueCount, result.Stats.DuplicateCount, result.Stats.WithinBatchDuplicateCount),
+			events.DeduplicationBatchCompletedData{
+				TotalCandidates:           result.Stats.TotalCandidates,
+				UniqueCount:               result.Stats.UniqueCount,
+				DuplicateCount:            result.Stats.DuplicateCount,
+				WithinBatchDuplicateCount: result.Stats.WithinBatchDuplicateCount,
+				ComparisonsMade:           result.Stats.ComparisonsMade,
+				AICallsMade:               result.Stats.AICallsMade,
+				ProcessingTimeMs:          result.Stats.ProcessingTimeMs,
+				Success:                   true,
+			},
+		)
+	}
+
+	if eventErr != nil {
+		log.Printf("[SANDBOX] warning: failed to create deduplication batch completed event: %v", eventErr)
+		return
+	}
+
+	if err := store.StoreAgentEvent(ctx, batchEvent); err != nil {
+		log.Printf("[SANDBOX] warning: failed to store deduplication batch completed event: %v", err)
+		return
+	}
+
+	// Log individual decision events (for confidence score distribution analysis)
+	if result != nil && len(result.Decisions) > 0 {
+		for _, decision := range result.Decisions {
+			logSandboxDeduplicationDecision(ctx, store, issueID, decision)
+		}
+	}
+}
+
+// logSandboxDeduplicationDecision logs an individual deduplication decision from sandbox merge (vc-151)
+func logSandboxDeduplicationDecision(ctx context.Context, store storage.Storage, issueID string, decision deduplication.DecisionDetail) {
+	// Skip logging if context is cancelled
+	if ctx.Err() != nil {
+		return
+	}
+
+	severity := events.SeverityInfo
+	var message string
+
+	if decision.IsDuplicate {
+		severity = events.SeverityWarning
+		if decision.WithinBatchOriginalIndex >= 0 {
+			message = fmt.Sprintf("[Sandbox merge] Within-batch duplicate: %s (confidence: %.2f)", decision.CandidateTitle, decision.Confidence)
+		} else {
+			message = fmt.Sprintf("[Sandbox merge] Duplicate of %s: %s (confidence: %.2f)", decision.DuplicateOf, decision.CandidateTitle, decision.Confidence)
+		}
+	} else {
+		message = fmt.Sprintf("[Sandbox merge] Unique issue: %s (confidence: %.2f)", decision.CandidateTitle, decision.Confidence)
+	}
+
+	var withinBatchOriginal string
+	if decision.WithinBatchOriginalIndex >= 0 {
+		withinBatchOriginal = fmt.Sprintf("candidate_%d", decision.WithinBatchOriginalIndex)
+	}
+
+	event, err := events.NewDeduplicationDecisionEvent(
+		issueID,
+		"sandbox-dedup",
+		"deduplication",
+		severity,
+		message,
+		events.DeduplicationDecisionData{
+			CandidateTitle:       decision.CandidateTitle,
+			IsDuplicate:          decision.IsDuplicate,
+			DuplicateOf:          decision.DuplicateOf,
+			Confidence:           decision.Confidence,
+			Reasoning:            decision.Reasoning,
+			WithinBatchDuplicate: decision.WithinBatchOriginalIndex >= 0,
+			WithinBatchOriginal:  withinBatchOriginal,
+		},
+	)
+	if err != nil {
+		log.Printf("[SANDBOX] warning: failed to create deduplication decision event: %v", err)
+		return
+	}
+
+	if err := store.StoreAgentEvent(ctx, event); err != nil {
+		log.Printf("[SANDBOX] warning: failed to store deduplication decision event: %v", err)
+	}
 }

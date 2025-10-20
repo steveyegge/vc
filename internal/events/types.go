@@ -55,6 +55,14 @@ const (
 	EventTypeQualityGatesCompleted EventType = "quality_gates_completed"
 	// EventTypeQualityGatesSkipped indicates quality gates evaluation was skipped
 	EventTypeQualityGatesSkipped EventType = "quality_gates_skipped"
+
+	// Deduplication events (vc-151)
+	// EventTypeDeduplicationBatchStarted indicates batch deduplication processing started
+	EventTypeDeduplicationBatchStarted EventType = "deduplication_batch_started"
+	// EventTypeDeduplicationBatchCompleted indicates batch deduplication processing completed
+	EventTypeDeduplicationBatchCompleted EventType = "deduplication_batch_completed"
+	// EventTypeDeduplicationDecision indicates an individual duplicate decision was made
+	EventTypeDeduplicationDecision EventType = "deduplication_decision"
 )
 
 // EventSeverity represents the severity level of an event.
@@ -124,6 +132,54 @@ type GitOperationData struct {
 	Args []string `json:"args"`
 	// Success indicates whether the operation succeeded
 	Success bool `json:"success"`
+}
+
+// DeduplicationBatchStartedData contains structured data for deduplication batch start events (vc-151).
+type DeduplicationBatchStartedData struct {
+	// CandidateCount is the number of candidate issues being deduplicated
+	CandidateCount int `json:"candidate_count"`
+	// ParentIssueID is the issue that discovered these candidates (if applicable)
+	ParentIssueID string `json:"parent_issue_id,omitempty"`
+}
+
+// DeduplicationBatchCompletedData contains structured data for deduplication batch completion events (vc-151).
+type DeduplicationBatchCompletedData struct {
+	// TotalCandidates is the total number of candidates processed
+	TotalCandidates int `json:"total_candidates"`
+	// UniqueCount is the number of unique issues (to be filed)
+	UniqueCount int `json:"unique_count"`
+	// DuplicateCount is the number of duplicates against existing issues
+	DuplicateCount int `json:"duplicate_count"`
+	// WithinBatchDuplicateCount is the number of duplicates within the batch
+	WithinBatchDuplicateCount int `json:"within_batch_duplicate_count"`
+	// ComparisonsMade is the total number of pairwise comparisons
+	ComparisonsMade int `json:"comparisons_made"`
+	// AICallsMade is the number of AI API calls made
+	AICallsMade int `json:"ai_calls_made"`
+	// ProcessingTimeMs is the time taken for deduplication in milliseconds
+	ProcessingTimeMs int64 `json:"processing_time_ms"`
+	// Success indicates whether deduplication succeeded
+	Success bool `json:"success"`
+	// Error contains the error message if deduplication failed
+	Error string `json:"error,omitempty"`
+}
+
+// DeduplicationDecisionData contains structured data for individual duplicate decisions (vc-151).
+type DeduplicationDecisionData struct {
+	// CandidateTitle is the title of the candidate issue
+	CandidateTitle string `json:"candidate_title"`
+	// IsDuplicate indicates whether the candidate was marked as a duplicate
+	IsDuplicate bool `json:"is_duplicate"`
+	// DuplicateOf is the ID of the existing issue (if duplicate)
+	DuplicateOf string `json:"duplicate_of,omitempty"`
+	// Confidence is the AI's confidence score (0.0 to 1.0)
+	Confidence float64 `json:"confidence"`
+	// Reasoning is the AI's explanation for the decision
+	Reasoning string `json:"reasoning,omitempty"`
+	// WithinBatchDuplicate indicates if this is a within-batch duplicate
+	WithinBatchDuplicate bool `json:"within_batch_duplicate,omitempty"`
+	// WithinBatchOriginal is the title of the original issue (for within-batch duplicates)
+	WithinBatchOriginal string `json:"within_batch_original,omitempty"`
 }
 
 // EventStore defines the interface for storing and retrieving agent events.

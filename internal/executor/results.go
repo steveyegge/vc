@@ -951,6 +951,154 @@ func (rp *ResultsProcessor) logEvent(ctx context.Context, eventType events.Event
 	}
 }
 
+// logDeduplicationBatchStarted logs a deduplication batch start event (vc-151)
+func (rp *ResultsProcessor) logDeduplicationBatchStarted(ctx context.Context, issueID string, candidateCount int, parentIssueID string) {
+	// Skip logging if context is cancelled
+	if ctx.Err() != nil {
+		return
+	}
+
+	event, err := events.NewDeduplicationBatchStartedEvent(
+		issueID,
+		rp.actor,
+		"deduplication",
+		events.SeverityInfo,
+		fmt.Sprintf("Starting deduplication of %d discovered issues for %s", candidateCount, parentIssueID),
+		events.DeduplicationBatchStartedData{
+			CandidateCount: candidateCount,
+			ParentIssueID:  parentIssueID,
+		},
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to create deduplication batch started event: %v\n", err)
+		return
+	}
+
+	if err := rp.store.StoreAgentEvent(ctx, event); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to store deduplication batch started event: %v\n", err)
+	}
+}
+
+// logDeduplicationBatchCompleted logs a deduplication batch completion event with stats and decisions (vc-151)
+func (rp *ResultsProcessor) logDeduplicationBatchCompleted(ctx context.Context, issueID string, result *deduplication.DeduplicationResult, err error) {
+	// Skip logging if context is cancelled
+	if ctx.Err() != nil {
+		return
+	}
+
+	var batchEvent *events.AgentEvent
+	var eventErr error
+
+	if err != nil {
+		// Deduplication failed
+		batchEvent, eventErr = events.NewDeduplicationBatchCompletedEvent(
+			issueID,
+			rp.actor,
+			"deduplication",
+			events.SeverityError,
+			fmt.Sprintf("Deduplication failed for %s: %v", issueID, err),
+			events.DeduplicationBatchCompletedData{
+				Success: false,
+				Error:   err.Error(),
+			},
+		)
+	} else {
+		// Deduplication succeeded
+		severity := events.SeverityInfo
+		if result.Stats.DuplicateCount > 0 || result.Stats.WithinBatchDuplicateCount > 0 {
+			severity = events.SeverityWarning // Duplicates found - worth highlighting
+		}
+
+		batchEvent, eventErr = events.NewDeduplicationBatchCompletedEvent(
+			issueID,
+			rp.actor,
+			"deduplication",
+			severity,
+			fmt.Sprintf("Deduplication completed: %d unique, %d duplicates, %d within-batch duplicates",
+				result.Stats.UniqueCount, result.Stats.DuplicateCount, result.Stats.WithinBatchDuplicateCount),
+			events.DeduplicationBatchCompletedData{
+				TotalCandidates:           result.Stats.TotalCandidates,
+				UniqueCount:               result.Stats.UniqueCount,
+				DuplicateCount:            result.Stats.DuplicateCount,
+				WithinBatchDuplicateCount: result.Stats.WithinBatchDuplicateCount,
+				ComparisonsMade:           result.Stats.ComparisonsMade,
+				AICallsMade:               result.Stats.AICallsMade,
+				ProcessingTimeMs:          result.Stats.ProcessingTimeMs,
+				Success:                   true,
+			},
+		)
+	}
+
+	if eventErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to create deduplication batch completed event: %v\n", eventErr)
+		return
+	}
+
+	if err := rp.store.StoreAgentEvent(ctx, batchEvent); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to store deduplication batch completed event: %v\n", err)
+		return
+	}
+
+	// Log individual decision events (for confidence score distribution analysis)
+	if result != nil && len(result.Decisions) > 0 {
+		for _, decision := range result.Decisions {
+			rp.logDeduplicationDecision(ctx, issueID, decision)
+		}
+	}
+}
+
+// logDeduplicationDecision logs an individual deduplication decision (vc-151)
+func (rp *ResultsProcessor) logDeduplicationDecision(ctx context.Context, issueID string, decision deduplication.DecisionDetail) {
+	// Skip logging if context is cancelled
+	if ctx.Err() != nil {
+		return
+	}
+
+	severity := events.SeverityInfo
+	var message string
+
+	if decision.IsDuplicate {
+		severity = events.SeverityWarning
+		if decision.WithinBatchOriginalIndex >= 0 {
+			message = fmt.Sprintf("Within-batch duplicate: %s (confidence: %.2f)", decision.CandidateTitle, decision.Confidence)
+		} else {
+			message = fmt.Sprintf("Duplicate of %s: %s (confidence: %.2f)", decision.DuplicateOf, decision.CandidateTitle, decision.Confidence)
+		}
+	} else {
+		message = fmt.Sprintf("Unique issue: %s (confidence: %.2f)", decision.CandidateTitle, decision.Confidence)
+	}
+
+	var withinBatchOriginal string
+	if decision.WithinBatchOriginalIndex >= 0 {
+		withinBatchOriginal = fmt.Sprintf("candidate_%d", decision.WithinBatchOriginalIndex)
+	}
+
+	event, err := events.NewDeduplicationDecisionEvent(
+		issueID,
+		rp.actor,
+		"deduplication",
+		severity,
+		message,
+		events.DeduplicationDecisionData{
+			CandidateTitle:       decision.CandidateTitle,
+			IsDuplicate:          decision.IsDuplicate,
+			DuplicateOf:          decision.DuplicateOf,
+			Confidence:           decision.Confidence,
+			Reasoning:            decision.Reasoning,
+			WithinBatchDuplicate: decision.WithinBatchOriginalIndex >= 0,
+			WithinBatchOriginal:  withinBatchOriginal,
+		},
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to create deduplication decision event: %v\n", err)
+		return
+	}
+
+	if err := rp.store.StoreAgentEvent(ctx, event); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to store deduplication decision event: %v\n", err)
+	}
+}
+
 // getOutputSample returns the last N lines of output, or all if fewer than N
 func getOutputSample(output []string, maxLines int) []string {
 	if len(output) == 0 {
@@ -1571,13 +1719,21 @@ func (rp *ResultsProcessor) deduplicateDiscoveredIssues(ctx context.Context, par
 		}
 	}
 
+	// vc-151: Log deduplication batch started event
+	rp.logDeduplicationBatchStarted(ctx, parentIssue.ID, len(candidates), parentIssue.ID)
+
 	// Deduplicate
 	result, err := rp.deduplicator.DeduplicateBatch(ctx, candidates)
 	if err != nil {
 		// Fail-safe: on error, return all discovered issues
 		fmt.Fprintf(os.Stderr, "Warning: deduplication failed, creating all discovered issues: %v\n", err)
+		// vc-151: Log failure
+		rp.logDeduplicationBatchCompleted(ctx, parentIssue.ID, nil, err)
 		return discovered, deduplication.DeduplicationStats{}
 	}
+
+	// vc-151: Log deduplication batch completed event with stats and individual decisions
+	rp.logDeduplicationBatchCompleted(ctx, parentIssue.ID, result, nil)
 
 	// Build list of unique discovered issues to create
 	// We need to map back from unique issues to original DiscoveredIssue objects

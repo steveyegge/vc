@@ -687,3 +687,158 @@ The AI has access to these tools (you don't call them directly):
 - **search_issues**: Searches issues by text
 
 The AI understands your intent and uses these tools automatically.
+
+---
+
+## 📊 Querying Deduplication Metrics (vc-151)
+
+VC tracks comprehensive deduplication metrics in the `agent_events` table. All deduplication operations emit structured events that can be queried for analysis.
+
+### Event Types
+
+Three event types track deduplication activity:
+
+1. **`deduplication_batch_started`** - When batch deduplication begins
+2. **`deduplication_batch_completed`** - When batch deduplication completes (with stats)
+3. **`deduplication_decision`** - Individual duplicate decisions (with confidence scores)
+
+### Quick Queries
+
+**View recent deduplication batches:**
+```sql
+SELECT
+  timestamp,
+  issue_id,
+  message,
+  json_extract(data, '$.total_candidates') as candidates,
+  json_extract(data, '$.unique_count') as unique,
+  json_extract(data, '$.duplicate_count') as duplicates,
+  json_extract(data, '$.ai_calls_made') as ai_calls,
+  json_extract(data, '$.processing_time_ms') as time_ms
+FROM agent_events
+WHERE type = 'deduplication_batch_completed'
+  AND json_extract(data, '$.success') = 1
+ORDER BY timestamp DESC
+LIMIT 10;
+```
+
+**Confidence score distribution:**
+```sql
+SELECT
+  ROUND(json_extract(data, '$.confidence'), 1) as confidence_bucket,
+  COUNT(*) as count,
+  SUM(CASE WHEN json_extract(data, '$.is_duplicate') = 1 THEN 1 ELSE 0 END) as duplicates,
+  SUM(CASE WHEN json_extract(data, '$.is_duplicate') = 0 THEN 1 ELSE 0 END) as unique
+FROM agent_events
+WHERE type = 'deduplication_decision'
+GROUP BY confidence_bucket
+ORDER BY confidence_bucket DESC;
+```
+
+**Deduplication efficiency over time:**
+```sql
+SELECT
+  date(timestamp) as date,
+  COUNT(*) as batches,
+  SUM(json_extract(data, '$.total_candidates')) as total_candidates,
+  SUM(json_extract(data, '$.duplicate_count')) as total_duplicates,
+  ROUND(100.0 * SUM(json_extract(data, '$.duplicate_count')) /
+        SUM(json_extract(data, '$.total_candidates')), 2) as duplicate_rate_pct,
+  SUM(json_extract(data, '$.ai_calls_made')) as total_ai_calls,
+  AVG(json_extract(data, '$.processing_time_ms')) as avg_time_ms
+FROM agent_events
+WHERE type = 'deduplication_batch_completed'
+  AND json_extract(data, '$.success') = 1
+GROUP BY date
+ORDER BY date DESC
+LIMIT 30;
+```
+
+**Failed deduplication operations:**
+```sql
+SELECT
+  timestamp,
+  issue_id,
+  message,
+  json_extract(data, '$.error') as error
+FROM agent_events
+WHERE type = 'deduplication_batch_completed'
+  AND json_extract(data, '$.success') = 0
+ORDER BY timestamp DESC;
+```
+
+**Individual duplicate decisions for an issue:**
+```sql
+SELECT
+  json_extract(data, '$.candidate_title') as title,
+  json_extract(data, '$.is_duplicate') as is_dup,
+  json_extract(data, '$.duplicate_of') as dup_of,
+  json_extract(data, '$.confidence') as confidence,
+  json_extract(data, '$.reasoning') as reasoning
+FROM agent_events
+WHERE type = 'deduplication_decision'
+  AND issue_id = 'vc-XXX'
+ORDER BY timestamp;
+```
+
+**Top duplicate issues (what issues are most frequently found as duplicates):**
+```sql
+SELECT
+  json_extract(data, '$.duplicate_of') as issue_id,
+  COUNT(*) as times_found_as_duplicate,
+  GROUP_CONCAT(DISTINCT json_extract(data, '$.candidate_title'), '; ') as duplicate_titles
+FROM agent_events
+WHERE type = 'deduplication_decision'
+  AND json_extract(data, '$.is_duplicate') = 1
+  AND json_extract(data, '$.duplicate_of') IS NOT NULL
+GROUP BY json_extract(data, '$.duplicate_of')
+ORDER BY times_found_as_duplicate DESC
+LIMIT 20;
+```
+
+### Data Fields
+
+**DeduplicationBatchCompletedData:**
+- `total_candidates` - Number of issues checked
+- `unique_count` - Number of unique issues
+- `duplicate_count` - Duplicates against existing issues
+- `within_batch_duplicate_count` - Duplicates within the batch
+- `comparisons_made` - Total pairwise comparisons
+- `ai_calls_made` - Number of AI API calls
+- `processing_time_ms` - Time taken in milliseconds
+- `success` - Whether deduplication succeeded
+- `error` - Error message (if failed)
+
+**DeduplicationDecisionData:**
+- `candidate_title` - Title of the candidate issue
+- `is_duplicate` - Whether marked as duplicate
+- `duplicate_of` - ID of existing issue (if duplicate)
+- `confidence` - AI confidence score (0.0 to 1.0)
+- `reasoning` - AI explanation for the decision
+- `within_batch_duplicate` - If this is a within-batch duplicate
+- `within_batch_original` - Reference to original (if within-batch)
+
+### Monitoring Deduplication Health
+
+**Check for high false positive rate (low confidence duplicates being marked):**
+```sql
+SELECT COUNT(*) as low_confidence_duplicates
+FROM agent_events
+WHERE type = 'deduplication_decision'
+  AND json_extract(data, '$.is_duplicate') = 1
+  AND json_extract(data, '$.confidence') < 0.90;
+```
+
+**Check for deduplication performance issues:**
+```sql
+SELECT
+  AVG(json_extract(data, '$.processing_time_ms')) as avg_ms,
+  MAX(json_extract(data, '$.processing_time_ms')) as max_ms,
+  AVG(json_extract(data, '$.ai_calls_made')) as avg_calls
+FROM agent_events
+WHERE type = 'deduplication_batch_completed'
+  AND json_extract(data, '$.success') = 1
+  AND timestamp > datetime('now', '-7 days');
+```
+
+---

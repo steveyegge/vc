@@ -83,3 +83,60 @@ func mapToStruct(dataMap map[string]interface{}, target interface{}) error {
 	}
 	return json.Unmarshal(bytes, target)
 }
+
+// SetDeduplicationBatchStartedData sets the Data field with DeduplicationBatchStartedData in a type-safe way (vc-151).
+func (e *AgentEvent) SetDeduplicationBatchStartedData(data DeduplicationBatchStartedData) error {
+	dataMap, err := structToMap(data)
+	if err != nil {
+		return fmt.Errorf("failed to convert DeduplicationBatchStartedData: %w", err)
+	}
+	e.Data = dataMap
+	return nil
+}
+
+// GetDeduplicationBatchStartedData retrieves DeduplicationBatchStartedData from the Data field (vc-151).
+func (e *AgentEvent) GetDeduplicationBatchStartedData() (*DeduplicationBatchStartedData, error) {
+	var data DeduplicationBatchStartedData
+	if err := mapToStruct(e.Data, &data); err != nil {
+		return nil, fmt.Errorf("failed to parse DeduplicationBatchStartedData: %w", err)
+	}
+	return &data, nil
+}
+
+// SetDeduplicationBatchCompletedData sets the Data field with DeduplicationBatchCompletedData in a type-safe way (vc-151).
+func (e *AgentEvent) SetDeduplicationBatchCompletedData(data DeduplicationBatchCompletedData) error {
+	dataMap, err := structToMap(data)
+	if err != nil {
+		return fmt.Errorf("failed to convert DeduplicationBatchCompletedData: %w", err)
+	}
+	e.Data = dataMap
+	return nil
+}
+
+// GetDeduplicationBatchCompletedData retrieves DeduplicationBatchCompletedData from the Data field (vc-151).
+func (e *AgentEvent) GetDeduplicationBatchCompletedData() (*DeduplicationBatchCompletedData, error) {
+	var data DeduplicationBatchCompletedData
+	if err := mapToStruct(e.Data, &data); err != nil {
+		return nil, fmt.Errorf("failed to parse DeduplicationBatchCompletedData: %w", err)
+	}
+	return &data, nil
+}
+
+// SetDeduplicationDecisionData sets the Data field with DeduplicationDecisionData in a type-safe way (vc-151).
+func (e *AgentEvent) SetDeduplicationDecisionData(data DeduplicationDecisionData) error {
+	dataMap, err := structToMap(data)
+	if err != nil {
+		return fmt.Errorf("failed to convert DeduplicationDecisionData: %w", err)
+	}
+	e.Data = dataMap
+	return nil
+}
+
+// GetDeduplicationDecisionData retrieves DeduplicationDecisionData from the Data field (vc-151).
+func (e *AgentEvent) GetDeduplicationDecisionData() (*DeduplicationDecisionData, error) {
+	var data DeduplicationDecisionData
+	if err := mapToStruct(e.Data, &data); err != nil {
+		return nil, fmt.Errorf("failed to parse DeduplicationDecisionData: %w", err)
+	}
+	return &data, nil
+}

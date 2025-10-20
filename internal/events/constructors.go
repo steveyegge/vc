@@ -97,3 +97,60 @@ func NewSimpleEvent(eventType EventType, issueID, executorID, agentID string, se
 		SourceLine: 0,
 	}
 }
+
+// NewDeduplicationBatchStartedEvent creates a new AgentEvent for deduplication batch start with type-safe data (vc-151).
+func NewDeduplicationBatchStartedEvent(issueID, executorID, agentID string, severity EventSeverity, message string, data DeduplicationBatchStartedData) (*AgentEvent, error) {
+	event := &AgentEvent{
+		ID:         uuid.New().String(),
+		Type:       EventTypeDeduplicationBatchStarted,
+		Timestamp:  time.Now(),
+		IssueID:    issueID,
+		ExecutorID: executorID,
+		AgentID:    agentID,
+		Severity:   severity,
+		Message:    message,
+		SourceLine: 0,
+	}
+	if err := event.SetDeduplicationBatchStartedData(data); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
+// NewDeduplicationBatchCompletedEvent creates a new AgentEvent for deduplication batch completion with type-safe data (vc-151).
+func NewDeduplicationBatchCompletedEvent(issueID, executorID, agentID string, severity EventSeverity, message string, data DeduplicationBatchCompletedData) (*AgentEvent, error) {
+	event := &AgentEvent{
+		ID:         uuid.New().String(),
+		Type:       EventTypeDeduplicationBatchCompleted,
+		Timestamp:  time.Now(),
+		IssueID:    issueID,
+		ExecutorID: executorID,
+		AgentID:    agentID,
+		Severity:   severity,
+		Message:    message,
+		SourceLine: 0,
+	}
+	if err := event.SetDeduplicationBatchCompletedData(data); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
+// NewDeduplicationDecisionEvent creates a new AgentEvent for an individual deduplication decision with type-safe data (vc-151).
+func NewDeduplicationDecisionEvent(issueID, executorID, agentID string, severity EventSeverity, message string, data DeduplicationDecisionData) (*AgentEvent, error) {
+	event := &AgentEvent{
+		ID:         uuid.New().String(),
+		Type:       EventTypeDeduplicationDecision,
+		Timestamp:  time.Now(),
+		IssueID:    issueID,
+		ExecutorID: executorID,
+		AgentID:    agentID,
+		Severity:   severity,
+		Message:    message,
+		SourceLine: 0,
+	}
+	if err := event.SetDeduplicationDecisionData(data); err != nil {
+		return nil, err
+	}
+	return event, nil
+}

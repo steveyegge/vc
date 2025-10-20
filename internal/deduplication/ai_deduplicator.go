@@ -216,6 +216,7 @@ func (d *AIDeduplicator) DeduplicateBatch(ctx context.Context, candidates []*typ
 	uniqueIssues := []*types.Issue{}
 	duplicatePairs := make(map[int]string)
 	withinBatchDuplicates := make(map[int]int)
+	decisions := []DecisionDetail{} // vc-151: Track individual decisions for observability
 	comparisons := 0
 	aiCalls := 0
 
@@ -248,6 +249,15 @@ func (d *AIDeduplicator) DeduplicateBatch(ctx context.Context, candidates []*typ
 					isWithinBatchDup = true
 					log.Printf("[DEDUP] Within-batch duplicate: %s is duplicate of %s (confidence: %.2f)",
 						candidate.ID, candidates[j].ID, resp.Confidence)
+					// vc-151: Record decision detail
+					decisions = append(decisions, DecisionDetail{
+						Index:                    i,
+						CandidateTitle:           candidate.Title,
+						IsDuplicate:              true,
+						WithinBatchOriginalIndex: j,
+						Confidence:               resp.Confidence,
+						Reasoning:                resp.Reasoning,
+					})
 					break
 				}
 			}
@@ -277,8 +287,25 @@ func (d *AIDeduplicator) DeduplicateBatch(ctx context.Context, candidates []*typ
 			duplicatePairs[i] = decision.DuplicateOf
 			log.Printf("[DEDUP] Duplicate found: %s is duplicate of %s (confidence: %.2f)",
 				candidate.ID, decision.DuplicateOf, decision.Confidence)
+			// vc-151: Record decision detail
+			decisions = append(decisions, DecisionDetail{
+				Index:          i,
+				CandidateTitle: candidate.Title,
+				IsDuplicate:    true,
+				DuplicateOf:    decision.DuplicateOf,
+				Confidence:     decision.Confidence,
+				Reasoning:      decision.Reasoning,
+			})
 		} else {
 			uniqueIssues = append(uniqueIssues, candidate)
+			// vc-151: Record decision detail for unique issues too (useful for confidence analysis)
+			decisions = append(decisions, DecisionDetail{
+				Index:          i,
+				CandidateTitle: candidate.Title,
+				IsDuplicate:    false,
+				Confidence:     decision.Confidence,
+				Reasoning:      decision.Reasoning,
+			})
 		}
 	}
 
@@ -286,6 +313,7 @@ func (d *AIDeduplicator) DeduplicateBatch(ctx context.Context, candidates []*typ
 		UniqueIssues:          uniqueIssues,
 		DuplicatePairs:        duplicatePairs,
 		WithinBatchDuplicates: withinBatchDuplicates,
+		Decisions:             decisions, // vc-151: Include individual decisions for observability
 		Stats: DeduplicationStats{
 			TotalCandidates:           len(candidates),
 			UniqueCount:               len(uniqueIssues),
