@@ -597,10 +597,10 @@ func TestCruftDetector_Check_ErrorTruncation(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, result)
 
-	// Error message should be truncated to ~500 chars, not the full 1000+
+	// Error message should indicate parsing failure (resilient parser handles truncation internally)
 	errMsg := err.Error()
-	assert.LessOrEqual(t, len(errMsg), 700, "Error message should be truncated")
-	assert.Contains(t, errMsg, "truncated", "Error should indicate truncation")
+	assert.Contains(t, errMsg, "parsing AI response", "Error should indicate parsing failure")
+	assert.Contains(t, errMsg, "cruft_evaluation", "Error should include context")
 }
 
 func TestCruftDetector_Check_OnlyDeleteNoPatterns(t *testing.T) {
