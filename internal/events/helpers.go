@@ -140,3 +140,60 @@ func (e *AgentEvent) GetDeduplicationDecisionData() (*DeduplicationDecisionData,
 	}
 	return &data, nil
 }
+
+// SetAgentToolUseData sets the Data field with AgentToolUseData in a type-safe way (vc-129).
+func (e *AgentEvent) SetAgentToolUseData(data AgentToolUseData) error {
+	dataMap, err := structToMap(data)
+	if err != nil {
+		return fmt.Errorf("failed to convert AgentToolUseData: %w", err)
+	}
+	e.Data = dataMap
+	return nil
+}
+
+// GetAgentToolUseData retrieves AgentToolUseData from the Data field (vc-129).
+func (e *AgentEvent) GetAgentToolUseData() (*AgentToolUseData, error) {
+	var data AgentToolUseData
+	if err := mapToStruct(e.Data, &data); err != nil {
+		return nil, fmt.Errorf("failed to parse AgentToolUseData: %w", err)
+	}
+	return &data, nil
+}
+
+// SetAgentHeartbeatData sets the Data field with AgentHeartbeatData in a type-safe way (vc-129).
+func (e *AgentEvent) SetAgentHeartbeatData(data AgentHeartbeatData) error {
+	dataMap, err := structToMap(data)
+	if err != nil {
+		return fmt.Errorf("failed to convert AgentHeartbeatData: %w", err)
+	}
+	e.Data = dataMap
+	return nil
+}
+
+// GetAgentHeartbeatData retrieves AgentHeartbeatData from the Data field (vc-129).
+func (e *AgentEvent) GetAgentHeartbeatData() (*AgentHeartbeatData, error) {
+	var data AgentHeartbeatData
+	if err := mapToStruct(e.Data, &data); err != nil {
+		return nil, fmt.Errorf("failed to parse AgentHeartbeatData: %w", err)
+	}
+	return &data, nil
+}
+
+// SetAgentStateChangeData sets the Data field with AgentStateChangeData in a type-safe way (vc-129).
+func (e *AgentEvent) SetAgentStateChangeData(data AgentStateChangeData) error {
+	dataMap, err := structToMap(data)
+	if err != nil {
+		return fmt.Errorf("failed to convert AgentStateChangeData: %w", err)
+	}
+	e.Data = dataMap
+	return nil
+}
+
+// GetAgentStateChangeData retrieves AgentStateChangeData from the Data field (vc-129).
+func (e *AgentEvent) GetAgentStateChangeData() (*AgentStateChangeData, error) {
+	var data AgentStateChangeData
+	if err := mapToStruct(e.Data, &data); err != nil {
+		return nil, fmt.Errorf("failed to parse AgentStateChangeData: %w", err)
+	}
+	return &data, nil
+}

@@ -1,6 +1,7 @@
 package events
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -635,6 +636,158 @@ func TestOutputParser_Reset(t *testing.T) {
 
 	if parser.LineNumber != 0 {
 		t.Errorf("expected line number 0 after reset but got %d", parser.LineNumber)
+	}
+}
+
+func TestOutputParser_ParseToolUse(t *testing.T) {
+	parser := NewOutputParser("vc-123", "exec-1", "agent-1")
+
+	tests := []struct {
+		name             string
+		line             string
+		expect           bool
+		expectedTool     string
+		expectedFile     string
+		expectedDescLike string // substring that should appear in description
+	}{
+		{
+			name:         "Read tool usage",
+			line:         "Let me use the Read tool to read the configuration file",
+			expect:       true,
+			expectedTool: "Read",
+		},
+		{
+			name:         "Read tool with file",
+			line:         "I'll use the Read tool to read main.go",
+			expect:       true,
+			expectedTool: "Read",
+			expectedFile: "main.go",
+		},
+		{
+			name:         "Edit tool usage",
+			line:         "Using the Edit tool to modify the source code",
+			expect:       true,
+			expectedTool: "Edit",
+		},
+		{
+			name:         "Edit tool with file",
+			line:         "I'm going to use the Edit tool to update parser.go",
+			expect:       true,
+			expectedTool: "Edit",
+			expectedFile: "parser.go",
+		},
+		{
+			name:         "Write tool usage",
+			line:         "Let me use the Write tool to create a new test file",
+			expect:       true,
+			expectedTool: "Write",
+		},
+		{
+			name:         "Write tool with file",
+			line:         "Using the Write tool to write output.log",
+			expect:       true,
+			expectedTool: "Write",
+			expectedFile: "output.log",
+		},
+		{
+			name:         "Bash tool usage",
+			line:         "I'll use the Bash tool to run the tests",
+			expect:       true,
+			expectedTool: "Bash",
+		},
+		{
+			name:         "Bash tool variation",
+			line:         "Running the Bash tool to execute the command",
+			expect:       true,
+			expectedTool: "Bash",
+		},
+		{
+			name:         "Glob tool usage",
+			line:         "Using the Glob tool to find all test files",
+			expect:       true,
+			expectedTool: "Glob",
+		},
+		{
+			name:         "Grep tool usage",
+			line:         "Let me use the Grep tool to search for the pattern",
+			expect:       true,
+			expectedTool: "Grep",
+		},
+		{
+			name:         "Task tool usage",
+			line:         "I'll use the Task tool to launch a new agent",
+			expect:       true,
+			expectedTool: "Task",
+		},
+		{
+			name:         "Task tool spawning",
+			line:         "Spawning the Task tool to start the worker",
+			expect:       true,
+			expectedTool: "Task",
+		},
+		{
+			name:         "Generic tool pattern",
+			line:         "Using the Custom tool to perform operation",
+			expect:       true,
+			expectedTool: "Custom",
+		},
+		{
+			name:   "Non-tool line",
+			line:   "This is just regular output without tool mention",
+			expect: false,
+		},
+		{
+			name:   "Tool word but not usage",
+			line:   "The tool was created successfully",
+			expect: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			events := parser.ParseLine(tt.line)
+
+			if !tt.expect {
+				if len(events) > 0 {
+					t.Errorf("expected no events but got %d", len(events))
+				}
+				return
+			}
+
+			if len(events) != 1 {
+				t.Fatalf("expected 1 event but got %d", len(events))
+			}
+
+			event := events[0]
+			if event.Type != EventTypeAgentToolUse {
+				t.Errorf("expected type %s but got %s", EventTypeAgentToolUse, event.Type)
+			}
+
+			if event.Severity != SeverityInfo {
+				t.Errorf("expected severity %s but got %s", SeverityInfo, event.Severity)
+			}
+
+			data, err := event.GetAgentToolUseData()
+			if err != nil {
+				t.Fatalf("failed to get tool use data: %v", err)
+			}
+
+			if data.ToolName != tt.expectedTool {
+				t.Errorf("expected tool %s but got %s", tt.expectedTool, data.ToolName)
+			}
+
+			if tt.expectedFile != "" && data.TargetFile != tt.expectedFile {
+				t.Errorf("expected file %s but got %s", tt.expectedFile, data.TargetFile)
+			}
+
+			if data.ToolDescription == "" {
+				t.Error("expected non-empty tool description")
+			}
+
+			if tt.expectedDescLike != "" && !strings.Contains(data.ToolDescription, tt.expectedDescLike) {
+				t.Errorf("expected description to contain %q but got %q", tt.expectedDescLike, data.ToolDescription)
+			}
+		})
 	}
 }
 

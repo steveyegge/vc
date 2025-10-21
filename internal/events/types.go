@@ -73,6 +73,14 @@ const (
 	EventTypeHealthCheckCompleted EventType = "health_check_completed"
 	// EventTypeHealthCheckFailed indicates a health monitor failed to execute
 	EventTypeHealthCheckFailed EventType = "health_check_failed"
+
+	// Agent progress events (vc-129)
+	// EventTypeAgentToolUse indicates an agent invoked a tool (Read, Edit, Write, Bash, etc.)
+	EventTypeAgentToolUse EventType = "agent_tool_use"
+	// EventTypeAgentHeartbeat indicates periodic progress heartbeat from agent
+	EventTypeAgentHeartbeat EventType = "agent_heartbeat"
+	// EventTypeAgentStateChange indicates agent state change (thinking, planning, executing)
+	EventTypeAgentStateChange EventType = "agent_state_change"
 )
 
 // EventSeverity represents the severity level of an event.
@@ -212,6 +220,36 @@ type EventCleanupCompletedData struct {
 	Success bool `json:"success"`
 	// Error contains the error message if cleanup failed
 	Error string `json:"error,omitempty"`
+}
+
+// AgentToolUseData contains structured data for agent tool usage events (vc-129).
+type AgentToolUseData struct {
+	// ToolName is the name of the tool invoked (Read, Edit, Write, Bash, etc.)
+	ToolName string `json:"tool_name"`
+	// ToolDescription is a brief description of what the tool is doing
+	ToolDescription string `json:"tool_description,omitempty"`
+	// TargetFile is the file being operated on (if applicable)
+	TargetFile string `json:"target_file,omitempty"`
+	// Command is the command being executed (for Bash tool)
+	Command string `json:"command,omitempty"`
+}
+
+// AgentHeartbeatData contains structured data for agent heartbeat events (vc-129).
+type AgentHeartbeatData struct {
+	// CurrentAction is a description of what the agent is currently doing
+	CurrentAction string `json:"current_action"`
+	// ElapsedSeconds is the time elapsed since agent started (in seconds)
+	ElapsedSeconds int64 `json:"elapsed_seconds"`
+}
+
+// AgentStateChangeData contains structured data for agent state change events (vc-129).
+type AgentStateChangeData struct {
+	// FromState is the previous state (if applicable)
+	FromState string `json:"from_state,omitempty"`
+	// ToState is the new state (thinking, planning, executing, waiting, etc.)
+	ToState string `json:"to_state"`
+	// Description is additional context about the state change
+	Description string `json:"description,omitempty"`
 }
 
 // EventStore defines the interface for storing and retrieving agent events.

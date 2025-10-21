@@ -843,6 +843,163 @@ WHERE type = 'deduplication_batch_completed'
 
 ---
 
+## 📡 Agent Progress Events (vc-129)
+
+**Status:** Implemented. Agent tool usage is now captured and stored in real-time.
+
+### Overview
+
+When agents execute in background mode, their progress is captured as structured events in the activity feed. This provides visibility into what agents are doing and helps distinguish between actual hangs and normal operation.
+
+### Event Types
+
+Three new event types were added for agent progress tracking:
+
+1. **`agent_tool_use`** - Captured when agent invokes a tool (Read, Edit, Write, Bash, Glob, Grep, Task)
+2. **`agent_heartbeat`** - Periodic progress updates (future - not yet emitted)
+3. **`agent_state_change`** - Agent state transitions like thinking→planning→executing (future - not yet emitted)
+
+### Tool Usage Detection
+
+The parser automatically detects tool usage from agent output patterns like:
+- "Let me use the Read tool to read the file"
+- "I'll use the Edit tool to modify parser.go"
+- "Using the Bash tool to run tests"
+- "Spawning the Task tool to launch an agent"
+
+**Supported tools:**
+- Read (file reads)
+- Edit (file modifications)
+- Write (file creation)
+- Bash (command execution)
+- Glob (file search by pattern)
+- Grep (content search)
+- Task (agent spawning)
+- Generic fallback for any "XYZ tool" pattern
+
+### Event Data Structure
+
+**AgentToolUseData:**
+```go
+{
+  "tool_name": "Read",              // Name of the tool invoked
+  "tool_description": "read the configuration file",  // What the tool is doing
+  "target_file": "config.yaml",     // File being operated on (if applicable)
+  "command": ""                     // Command being executed (for Bash tool)
+}
+```
+
+**AgentHeartbeatData (future):**
+```go
+{
+  "current_action": "Running tests",  // What agent is currently doing
+  "elapsed_seconds": 120              // Time since agent started
+}
+```
+
+**AgentStateChangeData (future):**
+```go
+{
+  "from_state": "thinking",           // Previous state
+  "to_state": "executing",            // New state
+  "description": "Starting implementation"  // Context
+}
+```
+
+### Querying Progress Events
+
+**View tool usage for an issue:**
+```sql
+SELECT
+  timestamp,
+  message,
+  json_extract(data, '$.tool_name') as tool,
+  json_extract(data, '$.target_file') as file,
+  json_extract(data, '$.tool_description') as description
+FROM agent_events
+WHERE type = 'agent_tool_use'
+  AND issue_id = 'vc-XXX'
+ORDER BY timestamp;
+```
+
+**Tool usage frequency:**
+```sql
+SELECT
+  json_extract(data, '$.tool_name') as tool,
+  COUNT(*) as usage_count
+FROM agent_events
+WHERE type = 'agent_tool_use'
+  AND timestamp > datetime('now', '-7 days')
+GROUP BY tool
+ORDER BY usage_count DESC;
+```
+
+**Agent activity timeline:**
+```sql
+SELECT
+  timestamp,
+  type,
+  message,
+  CASE type
+    WHEN 'agent_tool_use' THEN json_extract(data, '$.tool_name')
+    WHEN 'file_modified' THEN json_extract(data, '$.file_path')
+    WHEN 'git_operation' THEN json_extract(data, '$.command')
+    ELSE ''
+  END as detail
+FROM agent_events
+WHERE issue_id = 'vc-XXX'
+  AND type IN ('agent_tool_use', 'file_modified', 'git_operation', 'progress')
+ORDER BY timestamp;
+```
+
+### Future Work
+
+**Not yet implemented** (punted for now):
+
+1. **Heartbeat emission** - Agent doesn't emit periodic heartbeat events yet
+   - Would require goroutine in agent.go to emit events every 30-60s
+   - Would track "current action" based on recent tool usage
+
+2. **State change detection** - No explicit state tracking yet
+   - Would require analyzing output patterns for thinking/planning/executing
+   - Or structured state markers in agent output
+
+3. **Watchdog integration** (vc-234) - Watchdog doesn't consume progress events yet
+   - Would check time since last progress event
+   - Would distinguish stuck (no events >5min) vs thinking (recent events)
+
+4. **CLI visualization** - No `vc tail -f --issue vc-X` command yet
+   - Would stream progress events in real-time
+   - Would show colorized tool usage, file changes, etc.
+
+### Why This Helps
+
+**Before vc-129:**
+- Agent spawned, no output for 5+ minutes
+- Activity feed showed "agent_spawned" then silence
+- Appeared stuck, but was actually working
+- Watchdog saw "0 executions" (no progress events)
+
+**After vc-129:**
+- Tool usage captured in real-time (Read, Edit, Write, Bash, etc.)
+- Activity feed shows what agent is doing
+- Clear distinction between working vs stuck
+- Foundation for watchdog convergence detection
+
+**Example event stream:**
+```
+10:06:20 agent_spawned: Claude Code started on vc-123
+10:06:25 agent_tool_use: Read tool - parser.go
+10:06:30 agent_tool_use: Glob tool - find test files
+10:07:15 file_modified: Created parser_test.go
+10:07:45 agent_tool_use: Bash tool - run tests
+10:08:10 test_run: PASS (all tests passed)
+10:08:20 git_operation: git add parser_test.go
+10:08:25 agent_completed: Success
+```
+
+---
+
 ## 🗄️ Event Retention and Cleanup (Future Work)
 
 **Status:** Not yet implemented. Punted until database size becomes a real issue (vc-184, vc-198).
