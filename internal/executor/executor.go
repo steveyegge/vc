@@ -708,10 +708,10 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	agentID := uuid.New().String()
 
 	agentCfg := AgentConfig{
-		Type:       AgentTypeClaudeCode, // Default to Claude Code for now
+		Type:       AgentTypeAmp, // Use Amp for structured JSON events (vc-236)
 		WorkingDir: workingDir,
 		Issue:      issue,
-		StreamJSON: false,
+		StreamJSON: true, // Enable --stream-json for structured events (vc-236)
 		Timeout:    30 * time.Minute,
 		// Enable event parsing and storage
 		Store:      e.store,
