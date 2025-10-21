@@ -175,8 +175,8 @@ CREATE TABLE IF NOT EXISTS agent_events (
     severity TEXT NOT NULL CHECK(severity IN ('info', 'warning', 'error', 'critical')),
     message TEXT NOT NULL,
     data TEXT NOT NULL DEFAULT '{}',
-    source_line INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
+    source_line INTEGER NOT NULL DEFAULT 0
+    -- No FK constraint: system-level events use issue_id="SYSTEM"
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_events_issue ON agent_events(issue_id);
