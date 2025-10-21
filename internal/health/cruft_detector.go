@@ -2,12 +2,13 @@ package health
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/steveyegge/vc/internal/ai"
 )
 
 const (
@@ -253,18 +254,16 @@ func (d *CruftDetector) evaluateCruft(ctx context.Context, files []cruftFile) (*
 		return nil, fmt.Errorf("AI call failed: %w", err)
 	}
 
-	// Parse JSON response
-	var eval cruftEvaluation
-	if err := json.Unmarshal([]byte(response), &eval); err != nil {
-		// Truncate response in error message to avoid huge logs
-		truncated := response
-		if len(response) > 500 {
-			truncated = response[:500] + "... (truncated)"
-		}
-		return nil, fmt.Errorf("parsing AI response: %w (response: %s)", err, truncated)
+	// Parse JSON response using resilient parser
+	parseResult := ai.Parse[cruftEvaluation](response, ai.ParseOptions{
+		Context: "cruft_evaluation",
+	})
+
+	if !parseResult.Success {
+		return nil, fmt.Errorf("parsing AI response: %s", parseResult.Error)
 	}
 
-	return &eval, nil
+	return &parseResult.Data, nil
 }
 
 // buildPrompt creates the AI evaluation prompt.

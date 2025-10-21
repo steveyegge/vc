@@ -3,7 +3,6 @@ package health
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -11,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/steveyegge/vc/internal/ai"
 )
 
 // FileSizeMonitor detects oversized files using statistical analysis
@@ -371,18 +372,16 @@ func (m *FileSizeMonitor) evaluateOutliers(ctx context.Context, outliers []fileS
 		return nil, fmt.Errorf("AI call failed: %w", err)
 	}
 
-	// Parse JSON response
-	var eval outlierEvaluation
-	if err := json.Unmarshal([]byte(response), &eval); err != nil {
-		// Truncate response in error message to avoid huge logs
-		truncated := response
-		if len(response) > 500 {
-			truncated = response[:500] + "... (truncated)"
-		}
-		return nil, fmt.Errorf("parsing AI response: %w (response: %s)", err, truncated)
+	// Parse JSON response using resilient parser
+	parseResult := ai.Parse[outlierEvaluation](response, ai.ParseOptions{
+		Context: "file_size_evaluation",
+	})
+
+	if !parseResult.Success {
+		return nil, fmt.Errorf("parsing AI response: %s", parseResult.Error)
 	}
 
-	return &eval, nil
+	return &parseResult.Data, nil
 }
 
 // buildPrompt creates the AI evaluation prompt.
