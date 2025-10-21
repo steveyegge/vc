@@ -3,6 +3,7 @@ package gates
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -125,6 +126,14 @@ func (r *Runner) runTestGate(ctx context.Context) *Result {
 	// Use -timeout to enforce hard deadline (2 minutes per test)
 	cmd := exec.CommandContext(ctx, "go", "test", "-short", "-timeout=2m", "./...")
 	cmd.Dir = r.workingDir
+
+	// vc-235: Isolate test database to prevent pollution of production databases
+	// Set environment variables to ensure tests use :memory: database instead of discovering
+	// any .beads/*.db files in parent directories (e.g., ~/src/beads/.beads/beads.db)
+	cmd.Env = append(os.Environ(),
+		"VC_DB_PATH=:memory:",  // Force VC tests to use in-memory database
+		"BD_DB_PATH=:memory:",  // Force beads tests to use in-memory database
+	)
 
 	output, err := cmd.CombinedOutput()
 	result.Output = string(output)

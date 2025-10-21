@@ -741,3 +741,68 @@ func TestHandleGateResults_NoAI_Fallback(t *testing.T) {
 		t.Errorf("Expected blocking issue to be open")
 	}
 }
+
+// TestRunTestGate_DatabaseIsolation verifies that test gate sets environment variables
+// to prevent test database pollution (vc-235)
+func TestRunTestGate_DatabaseIsolation(t *testing.T) {
+	// Create temp db
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+
+	store, err := sqlite.New(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a minimal Go module
+	goMod := filepath.Join(tempDir, "go.mod")
+	modContent := "module testmodule\n\ngo 1.24\n"
+	if err := os.WriteFile(goMod, []byte(modContent), 0644); err != nil {
+		t.Fatalf("Failed to create go.mod: %v", err)
+	}
+
+	runner := &Runner{
+		store:      store,
+		workingDir: tempDir,
+	}
+
+	// Create a simple test file that verifies environment variables
+	testFile := filepath.Join(tempDir, "isolation_test.go")
+	testContent := `package testmodule
+
+import (
+	"os"
+	"testing"
+)
+
+func TestDatabaseIsolation(t *testing.T) {
+	vcPath := os.Getenv("VC_DB_PATH")
+	bdPath := os.Getenv("BD_DB_PATH")
+
+	if vcPath != ":memory:" {
+		t.Errorf("VC_DB_PATH should be :memory:, got: %s", vcPath)
+	}
+	if bdPath != ":memory:" {
+		t.Errorf("BD_DB_PATH should be :memory:, got: %s", bdPath)
+	}
+}
+`
+	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	ctx := context.Background()
+	result := runner.runTestGate(ctx)
+
+	// The test should pass (our isolation test verifies env vars are set)
+	if !result.Passed {
+		t.Errorf("Expected test gate to pass with database isolation, got error: %v\nOutput: %s",
+			result.Error, result.Output)
+	}
+
+	// Verify the output contains our test
+	if result.Output == "" {
+		t.Error("Expected output from go test")
+	}
+}
