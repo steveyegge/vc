@@ -1,5 +1,5 @@
 # Binaries
-vc
+/vc
 *.exe
 *.dll
 *.so

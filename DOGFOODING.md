@@ -31,30 +31,29 @@ VC autonomously works on its own codebase:
 
 ---
 
-## Current Status (Updated 2025-10-18)
+## Current Status (Updated 2025-10-21)
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| **Total runs** | 10 | See docs/dogfooding-run-*.md for details |
-| **Successful runs** | 10 | All demonstrated architecture or discovered issues |
-| **Quality gate pass** | 60% (6/10) | Run #10 correctly blocked incomplete work |
-| **Issues discovered** | 10+ | vc-125 through vc-136 |
-| **Issues fixed** | 4 | vc-125, vc-126, vc-127, vc-130 closed |
+| **Total runs** | 14 | Runs #1-14 complete |
+| **Agent completion** | ~95% | Agents successfully execute work |
+| **Quality gate pass** | ~40% | Gates often too strict, but AI recovery working |
+| **Issues discovered** | 15+ | Run #14: 3 new issues filed |
 | **Activity feed** | ✅ Working | `vc tail -f` for live monitoring |
-| **Auto-mission select** | ✅ Working | Executor picks highest priority |
-| **AI supervision** | ✅ Excellent | Catches agent errors (validated run #10) |
+| **AI supervision** | ✅ Excellent | Assessment/analysis confidence 0.88-0.92 |
 | **GitOps** | ❌ Disabled | Intentional safety during bootstrap |
-| **Human intervention** | ~30% | 3/10 runs needed manual cleanup |
+| **Human intervention** | ~40% | Still need to reduce to <10% |
 
 **Key achievements**:
-- Test gate timeout fixed (vc-130) - 1min vs 5min
-- AI supervision catches agent blind spots (run #10)
-- Executor auto-selects work by priority
-- Quality gates enforce standards
+- Agent execution highly reliable (run #14: 100% completion)
+- AI supervision working well (assess + analyze)
+- Graceful shutdown implemented and working
+- Watchdog running continuously, detecting anomalies
 
-**Current blockers**:
-- vc-131 (P1): Agent event storage CHECK constraint
-- vc-132 (P1): UNIQUE constraint on discovered issues
+**Known issues**:
+- Quality gates too strict (blocking good work)
+- Event type CHECK constraints missing (deduplication/cleanup)
+- Execution state race condition with quality gates
 
 ---
 
@@ -120,35 +119,24 @@ bd export -o .beads/issues.jsonl
 
 ## Recent Runs Summary
 
-### Run #10 (2025-10-18 PM) - AI Supervision Validation ✅
-- **Target**: vc-117 (P0, auto-selected)
-- **Result**: 0 completions, gates correctly blocked
-- **Duration**: 6m34s
-- **Key finding**: AI analysis caught agent claiming completion when acceptance criteria not met
-- **Validation**: Test gate timeout fixed, AI supervision working excellently
-- **Details**: `docs/dogfooding-run-10.md`
+### Run #14 (2025-10-20) - Infrastructure Validation ✅
+- **Target**: Ready work queue (vc-72, vc-225, vc-229, vc-228)
+- **Result**: 4/4 agents completed, 1 issue closed (acceptable_failure strategy)
+- **Duration**: ~20 minutes
+- **Key findings**: Agent execution perfect, quality gates too strict, AI recovery working
+- **Issues filed**: vc-226 (P2), vc-227 (P1), vc-228 (P1, completed)
+- **Bugs exposed**: Event schema CHECK constraints, state race condition
 
-### Run #9 (2025-10-18 AM) - Test Gate Timeout Discovery
-- **Target**: vc-117, vc-128
-- **Result**: 0 completions, blocked by test gate timeout
-- **Issues filed**: vc-130 (test gate), vc-131, vc-132
-- **Details**: `docs/dogfooding-run-9.md`
+### Runs #10-13
+- Focused on AI supervision validation and infrastructure hardening
+- Quality gates, watchdog, graceful shutdown all validated
+- Multiple bugs discovered and fixed
 
-### Run #8 (2025-10-18) - Meta-Epic Work
-- **Target**: vc-106 (documentation)
-- **Result**: Documentation updated
-- **Learning**: P0 epics shouldn't be auto-claimable
+### Runs #1-9
+- Bootstrap phase: establishing workflow, tooling, and patterns
+- Activity feed, executor, basic infrastructure
 
-### Run #7 (2025-10-18) - Self-Demonstrating Bug
-- **Target**: vc-122
-- **Result**: Bug manifested, 2 new issues discovered
-- **Issues**: vc-125, vc-126
-
-### Runs #1-6
-- 6 baseline runs establishing workflow
-- Metrics tracked in aggregate
-
-**Full history**: See Mission Log in `docs/dogfooding-archive.md`
+**Full history**: See vc-106 notes for detailed run logs
 
 ---
 
@@ -230,15 +218,15 @@ git clean -fd
 
 ## Next Steps
 
-### Immediate (before run #11)
-1. Fix vc-131 (P1) - Quality gate event storage
-2. Fix vc-132 (P1) - Discovered issue creation
-3. Target vc-131 or vc-132 for run #11
+### Run #15 (Planned)
+**Goal**: Observe pipeline, identify bugs, file issues. Actual fix is secondary.
+**Target**: Pick a P2 issue (vc-129, vc-133, vc-134, vc-200, or vc-206)
+**Focus**: Pipeline behavior, bug discovery, not completion
 
 ### Short-term
-1. Improve acceptance criteria enforcement
-2. Lower watchdog threshold (0.75 → 0.70?)
-3. Track completion accuracy metrics
+1. Fix event schema CHECK constraints (from run #14)
+2. Fix execution state race condition (from run #14)
+3. Tune quality gate expectations (too strict currently)
 
 ### Long-term
 1. Enable GitOps after stability proven

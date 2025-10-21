@@ -1,0 +1,129 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/fatih/color"
+	"github.com/spf13/cobra"
+	"github.com/steveyegge/vc/internal/deduplication"
+	"github.com/steveyegge/vc/internal/executor"
+	"github.com/steveyegge/vc/internal/storage"
+)
+
+var executeCmd = &cobra.Command{
+	Use:   "execute",
+	Short: "Start the issue processor event loop",
+	Long: `Start the executor that continuously claims and processes ready issues.
+
+The executor will:
+1. Register as an active executor instance
+2. Poll for ready work (issues with no open blockers)
+3. Atomically claim available issues
+4. Spawn coding agents (Claude Code) to execute the work
+5. Update issue status based on agent results
+6. Continue until stopped with Ctrl+C`,
+	Run: func(cmd *cobra.Command, args []string) {
+		version, _ := cmd.Flags().GetString("version")
+		pollSeconds, _ := cmd.Flags().GetInt("poll-interval")
+		enableSandboxes, _ := cmd.Flags().GetBool("enable-sandboxes")
+		sandboxRoot, _ := cmd.Flags().GetString("sandbox-root")
+		parentRepo, _ := cmd.Flags().GetString("parent-repo")
+
+		// Derive working directory from database location
+		// This ensures database and code are in the same project
+		projectRoot, err := storage.GetProjectRoot(dbPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Validate alignment between database and working directory
+		cwd, _ := os.Getwd()
+		if err := storage.ValidateAlignment(dbPath, cwd); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Load deduplication configuration from environment
+		dedupConfig, err := deduplication.ConfigFromEnv()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid deduplication configuration: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Create executor configuration
+		cfg := executor.DefaultConfig()
+		cfg.Store = store
+		cfg.Version = version
+		cfg.WorkingDir = projectRoot // Use project root, not cwd
+		cfg.EnableSandboxes = enableSandboxes
+		cfg.SandboxRoot = sandboxRoot
+		cfg.ParentRepo = parentRepo
+		cfg.DeduplicationConfig = &dedupConfig
+		if pollSeconds > 0 {
+			cfg.PollInterval = time.Duration(pollSeconds) * time.Second
+		}
+
+		// Create executor instance
+		exec, err := executor.New(cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to create executor: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Set up context with cancellation
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Handle signals for graceful shutdown
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+		// Start executor in background
+		if err := exec.Start(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to start executor: %v\n", err)
+			os.Exit(1)
+		}
+
+		green := color.New(color.FgGreen).SprintFunc()
+		cyan := color.New(color.FgCyan).SprintFunc()
+		fmt.Printf("%s Executor started (version %s)\n", green("✓"), cyan(version))
+		fmt.Printf("  Polling for ready work every %v\n", cfg.PollInterval)
+		if cfg.EnableSandboxes {
+			fmt.Printf("  Sandboxes: %s (root: %s)\n", green("enabled"), cfg.SandboxRoot)
+		} else {
+			fmt.Printf("  Sandboxes: disabled\n")
+		}
+		fmt.Printf("  Press Ctrl+C to stop\n\n")
+
+		// Wait for shutdown signal
+		<-sigCh
+		fmt.Println("\n\nShutting down executor...")
+
+		// Stop the executor gracefully
+		// Use a fresh context for shutdown since main context is being cancelled
+		cancel()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer shutdownCancel()
+
+		if err := exec.Stop(shutdownCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: error during shutdown: %v\n", err)
+		}
+
+		fmt.Printf("%s Executor stopped\n", green("✓"))
+	},
+}
+
+func init() {
+	executeCmd.Flags().String("version", "0.1.0", "Executor version")
+	executeCmd.Flags().IntP("poll-interval", "i", 5, "Poll interval in seconds")
+	executeCmd.Flags().Bool("enable-sandboxes", false, "Enable sandbox isolation for agent execution")
+	executeCmd.Flags().String("sandbox-root", ".sandboxes", "Root directory for sandboxes")
+	executeCmd.Flags().String("parent-repo", ".", "Parent repository path")
+	rootCmd.AddCommand(executeCmd)
+}
