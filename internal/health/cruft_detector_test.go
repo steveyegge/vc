@@ -67,7 +67,7 @@ func TestNewCruftDetector_PathValidation(t *testing.T) {
 func TestCruftDetector_ScanFiles(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cruft-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create various test files
 	testFiles := map[string]string{
@@ -128,7 +128,7 @@ func TestCruftDetector_ScanFiles(t *testing.T) {
 func TestCruftDetector_PatternMatching(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cruft-pattern-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Test all cruft patterns
 	cruftPatterns := map[string]string{
@@ -176,7 +176,7 @@ func TestCruftDetector_PatternMatching(t *testing.T) {
 func TestCruftDetector_ExcludePatterns(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cruft-exclude-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create directory structure
 	dirs := []string{
@@ -418,7 +418,7 @@ func TestCruftDetector_BuildIssues_WeightedSeverity(t *testing.T) {
 func TestCruftDetector_Check_NilSupervisor(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cruft-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create cruft files
 	err = os.WriteFile(filepath.Join(tmpDir, "test.bak"), []byte("test\n"), 0644)
@@ -438,7 +438,7 @@ func TestCruftDetector_Check_NilSupervisor(t *testing.T) {
 func TestCruftDetector_Check_BelowThreshold(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cruft-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create only 2 cruft files (below threshold of 3)
 	err = os.WriteFile(filepath.Join(tmpDir, "file1.bak"), []byte("test\n"), 0644)
@@ -463,7 +463,7 @@ func TestCruftDetector_Check_BelowThreshold(t *testing.T) {
 func TestCruftDetector_Check_WithAI(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cruft-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create 5 cruft files (above threshold)
 	for i := 1; i <= 5; i++ {
@@ -513,7 +513,7 @@ func TestCruftDetector_Check_WithAI(t *testing.T) {
 func TestCruftDetector_Check_ContextCancellation(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cruft-cancel-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create many cruft files
 	for i := 0; i < 100; i++ {
@@ -543,7 +543,7 @@ func TestCruftDetector_Check_ContextCancellation(t *testing.T) {
 func TestCruftDetector_Check_InvalidJSON(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cruft-json-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create cruft files above threshold
 	for i := 0; i < 5; i++ {
@@ -572,7 +572,7 @@ func TestCruftDetector_Check_InvalidJSON(t *testing.T) {
 func TestCruftDetector_Check_ErrorTruncation(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cruft-truncate-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create cruft files above threshold
 	for i := 0; i < 5; i++ {
@@ -606,7 +606,7 @@ func TestCruftDetector_Check_ErrorTruncation(t *testing.T) {
 func TestCruftDetector_Check_OnlyDeleteNoPatterns(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cruft-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create cruft files
 	for i := 0; i < 5; i++ {
@@ -643,7 +643,7 @@ func TestCruftDetector_Check_OnlyDeleteNoPatterns(t *testing.T) {
 func TestCruftDetector_Check_OnlyPatternsNoDelete(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cruft-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create cruft files
 	for i := 0; i < 5; i++ {
@@ -680,7 +680,7 @@ func TestCruftDetector_Check_OnlyPatternsNoDelete(t *testing.T) {
 func TestCruftDetector_Check_AllLegitimate(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cruft-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create files that match patterns but are legitimate
 	// Use .bak files which clearly match
@@ -767,7 +767,7 @@ func (m *capturingMockSupervisor) CallAI(ctx context.Context, prompt string, ope
 func TestCruftDetector_Check_LargeNumberOfFiles(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cruft-large-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create 100 cruft files (well above the 50 file limit)
 	for i := 0; i < 100; i++ {

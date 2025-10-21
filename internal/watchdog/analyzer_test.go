@@ -8,6 +8,7 @@ import (
 
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/events"
+	"github.com/steveyegge/vc/internal/storage/sqlite"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -58,6 +59,11 @@ func (m *mockStorage) GetExecutionHistory(ctx context.Context, issueID string) (
 func (m *mockStorage) RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error { return nil }
 func (m *mockStorage) GetConfig(ctx context.Context, key string) (string, error) { return "", nil }
 func (m *mockStorage) SetConfig(ctx context.Context, key, value string) error { return nil }
+func (m *mockStorage) CleanupEventsByAge(ctx context.Context, retentionDays, criticalRetentionDays, batchSize int) (int, error) { return 0, nil }
+func (m *mockStorage) CleanupEventsByIssueLimit(ctx context.Context, perIssueLimit, batchSize int) (int, error) { return 0, nil }
+func (m *mockStorage) CleanupEventsByGlobalLimit(ctx context.Context, globalLimit, batchSize int) (int, error) { return 0, nil }
+func (m *mockStorage) GetEventCounts(ctx context.Context) (*sqlite.EventCounts, error) { return &sqlite.EventCounts{}, nil }
+func (m *mockStorage) VacuumDatabase(ctx context.Context) error { return nil }
 
 // createTestSupervisor creates a supervisor for testing
 // If ANTHROPIC_API_KEY is set, uses real AI calls; otherwise uses a test key (which will fail API calls)

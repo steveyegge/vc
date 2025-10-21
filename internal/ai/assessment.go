@@ -220,11 +220,14 @@ func (s *Supervisor) buildCompletionPrompt(issue *types.Issue, children []*types
 	}
 
 	// Use explicit subtype instead of heuristics (ZFC compliance)
-	issueTypeStr := "epic"
-	if issue.IssueSubtype == types.SubtypeMission {
+	var issueTypeStr string
+	switch issue.IssueSubtype {
+	case types.SubtypeMission:
 		issueTypeStr = "mission"
-	} else if issue.IssueSubtype == types.SubtypePhase {
+	case types.SubtypePhase:
 		issueTypeStr = "phase"
+	default:
+		issueTypeStr = "epic"
 	}
 
 	// Add guidance for all structural containers (epics, missions, phases)

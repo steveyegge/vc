@@ -289,7 +289,7 @@ func (r *MonitorRegistry) saveState() error {
 	}
 
 	if err := os.Rename(tmpPath, r.statePath); err != nil {
-		os.Remove(tmpPath) // Clean up on error
+		_ = os.Remove(tmpPath) // Clean up on error (best effort)
 		return fmt.Errorf("committing state file: %w", err)
 	}
 

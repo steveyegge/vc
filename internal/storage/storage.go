@@ -9,6 +9,14 @@ import (
 )
 
 // Storage defines the interface for issue storage backends
+//
+// IMPORTANT: When adding methods to this interface, you MUST update ALL mock implementations.
+// Run ./scripts/find-storage-mocks.sh to find all files that need updates.
+// The following test files contain mockStorage implementations:
+//   - internal/ai/supervisor_test.go
+//   - internal/repl/conversation_test.go
+//   - internal/repl/conversation_integration_test.go
+//   - internal/watchdog/analyzer_test.go
 type Storage interface {
 	// Agent Events - structured events extracted from agent output
 	StoreAgentEvent(ctx context.Context, event *events.AgentEvent) error

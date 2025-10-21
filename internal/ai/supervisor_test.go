@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/vc/internal/events"
+	"github.com/steveyegge/vc/internal/storage/sqlite"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -188,7 +189,7 @@ func (m *mockStorage) SetConfig(ctx context.Context, key, value string) error {
 	return nil
 }
 
-func (m *mockStorage) CleanupEventsByAge(ctx context.Context, maxAgeDays int, perIssueLimit int, globalLimit int) (int, error) {
+func (m *mockStorage) CleanupEventsByAge(ctx context.Context, retentionDays, criticalRetentionDays, batchSize int) (int, error) {
 	return 0, nil
 }
 
@@ -198,6 +199,14 @@ func (m *mockStorage) CleanupEventsByGlobalLimit(ctx context.Context, globalLimi
 
 func (m *mockStorage) CleanupEventsByIssueLimit(ctx context.Context, perIssueLimit int, batchSize int) (int, error) {
 	return 0, nil
+}
+
+func (m *mockStorage) GetEventCounts(ctx context.Context) (*sqlite.EventCounts, error) {
+	return &sqlite.EventCounts{}, nil
+}
+
+func (m *mockStorage) VacuumDatabase(ctx context.Context) error {
+	return nil
 }
 
 func min(a, b int) int {

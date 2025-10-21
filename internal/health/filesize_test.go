@@ -131,7 +131,7 @@ func TestFileSizeMonitor_ScanFiles(t *testing.T) {
 	// Create temporary test directory
 	tmpDir, err := os.MkdirTemp("", "filesize-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create test files
 	testFiles := map[string]string{
@@ -174,7 +174,7 @@ func TestFileSizeMonitor_ScanFiles(t *testing.T) {
 func TestFileSizeMonitor_Check_NoFiles(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "filesize-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Use mock supervisor (even though it won't be called)
 	mockAI := &mockSupervisor{}
@@ -193,7 +193,7 @@ func TestFileSizeMonitor_Check_NoFiles(t *testing.T) {
 func TestFileSizeMonitor_Check_NoOutliers(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "filesize-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create files with similar sizes (no outliers)
 	for i := 1; i <= 5; i++ {
@@ -294,7 +294,7 @@ func TestFileSizeMonitor_BuildIssues(t *testing.T) {
 func TestCountLines(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "countlines-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	tests := []struct {
 		name     string
@@ -357,7 +357,7 @@ func (m *mockSupervisor) CallAI(ctx context.Context, prompt string, operation st
 func TestFileSizeMonitor_Check_WithAI(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "filesize-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create several small files to establish a baseline
 	for i := 1; i <= 5; i++ {
@@ -411,7 +411,7 @@ func TestFileSizeMonitor_Check_WithAI(t *testing.T) {
 func TestFileSizeMonitor_Check_NilSupervisor(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "filesize-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create a file
 	err = os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte("package main\n"), 0644)
@@ -432,7 +432,7 @@ func TestFileSizeMonitor_Check_NilSupervisor(t *testing.T) {
 func TestCountLines_StreamBased(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "countlines-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	tests := []struct {
 		name        string
@@ -454,13 +454,13 @@ func TestCountLines_StreamBased(t *testing.T) {
 			// Write lines
 			for i := 0; i < tt.lines; i++ {
 				if i < tt.lines-1 || tt.withNewline {
-					_, err = f.WriteString(fmt.Sprintf("line %d\n", i))
+					_, err = fmt.Fprintf(f, "line %d\n", i)
 				} else {
-					_, err = f.WriteString(fmt.Sprintf("line %d", i))
+					_, err = fmt.Fprintf(f, "line %d", i)
 				}
 				require.NoError(t, err)
 			}
-			f.Close()
+			_ = f.Close()
 
 			count, err := countLines(path)
 			require.NoError(t, err)
@@ -513,7 +513,7 @@ func TestNewFileSizeMonitor_PathValidation(t *testing.T) {
 func TestFileSizeMonitor_PatternMatching(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "filesize-pattern-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create directory structure
 	dirs := []string{
@@ -596,7 +596,7 @@ func (m *capturePromptSupervisor) CallAI(ctx context.Context, prompt string, ope
 func TestFileSizeMonitor_OutlierLimit(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "filesize-limit-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create many small files to establish baseline
 	for i := 0; i < 100; i++ {
@@ -679,7 +679,7 @@ func TestFileSizeMonitor_DynamicYear(t *testing.T) {
 func TestFileSizeMonitor_ErrorTruncation(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "filesize-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create small files to establish baseline
 	for i := 0; i < 10; i++ {
@@ -775,7 +775,7 @@ func TestFileSizeMonitor_Percentiles_SmallDatasets(t *testing.T) {
 func TestFileSizeMonitor_Check_ContextCancellation(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "filesize-cancel-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create many files to ensure scan takes some time
 	for i := 0; i < 100; i++ {
@@ -807,7 +807,7 @@ func TestFileSizeMonitor_Check_ContextCancellation(t *testing.T) {
 func TestFileSizeMonitor_EvaluateOutliers_InvalidJSON(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "filesize-json-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create small files and one large outlier
 	for i := 0; i < 10; i++ {
@@ -884,7 +884,7 @@ func TestDistribution_IsUpperOutlier_ZeroStdDev(t *testing.T) {
 func TestFileSizeMonitor_ScanFiles_RelPathHandling(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "filesize-relpath-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create test file
 	err = os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte("package main\n"), 0644)
