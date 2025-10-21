@@ -382,9 +382,13 @@ func (d *CruftDetector) buildIssues(eval *cruftEvaluation) []DiscoveredIssue {
 			description = fmt.Sprintf("Clean up cruft: %s", strings.Join(detailParts, ", "))
 		}
 
+		// Calculate severity based on total work needed
+		// Weight deletions higher than patterns (deletions are more urgent)
+		weightedWork := len(eval.CruftToDelete) + (len(eval.PatternsToIgnore) / 2)
+
 		issues = append(issues, DiscoveredIssue{
 			Category:    "cruft",
-			Severity:    d.calculateSeverity(len(eval.CruftToDelete)),
+			Severity:    d.calculateSeverity(weightedWork),
 			Description: description,
 			Evidence:    evidence,
 		})
@@ -393,11 +397,12 @@ func (d *CruftDetector) buildIssues(eval *cruftEvaluation) []DiscoveredIssue {
 	return issues
 }
 
-// calculateSeverity determines issue severity based on number of cruft files.
-func (d *CruftDetector) calculateSeverity(cruftCount int) string {
-	if cruftCount >= 20 {
+// calculateSeverity determines issue severity based on weighted work count.
+// The work count includes both files to delete and patterns to add (weighted).
+func (d *CruftDetector) calculateSeverity(workCount int) string {
+	if workCount >= 20 {
 		return "high"
-	} else if cruftCount >= 10 {
+	} else if workCount >= 10 {
 		return "medium"
 	}
 	return "low"

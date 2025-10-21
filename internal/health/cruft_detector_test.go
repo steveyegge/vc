@@ -334,6 +334,87 @@ func TestCruftDetector_CalculateSeverity(t *testing.T) {
 	}
 }
 
+func TestCruftDetector_BuildIssues_WeightedSeverity(t *testing.T) {
+	detector, err := NewCruftDetector("/tmp", nil)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name             string
+		deletions        int
+		patterns         int
+		expectedSeverity string
+	}{
+		{
+			name:             "patterns_only_medium",
+			deletions:        0,
+			patterns:         20,
+			expectedSeverity: "medium", // weighted: 0 + 10 = 10
+		},
+		{
+			name:             "patterns_only_high",
+			deletions:        0,
+			patterns:         40,
+			expectedSeverity: "high", // weighted: 0 + 20 = 20
+		},
+		{
+			name:             "mixed_medium",
+			deletions:        5,
+			patterns:         10,
+			expectedSeverity: "medium", // weighted: 5 + 5 = 10
+		},
+		{
+			name:             "mixed_low",
+			deletions:        3,
+			patterns:         6,
+			expectedSeverity: "low", // weighted: 3 + 3 = 6
+		},
+		{
+			name:             "deletions_only_high",
+			deletions:        25,
+			patterns:         0,
+			expectedSeverity: "high", // weighted: 25 + 0 = 25
+		},
+		{
+			name:             "both_high",
+			deletions:        15,
+			patterns:         20,
+			expectedSeverity: "high", // weighted: 15 + 10 = 25
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Build evaluation with specified counts
+			eval := &cruftEvaluation{
+				CruftToDelete:    make([]cruftFileAction, tt.deletions),
+				PatternsToIgnore: make([]string, tt.patterns),
+				Reasoning:        "Test reasoning",
+			}
+
+			// Populate with dummy data
+			for i := 0; i < tt.deletions; i++ {
+				eval.CruftToDelete[i] = cruftFileAction{
+					File:    fmt.Sprintf("file%d.bak", i),
+					Reason:  "Test file",
+					Pattern: "*.bak",
+				}
+			}
+			for i := 0; i < tt.patterns; i++ {
+				eval.PatternsToIgnore[i] = fmt.Sprintf("*.pattern%d", i)
+			}
+
+			issues := detector.buildIssues(eval)
+
+			require.Len(t, issues, 1, "Should create one issue")
+			issue := issues[0]
+			assert.Equal(t, tt.expectedSeverity, issue.Severity,
+				"Expected severity %s for %d deletions + %d patterns (weighted: %d)",
+				tt.expectedSeverity, tt.deletions, tt.patterns,
+				tt.deletions+(tt.patterns/2))
+		})
+	}
+}
+
 func TestCruftDetector_Check_NilSupervisor(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cruft-test-*")
 	require.NoError(t, err)
