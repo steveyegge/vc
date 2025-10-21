@@ -123,7 +123,7 @@ func (d *CruftDetector) Check(ctx context.Context, codebase CodebaseContext) (*M
 		return &MonitorResult{
 			IssuesFound: []DiscoveredIssue{},
 			Context:     fmt.Sprintf("Found %d potential cruft files (below threshold of %d)", len(cruftFiles), d.MinimumCruftThreshold),
-			CheckedAt:   time.Now(),
+			CheckedAt:   startTime,
 			Stats: CheckStats{
 				FilesScanned: len(cruftFiles),
 				Duration:     time.Since(startTime),
@@ -144,7 +144,7 @@ func (d *CruftDetector) Check(ctx context.Context, codebase CodebaseContext) (*M
 		IssuesFound: issues,
 		Context:     d.buildContext(cruftFiles, evaluation),
 		Reasoning:   d.buildReasoning(evaluation),
-		CheckedAt:   time.Now(),
+		CheckedAt:   startTime,
 		Stats: CheckStats{
 			FilesScanned: len(cruftFiles),
 			IssuesFound:  len(issues),
@@ -183,22 +183,11 @@ func (d *CruftDetector) scanFiles(ctx context.Context) ([]cruftFile, error) {
 		}
 
 		// Skip excluded patterns
-		for _, pattern := range d.ExcludePatterns {
-			matched := false
-			if strings.HasPrefix(relPath, pattern) {
-				matched = true
-			} else if strings.Contains(relPath, "/"+pattern) {
-				matched = true
-			} else if strings.HasSuffix(relPath, pattern) {
-				matched = true
+		if ShouldExcludePath(relPath, info, d.ExcludePatterns) {
+			if info.IsDir() {
+				return filepath.SkipDir
 			}
-
-			if matched {
-				if info.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
+			return nil
 		}
 
 		// Only process files (not directories)

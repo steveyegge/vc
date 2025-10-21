@@ -118,7 +118,7 @@ func (m *FileSizeMonitor) Check(ctx context.Context, codebase CodebaseContext) (
 		return &MonitorResult{
 			IssuesFound: []DiscoveredIssue{},
 			Context:     "No files found matching criteria",
-			CheckedAt:   time.Now(),
+			CheckedAt:   startTime,
 			Stats: CheckStats{
 				FilesScanned: 0,
 				Duration:     time.Since(startTime),
@@ -136,7 +136,7 @@ func (m *FileSizeMonitor) Check(ctx context.Context, codebase CodebaseContext) (
 		return &MonitorResult{
 			IssuesFound: []DiscoveredIssue{},
 			Context:     fmt.Sprintf("Scanned %d files, no outliers found", len(fileSizes)),
-			CheckedAt:   time.Now(),
+			CheckedAt:   startTime,
 			Stats: CheckStats{
 				FilesScanned: len(fileSizes),
 				Duration:     time.Since(startTime),
@@ -165,7 +165,7 @@ func (m *FileSizeMonitor) Check(ctx context.Context, codebase CodebaseContext) (
 		IssuesFound: issues,
 		Context:     m.buildContext(fileSizes, dist, outliers),
 		Reasoning:   m.buildReasoning(evaluation),
-		CheckedAt:   time.Now(),
+		CheckedAt:   startTime,
 		Stats: CheckStats{
 			FilesScanned: len(fileSizes),
 			IssuesFound:  len(issues),
@@ -204,28 +204,12 @@ func (m *FileSizeMonitor) scanFiles(ctx context.Context) ([]fileSize, error) {
 			// This should be rare but prevents silent failures
 			return nil
 		}
-		for _, pattern := range m.ExcludePatterns {
-			// Match pattern at path component boundaries to avoid false matches
-			// e.g., "vendor/" matches "vendor/foo" but not "vendorized/bar"
-			// "_test.go" matches "foo_test.go" but not "testing.go"
-			matched := false
-			if strings.HasPrefix(relPath, pattern) {
-				// Pattern at start of path (e.g., "vendor/foo.go")
-				matched = true
-			} else if strings.Contains(relPath, "/"+pattern) {
-				// Pattern after a path separator (e.g., "src/vendor/foo.go")
-				matched = true
-			} else if strings.HasSuffix(relPath, pattern) {
-				// Suffix match for file patterns (e.g., "_test.go", ".pb.go")
-				matched = true
-			}
 
-			if matched {
-				if info.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
+		if ShouldExcludePath(relPath, info, m.ExcludePatterns) {
+			if info.IsDir() {
+				return filepath.SkipDir
 			}
+			return nil
 		}
 
 		// Only process files with matching extensions
