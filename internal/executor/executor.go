@@ -12,6 +12,7 @@ import (
 	"github.com/steveyegge/vc/internal/config"
 	"github.com/steveyegge/vc/internal/deduplication"
 	"github.com/steveyegge/vc/internal/events"
+	"github.com/steveyegge/vc/internal/health"
 	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
@@ -27,6 +28,7 @@ type Executor struct {
 	intervention *watchdog.InterventionController
 	watchdogConfig *watchdog.WatchdogConfig
 	sandboxMgr sandbox.Manager
+	healthRegistry *health.MonitorRegistry
 	config     *Config
 	instanceID string
 	hostname   string
@@ -50,6 +52,7 @@ type Executor struct {
 	enableAISupervision bool
 	enableQualityGates  bool
 	enableSandboxes     bool
+	enableHealthMonitoring bool
 	workingDir          string
 
 	// State
@@ -59,39 +62,45 @@ type Executor struct {
 
 // Config holds executor configuration
 type Config struct {
-	Store                storage.Storage
-	Version              string
-	PollInterval         time.Duration
-	HeartbeatPeriod      time.Duration
-	CleanupInterval      time.Duration // How often to check for stale instances (default: 5 minutes)
-	StaleThreshold       time.Duration // How long before an instance is considered stale (default: 5 minutes)
-	EnableAISupervision  bool          // Enable AI assessment and analysis (default: true)
-	EnableQualityGates   bool          // Enable quality gates enforcement (default: true)
-	EnableSandboxes      bool          // Enable sandbox isolation (default: false)
-	WorkingDir           string        // Working directory for quality gates (default: ".")
-	SandboxRoot          string        // Root directory for sandboxes (default: ".sandboxes")
-	ParentRepo           string        // Parent repository path (default: ".")
-	DefaultBranch        string        // Default git branch for sandboxes (default: "main")
-	WatchdogConfig       *watchdog.WatchdogConfig   // Watchdog configuration (default: conservative defaults)
-	DeduplicationConfig  *deduplication.Config      // Deduplication configuration (default: sensible defaults, nil = use defaults)
-	EventRetentionConfig *config.EventRetentionConfig // Event retention and cleanup configuration (default: sensible defaults, nil = use defaults)
+	Store                  storage.Storage
+	Version                string
+	PollInterval           time.Duration
+	HeartbeatPeriod        time.Duration
+	CleanupInterval        time.Duration // How often to check for stale instances (default: 5 minutes)
+	StaleThreshold         time.Duration // How long before an instance is considered stale (default: 5 minutes)
+	EnableAISupervision    bool          // Enable AI assessment and analysis (default: true)
+	EnableQualityGates     bool          // Enable quality gates enforcement (default: true)
+	EnableSandboxes        bool          // Enable sandbox isolation (default: false)
+	EnableHealthMonitoring bool          // Enable health monitoring (default: false, opt-in)
+	HealthConfigPath       string        // Path to health_monitors.yaml (default: ".beads/health_monitors.yaml")
+	HealthStatePath        string        // Path to health_state.json (default: ".beads/health_state.json")
+	WorkingDir             string        // Working directory for quality gates (default: ".")
+	SandboxRoot            string        // Root directory for sandboxes (default: ".sandboxes")
+	ParentRepo             string        // Parent repository path (default: ".")
+	DefaultBranch          string        // Default git branch for sandboxes (default: "main")
+	WatchdogConfig         *watchdog.WatchdogConfig     // Watchdog configuration (default: conservative defaults)
+	DeduplicationConfig    *deduplication.Config        // Deduplication configuration (default: sensible defaults, nil = use defaults)
+	EventRetentionConfig   *config.EventRetentionConfig // Event retention and cleanup configuration (default: sensible defaults, nil = use defaults)
 }
 
 // DefaultConfig returns default executor configuration
 func DefaultConfig() *Config {
 	return &Config{
-		Version:             "0.1.0",
-		PollInterval:        5 * time.Second,
-		HeartbeatPeriod:     30 * time.Second,
-		CleanupInterval:     5 * time.Minute,
-		StaleThreshold:      5 * time.Minute,
-		EnableAISupervision: true,
-		EnableQualityGates:  true,
-		EnableSandboxes:     false,
-		WorkingDir:          ".",
-		SandboxRoot:         ".sandboxes",
-		ParentRepo:          ".",
-		DefaultBranch:       "main",
+		Version:                "0.1.0",
+		PollInterval:           5 * time.Second,
+		HeartbeatPeriod:        30 * time.Second,
+		CleanupInterval:        5 * time.Minute,
+		StaleThreshold:         5 * time.Minute,
+		EnableAISupervision:    true,
+		EnableQualityGates:     true,
+		EnableSandboxes:        false,
+		EnableHealthMonitoring: false, // Opt-in for now
+		HealthConfigPath:       ".beads/health_monitors.yaml",
+		HealthStatePath:        ".beads/health_state.json",
+		WorkingDir:             ".",
+		SandboxRoot:            ".sandboxes",
+		ParentRepo:             ".",
+		DefaultBranch:          "main",
 	}
 }
 
@@ -246,6 +255,58 @@ func New(cfg *Config) (*Executor, error) {
 		fmt.Fprintf(os.Stderr, "Warning: failed to initialize intervention controller: %v (watchdog disabled)\n", err)
 	} else {
 		e.intervention = intervention
+	}
+
+	// Initialize health monitoring if enabled
+	if cfg.EnableHealthMonitoring {
+		// Set default paths if not specified
+		healthStatePath := cfg.HealthStatePath
+		if healthStatePath == "" {
+			healthStatePath = ".beads/health_state.json"
+		}
+
+		// Create health registry
+		registry, err := health.NewMonitorRegistry(healthStatePath)
+		if err != nil {
+			// Don't fail - just disable health monitoring
+			fmt.Fprintf(os.Stderr, "Warning: failed to initialize health registry: %v (health monitoring disabled)\n", err)
+			e.enableHealthMonitoring = false
+		} else {
+			e.healthRegistry = registry
+
+			// Register monitors (requires supervisor for AI calls)
+			if e.supervisor != nil {
+				// Get project root
+				projectRoot, err := getProjectRootFromStore(cfg.Store)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to get project root: %v (health monitoring disabled)\n", err)
+					e.enableHealthMonitoring = false
+				} else {
+					// Register file size monitor
+					fileSizeMonitor, err := health.NewFileSizeMonitor(projectRoot, e.supervisor)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to create file size monitor: %v\n", err)
+					} else {
+						if err := registry.Register(fileSizeMonitor); err != nil {
+							fmt.Fprintf(os.Stderr, "Warning: failed to register file size monitor: %v\n", err)
+						}
+					}
+
+					// Register cruft detector
+					cruftDetector, err := health.NewCruftDetector(projectRoot, e.supervisor)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to create cruft detector: %v\n", err)
+					} else {
+						if err := registry.Register(cruftDetector); err != nil {
+							fmt.Fprintf(os.Stderr, "Warning: failed to register cruft detector: %v\n", err)
+						}
+					}
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "Warning: health monitoring requires AI supervision (health monitoring disabled)\n")
+				e.enableHealthMonitoring = false
+			}
+		}
 	}
 
 	return e, nil
@@ -407,6 +468,14 @@ func (e *Executor) eventLoop(ctx context.Context) {
 			if err := e.processNextIssue(ctx); err != nil {
 				// Log error but continue
 				fmt.Fprintf(os.Stderr, "error processing issue: %v\n", err)
+			}
+
+			// Check health monitors after completing an issue (if enabled)
+			if e.enableHealthMonitoring && e.healthRegistry != nil {
+				if err := e.checkHealthMonitors(ctx); err != nil {
+					// Log error but continue
+					fmt.Fprintf(os.Stderr, "error running health monitors: %v\n", err)
+				}
 			}
 		}
 	}

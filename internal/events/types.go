@@ -67,6 +67,12 @@ const (
 	// Event retention and cleanup events (vc-196)
 	// EventTypeEventCleanupCompleted indicates event cleanup cycle completed
 	EventTypeEventCleanupCompleted EventType = "event_cleanup_completed"
+
+	// Health monitoring events (vc-205)
+	// EventTypeHealthCheckCompleted indicates a health monitor completed execution
+	EventTypeHealthCheckCompleted EventType = "health_check_completed"
+	// EventTypeHealthCheckFailed indicates a health monitor failed to execute
+	EventTypeHealthCheckFailed EventType = "health_check_failed"
 )
 
 // EventSeverity represents the severity level of an event.
