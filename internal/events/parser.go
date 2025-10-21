@@ -1,6 +1,8 @@
 package events
 
 import (
+	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -77,6 +79,10 @@ type eventPatterns struct {
 	grepTool  *regexp.Regexp
 	taskTool  *regexp.Regexp
 	toolUseGeneric *regexp.Regexp
+
+	// Helper patterns for tool usage (vc-129)
+	toolToPattern  *regexp.Regexp // Matches "tool to do something" pattern
+	fileNamePattern *regexp.Regexp // Matches filename.ext patterns
 }
 
 // NewOutputParser creates a new OutputParser for the given execution context.
@@ -148,6 +154,10 @@ func compilePatterns() *eventPatterns {
 		taskTool:  regexp.MustCompile(`(?i)(?:use|using|invoke|invoking|call|calling|launch|launching|spawn|spawning|'ll use).*?\bTask\s+tool\b`),
 		// Generic tool usage pattern as fallback
 		toolUseGeneric: regexp.MustCompile(`(?i)(?:use|using|invoke|invoking|call|calling).*?\b([A-Z][a-zA-Z]+)\s+tool\b`),
+
+		// Helper patterns (compiled once for performance)
+		toolToPattern:  regexp.MustCompile(`\s+tool.*?\s+to\s+(.+?)(?:\.|$)`),
+		fileNamePattern: regexp.MustCompile(`\b([a-zA-Z0-9_\-./]+\.[a-z0-9]+)\b`),
 	}
 }
 
@@ -241,7 +251,7 @@ func (p *OutputParser) tryParseToolUse(line string) *AgentEvent {
 	}
 
 	// Try to extract filename from the line
-	targetFile := extractFileName(line)
+	targetFile := p.extractFileName(line)
 
 	event := &AgentEvent{
 		ID:         uuid.New().String(),
@@ -255,11 +265,15 @@ func (p *OutputParser) tryParseToolUse(line string) *AgentEvent {
 		SourceLine: p.LineNumber,
 	}
 
-	_ = event.SetAgentToolUseData(AgentToolUseData{
+	// Set the tool use data (log error but don't fail parsing)
+	if err := event.SetAgentToolUseData(AgentToolUseData{
 		ToolName:        toolName,
 		ToolDescription: description,
 		TargetFile:      targetFile,
-	})
+	}); err != nil {
+		// Log warning but continue - we still want to emit the event
+		fmt.Fprintf(os.Stderr, "warning: failed to set tool use data for %s: %v\n", toolName, err)
+	}
 
 	return event
 }
@@ -600,8 +614,12 @@ func (p *OutputParser) Reset(issueID, executorID, agentID string) {
 
 // extractToolDescription attempts to extract a description from a tool usage line (vc-129).
 // It looks for the common pattern "tool to do something" and extracts "do something".
+// Note: Uses pre-compiled regex from parser.patterns for performance.
 func extractToolDescription(line, toolKeyword string) string {
 	// Try to extract the part after "to" which usually describes the purpose
+	// Note: We still need to compile a keyword-specific pattern here because
+	// the keyword varies per tool. This is acceptable since it's only called
+	// once per matched line (not in a tight loop).
 	toPattern := regexp.MustCompile(`(?i)` + toolKeyword + `\s+tool.*?\s+to\s+(.+?)(?:\.|$)`)
 	if matches := toPattern.FindStringSubmatch(line); len(matches) > 1 {
 		desc := strings.TrimSpace(matches[1])
@@ -621,13 +639,10 @@ func extractToolDescription(line, toolKeyword string) string {
 
 // extractFileName attempts to extract a filename from a tool usage line (vc-129).
 // It looks for common file patterns (e.g., "read main.go", "update parser.go").
-func extractFileName(line string) string {
-	// Pattern to match common filenames with extensions
-	// Looks for word boundaries followed by filename-like patterns
-	filePattern := regexp.MustCompile(`\b([a-zA-Z0-9_\-./]+\.[a-z0-9]+)\b`)
-
+// Uses pre-compiled regex from parser.patterns for performance.
+func (p *OutputParser) extractFileName(line string) string {
 	// Find all matches and return the last one (usually the target file)
-	matches := filePattern.FindAllStringSubmatch(line, -1)
+	matches := p.patterns.fileNamePattern.FindAllStringSubmatch(line, -1)
 	if len(matches) > 0 {
 		// Return the last match (most likely the target file)
 		return matches[len(matches)-1][1]
