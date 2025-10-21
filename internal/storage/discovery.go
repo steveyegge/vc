@@ -14,7 +14,16 @@ import (
 //   cd ~/myproject && vc execute
 //   → Finds ~/myproject/.beads/project.db
 //   → Sets WorkingDir to ~/myproject
+//
+// vc-235: Check VC_DB_PATH environment variable first to allow test isolation.
+// If VC_DB_PATH is set, use it directly without discovery.
 func DiscoverDatabase() (string, error) {
+	// vc-235: Check environment variable first for test isolation
+	if dbPath := os.Getenv("VC_DB_PATH"); dbPath != "" {
+		// Allow special values like ":memory:" or explicit paths
+		return dbPath, nil
+	}
+
 	// Start from current working directory
 	dir, err := os.Getwd()
 	if err != nil {

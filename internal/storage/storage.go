@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"os"
 
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/storage/sqlite"
@@ -101,15 +102,23 @@ type Config struct {
 }
 
 // DefaultConfig returns a config with sensible defaults
+// vc-235: Check VC_DB_PATH environment variable first for test isolation
 func DefaultConfig() *Config {
+	// vc-235: Allow environment variable override for test isolation
+	path := os.Getenv("VC_DB_PATH")
+	if path == "" {
+		path = ".beads/vc.db"
+	}
 	return &Config{
-		Path: ".beads/vc.db",
+		Path: path,
 	}
 }
 
 // NewStorage creates a new SQLite storage backend
 // The ctx parameter is currently unused but kept for API consistency
 // and future extension possibilities
+//
+// vc-235: Respects VC_DB_PATH environment variable for test isolation
 func NewStorage(ctx context.Context, cfg *Config) (Storage, error) {
 	if cfg == nil {
 		cfg = DefaultConfig()
@@ -117,7 +126,11 @@ func NewStorage(ctx context.Context, cfg *Config) (Storage, error) {
 
 	// Default to standard path if not specified
 	if cfg.Path == "" {
-		cfg.Path = ".beads/vc.db"
+		// vc-235: Check environment variable before falling back to default
+		cfg.Path = os.Getenv("VC_DB_PATH")
+		if cfg.Path == "" {
+			cfg.Path = ".beads/vc.db"
+		}
 	}
 
 	return sqlite.New(cfg.Path)
