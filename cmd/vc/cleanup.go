@@ -9,12 +9,80 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/vc/internal/config"
+	"github.com/steveyegge/vc/internal/git"
 )
 
 var cleanupCmd = &cobra.Command{
 	Use:   "cleanup",
 	Short: "Cleanup and maintenance commands",
 	Long:  `Commands for cleaning up old data and performing database maintenance.`,
+}
+
+var cleanupBranchesCmd = &cobra.Command{
+	Use:   "branches",
+	Short: "Clean up orphaned mission branches",
+	Long: `Delete orphaned mission branches that have no associated worktree.
+
+Mission branches are created for each sandbox but may not be cleaned up if the
+executor crashes or is interrupted. This command finds branches matching the
+pattern "mission/*" that have no corresponding worktree and deletes them.
+
+By default, only branches older than 7 days are deleted to avoid removing
+branches from active missions.
+
+Examples:
+  vc cleanup branches                    # Clean up branches older than 7 days
+  vc cleanup branches --retention-days 14  # Clean up branches older than 14 days
+  vc cleanup branches --dry-run          # Preview what would be deleted`,
+	Run: func(cmd *cobra.Command, args []string) {
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
+		retentionDays, _ := cmd.Flags().GetInt("retention-days")
+
+		ctx := context.Background()
+
+		// Get current working directory as the repository path
+		repoPath, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to get current directory: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Initialize git operations
+		gitOps, err := initGit(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to initialize git: %v\n", err)
+			os.Exit(1)
+		}
+
+		if dryRun {
+			fmt.Printf("%s\n", color.YellowString("DRY RUN MODE - No branches will be deleted"))
+		}
+		fmt.Printf("Scanning for orphaned mission branches (retention: %d days)...\n\n", retentionDays)
+
+		// Get summary of orphaned branches
+		summary, err := gitOps.GetOrphanedBranchSummary(ctx, repoPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to get orphaned branch summary: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Print(summary)
+
+		// Clean up orphaned branches
+		deletedCount, err := gitOps.CleanupOrphanedBranches(ctx, repoPath, retentionDays, dryRun)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: branch cleanup failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Println()
+		if dryRun {
+			fmt.Printf("Would delete %d orphaned branch(es)\n", deletedCount)
+			fmt.Printf("Run without --dry-run to perform cleanup\n")
+		} else {
+			green := color.New(color.FgGreen).SprintFunc()
+			fmt.Printf("%s Deleted %d orphaned branch(es)\n", green("✓"), deletedCount)
+		}
+	},
 }
 
 var cleanupEventsCmd = &cobra.Command{
@@ -171,11 +239,26 @@ Examples:
 }
 
 func init() {
+	// Branch cleanup flags
+	cleanupBranchesCmd.Flags().Bool("dry-run", false, "Preview deletions without committing")
+	cleanupBranchesCmd.Flags().Int("retention-days", 7, "Delete branches older than N days")
+
+	// Event cleanup flags
 	cleanupEventsCmd.Flags().Bool("dry-run", false, "Preview deletions without committing")
 	cleanupEventsCmd.Flags().Bool("vacuum", false, "Run VACUUM after cleanup to reclaim disk space")
 
+	cleanupCmd.AddCommand(cleanupBranchesCmd)
 	cleanupCmd.AddCommand(cleanupEventsCmd)
 	rootCmd.AddCommand(cleanupCmd)
+}
+
+// initGit initializes git operations for branch cleanup
+func initGit(ctx context.Context) (*git.Git, error) {
+	gitOps, err := git.NewGit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize git: %w", err)
+	}
+	return gitOps, nil
 }
 
 // formatNumber formats a number with thousand separators

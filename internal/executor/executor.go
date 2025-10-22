@@ -12,6 +12,7 @@ import (
 	"github.com/steveyegge/vc/internal/config"
 	"github.com/steveyegge/vc/internal/deduplication"
 	"github.com/steveyegge/vc/internal/events"
+	"github.com/steveyegge/vc/internal/git"
 	"github.com/steveyegge/vc/internal/health"
 	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/storage"
@@ -367,6 +368,15 @@ func (e *Executor) Start(ctx context.Context) error {
 		e.running = false
 		e.mu.Unlock()
 		return fmt.Errorf("failed to register executor instance: %w", err)
+	}
+
+	// Clean up orphaned mission branches on startup (vc-135)
+	// This runs synchronously to ensure branches are cleaned before claiming work
+	if e.enableSandboxes && !e.config.KeepBranches {
+		if err := e.cleanupOrphanedBranches(ctx); err != nil {
+			// Log warning but don't fail startup
+			fmt.Fprintf(os.Stderr, "Warning: failed to cleanup orphaned branches: %v\n", err)
+		}
 	}
 
 	// Start the event loop
@@ -1080,6 +1090,39 @@ func (e *Executor) checkForAnomalies(ctx context.Context) error {
 
 // cleanupLoop runs periodic cleanup of stale executor instances in a background goroutine
 // When instances are marked as stale, their claimed issues are automatically released
+// cleanupOrphanedBranches removes orphaned mission branches on startup (vc-135)
+// This finds mission branches with no associated worktree and deletes them if older than 7 days.
+// Returns error only on critical failures; logs warnings for individual branch deletion failures.
+func (e *Executor) cleanupOrphanedBranches(ctx context.Context) error {
+	// Initialize git operations
+	gitOps, err := git.NewGit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to initialize git: %w", err)
+	}
+
+	// Get repository path from config
+	repoPath := e.config.ParentRepo
+	if repoPath == "" {
+		repoPath = "."
+	}
+
+	// Default retention: 7 days for orphaned branches
+	retentionDays := 7
+
+	// Clean up orphaned branches
+	deletedCount, err := gitOps.CleanupOrphanedBranches(ctx, repoPath, retentionDays, false)
+	if err != nil {
+		return fmt.Errorf("failed to cleanup orphaned branches: %w", err)
+	}
+
+	if deletedCount > 0 {
+		fmt.Printf("Cleanup: Deleted %d orphaned mission branch(es) (older than %d days)\n",
+			deletedCount, retentionDays)
+	}
+
+	return nil
+}
+
 func (e *Executor) cleanupLoop(ctx context.Context) {
 	defer close(e.cleanupDoneCh)
 

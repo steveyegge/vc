@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Conflict marker constants
@@ -478,4 +479,129 @@ func (g *Git) ValidateConflictResolution(ctx context.Context, repoPath string, f
 	}
 
 	return true, nil
+}
+
+// ListBranches returns a list of branches matching the specified pattern.
+// If pattern is empty, all branches are returned.
+// SECURITY: repoPath must be a validated, trusted path.
+func (g *Git) ListBranches(ctx context.Context, repoPath string, pattern string) ([]string, error) {
+	args := []string{"-C", repoPath, "branch", "--list"}
+	if pattern != "" {
+		args = append(args, pattern)
+	}
+
+	cmd := exec.CommandContext(ctx, g.gitPath, args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git branch --list failed in %s: %w", repoPath, err)
+	}
+
+	var branches []string
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// Remove the "* " prefix for current branch
+		line = strings.TrimPrefix(line, "* ")
+		if line != "" {
+			branches = append(branches, line)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to parse branch list: %w", err)
+	}
+
+	return branches, nil
+}
+
+// ListWorktrees returns a list of all worktrees in the repository.
+// Returns a map of worktree path -> branch name.
+// SECURITY: repoPath must be a validated, trusted path.
+func (g *Git) ListWorktrees(ctx context.Context, repoPath string) (map[string]string, error) {
+	cmd := exec.CommandContext(ctx, g.gitPath, "-C", repoPath, "worktree", "list", "--porcelain")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git worktree list failed in %s: %w", repoPath, err)
+	}
+
+	worktrees := make(map[string]string)
+	var currentPath, currentBranch string
+
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Porcelain format:
+		// worktree <path>
+		// HEAD <sha>
+		// branch <branch> (or detached if detached HEAD)
+		// <blank line between worktrees>
+
+		if strings.HasPrefix(line, "worktree ") {
+			currentPath = strings.TrimPrefix(line, "worktree ")
+		} else if strings.HasPrefix(line, "branch ") {
+			currentBranch = strings.TrimPrefix(line, "branch ")
+			// Extract just the branch name (refs/heads/mission/vc-123/...)
+			currentBranch = strings.TrimPrefix(currentBranch, "refs/heads/")
+		} else if line == "" && currentPath != "" {
+			// End of worktree entry - save it
+			if currentBranch != "" {
+				worktrees[currentPath] = currentBranch
+			}
+			currentPath = ""
+			currentBranch = ""
+		}
+	}
+
+	// Handle last entry if file doesn't end with blank line
+	if currentPath != "" && currentBranch != "" {
+		worktrees[currentPath] = currentBranch
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to parse worktree list: %w", err)
+	}
+
+	return worktrees, nil
+}
+
+// GetBranchTimestamp returns the commit timestamp of the most recent commit on the branch.
+// This can be used to determine the age of orphaned branches.
+// SECURITY: repoPath must be a validated, trusted path.
+func (g *Git) GetBranchTimestamp(ctx context.Context, repoPath string, branchName string) (time.Time, error) {
+	// Get the commit timestamp using git show
+	cmd := exec.CommandContext(ctx, g.gitPath, "-C", repoPath, "show", "-s", "--format=%ct", branchName)
+	output, err := cmd.Output()
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to get branch timestamp for %s: %w", branchName, err)
+	}
+
+	timestampStr := strings.TrimSpace(string(output))
+	var timestamp int64
+	if _, err := fmt.Sscanf(timestampStr, "%d", &timestamp); err != nil {
+		return time.Time{}, fmt.Errorf("failed to parse timestamp %s: %w", timestampStr, err)
+	}
+
+	return time.Unix(timestamp, 0), nil
+}
+
+// DeleteBranch deletes a branch in the repository.
+// This wraps the deleteBranch function from sandbox/git.go with a public API.
+// SECURITY: repoPath must be a validated, trusted path.
+func (g *Git) DeleteBranch(ctx context.Context, repoPath string, branchName string) error {
+	// Check if branch exists
+	checkCmd := exec.CommandContext(ctx, g.gitPath, "-C", repoPath, "rev-parse", "--verify", branchName)
+	if err := checkCmd.Run(); err != nil {
+		// Branch doesn't exist - not an error, just return
+		return nil
+	}
+
+	// Delete the branch (use -D to force delete even if not fully merged)
+	cmd := exec.CommandContext(ctx, g.gitPath, "-C", repoPath, "branch", "-D", branchName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git branch -D failed: %w (output: %s)", err, string(output))
+	}
+
+	return nil
 }
