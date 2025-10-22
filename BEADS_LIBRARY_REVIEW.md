@@ -2,14 +2,34 @@
 
 **Reviewer**: Claude (VC Team)
 **Date**: 2025-10-22
+**Updated**: 2025-10-22 (Extension Model)
 **Beads Repo**: ~/src/beads (unpushed changes)
 **Review Scope**: Library API, schema, tests, examples
 
 ---
 
+## UPDATE: Extension Model (Not Pollution)
+
+**After review with Steve**, we're using the **IntelliJ/Android Studio model**:
+- **Beads**: General-purpose platform (thousands of users, stays clean)
+- **VC**: Extension (adds own tables, doesn't modify Beads schema)
+
+See **BEADS_EXTENSIBILITY.md** for complete design.
+
+**What this means:**
+- ❌ Don't add `subtype`, `sandbox_path`, `branch_name` columns to Beads
+- ❌ Don't add `agent_events` table to Beads
+- ✅ VC creates **extension tables** (`vc_mission_state`, `vc_agent_events`)
+- ✅ Extension tables use foreign keys to reference Beads tables
+- ✅ Beads exposes `UnderlyingDB()` for extensions to create tables
+
+**The rest of this review is still valid** - just read "missing schema" as "VC extension tables" not "Beads additions".
+
+---
+
 ## Executive Summary
 
-**Status**: ✅ **EXCELLENT** - Ready to use with minor additions needed
+**Status**: ✅ **EXCELLENT** - Ready to use with extension model
 
 The beads library integration is well-designed and clean. The public API is minimal and focused, the schema is solid, and the examples/tests demonstrate real usage patterns.
 
