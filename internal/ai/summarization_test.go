@@ -74,7 +74,7 @@ func TestSummarizeAgentOutput(t *testing.T) {
 				"FAIL	github.com/test/auth [build failed]\n",
 			maxLength: 500,
 			expectContains: []string{
-				"error", "fail", // Should mention the failure
+				"fail", // Should mention the failure (output contains "FAIL" and "[build failed]")
 			},
 		},
 	}
@@ -184,12 +184,14 @@ func TestSummarizeAgentOutput_ErrorHandling(t *testing.T) {
 		Description: "Testing error handling",
 	}
 
+	// Use output longer than maxLength to force AI API call
+	longOutput := strings.Repeat("test output line\n", 100) // ~1700 chars
 	ctx := context.Background()
-	_, err = supervisor.SummarizeAgentOutput(ctx, issue, "test output", 1000)
+	_, err = supervisor.SummarizeAgentOutput(ctx, issue, longOutput, 500)
 
 	// Should return an error, not fall back to heuristics
 	if err == nil {
-		t.Error("Expected error with invalid API key, got nil")
+		t.Fatal("Expected error with invalid API key, got nil")
 	}
 
 	// Error should mention retry attempts (ZFC compliance)
