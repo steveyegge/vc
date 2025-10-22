@@ -122,22 +122,14 @@ func retry(attempts int) bool {
 
 	// Verify it found key violations (AI will judge legitimacy later)
 	foundCount50 := false
-	foundCount0 := false
-	foundCount1 := false
 	for _, v := range magicNumberViolations {
 		if strings.Contains(v.LineContent, "count > 50") {
 			foundCount50 = true
 			assert.Equal(t, "magic.go", v.FilePath)
 		}
-		if strings.Contains(v.LineContent, "count < 0") {
-			foundCount0 = true
-		}
-		if strings.Contains(v.LineContent, "count == 0") || strings.Contains(v.LineContent, "count == 1") {
-			foundCount1 = true
-		}
 	}
 	assert.True(t, foundCount50, "Should find 'count > 50' violation")
-	// Note: count < 0 and count == 0/1 will be flagged by AST but are sent to AI for judgment
+	// Note: Other comparisons (count < 0, count == 0/1) are also flagged and sent to AI for judgment
 }
 
 func TestZFCDetector_ScanFiles_RegexPatterns(t *testing.T) {
@@ -354,6 +346,21 @@ func TestZFCDetector_Check_RequiresSupervisor(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
+	// Create files with enough violations to exceed threshold (3+)
+	testFiles := map[string]string{
+		"file1.go": `package main
+func foo() { if count > 50 { } }`,
+		"file2.go": `package main
+func bar() { if size > 100 { } }`,
+		"file3.go": `package main
+func baz() { if limit > 75 { } }`,
+	}
+
+	for name, content := range testFiles {
+		err := os.WriteFile(filepath.Join(tmpDir, name), []byte(content), 0644)
+		require.NoError(t, err)
+	}
+
 	detector, err := NewZFCDetector(tmpDir, nil) // No supervisor
 	require.NoError(t, err)
 
@@ -469,8 +476,8 @@ func TestZFCDetector_BuildPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "2 potential ZFC violations")
 	assert.Contains(t, prompt, "test.go:10")
 	assert.Contains(t, prompt, "parser.go:20")
-	assert.Contains(t, prompt, "magic_number")
-	assert.Contains(t, prompt, "regex_parsing")
+	assert.Contains(t, prompt, "magic number")   // Violation types are formatted with spaces
+	assert.Contains(t, prompt, "regex parsing")  // Not underscores (see buildPrompt line 580)
 	assert.Contains(t, prompt, "true_violations")
 	assert.Contains(t, prompt, "legitimate_code")
 	assert.Contains(t, prompt, fmt.Sprintf("%d", time.Now().Year()))

@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -106,11 +105,6 @@ func (d *ZFCDetector) Cost() CostEstimate {
 
 // Check implements HealthMonitor.
 func (d *ZFCDetector) Check(ctx context.Context, codebase CodebaseContext) (*MonitorResult, error) {
-	// Validate that AI supervisor is configured
-	if d.Supervisor == nil {
-		return nil, fmt.Errorf("AI supervisor is required for ZFC detection")
-	}
-
 	startTime := time.Now()
 
 	// 1. Scan codebase for potential ZFC violations
@@ -132,7 +126,12 @@ func (d *ZFCDetector) Check(ctx context.Context, codebase CodebaseContext) (*Mon
 		}, nil
 	}
 
-	// 3. Ask AI to evaluate the violations
+	// 3. Validate that AI supervisor is configured (only needed if above threshold)
+	if d.Supervisor == nil {
+		return nil, fmt.Errorf("AI supervisor is required for ZFC detection")
+	}
+
+	// 4. Ask AI to evaluate the violations
 	evaluation, err := d.evaluateViolations(ctx, violations)
 	if err != nil {
 		return nil, fmt.Errorf("evaluating violations: %w", err)
@@ -203,8 +202,6 @@ func (d *ZFCDetector) scanFiles(ctx context.Context) ([]zfcViolation, error) {
 		if !d.shouldScanFile(path) {
 			return nil
 		}
-
-		filesScanned++
 
 		// Scan file for violations
 		fileViolations, err := d.scanFile(path, relPath)
@@ -415,7 +412,7 @@ func (d *ZFCDetector) scanFilePatterns(absPath, relPath string) ([]zfcViolation,
 	defer file.Close()
 
 	var violations []zfcViolation
-	scanner := bufio.Scanner(file)
+	scanner := bufio.NewScanner(file)
 	lineNumber := 0
 
 	// ZFC Meta-Note: Yes, this detector uses regexp.MustCompile!
@@ -497,7 +494,7 @@ func (d *ZFCDetector) getLineContent(filePath string, lineNumber int) string {
 	}
 	defer file.Close()
 
-	scanner := bufio.Scanner(file)
+	scanner := bufio.NewScanner(file)
 	currentLine := 0
 
 	for scanner.Scan() {
