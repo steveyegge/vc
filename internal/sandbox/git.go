@@ -207,6 +207,40 @@ func createBranch(ctx context.Context, worktreePath, branchName, baseBranch stri
 	return nil
 }
 
+// deleteBranch deletes a branch in the repository.
+// This is used to clean up mission branches after sandbox cleanup.
+// The branch must not be currently checked out.
+func deleteBranch(ctx context.Context, repoPath, branchName string) error {
+	// Validate repo is a git repository
+	if err := validateGitRepo(repoPath); err != nil {
+		return fmt.Errorf("repo validation failed: %w", err)
+	}
+
+	// Validate branch name
+	if err := validateGitRefName(branchName); err != nil {
+		return fmt.Errorf("invalid branch name: %w", err)
+	}
+
+	// Check if branch exists
+	checkCmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", branchName)
+	checkCmd.Dir = repoPath
+	if err := checkCmd.Run(); err != nil {
+		// Branch doesn't exist - not an error, just return
+		return nil
+	}
+
+	// Delete the branch (use -D to force delete even if not fully merged)
+	cmd := exec.CommandContext(ctx, "git", "branch", "-D", branchName)
+	cmd.Dir = repoPath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git branch -D failed: %w (output: %s)", err, string(output))
+	}
+
+	return nil
+}
+
 // validateGitRefName validates that a string is a valid git reference name.
 // Git ref names cannot contain certain characters or patterns.
 // See git-check-ref-format(1) for full specification.

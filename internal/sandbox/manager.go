@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -40,6 +41,11 @@ type Manager interface {
 	// CleanupAll removes all sandboxes older than the specified duration.
 	// This is useful for periodic cleanup of stale sandboxes.
 	CleanupAll(ctx context.Context, olderThan time.Duration) error
+
+	// CleanupStaleFailedSandboxes removes old failed sandboxes from disk,
+	// keeping only the most recent N as specified by retentionCount.
+	// If retentionCount is 0, all failed sandboxes are kept.
+	CleanupStaleFailedSandboxes(ctx context.Context, retentionCount int) error
 }
 
 // Config holds configuration for the sandbox manager
@@ -63,6 +69,10 @@ type Config struct {
 
 	// PreserveOnFailure determines if failed sandboxes should be kept for debugging
 	PreserveOnFailure bool
+
+	// KeepBranches determines if mission branches should be kept after cleanup
+	// If false, branches are deleted when sandbox is cleaned up (default: false)
+	KeepBranches bool
 
 	// MaxAge is the maximum age for sandboxes before they're considered stale
 	MaxAge time.Duration
@@ -304,6 +314,14 @@ func (m *manager) Cleanup(ctx context.Context, sandbox *Sandbox) error {
 			return fmt.Errorf("failed to remove worktree: %w", err)
 		}
 
+		// Delete mission branch unless KeepBranches is set (vc-134)
+		if !m.config.KeepBranches {
+			if err := deleteBranch(ctx, sandbox.ParentRepo, sandbox.GitBranch); err != nil {
+				// Log warning but don't fail - branch deletion is not critical
+				fmt.Fprintf(os.Stderr, "warning: failed to delete branch %s: %v\n", sandbox.GitBranch, err)
+			}
+		}
+
 		// Remove sandbox directory (if different from worktree)
 		if sandbox.Path != sandbox.GitWorktree {
 			if err := os.RemoveAll(sandbox.Path); err != nil {
@@ -344,6 +362,77 @@ func (m *manager) CleanupAll(ctx context.Context, olderThan time.Duration) error
 		if err := m.Cleanup(ctx, sandbox); err != nil {
 			// Continue cleaning up other sandboxes even if one fails
 			lastErr = fmt.Errorf("failed to cleanup sandbox %s: %w", sandbox.ID, err)
+		}
+	}
+
+	return lastErr
+}
+
+// CleanupStaleFailedSandboxes removes old failed sandboxes from disk,
+// keeping only the most recent N as specified by retentionCount.
+// This implements the retention policy from vc-134.
+// If retentionCount is 0, all failed sandboxes are kept.
+func (m *manager) CleanupStaleFailedSandboxes(ctx context.Context, retentionCount int) error {
+	if retentionCount == 0 {
+		// Keep all failed sandboxes
+		return nil
+	}
+
+	// Scan sandbox root directory for sandbox directories
+	entries, err := os.ReadDir(m.config.SandboxRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // No sandbox directory yet
+		}
+		return fmt.Errorf("failed to read sandbox root: %w", err)
+	}
+
+	// Collect sandbox directories with their modification times
+	type sandboxInfo struct {
+		path    string
+		modTime time.Time
+	}
+	var sandboxes []sandboxInfo
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		sandboxPath := filepath.Join(m.config.SandboxRoot, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to get info for %s: %v\n", sandboxPath, err)
+			continue
+		}
+
+		sandboxes = append(sandboxes, sandboxInfo{
+			path:    sandboxPath,
+			modTime: info.ModTime(),
+		})
+	}
+
+	// If we have fewer sandboxes than the retention count, keep all
+	if len(sandboxes) <= retentionCount {
+		return nil
+	}
+
+	// Sort by modification time (newest first)
+	sort.Slice(sandboxes, func(i, j int) bool {
+		return sandboxes[i].modTime.After(sandboxes[j].modTime)
+	})
+
+	// Remove sandboxes beyond the retention count
+	var lastErr error
+	for i := retentionCount; i < len(sandboxes); i++ {
+		sandboxPath := sandboxes[i].path
+		fmt.Printf("Removing stale failed sandbox: %s (modified: %s)\n",
+			filepath.Base(sandboxPath), sandboxes[i].modTime.Format(time.RFC3339))
+
+		if err := os.RemoveAll(sandboxPath); err != nil {
+			lastErr = fmt.Errorf("failed to remove sandbox %s: %w", sandboxPath, err)
+			fmt.Fprintf(os.Stderr, "warning: %v\n", lastErr)
+			continue
 		}
 	}
 

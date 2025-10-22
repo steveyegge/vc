@@ -49,6 +49,8 @@ type Executor struct {
 	pollInterval        time.Duration
 	cleanupInterval     time.Duration
 	staleThreshold      time.Duration
+	instanceCleanupAge  time.Duration
+	instanceCleanupKeep int
 	enableAISupervision bool
 	enableQualityGates  bool
 	enableSandboxes     bool
@@ -71,6 +73,9 @@ type Config struct {
 	EnableAISupervision    bool          // Enable AI assessment and analysis (default: true)
 	EnableQualityGates     bool          // Enable quality gates enforcement (default: true)
 	EnableSandboxes        bool          // Enable sandbox isolation (default: false)
+	KeepSandboxOnFailure   bool          // Keep failed sandboxes for debugging (default: false)
+	KeepBranches           bool          // Keep mission branches after cleanup (default: false)
+	SandboxRetentionCount  int           // Number of failed sandboxes to keep (default: 3, 0 = keep all)
 	EnableHealthMonitoring bool          // Enable health monitoring (default: false, opt-in)
 	HealthConfigPath       string        // Path to health_monitors.yaml (default: ".beads/health_monitors.yaml")
 	HealthStatePath        string        // Path to health_state.json (default: ".beads/health_state.json")
@@ -81,6 +86,8 @@ type Config struct {
 	WatchdogConfig         *watchdog.WatchdogConfig     // Watchdog configuration (default: conservative defaults)
 	DeduplicationConfig    *deduplication.Config        // Deduplication configuration (default: sensible defaults, nil = use defaults)
 	EventRetentionConfig   *config.EventRetentionConfig // Event retention and cleanup configuration (default: sensible defaults, nil = use defaults)
+	InstanceCleanupAge     time.Duration                // How old stopped instances must be before deletion (default: 24h)
+	InstanceCleanupKeep    int                          // Minimum number of stopped instances to keep (default: 10)
 }
 
 // DefaultConfig returns default executor configuration
@@ -91,9 +98,14 @@ func DefaultConfig() *Config {
 		HeartbeatPeriod:        30 * time.Second,
 		CleanupInterval:        5 * time.Minute,
 		StaleThreshold:         5 * time.Minute,
+		InstanceCleanupAge:     24 * time.Hour,
+		InstanceCleanupKeep:    10,
 		EnableAISupervision:    true,
 		EnableQualityGates:     true,
 		EnableSandboxes:        false,
+		KeepSandboxOnFailure:   false,
+		KeepBranches:           false,
+		SandboxRetentionCount:  3,
 		EnableHealthMonitoring: false, // Opt-in for now
 		HealthConfigPath:       ".beads/health_monitors.yaml",
 		HealthStatePath:        ".beads/health_state.json",
@@ -145,6 +157,18 @@ func New(cfg *Config) (*Executor, error) {
 		staleThreshold = 5 * time.Minute
 	}
 
+	// Set default instance cleanup age if not specified
+	instanceCleanupAge := cfg.InstanceCleanupAge
+	if instanceCleanupAge == 0 {
+		instanceCleanupAge = 24 * time.Hour
+	}
+
+	// Set default instance cleanup keep count if not specified
+	instanceCleanupKeep := cfg.InstanceCleanupKeep
+	if instanceCleanupKeep == 0 {
+		instanceCleanupKeep = 10
+	}
+
 	e := &Executor{
 		store:               cfg.Store,
 		config:              cfg,
@@ -155,6 +179,8 @@ func New(cfg *Config) (*Executor, error) {
 		pollInterval:        cfg.PollInterval,
 		cleanupInterval:     cleanupInterval,
 		staleThreshold:      staleThreshold,
+		instanceCleanupAge:  instanceCleanupAge,
+		instanceCleanupKeep: instanceCleanupKeep,
 		enableAISupervision: cfg.EnableAISupervision,
 		enableQualityGates:  cfg.EnableQualityGates,
 		enableSandboxes:     cfg.EnableSandboxes,
@@ -207,6 +233,8 @@ func New(cfg *Config) (*Executor, error) {
 			MainDB:              cfg.Store,
 			Deduplicator:        dedup, // Pass deduplicator for sandbox merge deduplication
 			DeduplicationConfig: cfg.DeduplicationConfig,
+			PreserveOnFailure:   cfg.KeepSandboxOnFailure, // Preserve failed sandboxes for debugging (vc-134)
+			KeepBranches:        cfg.KeepBranches,         // Keep mission branches after cleanup (vc-134)
 		})
 		if err != nil {
 			// Don't fail - just disable sandboxes
@@ -429,6 +457,17 @@ func (e *Executor) Stop(ctx context.Context) error {
 				fmt.Fprintf(os.Stderr, "warning: failed to mark instance as stopped: %v\n", err)
 			}
 		}
+	}
+
+	// Clean up old stopped instances (vc-133)
+	// This prevents accumulation of historical instances that are no longer needed
+	olderThanSeconds := int(e.instanceCleanupAge.Seconds())
+	deleted, err := e.store.DeleteOldStoppedInstances(ctx, olderThanSeconds, e.instanceCleanupKeep)
+	if err != nil {
+		// Don't fail shutdown if cleanup fails, just log warning
+		fmt.Fprintf(os.Stderr, "warning: failed to cleanup old executor instances: %v\n", err)
+	} else if deleted > 0 {
+		fmt.Printf("Cleanup: Deleted %d old stopped executor instance(s)\n", deleted)
 	}
 
 	e.mu.Lock()
@@ -805,6 +844,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		EnableQualityGates: e.enableQualityGates,
 		WorkingDir:         workingDir, // Use sandbox path if sandboxing is enabled (vc-117)
 		Actor:              e.instanceID,
+		Sandbox:            sb, // Pass sandbox for status tracking (vc-134)
 	})
 	if err != nil {
 		// Log results processing failure BEFORE releasing issue
@@ -1073,6 +1113,15 @@ func (e *Executor) cleanupLoop(ctx context.Context) {
 				if cleaned > 0 {
 					fmt.Printf("Cleanup: Marked %d stale instance(s) as stopped and released their claims\n", cleaned)
 				}
+
+				// Cleanup old failed sandboxes beyond retention policy (vc-134)
+				if e.sandboxMgr != nil && e.config != nil && e.config.SandboxRetentionCount > 0 {
+					if err := e.sandboxMgr.CleanupStaleFailedSandboxes(ctx, e.config.SandboxRetentionCount); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: failed to cleanup stale sandboxes: %v\n", err)
+						// Don't fail the cleanup loop on sandbox cleanup errors
+					}
+				}
+
 				done <- nil
 			}()
 

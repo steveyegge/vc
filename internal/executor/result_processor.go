@@ -11,6 +11,7 @@ import (
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/gates"
+	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -36,6 +37,7 @@ func NewResultsProcessor(cfg *ResultsProcessorConfig) (*ResultsProcessor, error)
 		enableAutoCommit:   cfg.EnableAutoCommit,
 		workingDir:         cfg.WorkingDir,
 		actor:              cfg.Actor,
+		sandbox:            cfg.Sandbox,
 	}, nil
 }
 
@@ -112,6 +114,11 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				"exit_code":    agentResult.ExitCode,
 				"output_lines": len(agentResult.Output),
 			})
+
+		// Mark sandbox as failed (vc-134)
+		if rp.sandbox != nil {
+			rp.sandbox.Status = sandbox.SandboxStatusFailed
+		}
 
 		// Release the execution state
 		if releaseErr := rp.releaseExecutionState(ctx, issue.ID); releaseErr != nil {
@@ -398,6 +405,15 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			// Always emit completion event (vc-245)
 			rp.logEvent(ctx, events.EventTypeQualityGatesCompleted, severity, issue.ID, message, gateData)
 
+			// Update sandbox status based on quality gate results (vc-134)
+			if rp.sandbox != nil {
+				if allPassed && !cancelled && !timedOut {
+					rp.sandbox.Status = sandbox.SandboxStatusCompleted
+				} else {
+					rp.sandbox.Status = sandbox.SandboxStatusFailed
+				}
+			}
+
 			// Skip blocking logic if cancelled - executor will release issue (vc-128)
 			if !cancelled && !allPassed {
 				fmt.Printf("\n=== Quality Gates Failed ===\n")
@@ -453,6 +469,10 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 		var reason string
 		if !agentResult.Success {
 			reason = "agent execution failed"
+			// Mark sandbox as failed when agent execution fails (vc-134)
+			if rp.sandbox != nil {
+				rp.sandbox.Status = sandbox.SandboxStatusFailed
+			}
 		} else {
 			reason = "quality gates disabled"
 		}

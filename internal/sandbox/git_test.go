@@ -645,3 +645,69 @@ func TestCreateBranchWithInvalidNames(t *testing.T) {
 		t.Errorf("createBranch should succeed for valid branch name: '%s', got error: %v", validName, err)
 	}
 }
+
+func TestDeleteBranch(t *testing.T) {
+	// Create a temporary git repository
+	tmpDir, err := os.MkdirTemp("", "sandbox-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+
+	// Create initial commit
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	cmd = exec.Command("git", "add", "test.txt")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+
+	cmd = exec.Command("git", "commit", "-m", "initial commit")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git commit: %v", err)
+	}
+
+	// Create a test branch
+	cmd = exec.Command("git", "branch", "test-branch")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create branch: %v", err)
+	}
+
+	// Verify branch exists
+	cmd = exec.Command("git", "rev-parse", "--verify", "test-branch")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Branch should exist but doesn't: %v", err)
+	}
+
+	// Delete the branch
+	ctx := context.Background()
+	if err := deleteBranch(ctx, tmpDir, "test-branch"); err != nil {
+		t.Fatalf("deleteBranch failed: %v", err)
+	}
+
+	// Verify branch is deleted
+	cmd = exec.Command("git", "rev-parse", "--verify", "test-branch")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err == nil {
+		t.Fatalf("Branch should be deleted but still exists")
+	}
+
+	// Delete non-existent branch should not error
+	if err := deleteBranch(ctx, tmpDir, "nonexistent-branch"); err != nil {
+		t.Fatalf("deleteBranch should not error on non-existent branch: %v", err)
+	}
+}

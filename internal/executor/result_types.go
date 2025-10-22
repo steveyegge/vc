@@ -4,6 +4,7 @@ import (
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/deduplication"
 	"github.com/steveyegge/vc/internal/git"
+	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/storage"
 )
 
@@ -24,7 +25,8 @@ type ResultsProcessor struct {
 	enableQualityGates bool
 	enableAutoCommit   bool
 	workingDir         string
-	actor              string // The actor performing the update (e.g., "repl", "executor-instance-id")
+	actor              string             // The actor performing the update (e.g., "repl", "executor-instance-id")
+	sandbox            *sandbox.Sandbox   // The sandbox being used (can be nil if sandboxing is disabled)
 }
 
 // ResultsProcessorConfig holds configuration for the results processor
@@ -37,7 +39,8 @@ type ResultsProcessorConfig struct {
 	EnableQualityGates bool
 	EnableAutoCommit   bool
 	WorkingDir         string
-	Actor              string // Actor ID for tracking who made the changes
+	Actor              string           // Actor ID for tracking who made the changes
+	Sandbox            *sandbox.Sandbox // The sandbox being used (can be nil if sandboxing is disabled)
 }
 
 // ProcessingResult contains the outcome of processing agent results
