@@ -22,41 +22,41 @@ import (
 
 // Executor manages the issue processing event loop
 type Executor struct {
-	store      storage.Storage
-	supervisor *ai.Supervisor
-	monitor    *watchdog.Monitor
-	analyzer   *watchdog.Analyzer
-	intervention *watchdog.InterventionController
+	store          storage.Storage
+	supervisor     *ai.Supervisor
+	monitor        *watchdog.Monitor
+	analyzer       *watchdog.Analyzer
+	intervention   *watchdog.InterventionController
 	watchdogConfig *watchdog.WatchdogConfig
-	sandboxMgr sandbox.Manager
+	sandboxMgr     sandbox.Manager
 	healthRegistry *health.MonitorRegistry
-	config     *Config
-	instanceID string
-	hostname   string
-	pid        int
-	version    string
+	config         *Config
+	instanceID     string
+	hostname       string
+	pid            int
+	version        string
 
 	// Control channels
-	stopCh chan struct{}
-	doneCh chan struct{}
-	watchdogStopCh      chan struct{} // Separate channel for watchdog shutdown
-	watchdogDoneCh      chan struct{} // Signals when watchdog goroutine finished
-	cleanupStopCh       chan struct{} // Separate channel for cleanup goroutine shutdown
-	cleanupDoneCh       chan struct{} // Signals when cleanup goroutine finished
-	eventCleanupStopCh  chan struct{} // Separate channel for event cleanup shutdown
-	eventCleanupDoneCh  chan struct{} // Signals when event cleanup goroutine finished
+	stopCh             chan struct{}
+	doneCh             chan struct{}
+	watchdogStopCh     chan struct{} // Separate channel for watchdog shutdown
+	watchdogDoneCh     chan struct{} // Signals when watchdog goroutine finished
+	cleanupStopCh      chan struct{} // Separate channel for cleanup goroutine shutdown
+	cleanupDoneCh      chan struct{} // Signals when cleanup goroutine finished
+	eventCleanupStopCh chan struct{} // Separate channel for event cleanup shutdown
+	eventCleanupDoneCh chan struct{} // Signals when event cleanup goroutine finished
 
 	// Configuration
-	pollInterval        time.Duration
-	cleanupInterval     time.Duration
-	staleThreshold      time.Duration
-	instanceCleanupAge  time.Duration
-	instanceCleanupKeep int
-	enableAISupervision bool
-	enableQualityGates  bool
-	enableSandboxes     bool
+	pollInterval           time.Duration
+	cleanupInterval        time.Duration
+	staleThreshold         time.Duration
+	instanceCleanupAge     time.Duration
+	instanceCleanupKeep    int
+	enableAISupervision    bool
+	enableQualityGates     bool
+	enableSandboxes        bool
 	enableHealthMonitoring bool
-	workingDir          string
+	workingDir             string
 
 	// State
 	mu      sync.RWMutex
@@ -69,21 +69,21 @@ type Config struct {
 	Version                string
 	PollInterval           time.Duration
 	HeartbeatPeriod        time.Duration
-	CleanupInterval        time.Duration // How often to check for stale instances (default: 5 minutes)
-	StaleThreshold         time.Duration // How long before an instance is considered stale (default: 5 minutes)
-	EnableAISupervision    bool          // Enable AI assessment and analysis (default: true)
-	EnableQualityGates     bool          // Enable quality gates enforcement (default: true)
-	EnableSandboxes        bool          // Enable sandbox isolation (default: false)
-	KeepSandboxOnFailure   bool          // Keep failed sandboxes for debugging (default: false)
-	KeepBranches           bool          // Keep mission branches after cleanup (default: false)
-	SandboxRetentionCount  int           // Number of failed sandboxes to keep (default: 3, 0 = keep all)
-	EnableHealthMonitoring bool          // Enable health monitoring (default: false, opt-in)
-	HealthConfigPath       string        // Path to health_monitors.yaml (default: ".beads/health_monitors.yaml")
-	HealthStatePath        string        // Path to health_state.json (default: ".beads/health_state.json")
-	WorkingDir             string        // Working directory for quality gates (default: ".")
-	SandboxRoot            string        // Root directory for sandboxes (default: ".sandboxes")
-	ParentRepo             string        // Parent repository path (default: ".")
-	DefaultBranch          string        // Default git branch for sandboxes (default: "main")
+	CleanupInterval        time.Duration                // How often to check for stale instances (default: 5 minutes)
+	StaleThreshold         time.Duration                // How long before an instance is considered stale (default: 5 minutes)
+	EnableAISupervision    bool                         // Enable AI assessment and analysis (default: true)
+	EnableQualityGates     bool                         // Enable quality gates enforcement (default: true)
+	EnableSandboxes        bool                         // Enable sandbox isolation (default: false)
+	KeepSandboxOnFailure   bool                         // Keep failed sandboxes for debugging (default: false)
+	KeepBranches           bool                         // Keep mission branches after cleanup (default: false)
+	SandboxRetentionCount  int                          // Number of failed sandboxes to keep (default: 3, 0 = keep all)
+	EnableHealthMonitoring bool                         // Enable health monitoring (default: false, opt-in)
+	HealthConfigPath       string                       // Path to health_monitors.yaml (default: ".beads/health_monitors.yaml")
+	HealthStatePath        string                       // Path to health_state.json (default: ".beads/health_state.json")
+	WorkingDir             string                       // Working directory for quality gates (default: ".")
+	SandboxRoot            string                       // Root directory for sandboxes (default: ".sandboxes")
+	ParentRepo             string                       // Parent repository path (default: ".")
+	DefaultBranch          string                       // Default git branch for sandboxes (default: "main")
 	WatchdogConfig         *watchdog.WatchdogConfig     // Watchdog configuration (default: conservative defaults)
 	DeduplicationConfig    *deduplication.Config        // Deduplication configuration (default: sensible defaults, nil = use defaults)
 	EventRetentionConfig   *config.EventRetentionConfig // Event retention and cleanup configuration (default: sensible defaults, nil = use defaults)
@@ -1165,6 +1165,18 @@ func (e *Executor) cleanupLoop(ctx context.Context) {
 					}
 				}
 
+				// Cleanup old stopped executor instances (vc-244)
+				// Prevents accumulation in long-running deployments
+				olderThanSeconds := int(e.instanceCleanupAge.Seconds())
+				deletedInstances, err := e.store.DeleteOldStoppedInstances(ctx, olderThanSeconds, e.instanceCleanupKeep)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to cleanup old executor instances: %v\n", err)
+					// Don't fail the cleanup loop on cleanup errors
+				} else if deletedInstances > 0 {
+					fmt.Printf("Cleanup: Deleted %d old stopped executor instance(s) (older than %v, keeping %d most recent)\n",
+						deletedInstances, e.instanceCleanupAge, e.instanceCleanupKeep)
+				}
+
 				done <- nil
 			}()
 
@@ -1356,7 +1368,7 @@ func (e *Executor) logCleanupEvent(ctx context.Context, totalDeleted, timeBasedD
 		Timestamp:  time.Now(),
 		IssueID:    "SYSTEM", // System-level event, not tied to a specific issue
 		ExecutorID: e.instanceID,
-		AgentID:    "",       // Not produced by a coding agent
+		AgentID:    "", // Not produced by a coding agent
 		Severity:   events.SeverityInfo,
 		Message:    message,
 		Data:       data,
