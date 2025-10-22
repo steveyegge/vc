@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/storage"
@@ -57,10 +58,21 @@ type AgentResult struct {
 }
 
 // AgentMessage represents a JSON message from the agent
+// This matches Amp's --stream-json output format (vc-236)
 type AgentMessage struct {
-	Type    string                 `json:"type"`
+	Type    string                 `json:"type"`    // Event type (e.g., "tool_use", "system", "result")
+	Subtype string                 `json:"subtype,omitempty"` // Event subtype (e.g., "init", "error_during_execution")
 	Content string                 `json:"content,omitempty"`
 	Data    map[string]interface{} `json:"data,omitempty"`
+
+	// Tool usage fields (vc-236: structured events instead of regex parsing)
+	Tool       string `json:"tool,omitempty"`       // Tool name (e.g., "read", "edit", "bash")
+	File       string `json:"file,omitempty"`       // Target file for file operations
+	Command    string `json:"command,omitempty"`    // Command for bash tool
+	Pattern    string `json:"pattern,omitempty"`    // Pattern for glob/grep tools
+
+	// Session metadata
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // Agent represents a running coding agent process
@@ -287,9 +299,27 @@ func (a *Agent) captureOutput() {
 
 // parseAndStoreEvents parses a line for events and stores them immediately
 // This method should be called with the mutex held
+// vc-236: First tries to parse as JSON (structured events from Amp), then falls back to regex patterns
 func (a *Agent) parseAndStoreEvents(line string) {
-	// Parse the line into events
-	extractedEvents := a.parser.ParseLine(line)
+	var extractedEvents []*events.AgentEvent
+
+	// If StreamJSON mode, try to parse as JSON first (vc-236)
+	if a.config.StreamJSON {
+		var msg AgentMessage
+		if err := json.Unmarshal([]byte(line), &msg); err == nil {
+			// Successfully parsed JSON - convert to agent event
+			if event := a.convertJSONToEvent(msg, line); event != nil {
+				extractedEvents = append(extractedEvents, event)
+			}
+			// Don't fall through to regex parsing - we have structured data
+		} else {
+			// Not valid JSON, fall back to regex parsing (for mixed output)
+			extractedEvents = a.parser.ParseLine(line)
+		}
+	} else {
+		// No StreamJSON - use traditional regex parsing
+		extractedEvents = a.parser.ParseLine(line)
+	}
 
 	// Store each event immediately
 	for _, event := range extractedEvents {
@@ -301,6 +331,55 @@ func (a *Agent) parseAndStoreEvents(line string) {
 			}
 		}(event)
 	}
+}
+
+// convertJSONToEvent converts an Amp JSON message to an AgentEvent (vc-236)
+// This replaces regex-based parsing with structured event processing
+func (a *Agent) convertJSONToEvent(msg AgentMessage, rawLine string) *events.AgentEvent {
+	// Only process tool_use events for now
+	// Other event types (system, result, etc.) are informational but not progress events
+	if msg.Type != "tool_use" {
+		return nil
+	}
+
+	// Create agent_tool_use event from structured JSON
+	event := &events.AgentEvent{
+		ID:         uuid.New().String(),
+		Type:       events.EventTypeAgentToolUse,
+		Timestamp:  time.Now(),
+		IssueID:    a.config.Issue.ID,
+		ExecutorID: a.config.ExecutorID,
+		AgentID:    a.config.AgentID,
+		Severity:   events.SeverityInfo,
+		Message:    rawLine,
+		SourceLine: a.parser.LineNumber,
+	}
+
+	// Extract tool usage data from structured JSON (no regex needed!)
+	toolData := events.AgentToolUseData{
+		ToolName:   msg.Tool,
+		TargetFile: msg.File,
+		Command:    msg.Command,
+	}
+
+	// Build a human-readable description from the structured data
+	if msg.File != "" {
+		toolData.ToolDescription = fmt.Sprintf("%s %s", msg.Tool, msg.File)
+	} else if msg.Command != "" {
+		toolData.ToolDescription = fmt.Sprintf("run: %s", msg.Command)
+	} else if msg.Pattern != "" {
+		toolData.ToolDescription = fmt.Sprintf("search: %s", msg.Pattern)
+	} else {
+		toolData.ToolDescription = msg.Tool
+	}
+
+	// Set the data
+	if err := event.SetAgentToolUseData(toolData); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to set tool use data: %v\n", err)
+		return nil
+	}
+
+	return event
 }
 
 // buildClaudeCodeCommand constructs the Claude Code CLI command
