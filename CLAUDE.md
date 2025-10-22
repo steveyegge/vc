@@ -35,6 +35,13 @@ This ensures you're always using the latest stable version from the homebrew tap
 - Without this key, the executor will run without AI supervision (warnings will be logged)
 - AI supervision can be explicitly disabled via config: `EnableAISupervision: false`
 
+**Debug Environment Variables:**
+- **`VC_DEBUG_PROMPTS`**: Log full prompts sent to agents (useful for debugging agent behavior)
+- **`VC_DEBUG_EVENTS`**: Log JSON event parsing details (tool_use events from Amp --stream-json)
+  ```bash
+  export VC_DEBUG_EVENTS=1  # Enable debug logging for agent progress events
+  ```
+
 When starting a new session:
 
 ```bash

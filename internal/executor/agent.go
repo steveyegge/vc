@@ -57,22 +57,43 @@ type AgentResult struct {
 	ParsedJSON []AgentMessage  // Parsed JSON messages if StreamJSON=true
 }
 
-// AgentMessage represents a JSON message from the agent
-// This matches Amp's --stream-json output format (vc-236)
+// AgentMessage represents a JSON message from the agent.
+// This matches Amp's --stream-json output format (vc-236).
+//
+// Event Types:
+// - "tool_use": Agent is invoking a tool (Read, Edit, Write, Bash, Glob, Grep, Task)
+// - "system": System messages (init, shutdown, etc.)
+// - "result": Final result/completion message
+//
+// Tool-to-Field Mapping (for type="tool_use"):
+// - Read/Edit/Write tools: use File field (target file path)
+// - Bash tool: uses Command field (shell command to execute)
+// - Glob/Grep tools: use Pattern field (search pattern)
+// - Task tool: uses Data field (agent spawn parameters)
+//
+// Example JSON (tool_use):
+//
+//	{"type":"tool_use","tool":"read","file":"main.go"}
+//	{"type":"tool_use","tool":"bash","command":"go test ./..."}
+//	{"type":"tool_use","tool":"grep","pattern":"TODO"}
+//
+// Note: This struct is designed for Amp's JSON output. When StreamJSON=false,
+// agent output is parsed via regex patterns in parser.go instead.
 type AgentMessage struct {
 	Type    string                 `json:"type"`    // Event type (e.g., "tool_use", "system", "result")
 	Subtype string                 `json:"subtype,omitempty"` // Event subtype (e.g., "init", "error_during_execution")
-	Content string                 `json:"content,omitempty"`
-	Data    map[string]interface{} `json:"data,omitempty"`
+	Content string                 `json:"content,omitempty"` // Human-readable message content
+	Data    map[string]interface{} `json:"data,omitempty"`    // Additional event-specific data
 
 	// Tool usage fields (vc-236: structured events instead of regex parsing)
+	// Only populated when Type="tool_use"
 	Tool       string `json:"tool,omitempty"`       // Tool name (e.g., "read", "edit", "bash")
-	File       string `json:"file,omitempty"`       // Target file for file operations
-	Command    string `json:"command,omitempty"`    // Command for bash tool
-	Pattern    string `json:"pattern,omitempty"`    // Pattern for glob/grep tools
+	File       string `json:"file,omitempty"`       // Target file for Read/Edit/Write tools
+	Command    string `json:"command,omitempty"`    // Shell command for Bash tool
+	Pattern    string `json:"pattern,omitempty"`    // Search pattern for Glob/Grep tools
 
 	// Session metadata
-	SessionID string `json:"session_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"` // Agent session identifier
 }
 
 // Agent represents a running coding agent process
@@ -334,11 +355,17 @@ func (a *Agent) parseAndStoreEvents(line string) {
 }
 
 // convertJSONToEvent converts an Amp JSON message to an AgentEvent (vc-236)
-// This replaces regex-based parsing with structured event processing
+// This replaces regex-based parsing with structured event processing.
+//
+// Set VC_DEBUG_EVENTS=1 to enable debug logging of JSON event parsing.
 func (a *Agent) convertJSONToEvent(msg AgentMessage, rawLine string) *events.AgentEvent {
 	// Only process tool_use events for now
 	// Other event types (system, result, etc.) are informational but not progress events
 	if msg.Type != "tool_use" {
+		// Debug log non-tool_use events if debugging is enabled
+		if os.Getenv("VC_DEBUG_EVENTS") != "" {
+			fmt.Fprintf(os.Stderr, "[DEBUG] Skipping non-tool_use event: type=%s subtype=%s\n", msg.Type, msg.Subtype)
+		}
 		return nil
 	}
 
@@ -377,6 +404,12 @@ func (a *Agent) convertJSONToEvent(msg AgentMessage, rawLine string) *events.Age
 	if err := event.SetAgentToolUseData(toolData); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to set tool use data: %v\n", err)
 		return nil
+	}
+
+	// Debug log successful event conversion
+	if os.Getenv("VC_DEBUG_EVENTS") != "" {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Parsed tool_use event: tool=%s file=%s command=%s pattern=%s\n",
+			msg.Tool, msg.File, msg.Command, msg.Pattern)
 	}
 
 	return event
