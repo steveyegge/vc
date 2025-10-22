@@ -88,7 +88,7 @@ type Config struct {
 	DeduplicationConfig    *deduplication.Config        // Deduplication configuration (default: sensible defaults, nil = use defaults)
 	EventRetentionConfig   *config.EventRetentionConfig // Event retention and cleanup configuration (default: sensible defaults, nil = use defaults)
 	InstanceCleanupAge     time.Duration                // How old stopped instances must be before deletion (default: 24h)
-	InstanceCleanupKeep    int                          // Minimum number of stopped instances to keep (default: 10)
+	InstanceCleanupKeep    int                          // Minimum number of stopped instances to keep (default: 10, 0 = keep none)
 }
 
 // DefaultConfig returns default executor configuration

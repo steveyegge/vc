@@ -293,6 +293,11 @@ func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshol
 // to prevent accumulation of historical instances that are no longer needed.
 // It deletes instances with status='stopped' that are older than olderThanSeconds,
 // but always keeps at least maxToKeep most recent stopped instances.
+//
+// Special cases:
+//   - maxToKeep=0: Deletes ALL instances older than threshold (keeps nothing)
+//   - maxToKeep > total stopped instances: Deletes nothing (all instances are kept)
+//
 // Returns the number of instances deleted.
 func (s *SQLiteStorage) DeleteOldStoppedInstances(ctx context.Context, olderThanSeconds int, maxToKeep int) (int, error) {
 	// Validate inputs
