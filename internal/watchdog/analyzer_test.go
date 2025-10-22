@@ -48,6 +48,7 @@ func (m *mockStorage) RegisterInstance(ctx context.Context, instance *types.Exec
 func (m *mockStorage) UpdateHeartbeat(ctx context.Context, instanceID string) error { return nil }
 func (m *mockStorage) GetActiveInstances(ctx context.Context) ([]*types.ExecutorInstance, error) { return nil, nil }
 func (m *mockStorage) CleanupStaleInstances(ctx context.Context, staleThreshold int) (int, error) { return 0, nil }
+func (m *mockStorage) DeleteOldStoppedInstances(ctx context.Context, olderThanSeconds int, maxToKeep int) (int, error) { return 0, nil }
 func (m *mockStorage) ClaimIssue(ctx context.Context, issueID, executorInstanceID string) error { return nil }
 func (m *mockStorage) GetExecutionState(ctx context.Context, issueID string) (*types.IssueExecutionState, error) { return nil, nil }
 func (m *mockStorage) UpdateExecutionState(ctx context.Context, issueID string, state types.ExecutionState) error { return nil }

@@ -136,6 +136,9 @@ func (m *mockStorage) GetActiveInstances(ctx context.Context) ([]*types.Executor
 func (m *mockStorage) CleanupStaleInstances(ctx context.Context, staleThreshold int) (int, error) {
 	return 0, nil
 }
+func (m *mockStorage) DeleteOldStoppedInstances(ctx context.Context, olderThanSeconds int, maxToKeep int) (int, error) {
+	return 0, nil
+}
 func (m *mockStorage) ClaimIssue(ctx context.Context, issueID, executorInstanceID string) error {
 	return nil
 }

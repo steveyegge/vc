@@ -71,6 +71,7 @@ type Storage interface {
 	UpdateHeartbeat(ctx context.Context, instanceID string) error
 	GetActiveInstances(ctx context.Context) ([]*types.ExecutorInstance, error)
 	CleanupStaleInstances(ctx context.Context, staleThreshold int) (int, error)
+	DeleteOldStoppedInstances(ctx context.Context, olderThanSeconds int, maxToKeep int) (int, error)
 
 	// Issue Execution State (Checkpoint/Resume)
 	ClaimIssue(ctx context.Context, issueID, executorInstanceID string) error
