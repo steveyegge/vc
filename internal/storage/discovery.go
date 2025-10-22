@@ -7,13 +7,16 @@ import (
 	"strings"
 )
 
-// DiscoverDatabase walks up the directory tree from cwd looking for .beads/*.db
+// DiscoverDatabase looks for .beads/*.db in the current directory only.
 // Returns the absolute path to the database file, or an error if not found.
 //
-// This implements git-like discovery:
-//   cd ~/myproject && vc execute
-//   → Finds ~/myproject/.beads/project.db
-//   → Sets WorkingDir to ~/myproject
+// vc-240: Changed to only check current directory, not parent directories.
+// This prevents accidentally using a parent project's database when VC
+// is nested inside another project's directory structure.
+//
+// Example:
+//   cd ~/src/vc && vc execute
+//   → Finds ~/src/vc/.beads/vc.db (not ~/src/beads/.beads/bd.db)
 //
 // vc-235: Check VC_DB_PATH environment variable first to allow test isolation.
 // If VC_DB_PATH is set, use it directly without discovery.
@@ -30,10 +33,45 @@ func DiscoverDatabase() (string, error) {
 		return "", fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	return discoverDatabaseFromDir(dir)
+	// vc-240: Only check current directory, do not walk up the tree
+	return discoverDatabaseInDir(dir)
 }
 
-// discoverDatabaseFromDir walks up from the given directory
+// discoverDatabaseInDir checks for .beads/*.db in the specified directory only.
+// Does NOT walk up the directory tree (vc-240).
+func discoverDatabaseInDir(dir string) (string, error) {
+	// Check for .beads/*.db in the specified directory
+	beadsDir := filepath.Join(dir, ".beads")
+
+	// Check if .beads directory exists
+	if info, err := os.Stat(beadsDir); err == nil && info.IsDir() {
+		// Look for .db files in .beads/
+		entries, err := os.ReadDir(beadsDir)
+		if err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".db") {
+					dbPath := filepath.Join(beadsDir, entry.Name())
+					// Return absolute path
+					absPath, err := filepath.Abs(dbPath)
+					if err != nil {
+						return "", fmt.Errorf("failed to get absolute path: %w", err)
+					}
+					return absPath, nil
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf(
+		"no .beads/*.db found in %s\n"+
+			"  Run 'vc init' to initialize a VC tracker in this directory\n"+
+			"  Or use --db flag to specify database path explicitly",
+		dir)
+}
+
+// discoverDatabaseFromDir walks up from the given directory.
+// DEPRECATED: Use discoverDatabaseInDir instead (vc-240).
+// Kept for potential future use or reference.
 func discoverDatabaseFromDir(startDir string) (string, error) {
 	dir := startDir
 
