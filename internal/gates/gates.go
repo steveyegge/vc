@@ -83,14 +83,16 @@ func (r *Runner) RunAll(ctx context.Context) ([]*Result, bool) {
 	var results []*Result
 	allPassed := true
 
-	// Run gates in order: test -> lint -> build
+	// Run gates in order: build -> test -> lint
+	// BUILD runs first to catch compilation errors before running tests
+	// This prevents confusing test failures on code that doesn't even compile
 	gates := []struct {
 		gateType GateType
 		runFunc  func(context.Context) *Result
 	}{
+		{GateBuild, r.runBuildGate},
 		{GateTest, r.runTestGate},
 		{GateLint, r.runLintGate},
-		{GateBuild, r.runBuildGate},
 	}
 
 	for _, gate := range gates {
@@ -288,7 +290,7 @@ func (r *Runner) HandleGateResults(ctx context.Context, originalIssue *types.Iss
 
 	// If all gates passed, nothing else to do
 	if allPassed {
-		successComment := "All quality gates passed:\n- ✓ go test\n- ✓ golangci-lint\n- ✓ go build"
+		successComment := "All quality gates passed:\n- ✓ go build\n- ✓ go test\n- ✓ golangci-lint"
 		if err := r.store.AddComment(ctx, originalIssue.ID, "quality-gates", successComment); err != nil {
 			fmt.Printf("warning: failed to add success comment: %v\n", err)
 		}
