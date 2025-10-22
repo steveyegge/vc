@@ -79,12 +79,14 @@ func processItems(count int) bool {
 		return true
 	}
 
-	// This should NOT be flagged: legitimate boundary check
+	// ZFC-compliant: ALL comparisons flagged, AI decides legitimacy
+	// These WILL be flagged and sent to AI for evaluation
 	if count < 0 {
 		return false
 	}
 
-	// This should NOT be flagged: common values
+	// ZFC-compliant: Even 0 and 1 are sent to AI
+	// AI will determine if these are legitimate based on context
 	if count == 0 || count == 1 {
 		return false
 	}
@@ -114,19 +116,28 @@ func retry(attempts int) bool {
 	violations, err := detector.scanFiles(ctx)
 	require.NoError(t, err)
 
-	// Should find the magic number violation
+	// ZFC-compliant: Should find ALL magic number comparisons (including 0, 1, 50)
 	magicNumberViolations := filterByType(violations, "magic_number")
-	assert.GreaterOrEqual(t, len(magicNumberViolations), 1, "Should detect magic number threshold")
+	assert.GreaterOrEqual(t, len(magicNumberViolations), 3, "Should detect all magic number thresholds")
 
-	// Verify it found the right line
-	found := false
+	// Verify it found key violations (AI will judge legitimacy later)
+	foundCount50 := false
+	foundCount0 := false
+	foundCount1 := false
 	for _, v := range magicNumberViolations {
 		if strings.Contains(v.LineContent, "count > 50") {
-			found = true
+			foundCount50 = true
 			assert.Equal(t, "magic.go", v.FilePath)
 		}
+		if strings.Contains(v.LineContent, "count < 0") {
+			foundCount0 = true
+		}
+		if strings.Contains(v.LineContent, "count == 0") || strings.Contains(v.LineContent, "count == 1") {
+			foundCount1 = true
+		}
 	}
-	assert.True(t, found, "Should find 'count > 50' violation")
+	assert.True(t, foundCount50, "Should find 'count > 50' violation")
+	// Note: count < 0 and count == 0/1 will be flagged by AST but are sent to AI for judgment
 }
 
 func TestZFCDetector_ScanFiles_RegexPatterns(t *testing.T) {
@@ -223,12 +234,14 @@ func TestZFCDetector_ScanFiles_ComplexConditionals(t *testing.T) {
 		"business_logic.go": `package main
 
 func shouldApprove(amount int, user string, hasAuth bool, isWeekend bool) bool {
-	// This should be flagged: complex business rule
+	// ZFC-compliant: Complex conditionals (2+ conditions) are flagged
+	// AI will decide if this encodes business rules or is legitimate
 	if amount < 1000 && user != "admin" && hasAuth && !isWeekend {
 		return true
 	}
 
-	// Simple conditional - should NOT be flagged
+	// Simple conditional - no && or || operators, not flagged as complex
+	// (but will be flagged as magic_number violation)
 	if amount < 0 {
 		return false
 	}

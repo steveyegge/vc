@@ -20,10 +20,8 @@ import (
 const (
 	// maxViolationsForAI limits the number of potential violations sent to AI evaluation
 	// to prevent token limit errors and excessive API costs.
+	// This is a technical constraint (API limits), not a semantic judgment.
 	maxViolationsForAI = 30
-
-	// minLineLength filters out very short lines that are unlikely to contain meaningful violations
-	minLineLength = 20
 )
 
 // ZFCDetector identifies Zero Framework Cognition violations: places where
@@ -169,7 +167,6 @@ type zfcViolation struct {
 // scanFiles walks the directory tree and finds potential ZFC violations.
 func (d *ZFCDetector) scanFiles(ctx context.Context) ([]zfcViolation, error) {
 	var violations []zfcViolation
-	filesScanned := 0
 
 	err := filepath.Walk(d.RootPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -306,11 +303,11 @@ func (d *ZFCDetector) checkMagicNumberComparison(fset *token.FileSet, expr *ast.
 		}
 
 		if numLit != nil {
-			// Ignore common legitimate values (0, 1, -1, 100 for percentages)
-			val, _ := strconv.Atoi(numLit.Value)
-			if val == 0 || val == 1 || val == -1 || val == 100 {
-				return nil
-			}
+			// ZFC Compliance: Send ALL numeric comparisons to AI for evaluation.
+			// Don't assume 0, 1, -1, or 100 are always legitimate - context matters!
+			// Example: "if retryCount > 100" could be a violation (arbitrary limit)
+			//          "if percentage == 100" is probably legitimate (semantic meaning)
+			// Let AI decide based on variable names and context.
 
 			pos := fset.Position(expr.Pos())
 			return &zfcViolation{
@@ -375,8 +372,13 @@ func (d *ZFCDetector) checkComplexConditional(fset *token.FileSet, ifStmt *ast.I
 	// Count the number of && and || operators in the condition
 	complexity := d.countConditionalComplexity(ifStmt.Cond)
 
-	// Only flag if there are 3+ conditions (significant complexity)
-	if complexity >= 3 {
+	// ZFC Compliance: Send ALL conditionals with multiple conditions to AI for evaluation.
+	// Don't hardcode "3 is too complex" - let AI decide based on context.
+	// A 2-condition check might encode business rules, or might be simple safety.
+	// Examples:
+	//   if amount > 1000 && user != "admin" { } // Business rule - likely violation
+	//   if ptr != nil && ptr.IsValid() { }       // Safety check - legitimate
+	if complexity >= 2 {
 		pos := fset.Position(ifStmt.Pos())
 		return &zfcViolation{
 			FilePath:      relPath,
@@ -416,7 +418,14 @@ func (d *ZFCDetector) scanFilePatterns(absPath, relPath string) ([]zfcViolation,
 	scanner := bufio.Scanner(file)
 	lineNumber := 0
 
-	// Compile patterns
+	// ZFC Meta-Note: Yes, this detector uses regexp.MustCompile!
+	// This is the "bootstrap problem": we need SOME pattern matching to identify
+	// candidates before sending them to AI for judgment. These regex patterns
+	// don't make semantic decisions - they just collect potential violations.
+	// The AI makes the final judgment on whether each match is a true violation.
+	//
+	// Think of it like a metal detector: it beeps on all metal objects (candidates),
+	// then a human decides which are treasure vs trash (AI evaluation).
 	magicNumberPattern := regexp.MustCompile(`if\s+\w+\s*[<>!=]+\s*\d{2,}`)
 	regexPattern := regexp.MustCompile(`regexp\.(MustCompile|Compile)`)
 	stringMatchPattern := regexp.MustCompile(`strings\.(Contains|HasPrefix|HasSuffix|EqualFold)`)
@@ -426,9 +435,9 @@ func (d *ZFCDetector) scanFilePatterns(absPath, relPath string) ([]zfcViolation,
 		lineNumber++
 		line := scanner.Text()
 
-		// Skip very short lines and comments
+		// Skip comments only (not blank lines - they won't match patterns anyway)
 		trimmed := strings.TrimSpace(line)
-		if len(trimmed) < minLineLength || strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") || strings.HasPrefix(trimmed, "*") {
+		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") || strings.HasPrefix(trimmed, "*") {
 			continue
 		}
 
