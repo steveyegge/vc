@@ -372,6 +372,9 @@ func (m *manager) CleanupAll(ctx context.Context, olderThan time.Duration) error
 // keeping only the most recent N as specified by retentionCount.
 // This implements the retention policy from vc-134.
 // If retentionCount is 0, all failed sandboxes are kept.
+//
+// IMPORTANT: This only removes sandboxes that are NOT in the activeSandboxes map,
+// preventing deletion of currently running or recently created sandboxes (vc-249).
 func (m *manager) CleanupStaleFailedSandboxes(ctx context.Context, retentionCount int) error {
 	if retentionCount == 0 {
 		// Keep all failed sandboxes
@@ -387,7 +390,16 @@ func (m *manager) CleanupStaleFailedSandboxes(ctx context.Context, retentionCoun
 		return fmt.Errorf("failed to read sandbox root: %w", err)
 	}
 
+	// Get set of active sandbox paths to skip
+	m.mu.RLock()
+	activePaths := make(map[string]bool)
+	for _, sb := range m.activeSandboxes {
+		activePaths[sb.Path] = true
+	}
+	m.mu.RUnlock()
+
 	// Collect sandbox directories with their modification times
+	// ONLY include directories that are NOT in activeSandboxes (vc-249)
 	type sandboxInfo struct {
 		path    string
 		modTime time.Time
@@ -400,6 +412,12 @@ func (m *manager) CleanupStaleFailedSandboxes(ctx context.Context, retentionCoun
 		}
 
 		sandboxPath := filepath.Join(m.config.SandboxRoot, entry.Name())
+
+		// Skip active sandboxes (vc-249: prevent deleting work in progress)
+		if activePaths[sandboxPath] {
+			continue
+		}
+
 		info, err := entry.Info()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to get info for %s: %v\n", sandboxPath, err)
