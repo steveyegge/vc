@@ -573,6 +573,418 @@ func TestRegisterInstanceValidation(t *testing.T) {
 	}
 }
 
+func TestDeleteOldStoppedInstances(t *testing.T) {
+	tests := []struct {
+		name              string
+		setup             func(ctx context.Context, db *SQLiteStorage, now time.Time) error
+		olderThanSeconds  int
+		maxToKeep         int
+		wantDeleted       int
+		wantRemaining     []string // instance IDs that should remain
+		wantErr           bool
+		errMsg            string
+	}{
+		{
+			name: "delete old instances while keeping N most recent",
+			setup: func(ctx context.Context, db *SQLiteStorage, now time.Time) error {
+				// Create 5 stopped instances of varying ages
+				instances := []*types.ExecutorInstance{
+					{
+						InstanceID:    "old-1",
+						Hostname:      "host-1",
+						PID:           100,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-10 * time.Hour), // Very old
+						LastHeartbeat: now.Add(-10 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+					{
+						InstanceID:    "old-2",
+						Hostname:      "host-2",
+						PID:           200,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-8 * time.Hour),
+						LastHeartbeat: now.Add(-8 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+					{
+						InstanceID:    "old-3",
+						Hostname:      "host-3",
+						PID:           300,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-6 * time.Hour),
+						LastHeartbeat: now.Add(-6 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+					{
+						InstanceID:    "recent-1",
+						Hostname:      "host-4",
+						PID:           400,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-2 * time.Hour),
+						LastHeartbeat: now.Add(-2 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+					{
+						InstanceID:    "recent-2",
+						Hostname:      "host-5",
+						PID:           500,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-1 * time.Hour), // Most recent
+						LastHeartbeat: now.Add(-1 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+				}
+				for _, inst := range instances {
+					if err := db.RegisterInstance(ctx, inst); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+			olderThanSeconds: 3600 * 4, // 4 hours
+			maxToKeep:        2,         // Keep 2 most recent
+			wantDeleted:      3,         // Delete old-1, old-2, old-3
+			wantRemaining:    []string{"recent-1", "recent-2"},
+			wantErr:          false,
+		},
+		{
+			name: "maxToKeep=0 deletes all old instances",
+			setup: func(ctx context.Context, db *SQLiteStorage, now time.Time) error {
+				instances := []*types.ExecutorInstance{
+					{
+						InstanceID:    "old-1",
+						Hostname:      "host-1",
+						PID:           100,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-10 * time.Hour),
+						LastHeartbeat: now.Add(-10 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+					{
+						InstanceID:    "old-2",
+						Hostname:      "host-2",
+						PID:           200,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-8 * time.Hour),
+						LastHeartbeat: now.Add(-8 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+				}
+				for _, inst := range instances {
+					if err := db.RegisterInstance(ctx, inst); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+			olderThanSeconds: 3600 * 4, // 4 hours
+			maxToKeep:        0,         // Delete all
+			wantDeleted:      2,
+			wantRemaining:    []string{},
+			wantErr:          false,
+		},
+		{
+			name: "fewer instances than maxToKeep deletes none",
+			setup: func(ctx context.Context, db *SQLiteStorage, now time.Time) error {
+				instances := []*types.ExecutorInstance{
+					{
+						InstanceID:    "old-1",
+						Hostname:      "host-1",
+						PID:           100,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-10 * time.Hour),
+						LastHeartbeat: now.Add(-10 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+					{
+						InstanceID:    "old-2",
+						Hostname:      "host-2",
+						PID:           200,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-8 * time.Hour),
+						LastHeartbeat: now.Add(-8 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+				}
+				for _, inst := range instances {
+					if err := db.RegisterInstance(ctx, inst); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+			olderThanSeconds: 3600 * 4, // 4 hours
+			maxToKeep:        5,         // Keep 5, but only 2 exist
+			wantDeleted:      0,
+			wantRemaining:    []string{"old-1", "old-2"},
+			wantErr:          false,
+		},
+		{
+			name: "all instances older than threshold",
+			setup: func(ctx context.Context, db *SQLiteStorage, now time.Time) error {
+				instances := []*types.ExecutorInstance{
+					{
+						InstanceID:    "old-1",
+						Hostname:      "host-1",
+						PID:           100,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-10 * time.Hour),
+						LastHeartbeat: now.Add(-10 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+					{
+						InstanceID:    "old-2",
+						Hostname:      "host-2",
+						PID:           200,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-9 * time.Hour),
+						LastHeartbeat: now.Add(-9 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+					{
+						InstanceID:    "old-3",
+						Hostname:      "host-3",
+						PID:           300,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-8 * time.Hour),
+						LastHeartbeat: now.Add(-8 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+				}
+				for _, inst := range instances {
+					if err := db.RegisterInstance(ctx, inst); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+			olderThanSeconds: 3600 * 4, // 4 hours
+			maxToKeep:        1,         // Keep 1 most recent
+			wantDeleted:      2,         // Delete 2 oldest
+			wantRemaining:    []string{"old-3"},
+			wantErr:          false,
+		},
+		{
+			name: "mix of old and new instances with running instances",
+			setup: func(ctx context.Context, db *SQLiteStorage, now time.Time) error {
+				instances := []*types.ExecutorInstance{
+					{
+						InstanceID:    "running-1",
+						Hostname:      "host-1",
+						PID:           100,
+						Status:        types.ExecutorStatusRunning, // Should not be deleted
+						StartedAt:     now.Add(-10 * time.Hour),
+						LastHeartbeat: now,
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+					{
+						InstanceID:    "stopped-old",
+						Hostname:      "host-2",
+						PID:           200,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-8 * time.Hour),
+						LastHeartbeat: now.Add(-8 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+					{
+						InstanceID:    "stopped-recent",
+						Hostname:      "host-3",
+						PID:           300,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-1 * time.Hour),
+						LastHeartbeat: now.Add(-1 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+				}
+				for _, inst := range instances {
+					if err := db.RegisterInstance(ctx, inst); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+			olderThanSeconds: 3600 * 4, // 4 hours
+			maxToKeep:        1,         // Keep 1 stopped instance
+			wantDeleted:      1,         // Delete stopped-old only
+			wantRemaining:    []string{"running-1", "stopped-recent"},
+			wantErr:          false,
+		},
+		{
+			name: "empty table",
+			setup: func(ctx context.Context, db *SQLiteStorage, now time.Time) error {
+				return nil // No instances
+			},
+			olderThanSeconds: 3600,
+			maxToKeep:        2,
+			wantDeleted:      0,
+			wantRemaining:    []string{},
+			wantErr:          false,
+		},
+		{
+			name: "exactly maxToKeep instances",
+			setup: func(ctx context.Context, db *SQLiteStorage, now time.Time) error {
+				instances := []*types.ExecutorInstance{
+					{
+						InstanceID:    "stopped-1",
+						Hostname:      "host-1",
+						PID:           100,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-10 * time.Hour),
+						LastHeartbeat: now.Add(-10 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+					{
+						InstanceID:    "stopped-2",
+						Hostname:      "host-2",
+						PID:           200,
+						Status:        types.ExecutorStatusStopped,
+						StartedAt:     now.Add(-8 * time.Hour),
+						LastHeartbeat: now.Add(-8 * time.Hour),
+						Version:       "0.1.0",
+						Metadata:      `{}`,
+					},
+				}
+				for _, inst := range instances {
+					if err := db.RegisterInstance(ctx, inst); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+			olderThanSeconds: 3600 * 4, // 4 hours
+			maxToKeep:        2,         // Exactly 2 stopped instances
+			wantDeleted:      0,
+			wantRemaining:    []string{"stopped-1", "stopped-2"},
+			wantErr:          false,
+		},
+		{
+			name: "negative olderThanSeconds returns error",
+			setup: func(ctx context.Context, db *SQLiteStorage, now time.Time) error {
+				return nil
+			},
+			olderThanSeconds: -100,
+			maxToKeep:        2,
+			wantDeleted:      0,
+			wantErr:          true,
+			errMsg:           "olderThanSeconds must be positive",
+		},
+		{
+			name: "zero olderThanSeconds returns error",
+			setup: func(ctx context.Context, db *SQLiteStorage, now time.Time) error {
+				return nil
+			},
+			olderThanSeconds: 0,
+			maxToKeep:        2,
+			wantDeleted:      0,
+			wantErr:          true,
+			errMsg:           "olderThanSeconds must be positive",
+		},
+		{
+			name: "negative maxToKeep returns error",
+			setup: func(ctx context.Context, db *SQLiteStorage, now time.Time) error {
+				return nil
+			},
+			olderThanSeconds: 3600,
+			maxToKeep:        -1,
+			wantDeleted:      0,
+			wantErr:          true,
+			errMsg:           "maxToKeep must be non-negative",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupTestDB(t)
+			defer func() { _ = db.Close() }()
+
+			ctx := context.Background()
+			now := time.Now()
+
+			// Setup test data
+			if err := tt.setup(ctx, db, now); err != nil {
+				t.Fatalf("Failed to setup test data: %v", err)
+			}
+
+			// Execute DeleteOldStoppedInstances
+			deleted, err := db.DeleteOldStoppedInstances(ctx, tt.olderThanSeconds, tt.maxToKeep)
+
+			// Check error
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Expected error containing %q, got nil", tt.errMsg)
+				} else if tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("Expected error containing %q, got %q", tt.errMsg, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			// Check deleted count
+			if deleted != tt.wantDeleted {
+				t.Errorf("Expected to delete %d instances, deleted %d", tt.wantDeleted, deleted)
+			}
+
+			// Verify remaining instances
+			query := `SELECT instance_id FROM executor_instances ORDER BY started_at DESC`
+			rows, err := db.db.QueryContext(ctx, query)
+			if err != nil {
+				t.Fatalf("Failed to query remaining instances: %v", err)
+			}
+			defer func() { _ = rows.Close() }()
+
+			var remaining []string
+			for rows.Next() {
+				var instanceID string
+				if err := rows.Scan(&instanceID); err != nil {
+					t.Fatalf("Failed to scan instance ID: %v", err)
+				}
+				remaining = append(remaining, instanceID)
+			}
+
+			if err = rows.Err(); err != nil {
+				t.Fatalf("Error iterating rows: %v", err)
+			}
+
+			// Compare remaining instances
+			if len(remaining) != len(tt.wantRemaining) {
+				t.Errorf("Expected %d remaining instances, got %d: %v", len(tt.wantRemaining), len(remaining), remaining)
+			}
+
+			// Check that all expected instances are present (order doesn't matter for this check)
+			remainingMap := make(map[string]bool)
+			for _, id := range remaining {
+				remainingMap[id] = true
+			}
+
+			for _, expectedID := range tt.wantRemaining {
+				if !remainingMap[expectedID] {
+					t.Errorf("Expected instance %s to remain, but it was deleted", expectedID)
+				}
+			}
+		})
+	}
+}
+
 // setupTestDB creates a temporary test database
 func setupTestDB(t *testing.T) *SQLiteStorage {
 	t.Helper()

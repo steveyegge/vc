@@ -288,3 +288,62 @@ func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshol
 	// Return total number of instances cleaned (stale + orphaned)
 	return len(allInstanceIDs), nil
 }
+
+// DeleteOldStoppedInstances removes old stopped executor instances from the database
+// to prevent accumulation of historical instances that are no longer needed.
+// It deletes instances with status='stopped' that are older than olderThanSeconds,
+// but always keeps at least maxToKeep most recent stopped instances.
+// Returns the number of instances deleted.
+func (s *SQLiteStorage) DeleteOldStoppedInstances(ctx context.Context, olderThanSeconds int, maxToKeep int) (int, error) {
+	// Validate inputs
+	if olderThanSeconds <= 0 {
+		return 0, fmt.Errorf("olderThanSeconds must be positive, got: %d", olderThanSeconds)
+	}
+	if maxToKeep < 0 {
+		return 0, fmt.Errorf("maxToKeep must be non-negative, got: %d", maxToKeep)
+	}
+
+	// Calculate the cutoff time
+	cutoffTime := time.Now().Add(-time.Duration(olderThanSeconds) * time.Second)
+
+	// Start a transaction
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Build the delete query:
+	// 1. Find stopped instances older than cutoff
+	// 2. Exclude the N most recent stopped instances (to always keep some history)
+	// We use a subquery to get the instance_ids we want to keep
+	deleteQuery := `
+		DELETE FROM executor_instances
+		WHERE status = 'stopped'
+		  AND started_at < ?
+		  AND instance_id NOT IN (
+		      SELECT instance_id
+		      FROM executor_instances
+		      WHERE status = 'stopped'
+		      ORDER BY started_at DESC
+		      LIMIT ?
+		  )
+	`
+
+	result, err := tx.ExecContext(ctx, deleteQuery, cutoffTime, maxToKeep)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete old stopped instances: %w", err)
+	}
+
+	rowsDeleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows deleted: %w", err)
+	}
+
+	// Commit the transaction
+	if err = tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return int(rowsDeleted), nil
+}
