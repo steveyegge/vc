@@ -20,6 +20,10 @@ type Mission struct {
 	ApprovalRequired bool `json:"approval_required"` // Requires human approval before execution
 	ApprovedAt  *time.Time `json:"approved_at,omitempty"` // When plan was approved
 	ApprovedBy  string `json:"approved_by,omitempty"`    // Who approved the plan
+	SandboxPath string `json:"sandbox_path,omitempty"`    // Path to sandbox directory for this mission
+	BranchName  string `json:"branch_name,omitempty"`     // Git branch for this mission's work
+	IterationCount int `json:"iteration_count"`           // Number of execution iterations
+	GatesStatus string `json:"gates_status,omitempty"`    // Quality gates status (passed/failed)
 }
 
 // Validate checks if the mission has valid field values

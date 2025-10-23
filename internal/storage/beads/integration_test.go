@@ -152,7 +152,7 @@ func TestBeadsIntegration(t *testing.T) {
 
 	t.Run("executor instance registration", func(t *testing.T) {
 		instance := &types.ExecutorInstance{
-			ID:            "test-executor-1",
+			InstanceID:    "test-executor-1",
 			Hostname:      "localhost",
 			PID:           12345,
 			Version:       "0.1.0",
@@ -176,11 +176,11 @@ func TestBeadsIntegration(t *testing.T) {
 			t.Errorf("Expected 1 active instance, got %d", len(instances))
 		}
 
-		if instances[0].ID != "test-executor-1" {
-			t.Errorf("Expected instance ID 'test-executor-1', got '%s'", instances[0].ID)
+		if instances[0].InstanceID != "test-executor-1" {
+			t.Errorf("Expected instance ID 'test-executor-1', got '%s'", instances[0].InstanceID)
 		}
 
-		t.Logf("Registered executor instance: %s", instance.ID)
+		t.Logf("Registered executor instance: %s", instance.InstanceID)
 	})
 
 	t.Run("claim and release issue", func(t *testing.T) {

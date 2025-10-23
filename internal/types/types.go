@@ -206,6 +206,7 @@ type IssueFilter struct {
 	Status    *Status
 	Priority  *int
 	IssueType *IssueType
+	Type      *IssueType // Alias for IssueType (for compatibility)
 	Assignee  *string
 	Labels    []string
 	Limit     int
@@ -299,8 +300,10 @@ type IssueExecutionState struct {
 	ExecutorInstanceID string         `json:"executor_instance_id"`
 	State              ExecutionState `json:"state"`
 	CheckpointData     string         `json:"checkpoint_data"` // JSON string (must be valid JSON)
+	ClaimedAt          time.Time      `json:"claimed_at"`
 	StartedAt          time.Time      `json:"started_at"`
 	UpdatedAt          time.Time      `json:"updated_at"`
+	ErrorMessage       string         `json:"error_message,omitempty"`
 }
 
 // Validate checks if the issue execution state has valid field values

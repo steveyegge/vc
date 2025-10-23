@@ -19,7 +19,7 @@ func (s *VCStorage) RegisterInstance(ctx context.Context, instance *types.Execut
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO vc_executor_instances (id, hostname, pid, version, started_at, last_heartbeat, status)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, instance.ID, instance.Hostname, instance.PID, instance.Version,
+	`, instance.InstanceID, instance.Hostname, instance.PID, instance.Version,
 		instance.StartedAt, instance.LastHeartbeat, instance.Status)
 
 	if err != nil {
@@ -69,7 +69,7 @@ func (s *VCStorage) GetActiveInstances(ctx context.Context) ([]*types.ExecutorIn
 	var instances []*types.ExecutorInstance
 	for rows.Next() {
 		var inst types.ExecutorInstance
-		if err := rows.Scan(&inst.ID, &inst.Hostname, &inst.PID, &inst.Version,
+		if err := rows.Scan(&inst.InstanceID, &inst.Hostname, &inst.PID, &inst.Version,
 			&inst.StartedAt, &inst.LastHeartbeat, &inst.Status); err != nil {
 			return nil, fmt.Errorf("failed to scan instance: %w", err)
 		}

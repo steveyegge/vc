@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	beadsTypes "github.com/steveyegge/beads/internal/types"
+	"github.com/steveyegge/beads"
 	"github.com/steveyegge/vc/internal/storage/sqlite"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -167,11 +167,22 @@ func (s *VCStorage) CloseIssue(ctx context.Context, id string, reason string, ac
 // SearchIssues searches issues in Beads
 func (s *VCStorage) SearchIssues(ctx context.Context, query string, filter types.IssueFilter) ([]*types.Issue, error) {
 	// Convert VC filter to Beads filter
-	beadsFilter := beadsTypes.IssueFilter{
-		Status:   beadsTypes.Status(filter.Status),
-		Type:     beadsTypes.IssueType(filter.Type),
+	beadsFilter := beads.IssueFilter{
 		Priority: filter.Priority,
 		Assignee: filter.Assignee,
+	}
+
+	// Convert pointer fields if not nil
+	if filter.Status != nil {
+		beadsStatus := beads.Status(*filter.Status)
+		beadsFilter.Status = &beadsStatus
+	}
+	if filter.Type != nil {
+		beadsType := beads.IssueType(*filter.Type)
+		beadsFilter.IssueType = &beadsType
+	} else if filter.IssueType != nil {
+		beadsType := beads.IssueType(*filter.IssueType)
+		beadsFilter.IssueType = &beadsType
 	}
 
 	beadsIssues, err := s.Storage.SearchIssues(ctx, query, beadsFilter)
@@ -194,10 +205,10 @@ func (s *VCStorage) SearchIssues(ctx context.Context, query string, filter types
 
 // AddDependency adds a dependency in Beads
 func (s *VCStorage) AddDependency(ctx context.Context, dep *types.Dependency, actor string) error {
-	beadsDep := &beadsTypes.Dependency{
+	beadsDep := &beads.Dependency{
 		IssueID:     dep.IssueID,
 		DependsOnID: dep.DependsOnID,
-		Type:        beadsTypes.DependencyType(dep.Type),
+		Type:        beads.DependencyType(dep.Type),
 	}
 	return s.Storage.AddDependency(ctx, beadsDep, actor)
 }
@@ -263,8 +274,9 @@ func (s *VCStorage) GetDependencyTree(ctx context.Context, issueID string, maxDe
 	vcNodes := make([]*types.TreeNode, len(beadsNodes))
 	for i, bn := range beadsNodes {
 		vcNodes[i] = &types.TreeNode{
-			Issue:    *beadsIssueToVC(bn.Issue),
-			Children: nil, // TODO: convert children recursively if needed
+			Issue:     *beadsIssueToVC(&bn.Issue),
+			Depth:     bn.Depth,
+			Truncated: bn.Truncated,
 		}
 	}
 	return vcNodes, nil
@@ -301,9 +313,8 @@ func (s *VCStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, error) 
 
 // GetReadyWork retrieves ready work from Beads
 func (s *VCStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) ([]*types.Issue, error) {
-	beadsFilter := beadsTypes.WorkFilter{
-		Status:   beadsTypes.Status(filter.Status),
-		Type:     beadsTypes.IssueType(filter.Type),
+	beadsFilter := beads.WorkFilter{
+		Status:   beads.Status(filter.Status),
 		Priority: filter.Priority,
 		Limit:    filter.Limit,
 	}
@@ -330,8 +341,9 @@ func (s *VCStorage) GetBlockedIssues(ctx context.Context) ([]*types.BlockedIssue
 	vcBlocked := make([]*types.BlockedIssue, len(beadsBlocked))
 	for i, bb := range beadsBlocked {
 		vcBlocked[i] = &types.BlockedIssue{
-			Issue:    *beadsIssueToVC(bb.Issue),
-			Blockers: nil, // TODO: convert blockers if needed
+			Issue:          *beadsIssueToVC(&bb.Issue),
+			BlockedByCount: bb.BlockedByCount,
+			BlockedBy:      bb.BlockedBy,
 		}
 	}
 	return vcBlocked, nil

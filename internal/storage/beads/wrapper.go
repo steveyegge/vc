@@ -18,23 +18,22 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/steveyegge/beads"
-	beadsTypes "github.com/steveyegge/beads/internal/types"
+	beadsLib "github.com/steveyegge/beads"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/types"
 )
 
 // VCStorage wraps Beads storage and adds VC-specific extensions
 type VCStorage struct {
-	beads.Storage          // Embedded - all Beads operations available
-	db            *sql.DB  // Direct DB access for VC extension tables
-	dbPath        string   // Path to database file
+	beadsLib.Storage       // Embedded - all Beads operations available
+	db               *sql.DB  // Direct DB access for VC extension tables
+	dbPath           string   // Path to database file
 }
 
 // NewVCStorage creates a VC storage instance using Beads as the underlying storage
 func NewVCStorage(ctx context.Context, dbPath string) (*VCStorage, error) {
 	// 1. Open Beads storage (creates core tables: issues, dependencies, labels, etc.)
-	beadsStore, err := beads.NewSQLiteStorage(dbPath)
+	beadsStore, err := beadsLib.NewSQLiteStorage(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open Beads storage: %w", err)
 	}
@@ -266,7 +265,7 @@ func (s *VCStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*eve
 // ======================================================================
 
 // Convert Beads types to VC types
-func beadsIssueToVC(bi *beadsTypes.Issue) *types.Issue {
+func beadsIssueToVC(bi *beadsLib.Issue) *types.Issue {
 	if bi == nil {
 		return nil
 	}
@@ -290,20 +289,20 @@ func beadsIssueToVC(bi *beadsTypes.Issue) *types.Issue {
 }
 
 // Convert VC types to Beads types
-func vcIssueToBeads(vi *types.Issue) *beadsTypes.Issue {
+func vcIssueToBeads(vi *types.Issue) *beadsLib.Issue {
 	if vi == nil {
 		return nil
 	}
-	return &beadsTypes.Issue{
+	return &beadsLib.Issue{
 		ID:                 vi.ID,
 		Title:              vi.Title,
 		Description:        vi.Description,
 		Design:             vi.Design,
 		AcceptanceCriteria: vi.AcceptanceCriteria,
 		Notes:              vi.Notes,
-		Status:             beadsTypes.Status(vi.Status),
+		Status:             beadsLib.Status(vi.Status),
 		Priority:           vi.Priority,
-		IssueType:          beadsTypes.IssueType(vi.IssueType),
+		IssueType:          beadsLib.IssueType(vi.IssueType),
 		// IssueSubtype is VC-specific, stored in extension table
 		Assignee:         vi.Assignee,
 		EstimatedMinutes: vi.EstimatedMinutes,
