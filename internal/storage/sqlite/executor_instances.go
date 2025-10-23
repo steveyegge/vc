@@ -46,6 +46,31 @@ func (s *SQLiteStorage) RegisterInstance(ctx context.Context, instance *types.Ex
 	return nil
 }
 
+// MarkInstanceStopped marks an executor instance as stopped
+func (s *SQLiteStorage) MarkInstanceStopped(ctx context.Context, instanceID string) error {
+	query := `
+		UPDATE executor_instances
+		SET status = 'stopped'
+		WHERE instance_id = ?
+	`
+
+	result, err := s.db.ExecContext(ctx, query, instanceID)
+	if err != nil {
+		return fmt.Errorf("failed to mark instance as stopped: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("executor instance not found: %s", instanceID)
+	}
+
+	return nil
+}
+
 // UpdateHeartbeat updates the last_heartbeat timestamp for an executor instance
 func (s *SQLiteStorage) UpdateHeartbeat(ctx context.Context, instanceID string) error {
 	query := `

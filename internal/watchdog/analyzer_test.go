@@ -45,6 +45,7 @@ func (m *mockStorage) AddComment(ctx context.Context, issueID, actor, comment st
 func (m *mockStorage) GetEvents(ctx context.Context, issueID string, limit int) ([]*types.Event, error) { return nil, nil }
 func (m *mockStorage) GetStatistics(ctx context.Context) (*types.Statistics, error) { return nil, nil }
 func (m *mockStorage) RegisterInstance(ctx context.Context, instance *types.ExecutorInstance) error { return nil }
+func (m *mockStorage) MarkInstanceStopped(ctx context.Context, instanceID string) error { return nil }
 func (m *mockStorage) UpdateHeartbeat(ctx context.Context, instanceID string) error { return nil }
 func (m *mockStorage) GetActiveInstances(ctx context.Context) ([]*types.ExecutorInstance, error) { return nil, nil }
 func (m *mockStorage) CleanupStaleInstances(ctx context.Context, staleThreshold int) (int, error) { return 0, nil }

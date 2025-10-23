@@ -447,26 +447,9 @@ func (e *Executor) Stop(ctx context.Context) error {
 		}
 	}
 
-	// Mark instance as stopped (vc-113: Don't fail shutdown if this fails)
-	// Get current instance to preserve all fields
-	instances, err := e.store.GetActiveInstances(ctx)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to get active instances during shutdown: %v\n", err)
-	} else {
-		var instance *types.ExecutorInstance
-		for _, inst := range instances {
-			if inst.InstanceID == e.instanceID {
-				instance = inst
-				break
-			}
-		}
-
-		if instance != nil {
-			instance.Status = types.ExecutorStatusStopped
-			if err := e.store.RegisterInstance(ctx, instance); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: failed to mark instance as stopped: %v\n", err)
-			}
-		}
+	// Mark instance as stopped (vc-102: Use UPDATE instead of INSERT)
+	if err := e.store.MarkInstanceStopped(ctx, e.instanceID); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to mark instance as stopped: %v\n", err)
 	}
 
 	// Clean up old stopped instances (vc-133)
@@ -1401,7 +1384,7 @@ func (e *Executor) logCleanupEvent(ctx context.Context, totalDeleted, timeBasedD
 		ID:         uuid.New().String(),
 		Type:       events.EventTypeEventCleanupCompleted,
 		Timestamp:  time.Now(),
-		IssueID:    "SYSTEM", // System-level event, not tied to a specific issue
+		IssueID:    "", // System-level event - empty string stores as NULL to avoid FK constraint violation (vc-100)
 		ExecutorID: e.instanceID,
 		AgentID:    "", // Not produced by a coding agent
 		Severity:   events.SeverityInfo,

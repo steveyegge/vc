@@ -158,6 +158,9 @@ func (m *mockStorage) GetEvents(ctx context.Context, issueID string, limit int) 
 func (m *mockStorage) RegisterInstance(ctx context.Context, instance *types.ExecutorInstance) error {
 	return nil
 }
+func (m *mockStorage) MarkInstanceStopped(ctx context.Context, instanceID string) error {
+	return nil
+}
 func (m *mockStorage) UpdateHeartbeat(ctx context.Context, instanceID string) error {
 	return nil
 }

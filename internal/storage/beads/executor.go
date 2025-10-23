@@ -29,6 +29,30 @@ func (s *VCStorage) RegisterInstance(ctx context.Context, instance *types.Execut
 	return nil
 }
 
+// MarkInstanceStopped marks an executor instance as stopped
+func (s *VCStorage) MarkInstanceStopped(ctx context.Context, instanceID string) error {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE vc_executor_instances
+		SET status = 'stopped'
+		WHERE id = ?
+	`, instanceID)
+
+	if err != nil {
+		return fmt.Errorf("failed to mark instance as stopped: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("executor instance %s not found", instanceID)
+	}
+
+	return nil
+}
+
 // UpdateHeartbeat updates the last heartbeat time for an executor instance
 func (s *VCStorage) UpdateHeartbeat(ctx context.Context, instanceID string) error {
 	result, err := s.db.ExecContext(ctx, `

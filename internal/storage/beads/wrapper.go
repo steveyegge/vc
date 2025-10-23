@@ -191,10 +191,18 @@ func (s *VCStorage) StoreAgentEvent(ctx context.Context, event *events.AgentEven
 		dataJSON = string(jsonBytes)
 	}
 
+	// Convert empty issue_id to NULL to avoid FK constraint violation for system events (vc-100)
+	var issueID interface{}
+	if event.IssueID == "" {
+		issueID = nil
+	} else {
+		issueID = event.IssueID
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO vc_agent_events (timestamp, issue_id, type, severity, message, data)
 		VALUES (?, ?, ?, ?, ?, ?)
-	`, event.Timestamp, event.IssueID, event.Type, event.Severity, event.Message, dataJSON)
+	`, event.Timestamp, issueID, event.Type, event.Severity, event.Message, dataJSON)
 
 	if err != nil {
 		return fmt.Errorf("failed to store agent event: %w", err)

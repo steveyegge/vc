@@ -68,6 +68,7 @@ type Storage interface {
 
 	// Executor Instances
 	RegisterInstance(ctx context.Context, instance *types.ExecutorInstance) error
+	MarkInstanceStopped(ctx context.Context, instanceID string) error
 	UpdateHeartbeat(ctx context.Context, instanceID string) error
 	GetActiveInstances(ctx context.Context) ([]*types.ExecutorInstance, error)
 	CleanupStaleInstances(ctx context.Context, staleThreshold int) (int, error)
