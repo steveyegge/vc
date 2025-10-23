@@ -370,6 +370,17 @@ func (e *Executor) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to register executor instance: %w", err)
 	}
 
+	// Clean up orphaned claims and stale instances on startup (vc-109)
+	// This runs synchronously before event loop starts to prevent claiming already-claimed issues
+	staleThresholdSecs := int(e.staleThreshold.Seconds())
+	cleaned, err := e.store.CleanupStaleInstances(ctx, staleThresholdSecs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to cleanup stale instances on startup: %v\n", err)
+		// Don't fail startup - log warning and continue
+	} else if cleaned > 0 {
+		fmt.Printf("Cleanup: Cleaned up %d stale/orphaned instance(s) on startup\n", cleaned)
+	}
+
 	// Clean up orphaned mission branches on startup (vc-135)
 	// This runs synchronously to ensure branches are cleaned before claiming work
 	if e.enableSandboxes && !e.config.KeepBranches {
