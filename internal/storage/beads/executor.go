@@ -162,13 +162,13 @@ func (s *VCStorage) ClaimIssue(ctx context.Context, issueID, executorInstanceID 
 	// Insert or update claim
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO vc_issue_execution_state (issue_id, executor_instance_id, claimed_at, state, updated_at)
-		VALUES (?, ?, ?, 'claimed', ?)
+		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(issue_id) DO UPDATE SET
 			executor_instance_id = excluded.executor_instance_id,
 			claimed_at = excluded.claimed_at,
-			state = 'claimed',
+			state = ?,
 			updated_at = excluded.updated_at
-	`, issueID, executorInstanceID, time.Now(), time.Now())
+	`, issueID, executorInstanceID, time.Now(), types.ExecutionStateClaimed, time.Now(), types.ExecutionStateClaimed)
 
 	if err != nil {
 		return fmt.Errorf("failed to claim issue: %w", err)
@@ -292,9 +292,9 @@ func (s *VCStorage) GetCheckpoint(ctx context.Context, issueID string) (string, 
 func (s *VCStorage) ReleaseIssue(ctx context.Context, issueID string) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE vc_issue_execution_state
-		SET state = 'completed', updated_at = ?
+		SET state = ?, updated_at = ?
 		WHERE issue_id = ?
-	`, time.Now(), issueID)
+	`, types.ExecutionStateCompleted, time.Now(), issueID)
 
 	if err != nil {
 		return fmt.Errorf("failed to release issue: %w", err)
@@ -308,9 +308,9 @@ func (s *VCStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, actor, e
 	// Update execution state to failed
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE vc_issue_execution_state
-		SET state = 'failed', error_message = ?, updated_at = ?
+		SET state = ?, error_message = ?, updated_at = ?
 		WHERE issue_id = ?
-	`, errorComment, time.Now(), issueID)
+	`, types.ExecutionStateFailed, errorComment, time.Now(), issueID)
 
 	if err != nil {
 		return fmt.Errorf("failed to update execution state: %w", err)

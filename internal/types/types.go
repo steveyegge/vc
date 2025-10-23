@@ -279,6 +279,7 @@ const (
 	ExecutionStateGates      ExecutionState = "gates"
 	ExecutionStateCommitting ExecutionState = "committing"
 	ExecutionStateCompleted  ExecutionState = "completed"
+	ExecutionStateFailed     ExecutionState = "failed"
 )
 
 // IsValid checks if the execution state value is valid
@@ -286,7 +287,7 @@ func (s ExecutionState) IsValid() bool {
 	switch s {
 	case ExecutionStateClaimed, ExecutionStateAssessing, ExecutionStateExecuting,
 		ExecutionStateAnalyzing, ExecutionStateGates, ExecutionStateCommitting,
-		ExecutionStateCompleted:
+		ExecutionStateCompleted, ExecutionStateFailed:
 		return true
 	}
 	return false

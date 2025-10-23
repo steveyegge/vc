@@ -317,6 +317,11 @@ func (s *SQLiteStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, acto
 
 // isValidStateTransition validates state machine transitions
 func isValidStateTransition(from, to types.ExecutionState) bool {
+	// Any state can transition to 'failed' (error escape hatch)
+	if to == types.ExecutionStateFailed {
+		return true
+	}
+
 	// Define valid state transitions
 	// NOTE: This allows skipping optional phases (assessing, analyzing, gates)
 	// to support configurations where AI supervision or quality gates are disabled
@@ -343,6 +348,9 @@ func isValidStateTransition(from, to types.ExecutionState) bool {
 		},
 		types.ExecutionStateCompleted: {
 			// Terminal state - no transitions
+		},
+		types.ExecutionStateFailed: {
+			// Terminal error state - no transitions
 		},
 	}
 
