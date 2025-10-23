@@ -707,3 +707,203 @@ func TestAgentEventDataPersistence(t *testing.T) {
 		}
 	})
 }
+
+// TestGetDependencyTree verifies that GetDependencyTree returns flat list with proper depth
+func TestGetDependencyTree(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer store.Close()
+
+	// Create a dependency chain (traversing upward):
+	//   leaf (depth 0) -> depends on middle1, middle2
+	//   middle1 (depth 1) -> depends on root
+	//   middle2 (depth 1) -> depends on root
+	//   root (depth 2)
+	//
+	// GetDependencyTree(leaf) should return: leaf (0), middle1 (1), middle2 (1), root (2)
+
+	root := &types.Issue{
+		Title:      "Root dependency",
+		Status:     types.StatusOpen,
+		Priority:   0,
+		IssueType:  types.TypeEpic,
+	}
+	err = store.CreateIssue(ctx, root, "test")
+	if err != nil {
+		t.Fatalf("Failed to create root: %v", err)
+	}
+
+	middle1 := &types.Issue{
+		Title:      "Middle dependency 1",
+		Status:     types.StatusOpen,
+		Priority:   1,
+		IssueType:  types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, middle1, "test")
+	if err != nil {
+		t.Fatalf("Failed to create middle1: %v", err)
+	}
+
+	middle2 := &types.Issue{
+		Title:      "Middle dependency 2",
+		Status:     types.StatusOpen,
+		Priority:   1,
+		IssueType:  types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, middle2, "test")
+	if err != nil {
+		t.Fatalf("Failed to create middle2: %v", err)
+	}
+
+	leaf := &types.Issue{
+		Title:      "Leaf issue (depends on middle1, middle2)",
+		Status:     types.StatusOpen,
+		Priority:   2,
+		IssueType:  types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, leaf, "test")
+	if err != nil {
+		t.Fatalf("Failed to create leaf: %v", err)
+	}
+
+	// Add blocking dependencies (leaf is blocked by middle1 and middle2)
+	err = store.AddDependency(ctx, &types.Dependency{
+		IssueID:     middle1.ID,
+		DependsOnID: root.ID,
+		Type:        types.DepBlocks,
+	}, "test")
+	if err != nil {
+		t.Fatalf("Failed to add middle1 blocks root: %v", err)
+	}
+
+	err = store.AddDependency(ctx, &types.Dependency{
+		IssueID:     middle2.ID,
+		DependsOnID: root.ID,
+		Type:        types.DepBlocks,
+	}, "test")
+	if err != nil {
+		t.Fatalf("Failed to add middle2 blocks root: %v", err)
+	}
+
+	err = store.AddDependency(ctx, &types.Dependency{
+		IssueID:     leaf.ID,
+		DependsOnID: middle1.ID,
+		Type:        types.DepBlocks,
+	}, "test")
+	if err != nil {
+		t.Fatalf("Failed to add leaf blocks middle1: %v", err)
+	}
+
+	err = store.AddDependency(ctx, &types.Dependency{
+		IssueID:     leaf.ID,
+		DependsOnID: middle2.ID,
+		Type:        types.DepBlocks,
+	}, "test")
+	if err != nil {
+		t.Fatalf("Failed to add leaf blocks middle2: %v", err)
+	}
+
+	t.Run("GetDependencyTree returns flat list with depths", func(t *testing.T) {
+		tree, err := store.GetDependencyTree(ctx, leaf.ID, 10)
+		if err != nil {
+			t.Fatalf("GetDependencyTree failed: %v", err)
+		}
+
+		// Should return flat list: leaf (depth 0), middle1 (depth 1), middle2 (depth 1), root (depth 2)
+		if len(tree) != 4 {
+			t.Fatalf("Expected 4 nodes in tree, got %d", len(tree))
+		}
+
+		// Verify leaf is at depth 0
+		if tree[0].ID != leaf.ID {
+			t.Errorf("Expected leaf at index 0, got %s", tree[0].ID)
+		}
+		if tree[0].Depth != 0 {
+			t.Errorf("Expected leaf at depth 0, got %d", tree[0].Depth)
+		}
+
+		// Find middle1 and verify depth
+		var middle1Node *types.TreeNode
+		for _, node := range tree {
+			if node.ID == middle1.ID {
+				middle1Node = node
+				break
+			}
+		}
+		if middle1Node == nil {
+			t.Fatal("middle1 not found in tree")
+		}
+		if middle1Node.Depth != 1 {
+			t.Errorf("Expected middle1 at depth 1, got %d", middle1Node.Depth)
+		}
+
+		// Find root and verify depth
+		var rootNode *types.TreeNode
+		for _, node := range tree {
+			if node.ID == root.ID {
+				rootNode = node
+				break
+			}
+		}
+		if rootNode == nil {
+			t.Fatal("root not found in tree")
+		}
+		if rootNode.Depth != 2 {
+			t.Errorf("Expected root at depth 2, got %d", rootNode.Depth)
+		}
+	})
+
+	t.Run("maxDepth limits tree depth", func(t *testing.T) {
+		// Request only depth 0 and 1
+		tree, err := store.GetDependencyTree(ctx, leaf.ID, 1)
+		if err != nil {
+			t.Fatalf("GetDependencyTree failed: %v", err)
+		}
+
+		// Should have leaf (depth 0) + middle1 + middle2 (depth 1) = 3 nodes
+		// Root at depth 2 should be excluded
+		if len(tree) != 3 {
+			t.Fatalf("Expected 3 nodes with maxDepth=1, got %d", len(tree))
+		}
+
+		// Verify no nodes at depth > 1
+		for _, node := range tree {
+			if node.Depth > 1 {
+				t.Errorf("Found node at depth %d when maxDepth=1", node.Depth)
+			}
+		}
+	})
+
+	t.Run("TreeNode has no Children field (flat structure)", func(t *testing.T) {
+		tree, err := store.GetDependencyTree(ctx, leaf.ID, 10)
+		if err != nil {
+			t.Fatalf("GetDependencyTree failed: %v", err)
+		}
+
+		// TreeNode intentionally has no Children field - it's a flat list
+		// Tree structure is encoded via Depth field
+		// This test documents the expected behavior
+
+		// Verify we can reconstruct dependency relationships from depth
+		depthCounts := make(map[int]int)
+		for _, node := range tree {
+			depthCounts[node.Depth]++
+		}
+
+		if depthCounts[0] != 1 {
+			t.Errorf("Expected 1 node at depth 0 (leaf), got %d", depthCounts[0])
+		}
+		if depthCounts[1] != 2 {
+			t.Errorf("Expected 2 nodes at depth 1 (middle), got %d", depthCounts[1])
+		}
+		if depthCounts[2] != 1 {
+			t.Errorf("Expected 1 node at depth 2 (root), got %d", depthCounts[2])
+		}
+	})
+}
