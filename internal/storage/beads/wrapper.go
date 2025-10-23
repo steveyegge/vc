@@ -17,6 +17,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	beadsLib "github.com/steveyegge/beads"
 	"github.com/steveyegge/vc/internal/events"
@@ -194,8 +195,69 @@ func (s *VCStorage) StoreAgentEvent(ctx context.Context, event *events.AgentEven
 
 // GetAgentEvents retrieves agent events matching the filter
 func (s *VCStorage) GetAgentEvents(ctx context.Context, filter events.EventFilter) ([]*events.AgentEvent, error) {
-	// TODO: Implement with proper filtering
-	return nil, fmt.Errorf("GetAgentEvents not yet implemented")
+	// Build WHERE clause dynamically based on filter
+	var whereClauses []string
+	var args []interface{}
+
+	if filter.IssueID != "" {
+		whereClauses = append(whereClauses, "issue_id = ?")
+		args = append(args, filter.IssueID)
+	}
+
+	if filter.Type != "" {
+		whereClauses = append(whereClauses, "type = ?")
+		args = append(args, filter.Type)
+	}
+
+	if filter.Severity != "" {
+		whereClauses = append(whereClauses, "severity = ?")
+		args = append(args, filter.Severity)
+	}
+
+	if !filter.AfterTime.IsZero() {
+		whereClauses = append(whereClauses, "timestamp >= ?")
+		args = append(args, filter.AfterTime)
+	}
+
+	if !filter.BeforeTime.IsZero() {
+		whereClauses = append(whereClauses, "timestamp <= ?")
+		args = append(args, filter.BeforeTime)
+	}
+
+	// Build the query
+	query := `SELECT id, timestamp, issue_id, type, severity, message, data FROM vc_agent_events`
+	if len(whereClauses) > 0 {
+		query += " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+	query += " ORDER BY timestamp DESC"
+
+	if filter.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, filter.Limit)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query agent events: %w", err)
+	}
+	defer rows.Close()
+
+	var result []*events.AgentEvent
+	for rows.Next() {
+		var e events.AgentEvent
+		var dataJSON sql.NullString
+		if err := rows.Scan(&e.ID, &e.Timestamp, &e.IssueID, &e.Type, &e.Severity, &e.Message, &dataJSON); err != nil {
+			return nil, fmt.Errorf("failed to scan agent event: %w", err)
+		}
+		if dataJSON.Valid && dataJSON.String != "" {
+			if err := json.Unmarshal([]byte(dataJSON.String), &e.Data); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal event data: %w", err)
+			}
+		}
+		result = append(result, &e)
+	}
+
+	return result, rows.Err()
 }
 
 // GetAgentEventsByIssue retrieves all agent events for a specific issue

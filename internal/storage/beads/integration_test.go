@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -291,4 +292,211 @@ func TestBeadsCoreTables(t *testing.T) {
 			t.Logf("✓ Beads table '%s' exists (count=%d)", table, count)
 		}
 	}
+}
+
+// TestGetAgentEvents validates GetAgentEvents filtering functionality
+func TestGetAgentEvents(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer store.Close()
+
+	// Create test issues
+	issue := &types.Issue{
+		Title:      "Test issue for events",
+		Status:     types.StatusOpen,
+		Priority:   2,
+		IssueType:  types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, issue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	otherIssue := &types.Issue{
+		Title:      "Other test issue",
+		Status:     types.StatusOpen,
+		Priority:   2,
+		IssueType:  types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, otherIssue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create other issue: %v", err)
+	}
+
+	// Create test events with different attributes
+	now := time.Now()
+	testEvents := []events.AgentEvent{
+		{
+			Timestamp: now.Add(-3 * time.Hour),
+			IssueID:   issue.ID,
+			Type:      events.EventTypeProgress,
+			Severity:  events.SeverityInfo,
+			Message:   "Progress event 1",
+		},
+		{
+			Timestamp: now.Add(-2 * time.Hour),
+			IssueID:   issue.ID,
+			Type:      events.EventTypeError,
+			Severity:  events.SeverityError,
+			Message:   "Error event",
+		},
+		{
+			Timestamp: now.Add(-1 * time.Hour),
+			IssueID:   issue.ID,
+			Type:      events.EventTypeProgress,
+			Severity:  events.SeverityInfo,
+			Message:   "Progress event 2",
+		},
+		{
+			Timestamp: now,
+			IssueID:   otherIssue.ID,
+			Type:      events.EventTypeProgress,
+			Severity:  events.SeverityInfo,
+			Message:   "Other issue event",
+		},
+	}
+
+	// Store test events
+	for _, event := range testEvents {
+		err := store.StoreAgentEvent(ctx, &event)
+		if err != nil {
+			t.Fatalf("Failed to store event: %v", err)
+		}
+	}
+
+	t.Run("filter by issue ID", func(t *testing.T) {
+		filter := events.EventFilter{
+			IssueID: issue.ID,
+		}
+		results, err := store.GetAgentEvents(ctx, filter)
+		if err != nil {
+			t.Fatalf("GetAgentEvents failed: %v", err)
+		}
+
+		if len(results) != 3 {
+			t.Errorf("Expected 3 events for issue %s, got %d", issue.ID, len(results))
+		}
+
+		for _, e := range results {
+			if e.IssueID != issue.ID {
+				t.Errorf("Expected issue ID %s, got %s", issue.ID, e.IssueID)
+			}
+		}
+	})
+
+	t.Run("filter by type", func(t *testing.T) {
+		filter := events.EventFilter{
+			Type: events.EventTypeError,
+		}
+		results, err := store.GetAgentEvents(ctx, filter)
+		if err != nil {
+			t.Fatalf("GetAgentEvents failed: %v", err)
+		}
+
+		if len(results) != 1 {
+			t.Errorf("Expected 1 error event, got %d", len(results))
+		}
+
+		if results[0].Type != events.EventTypeError {
+			t.Errorf("Expected type %s, got %s", events.EventTypeError, results[0].Type)
+		}
+	})
+
+	t.Run("filter by severity", func(t *testing.T) {
+		filter := events.EventFilter{
+			Severity: events.SeverityError,
+		}
+		results, err := store.GetAgentEvents(ctx, filter)
+		if err != nil {
+			t.Fatalf("GetAgentEvents failed: %v", err)
+		}
+
+		if len(results) != 1 {
+			t.Errorf("Expected 1 error severity event, got %d", len(results))
+		}
+
+		if results[0].Severity != events.SeverityError {
+			t.Errorf("Expected severity %s, got %s", events.SeverityError, results[0].Severity)
+		}
+	})
+
+	t.Run("filter by time range", func(t *testing.T) {
+		filter := events.EventFilter{
+			AfterTime:  now.Add(-2*time.Hour - 30*time.Minute),
+			BeforeTime: now.Add(-30 * time.Minute),
+		}
+		results, err := store.GetAgentEvents(ctx, filter)
+		if err != nil {
+			t.Fatalf("GetAgentEvents failed: %v", err)
+		}
+
+		if len(results) != 2 {
+			t.Errorf("Expected 2 events in time range, got %d", len(results))
+		}
+	})
+
+	t.Run("filter with limit", func(t *testing.T) {
+		filter := events.EventFilter{
+			Limit: 2,
+		}
+		results, err := store.GetAgentEvents(ctx, filter)
+		if err != nil {
+			t.Fatalf("GetAgentEvents failed: %v", err)
+		}
+
+		if len(results) != 2 {
+			t.Errorf("Expected 2 events (limit), got %d", len(results))
+		}
+
+		// Verify ordering (DESC by timestamp - newest first)
+		if !results[0].Timestamp.After(results[1].Timestamp) {
+			t.Error("Expected results ordered by timestamp DESC")
+		}
+	})
+
+	t.Run("combined filters", func(t *testing.T) {
+		filter := events.EventFilter{
+			IssueID:  issue.ID,
+			Type:     events.EventTypeProgress,
+			Severity: events.SeverityInfo,
+		}
+		results, err := store.GetAgentEvents(ctx, filter)
+		if err != nil {
+			t.Fatalf("GetAgentEvents failed: %v", err)
+		}
+
+		if len(results) != 2 {
+			t.Errorf("Expected 2 progress events for issue, got %d", len(results))
+		}
+
+		for _, e := range results {
+			if e.IssueID != issue.ID {
+				t.Errorf("Expected issue ID %s, got %s", issue.ID, e.IssueID)
+			}
+			if e.Type != events.EventTypeProgress {
+				t.Errorf("Expected type %s, got %s", events.EventTypeProgress, e.Type)
+			}
+			if e.Severity != events.SeverityInfo {
+				t.Errorf("Expected severity %s, got %s", events.SeverityInfo, e.Severity)
+			}
+		}
+	})
+
+	t.Run("no filters returns all events", func(t *testing.T) {
+		filter := events.EventFilter{}
+		results, err := store.GetAgentEvents(ctx, filter)
+		if err != nil {
+			t.Fatalf("GetAgentEvents failed: %v", err)
+		}
+
+		if len(results) != 4 {
+			t.Errorf("Expected 4 total events, got %d", len(results))
+		}
+	})
 }
