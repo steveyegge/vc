@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -65,77 +66,100 @@ func TestConvertJSONToEvent(t *testing.T) {
 			expectedDescSubstr string // substring that should appear in description
 		}{
 			{
-				name: "Read tool with file",
+				name: "Read tool with file (Amp format)",
 				msg: AgentMessage{
 					Type: "tool_use",
-					Tool: "read",
-					File: "internal/executor/agent.go",
+					ID:   "toolu_123",
+					Name: "Read",
+					Input: map[string]interface{}{
+						"path": "internal/executor/agent.go",
+					},
 				},
 				expectedToolName:   "read",
 				expectedFile:       "internal/executor/agent.go",
 				expectedDescSubstr: "read internal/executor/agent.go",
 			},
 			{
-				name: "Edit tool with file",
+				name: "Edit tool with file (Amp format - edit_file)",
 				msg: AgentMessage{
 					Type: "tool_use",
-					Tool: "edit",
-					File: "parser.go",
+					ID:   "toolu_456",
+					Name: "edit_file",
+					Input: map[string]interface{}{
+						"path":    "parser.go",
+						"old_str": "old",
+						"new_str": "new",
+					},
 				},
 				expectedToolName:   "edit",
 				expectedFile:       "parser.go",
 				expectedDescSubstr: "edit parser.go",
 			},
 			{
-				name: "Write tool with file",
+				name: "Write tool with file (Amp format)",
 				msg: AgentMessage{
 					Type: "tool_use",
-					Tool: "write",
-					File: "new_file.go",
+					ID:   "toolu_789",
+					Name: "Write",
+					Input: map[string]interface{}{
+						"path": "new_file.go",
+					},
 				},
 				expectedToolName:   "write",
 				expectedFile:       "new_file.go",
 				expectedDescSubstr: "write new_file.go",
 			},
 			{
-				name: "Bash tool with command",
+				name: "Bash tool with command (Amp format)",
 				msg: AgentMessage{
-					Type:    "tool_use",
-					Tool:    "bash",
-					Command: "go test ./...",
+					Type: "tool_use",
+					ID:   "toolu_abc",
+					Name: "Bash",
+					Input: map[string]interface{}{
+						"cmd": "go test ./...",
+						"cwd": "/workspace",
+					},
 				},
 				expectedToolName:   "bash",
 				expectedCommand:    "go test ./...",
 				expectedDescSubstr: "run: go test ./...",
 			},
 			{
-				name: "Glob tool with pattern",
+				name: "Glob tool with pattern (Amp format)",
 				msg: AgentMessage{
-					Type:    "tool_use",
-					Tool:    "glob",
-					Pattern: "**/*.go",
+					Type: "tool_use",
+					ID:   "toolu_def",
+					Name: "Glob",
+					Input: map[string]interface{}{
+						"pattern": "**/*.go",
+					},
 				},
 				expectedToolName:   "glob",
 				expectedPattern:    "**/*.go",
 				expectedDescSubstr: "search: **/*.go",
 			},
 			{
-				name: "Grep tool with pattern",
-				msg: AgentMessage{
-					Type:    "tool_use",
-					Tool:    "grep",
-					Pattern: "TODO",
-				},
-				expectedToolName:   "grep",
-				expectedPattern:    "TODO",
-				expectedDescSubstr: "search: TODO",
-			},
-			{
-				name: "Task tool (spawning agent)",
+				name: "Grep tool with pattern (Amp format)",
 				msg: AgentMessage{
 					Type: "tool_use",
-					Tool: "task",
-					Data: map[string]interface{}{
+					ID:   "toolu_ghi",
+					Name: "Grep",
+					Input: map[string]interface{}{
+						"pattern": "TODO",
+						"path":    "/workspace",
+					},
+				},
+				expectedToolName:   "grep",
+				expectedFile:       "/workspace",
+				expectedDescSubstr: "grep /workspace",
+			},
+			{
+				name: "Task tool (Amp format)",
+				msg: AgentMessage{
+					Type: "tool_use",
+					ID:   "toolu_jkl",
+					Name: "Task",
+					Input: map[string]interface{}{
 						"description": "Spawn sub-agent",
 					},
 				},
@@ -215,18 +239,21 @@ func TestConvertJSONToEvent(t *testing.T) {
 			msg  AgentMessage
 		}{
 			{
-				name: "tool_use without file/command/pattern",
+				name: "tool_use without input (Amp format)",
 				msg: AgentMessage{
 					Type: "tool_use",
-					Tool: "generic_tool",
+					ID:   "toolu_999",
+					Name: "generic_tool",
+					// No Input specified
 				},
 			},
 			{
-				name: "tool_use with only tool name",
+				name: "tool_use with empty input (Amp format)",
 				msg: AgentMessage{
-					Type: "tool_use",
-					Tool: "read",
-					// No file specified
+					Type:  "tool_use",
+					ID:    "toolu_888",
+					Name:  "Read",
+					Input: map[string]interface{}{}, // Empty input
 				},
 			},
 		}
@@ -265,8 +292,11 @@ func TestConvertJSONToEvent(t *testing.T) {
 	t.Run("Edge case - empty tool name", func(t *testing.T) {
 		msg := AgentMessage{
 			Type: "tool_use",
-			Tool: "", // Empty tool name
-			File: "some_file.go",
+			ID:   "toolu_777",
+			Name: "", // Empty tool name
+			Input: map[string]interface{}{
+				"path": "some_file.go",
+			},
 		}
 
 		rawJSON, _ := json.Marshal(msg)
@@ -277,6 +307,40 @@ func TestConvertJSONToEvent(t *testing.T) {
 		// Should still create event (edge case handling)
 		if event == nil {
 			t.Fatal("Expected event to be created even with empty tool name")
+		}
+	})
+
+	t.Run("Internal tools should be skipped", func(t *testing.T) {
+		testCases := []struct {
+			name     string
+			toolName string
+		}{
+			{name: "todo_write", toolName: "todo_write"},
+			{name: "mcp__beads__show", toolName: "mcp__beads__show"},
+			{name: "mcp__beads__list", toolName: "mcp__beads__list"},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				msg := AgentMessage{
+					Type: "tool_use",
+					ID:   "toolu_skip",
+					Name: tc.toolName,
+					Input: map[string]interface{}{
+						"data": "test",
+					},
+				}
+
+				rawJSON, _ := json.Marshal(msg)
+				rawLine := string(rawJSON)
+
+				event := agent.convertJSONToEvent(msg, rawLine)
+
+				// Internal tools should NOT create events
+				if event != nil {
+					t.Errorf("Expected nil event for internal tool %s, but got event", tc.toolName)
+				}
+			})
 		}
 	})
 
@@ -363,11 +427,14 @@ func TestConvertJSONToEventFieldMapping(t *testing.T) {
 		ctx:    ctx,
 	}
 
-	t.Run("Read/Edit/Write tools use File field", func(t *testing.T) {
+	t.Run("Read/Edit/Write tools use path in Input", func(t *testing.T) {
 		msg := AgentMessage{
 			Type: "tool_use",
-			Tool: "read",
-			File: "test.go",
+			ID:   "toolu_test1",
+			Name: "Read",
+			Input: map[string]interface{}{
+				"path": "test.go",
+			},
 		}
 
 		rawJSON, _ := json.Marshal(msg)
@@ -387,11 +454,14 @@ func TestConvertJSONToEventFieldMapping(t *testing.T) {
 		}
 	})
 
-	t.Run("Bash tool uses Command field", func(t *testing.T) {
+	t.Run("Bash tool uses cmd in Input", func(t *testing.T) {
 		msg := AgentMessage{
-			Type:    "tool_use",
-			Tool:    "bash",
-			Command: "go build",
+			Type: "tool_use",
+			ID:   "toolu_test2",
+			Name: "Bash",
+			Input: map[string]interface{}{
+				"cmd": "go build",
+			},
 		}
 
 		rawJSON, _ := json.Marshal(msg)
@@ -411,11 +481,14 @@ func TestConvertJSONToEventFieldMapping(t *testing.T) {
 		}
 	})
 
-	t.Run("Glob/Grep tools use Pattern field", func(t *testing.T) {
+	t.Run("Glob/Grep tools use pattern in Input", func(t *testing.T) {
 		msg := AgentMessage{
-			Type:    "tool_use",
-			Tool:    "grep",
-			Pattern: "FIXME",
+			Type: "tool_use",
+			ID:   "toolu_test3",
+			Name: "Grep",
+			Input: map[string]interface{}{
+				"pattern": "FIXME",
+			},
 		}
 
 		rawJSON, _ := json.Marshal(msg)
@@ -480,8 +553,11 @@ func TestConvertJSONToEventStructureVerification(t *testing.T) {
 
 	msg := AgentMessage{
 		Type: "tool_use",
-		Tool: "read",
-		File: "test.go",
+		ID:   "toolu_test4",
+		Name: "Read",
+		Input: map[string]interface{}{
+			"path": "test.go",
+		},
 	}
 
 	rawJSON, _ := json.Marshal(msg)
@@ -598,9 +674,12 @@ func TestConvertJSONToEventPatternHandling(t *testing.T) {
 
 	t.Run("Pattern appears in ToolDescription for Glob", func(t *testing.T) {
 		msg := AgentMessage{
-			Type:    "tool_use",
-			Tool:    "glob",
-			Pattern: "**/*.test.go",
+			Type: "tool_use",
+			ID:   "toolu_test5",
+			Name: "Glob",
+			Input: map[string]interface{}{
+				"pattern": "**/*.test.go",
+			},
 		}
 
 		rawJSON, _ := json.Marshal(msg)
@@ -627,9 +706,12 @@ func TestConvertJSONToEventPatternHandling(t *testing.T) {
 
 	t.Run("Pattern appears in ToolDescription for Grep", func(t *testing.T) {
 		msg := AgentMessage{
-			Type:    "tool_use",
-			Tool:    "grep",
-			Pattern: "TODO|FIXME",
+			Type: "tool_use",
+			ID:   "toolu_test6",
+			Name: "Grep",
+			Input: map[string]interface{}{
+				"pattern": "TODO|FIXME",
+			},
 		}
 
 		rawJSON, _ := json.Marshal(msg)
@@ -689,33 +771,34 @@ func TestConvertJSONToEventAllToolTypes(t *testing.T) {
 		ctx:    ctx,
 	}
 
-	// List of all tool types that should be supported
-	tools := []string{"read", "edit", "write", "bash", "glob", "grep", "task"}
+	// List of all tool types that should be supported (Amp format)
+	tools := []struct {
+		name  string
+		input map[string]interface{}
+	}{
+		{name: "Read", input: map[string]interface{}{"path": "test.go"}},
+		{name: "edit_file", input: map[string]interface{}{"path": "test.go"}},
+		{name: "Write", input: map[string]interface{}{"path": "test.go"}},
+		{name: "Bash", input: map[string]interface{}{"cmd": "echo test"}},
+		{name: "Glob", input: map[string]interface{}{"pattern": "*.go"}},
+		{name: "Grep", input: map[string]interface{}{"pattern": "*.go"}},
+		{name: "Task", input: map[string]interface{}{"description": "test"}},
+	}
 
-	for _, tool := range tools {
-		t.Run("Tool: "+tool, func(t *testing.T) {
+	for i, tc := range tools {
+		t.Run("Tool: "+tc.name, func(t *testing.T) {
 			msg := AgentMessage{
-				Type: "tool_use",
-				Tool: tool,
-			}
-
-			// Add appropriate field for each tool type
-			switch tool {
-			case "read", "edit", "write":
-				msg.File = "test.go"
-			case "bash":
-				msg.Command = "echo test"
-			case "glob", "grep":
-				msg.Pattern = "*.go"
-			case "task":
-				msg.Data = map[string]interface{}{"description": "test"}
+				Type:  "tool_use",
+				ID:    fmt.Sprintf("toolu_test%d", i+100),
+				Name:  tc.name,
+				Input: tc.input,
 			}
 
 			rawJSON, _ := json.Marshal(msg)
 			event := agent.convertJSONToEvent(msg, string(rawJSON))
 
 			if event == nil {
-				t.Fatalf("Expected event to be created for tool %s", tool)
+				t.Fatalf("Expected event to be created for tool %s", tc.name)
 			}
 
 			if event.Type != events.EventTypeAgentToolUse {
@@ -727,8 +810,10 @@ func TestConvertJSONToEventAllToolTypes(t *testing.T) {
 				t.Fatalf("Failed to get tool data: %v", err)
 			}
 
-			if toolData.ToolName != tool {
-				t.Errorf("Expected ToolName %s, got %s", tool, toolData.ToolName)
+			// Verify tool name is normalized (e.g., "edit_file" -> "edit", "Read" -> "read")
+			expectedName := normalizeToolName(tc.name)
+			if toolData.ToolName != expectedName {
+				t.Errorf("Expected ToolName %s, got %s", expectedName, toolData.ToolName)
 			}
 		})
 	}
@@ -797,11 +882,12 @@ func TestConvertJSONToEventDebugLogging(t *testing.T) {
 		t.Setenv("VC_DEBUG_EVENTS", "1")
 
 		msg := AgentMessage{
-			Type:    "tool_use",
-			Tool:    "read",
-			File:    "test.go",
-			Command: "test command",
-			Pattern: "test pattern",
+			Type: "tool_use",
+			ID:   "toolu_debug1",
+			Name: "Read",
+			Input: map[string]interface{}{
+				"path": "test.go",
+			},
 		}
 
 		rawJSON, _ := json.Marshal(msg)
@@ -827,31 +913,42 @@ func TestConvertJSONToEventDebugLogging(t *testing.T) {
 				name: "File branch",
 				msg: AgentMessage{
 					Type: "tool_use",
-					Tool: "read",
-					File: "file.go",
+					ID:   "toolu_debug2",
+					Name: "Read",
+					Input: map[string]interface{}{
+						"path": "file.go",
+					},
 				},
 			},
 			{
 				name: "Command branch (no file)",
 				msg: AgentMessage{
 					Type: "tool_use",
-					Tool: "bash",
-					Command: "ls",
+					ID:   "toolu_debug3",
+					Name: "Bash",
+					Input: map[string]interface{}{
+						"cmd": "ls",
+					},
 				},
 			},
 			{
 				name: "Pattern branch (no file, no command)",
 				msg: AgentMessage{
 					Type: "tool_use",
-					Tool: "grep",
-					Pattern: "TODO",
+					ID:   "toolu_debug4",
+					Name: "Grep",
+					Input: map[string]interface{}{
+						"pattern": "TODO",
+					},
 				},
 			},
 			{
 				name: "Default branch (no file, command, or pattern)",
 				msg: AgentMessage{
 					Type: "tool_use",
-					Tool: "generic",
+					ID:   "toolu_debug5",
+					Name: "generic",
+					Input: map[string]interface{}{},
 				},
 			},
 		}

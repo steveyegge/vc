@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,39 +59,35 @@ type AgentResult struct {
 }
 
 // AgentMessage represents a JSON message from the agent.
-// This matches Amp's --stream-json output format (vc-236).
+// This matches Amp's --stream-json output format (vc-236, vc-107).
 //
 // Event Types:
 // - "tool_use": Agent is invoking a tool (Read, Edit, Write, Bash, Glob, Grep, Task)
 // - "system": System messages (init, shutdown, etc.)
 // - "result": Final result/completion message
 //
-// Tool-to-Field Mapping (for type="tool_use"):
-// - Read/Edit/Write tools: use File field (target file path)
-// - Bash tool: uses Command field (shell command to execute)
-// - Glob/Grep tools: use Pattern field (search pattern)
-// - Task tool: uses Data field (agent spawn parameters)
+// Actual Amp JSON Format (from --stream-json):
 //
-// Example JSON (tool_use):
+//	{"type":"tool_use","id":"toolu_xxx","name":"Read","input":{"path":"/path/to/file"}}
+//	{"type":"tool_use","id":"toolu_xxx","name":"edit_file","input":{"path":"/path/to/file","old_str":"...","new_str":"..."}}
+//	{"type":"tool_use","id":"toolu_xxx","name":"Bash","input":{"cmd":"go test","cwd":"/path"}}
+//	{"type":"tool_use","id":"toolu_xxx","name":"Grep","input":{"pattern":"TODO","path":"/path"}}
 //
-//	{"type":"tool_use","tool":"read","file":"main.go"}
-//	{"type":"tool_use","tool":"bash","command":"go test ./..."}
-//	{"type":"tool_use","tool":"grep","pattern":"TODO"}
+// Note: Tool names are capitalized (Read, Bash, Grep) or use underscores (edit_file, todo_write).
+// The "input" field contains tool-specific parameters as a map.
 //
-// Note: This struct is designed for Amp's JSON output. When StreamJSON=false,
-// agent output is parsed via regex patterns in parser.go instead.
+// When StreamJSON=false, agent output is parsed via regex patterns in parser.go instead.
 type AgentMessage struct {
-	Type    string                 `json:"type"`    // Event type (e.g., "tool_use", "system", "result")
+	Type    string                 `json:"type"`              // Event type (e.g., "tool_use", "system", "result")
 	Subtype string                 `json:"subtype,omitempty"` // Event subtype (e.g., "init", "error_during_execution")
 	Content string                 `json:"content,omitempty"` // Human-readable message content
-	Data    map[string]interface{} `json:"data,omitempty"`    // Additional event-specific data
+	Data    map[string]interface{} `json:"data,omitempty"`    // Additional event-specific data (legacy)
 
-	// Tool usage fields (vc-236: structured events instead of regex parsing)
+	// Tool usage fields (vc-107: actual Amp format)
 	// Only populated when Type="tool_use"
-	Tool       string `json:"tool,omitempty"`       // Tool name (e.g., "read", "edit", "bash")
-	File       string `json:"file,omitempty"`       // Target file for Read/Edit/Write tools
-	Command    string `json:"command,omitempty"`    // Shell command for Bash tool
-	Pattern    string `json:"pattern,omitempty"`    // Search pattern for Glob/Grep tools
+	ID    string                 `json:"id,omitempty"`    // Tool invocation ID (e.g., "toolu_xxx")
+	Name  string                 `json:"name,omitempty"`  // Tool name (e.g., "Read", "edit_file", "Bash")
+	Input map[string]interface{} `json:"input,omitempty"` // Tool parameters (path, cmd, pattern, etc.)
 
 	// Session metadata
 	SessionID string `json:"session_id,omitempty"` // Agent session identifier
@@ -354,7 +351,7 @@ func (a *Agent) parseAndStoreEvents(line string) {
 	}
 }
 
-// convertJSONToEvent converts an Amp JSON message to an AgentEvent (vc-236)
+// convertJSONToEvent converts an Amp JSON message to an AgentEvent (vc-107)
 // This replaces regex-based parsing with structured event processing.
 //
 // Set VC_DEBUG_EVENTS=1 to enable debug logging of JSON event parsing.
@@ -365,6 +362,16 @@ func (a *Agent) convertJSONToEvent(msg AgentMessage, rawLine string) *events.Age
 		// Debug log non-tool_use events if debugging is enabled
 		if os.Getenv("VC_DEBUG_EVENTS") != "" {
 			fmt.Fprintf(os.Stderr, "[DEBUG] Skipping non-tool_use event: type=%s subtype=%s\n", msg.Type, msg.Subtype)
+		}
+		return nil
+	}
+
+	// Skip internal tools that aren't code operations (vc-107)
+	// These are agent-internal tools that don't represent actual work
+	toolName := normalizeToolName(msg.Name)
+	if shouldSkipTool(toolName) {
+		if os.Getenv("VC_DEBUG_EVENTS") != "" {
+			fmt.Fprintf(os.Stderr, "[DEBUG] Skipping internal tool: name=%s\n", msg.Name)
 		}
 		return nil
 	}
@@ -382,22 +389,40 @@ func (a *Agent) convertJSONToEvent(msg AgentMessage, rawLine string) *events.Age
 		SourceLine: a.parser.LineNumber,
 	}
 
-	// Extract tool usage data from structured JSON (no regex needed!)
+	// Extract tool usage data from Amp's actual JSON format (vc-107)
 	toolData := events.AgentToolUseData{
-		ToolName:   msg.Tool,
-		TargetFile: msg.File,
-		Command:    msg.Command,
+		ToolName: toolName,
 	}
 
+	// Extract parameters from the input map
+	var targetFile, command, pattern string
+	if msg.Input != nil {
+		// Path field (used by Read, edit_file, Grep, etc.)
+		if pathVal, ok := msg.Input["path"].(string); ok {
+			targetFile = pathVal
+		}
+		// Cmd field (used by Bash)
+		if cmdVal, ok := msg.Input["cmd"].(string); ok {
+			command = cmdVal
+		}
+		// Pattern field (used by Grep, Glob)
+		if patternVal, ok := msg.Input["pattern"].(string); ok {
+			pattern = patternVal
+		}
+	}
+
+	toolData.TargetFile = targetFile
+	toolData.Command = command
+
 	// Build a human-readable description from the structured data
-	if msg.File != "" {
-		toolData.ToolDescription = fmt.Sprintf("%s %s", msg.Tool, msg.File)
-	} else if msg.Command != "" {
-		toolData.ToolDescription = fmt.Sprintf("run: %s", msg.Command)
-	} else if msg.Pattern != "" {
-		toolData.ToolDescription = fmt.Sprintf("search: %s", msg.Pattern)
+	if targetFile != "" {
+		toolData.ToolDescription = fmt.Sprintf("%s %s", toolName, targetFile)
+	} else if command != "" {
+		toolData.ToolDescription = fmt.Sprintf("run: %s", command)
+	} else if pattern != "" {
+		toolData.ToolDescription = fmt.Sprintf("search: %s", pattern)
 	} else {
-		toolData.ToolDescription = msg.Tool
+		toolData.ToolDescription = toolName
 	}
 
 	// Set the data
@@ -409,10 +434,42 @@ func (a *Agent) convertJSONToEvent(msg AgentMessage, rawLine string) *events.Age
 	// Debug log successful event conversion
 	if os.Getenv("VC_DEBUG_EVENTS") != "" {
 		fmt.Fprintf(os.Stderr, "[DEBUG] Parsed tool_use event: tool=%s file=%s command=%s pattern=%s\n",
-			msg.Tool, msg.File, msg.Command, msg.Pattern)
+			toolName, targetFile, command, pattern)
 	}
 
 	return event
+}
+
+// normalizeToolName converts Amp's tool names to canonical lowercase names
+// Examples: "Read" -> "read", "edit_file" -> "edit", "Bash" -> "bash"
+func normalizeToolName(ampToolName string) string {
+	// Convert to lowercase
+	name := strings.ToLower(ampToolName)
+
+	// Map Amp-specific names to canonical names
+	switch name {
+	case "edit_file":
+		return "edit"
+	case "write_file":
+		return "write"
+	default:
+		return name
+	}
+}
+
+// shouldSkipTool returns true if this tool is internal and shouldn't generate events
+func shouldSkipTool(toolName string) bool {
+	// Skip internal agent tools that don't represent actual code work
+	internalTools := map[string]bool{
+		"todo_write":          true, // Claude Code's internal TODO tracking
+		"mcp__beads__show":    true, // MCP beads integration
+		"mcp__beads__list":    true,
+		"mcp__beads__create":  true,
+		"mcp__beads__update":  true,
+		"mcp__beads__close":   true,
+	}
+
+	return internalTools[toolName]
 }
 
 // buildClaudeCodeCommand constructs the Claude Code CLI command

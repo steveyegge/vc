@@ -262,9 +262,13 @@ func (s *VCStorage) GetAgentEvents(ctx context.Context, filter events.EventFilte
 	var result []*events.AgentEvent
 	for rows.Next() {
 		var e events.AgentEvent
+		var issueID sql.NullString
 		var dataJSON sql.NullString
-		if err := rows.Scan(&e.ID, &e.Timestamp, &e.IssueID, &e.Type, &e.Severity, &e.Message, &dataJSON); err != nil {
+		if err := rows.Scan(&e.ID, &e.Timestamp, &issueID, &e.Type, &e.Severity, &e.Message, &dataJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan agent event: %w", err)
+		}
+		if issueID.Valid {
+			e.IssueID = issueID.String
 		}
 		if dataJSON.Valid && dataJSON.String != "" {
 			if err := json.Unmarshal([]byte(dataJSON.String), &e.Data); err != nil {
@@ -293,9 +297,13 @@ func (s *VCStorage) GetAgentEventsByIssue(ctx context.Context, issueID string) (
 	var result []*events.AgentEvent
 	for rows.Next() {
 		var e events.AgentEvent
+		var issueIDNull sql.NullString
 		var dataJSON sql.NullString
-		if err := rows.Scan(&e.ID, &e.Timestamp, &e.IssueID, &e.Type, &e.Severity, &e.Message, &dataJSON); err != nil {
+		if err := rows.Scan(&e.ID, &e.Timestamp, &issueIDNull, &e.Type, &e.Severity, &e.Message, &dataJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan agent event: %w", err)
+		}
+		if issueIDNull.Valid {
+			e.IssueID = issueIDNull.String
 		}
 		if dataJSON.Valid && dataJSON.String != "" {
 			if err := json.Unmarshal([]byte(dataJSON.String), &e.Data); err != nil {
@@ -324,9 +332,13 @@ func (s *VCStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*eve
 	var result []*events.AgentEvent
 	for rows.Next() {
 		var e events.AgentEvent
+		var issueIDNull sql.NullString
 		var dataJSON sql.NullString
-		if err := rows.Scan(&e.ID, &e.Timestamp, &e.IssueID, &e.Type, &e.Severity, &e.Message, &dataJSON); err != nil {
+		if err := rows.Scan(&e.ID, &e.Timestamp, &issueIDNull, &e.Type, &e.Severity, &e.Message, &dataJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan agent event: %w", err)
+		}
+		if issueIDNull.Valid {
+			e.IssueID = issueIDNull.String
 		}
 		if dataJSON.Valid && dataJSON.String != "" {
 			if err := json.Unmarshal([]byte(dataJSON.String), &e.Data); err != nil {
