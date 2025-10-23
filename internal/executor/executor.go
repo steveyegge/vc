@@ -583,6 +583,14 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		assessmentRan = true
 		// Update execution state to assessing
 		if err := e.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateAssessing); err != nil {
+			// Check if context was canceled (shutdown initiated)
+			if ctx.Err() != nil {
+				// Use background context for cleanup since main context is canceled
+				cleanupCtx := context.Background()
+				e.releaseIssueWithError(cleanupCtx, issue.ID, fmt.Sprintf("Execution canceled during state transition: %v", ctx.Err()))
+				e.monitor.EndExecution(false, false)
+				return ctx.Err()
+			}
 			fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
 		}
 		e.monitor.RecordStateTransition(types.ExecutionStateClaimed, types.ExecutionStateAssessing)
@@ -595,7 +603,16 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		var err error
 		assessment, err = e.supervisor.AssessIssueState(ctx, issue)
 		if err != nil {
-			// Don't fail execution - just log and continue without assessment
+			// Check if context was canceled (shutdown initiated)
+			if ctx.Err() != nil {
+				fmt.Fprintf(os.Stderr, "Assessment canceled due to executor shutdown\n")
+				// Use background context for cleanup since main context is canceled
+				cleanupCtx := context.Background()
+				e.releaseIssueWithError(cleanupCtx, issue.ID, "Execution canceled during assessment")
+				e.monitor.EndExecution(false, false)
+				return ctx.Err()
+			}
+			// Real error (not cancellation) - log and continue without assessment
 			fmt.Fprintf(os.Stderr, "Warning: AI assessment failed: %v (continuing without assessment)\n", err)
 			// Log assessment failure
 			e.logEvent(ctx, events.EventTypeAssessmentCompleted, events.SeverityError, issue.ID,
@@ -682,8 +699,26 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	}
 
 	// Phase 3: Spawn the coding agent
+	// Check if context was canceled before starting execution (vc-101)
+	if ctx.Err() != nil {
+		fmt.Fprintf(os.Stderr, "Execution canceled before spawning agent\n")
+		// Use background context for cleanup since main context is canceled
+		cleanupCtx := context.Background()
+		e.releaseIssueWithError(cleanupCtx, issue.ID, "Execution canceled before spawning agent")
+		e.monitor.EndExecution(false, false)
+		return ctx.Err()
+	}
+
 	// Update execution state to executing
 	if err := e.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateExecuting); err != nil {
+		// Check if context was canceled (shutdown initiated)
+		if ctx.Err() != nil {
+			// Use background context for cleanup since main context is canceled
+			cleanupCtx := context.Background()
+			e.releaseIssueWithError(cleanupCtx, issue.ID, fmt.Sprintf("Execution canceled during state transition: %v", ctx.Err()))
+			e.monitor.EndExecution(false, false)
+			return ctx.Err()
+		}
 		fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
 	}
 	// Record state transition based on whether assessment actually ran
