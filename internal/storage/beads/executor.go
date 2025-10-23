@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/steveyegge/vc/internal/types"
@@ -103,27 +104,187 @@ func (s *VCStorage) GetActiveInstances(ctx context.Context) ([]*types.ExecutorIn
 	return instances, rows.Err()
 }
 
-// CleanupStaleInstances marks instances as crashed if they haven't sent heartbeat
+// CleanupStaleInstances marks instances as crashed and releases their claimed issues
 func (s *VCStorage) CleanupStaleInstances(ctx context.Context, staleThresholdSeconds int) (int, error) {
 	staleTime := time.Now().Add(-time.Duration(staleThresholdSeconds) * time.Second)
 
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE vc_executor_instances
-		SET status = 'crashed'
+	// Start a transaction to ensure atomic cleanup of instances and their claims
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// First, find all stale instances (running but heartbeat is old)
+	staleQuery := `
+		SELECT id
+		FROM vc_executor_instances
 		WHERE status = 'running'
 		  AND last_heartbeat < ?
-	`, staleTime)
+	`
 
+	rows, err := tx.QueryContext(ctx, staleQuery, staleTime)
 	if err != nil {
-		return 0, fmt.Errorf("failed to cleanup stale instances: %w", err)
+		return 0, fmt.Errorf("failed to query stale instances: %w", err)
 	}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	var staleInstanceIDs []string
+	for rows.Next() {
+		var instanceID string
+		if err := rows.Scan(&instanceID); err != nil {
+			_ = rows.Close()
+			return 0, fmt.Errorf("failed to scan instance ID: %w", err)
+		}
+		staleInstanceIDs = append(staleInstanceIDs, instanceID)
+	}
+	_ = rows.Close()
+
+	if err = rows.Err(); err != nil {
+		return 0, fmt.Errorf("error iterating stale instances: %w", err)
 	}
 
-	return int(rowsAffected), nil
+	// Also find instances that are already stopped but still have claims (orphaned claims)
+	orphanedQuery := `
+		SELECT DISTINCT executor_instance_id
+		FROM vc_issue_execution_state
+		WHERE executor_instance_id IN (
+			SELECT id FROM vc_executor_instances WHERE status = 'stopped'
+		)
+	`
+
+	orphanedRows, err := tx.QueryContext(ctx, orphanedQuery)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query orphaned claims: %w", err)
+	}
+
+	var orphanedInstanceIDs []string
+	for orphanedRows.Next() {
+		var instanceID string
+		if err := orphanedRows.Scan(&instanceID); err != nil {
+			_ = orphanedRows.Close()
+			return 0, fmt.Errorf("failed to scan orphaned instance ID: %w", err)
+		}
+		orphanedInstanceIDs = append(orphanedInstanceIDs, instanceID)
+	}
+	_ = orphanedRows.Close()
+
+	if err = orphanedRows.Err(); err != nil {
+		return 0, fmt.Errorf("error iterating orphaned instances: %w", err)
+	}
+
+	// Combine both lists (stale and orphaned)
+	allInstanceIDs := append(staleInstanceIDs, orphanedInstanceIDs...)
+
+	// If no instances to clean up, return early
+	if len(allInstanceIDs) == 0 {
+		return 0, nil
+	}
+
+	// For each instance (stale or orphaned), find and release all claimed issues
+	for _, instanceID := range allInstanceIDs {
+		// Find all issues claimed by this instance
+		claimedIssuesQuery := `
+			SELECT issue_id
+			FROM vc_issue_execution_state
+			WHERE executor_instance_id = ?
+		`
+
+		issueRows, err := tx.QueryContext(ctx, claimedIssuesQuery, instanceID)
+		if err != nil {
+			return 0, fmt.Errorf("failed to query claimed issues for instance %s: %w", instanceID, err)
+		}
+
+		var issueIDs []string
+		for issueRows.Next() {
+			var issueID string
+			if err := issueRows.Scan(&issueID); err != nil {
+				_ = issueRows.Close()
+				return 0, fmt.Errorf("failed to scan issue ID: %w", err)
+			}
+			issueIDs = append(issueIDs, issueID)
+		}
+		_ = issueRows.Close()
+
+		if err = issueRows.Err(); err != nil {
+			return 0, fmt.Errorf("error iterating claimed issues: %w", err)
+		}
+
+		// Release each claimed issue
+		for _, issueID := range issueIDs {
+			// Delete execution state
+			_, err = tx.ExecContext(ctx, `
+				DELETE FROM vc_issue_execution_state
+				WHERE issue_id = ?
+			`, issueID)
+			if err != nil {
+				return 0, fmt.Errorf("failed to delete execution state for issue %s: %w", issueID, err)
+			}
+
+			// Reset issue status to 'open'
+			_, err = tx.ExecContext(ctx, `
+				UPDATE issues
+				SET status = ?, updated_at = ?
+				WHERE id = ?
+			`, "open", time.Now(), issueID)
+			if err != nil {
+				return 0, fmt.Errorf("failed to reset issue status for %s: %w", issueID, err)
+			}
+
+			// Store event explaining why the issue was released
+			var message string
+			isStale := false
+			for _, staleID := range staleInstanceIDs {
+				if staleID == instanceID {
+					isStale = true
+					break
+				}
+			}
+			if isStale {
+				message = fmt.Sprintf("Issue automatically released - executor instance %s became stale (no heartbeat for %d seconds)", instanceID, staleThresholdSeconds)
+			} else {
+				message = fmt.Sprintf("Issue automatically released - executor instance %s was already stopped but claim remained (orphaned)", instanceID)
+			}
+
+			// Store as agent event
+			eventData := map[string]interface{}{
+				"instance_id": instanceID,
+				"reason":      message,
+			}
+			eventDataJSON, _ := json.Marshal(eventData)
+
+			_, err = tx.ExecContext(ctx, `
+				INSERT INTO vc_agent_events (issue_id, type, message, data, timestamp)
+				VALUES (?, ?, ?, ?, ?)
+			`, issueID, "issue_released", message, string(eventDataJSON), time.Now())
+			if err != nil {
+				// Don't fail cleanup if event storage fails
+				fmt.Fprintf(os.Stderr, "warning: failed to store release event for issue %s: %v\n", issueID, err)
+			}
+		}
+	}
+
+	// Mark all stale instances as 'crashed'
+	if len(staleInstanceIDs) > 0 {
+		updateQuery := `
+			UPDATE vc_executor_instances
+			SET status = 'crashed'
+			WHERE status = 'running'
+			  AND last_heartbeat < ?
+		`
+
+		_, err = tx.ExecContext(ctx, updateQuery, staleTime)
+		if err != nil {
+			return 0, fmt.Errorf("failed to mark stale instances as crashed: %w", err)
+		}
+	}
+
+	// Commit the transaction
+	if err = tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Return total number of instances cleaned (stale + orphaned)
+	return len(allInstanceIDs), nil
 }
 
 // DeleteOldStoppedInstances deletes old stopped/crashed instances
