@@ -57,6 +57,15 @@ func NewVCStorage(ctx context.Context, dbPath string) (*VCStorage, error) {
 	}, nil
 }
 
+// Close closes the storage connection and releases resources.
+// This delegates to the embedded Beads storage which owns the database connection.
+// After Close() is called, all subsequent operations will fail.
+func (s *VCStorage) Close() error {
+	// Beads owns the DB connection (s.db is the same underlying connection)
+	// so we just delegate to Beads.Storage.Close() which closes the DB
+	return s.Storage.Close()
+}
+
 // createVCExtensionTables creates VC-specific tables in the Beads database
 // These tables extend Beads with mission workflow metadata
 func createVCExtensionTables(ctx context.Context, db *sql.DB) error {

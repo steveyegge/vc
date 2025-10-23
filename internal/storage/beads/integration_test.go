@@ -2,6 +2,7 @@ package beads
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1068,6 +1069,382 @@ func TestGetBlockedIssues(t *testing.T) {
 				t.Errorf("Blocked issue %s: len(BlockedBy)=%d doesn't match BlockedByCount=%d",
 					b.ID, len(b.BlockedBy), b.BlockedByCount)
 			}
+		}
+	})
+}
+
+// TestVCStorageClose verifies that Close() properly closes the database
+// and subsequent operations fail with appropriate errors
+func TestVCStorageClose(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Create VCStorage instance
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+
+	// Create a test issue before closing
+	issue := &types.Issue{
+		Title:      "Test issue",
+		Status:     types.StatusOpen,
+		Priority:   2,
+		IssueType:  types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, issue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Close the storage
+	err = store.Close()
+	if err != nil {
+		t.Fatalf("Close() failed: %v", err)
+	}
+
+	// Verify subsequent operations fail
+	t.Run("CreateIssue fails after close", func(t *testing.T) {
+		newIssue := &types.Issue{
+			Title:      "Should fail",
+			Status:     types.StatusOpen,
+			Priority:   2,
+			IssueType:  types.TypeTask,
+		}
+		err = store.CreateIssue(ctx, newIssue, "test")
+		if err == nil {
+			t.Fatal("Expected CreateIssue to fail after Close(), but it succeeded")
+		}
+		t.Logf("CreateIssue correctly failed with: %v", err)
+	})
+
+	t.Run("GetIssue fails after close", func(t *testing.T) {
+		_, err = store.GetIssue(ctx, issue.ID)
+		if err == nil {
+			t.Fatal("Expected GetIssue to fail after Close(), but it succeeded")
+		}
+		t.Logf("GetIssue correctly failed with: %v", err)
+	})
+
+	t.Run("StoreAgentEvent fails after close", func(t *testing.T) {
+		event := &events.AgentEvent{
+			Timestamp: time.Now(),
+			IssueID:   issue.ID,
+			Type:      events.EventTypeProgress,
+			Severity:  events.SeverityInfo,
+			Message:   "Should fail",
+		}
+		err = store.StoreAgentEvent(ctx, event)
+		if err == nil {
+			t.Fatal("Expected StoreAgentEvent to fail after Close(), but it succeeded")
+		}
+		t.Logf("StoreAgentEvent correctly failed with: %v", err)
+	})
+
+	t.Run("RegisterInstance fails after close", func(t *testing.T) {
+		instance := &types.ExecutorInstance{
+			InstanceID:    "test-instance",
+			Hostname:      "localhost",
+			PID:           12345,
+			Version:       "test",
+			StartedAt:     time.Now(),
+			LastHeartbeat: time.Now(),
+			Status:        "running",
+		}
+		err = store.RegisterInstance(ctx, instance)
+		if err == nil {
+			t.Fatal("Expected RegisterInstance to fail after Close(), but it succeeded")
+		}
+		t.Logf("RegisterInstance correctly failed with: %v", err)
+	})
+}
+
+// TestExecutionStateTransitions verifies state transition validation
+func TestExecutionStateTransitions(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer store.Close()
+
+	// Create test issue
+	issue := &types.Issue{
+		Title:      "Test issue for state transitions",
+		Status:     types.StatusOpen,
+		Priority:   2,
+		IssueType:  types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, issue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Register executor instance
+	instance := &types.ExecutorInstance{
+		InstanceID:    "test-executor",
+		Hostname:      "localhost",
+		PID:           12345,
+		Version:       "test",
+		StartedAt:     time.Now(),
+		LastHeartbeat: time.Now(),
+		Status:        "running",
+	}
+	err = store.RegisterInstance(ctx, instance)
+	if err != nil {
+		t.Fatalf("Failed to register executor: %v", err)
+	}
+
+	t.Run("valid full lifecycle transition", func(t *testing.T) {
+		// Test the complete happy path: pending → claimed → assessing → executing → analyzing → gates → committing → completed
+		validTransitions := []types.ExecutionState{
+			types.ExecutionStatePending,
+			types.ExecutionStateClaimed,
+			types.ExecutionStateAssessing,
+			types.ExecutionStateExecuting,
+			types.ExecutionStateAnalyzing,
+			types.ExecutionStateGates,
+			types.ExecutionStateCommitting,
+			types.ExecutionStateCompleted,
+		}
+
+		for i, state := range validTransitions {
+			err := store.UpdateExecutionState(ctx, issue.ID, state)
+			if err != nil {
+				t.Fatalf("Valid transition %d failed: %v (transitioning to %s)", i, err, state)
+			}
+
+			// Verify state was updated
+			execState, err := store.GetExecutionState(ctx, issue.ID)
+			if err != nil {
+				t.Fatalf("Failed to get execution state after transition to %s: %v", state, err)
+			}
+			if execState.State != state {
+				t.Errorf("Expected state %s, got %s", state, execState.State)
+			}
+		}
+	})
+
+	t.Run("transition to failed from any state", func(t *testing.T) {
+		// Reset to pending
+		err := store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStatePending)
+		if err == nil {
+			t.Error("Should not be able to transition from completed back to pending")
+		}
+
+		// Create new issue for this test
+		issue2 := &types.Issue{
+			Title:      "Test issue for failed transitions",
+			Status:     types.StatusOpen,
+			Priority:   2,
+			IssueType:  types.TypeTask,
+		}
+		err = store.CreateIssue(ctx, issue2, "test")
+		if err != nil {
+			t.Fatalf("Failed to create issue: %v", err)
+		}
+
+		// Test transition to failed from each non-terminal state
+		nonTerminalStates := []types.ExecutionState{
+			types.ExecutionStatePending,
+			types.ExecutionStateClaimed,
+			types.ExecutionStateAssessing,
+			types.ExecutionStateExecuting,
+			types.ExecutionStateAnalyzing,
+			types.ExecutionStateGates,
+			types.ExecutionStateCommitting,
+		}
+
+		for _, targetState := range nonTerminalStates {
+			// Create a new issue for each test
+			testIssue := &types.Issue{
+				Title:      fmt.Sprintf("Test issue for %s to failed transition", targetState),
+				Status:     types.StatusOpen,
+				Priority:   2,
+				IssueType:  types.TypeTask,
+			}
+			err = store.CreateIssue(ctx, testIssue, "test")
+			if err != nil {
+				t.Fatalf("Failed to create issue: %v", err)
+			}
+
+			// Walk through state machine to reach target state
+			statePath := []types.ExecutionState{types.ExecutionStatePending}
+			switch targetState {
+			case types.ExecutionStatePending:
+				// Already there
+			case types.ExecutionStateClaimed:
+				statePath = append(statePath, types.ExecutionStateClaimed)
+			case types.ExecutionStateAssessing:
+				statePath = append(statePath, types.ExecutionStateClaimed, types.ExecutionStateAssessing)
+			case types.ExecutionStateExecuting:
+				statePath = append(statePath, types.ExecutionStateClaimed, types.ExecutionStateAssessing, types.ExecutionStateExecuting)
+			case types.ExecutionStateAnalyzing:
+				statePath = append(statePath, types.ExecutionStateClaimed, types.ExecutionStateAssessing, types.ExecutionStateExecuting, types.ExecutionStateAnalyzing)
+			case types.ExecutionStateGates:
+				statePath = append(statePath, types.ExecutionStateClaimed, types.ExecutionStateAssessing, types.ExecutionStateExecuting, types.ExecutionStateAnalyzing, types.ExecutionStateGates)
+			case types.ExecutionStateCommitting:
+				statePath = append(statePath, types.ExecutionStateClaimed, types.ExecutionStateAssessing, types.ExecutionStateExecuting, types.ExecutionStateAnalyzing, types.ExecutionStateGates, types.ExecutionStateCommitting)
+			}
+
+			// Walk to target state
+			for _, state := range statePath {
+				err = store.UpdateExecutionState(ctx, testIssue.ID, state)
+				if err != nil {
+					t.Fatalf("Failed to reach state %s (current: %s): %v", targetState, state, err)
+				}
+			}
+
+			// Transition to failed should always work
+			err = store.UpdateExecutionState(ctx, testIssue.ID, types.ExecutionStateFailed)
+			if err != nil {
+				t.Errorf("Failed to transition from %s to failed: %v", targetState, err)
+			}
+		}
+	})
+
+	t.Run("invalid skip transitions", func(t *testing.T) {
+		// Create new issue
+		issue3 := &types.Issue{
+			Title:      "Test issue for invalid transitions",
+			Status:     types.StatusOpen,
+			Priority:   2,
+			IssueType:  types.TypeTask,
+		}
+		err = store.CreateIssue(ctx, issue3, "test")
+		if err != nil {
+			t.Fatalf("Failed to create issue: %v", err)
+		}
+
+		// Set to claimed
+		err = store.UpdateExecutionState(ctx, issue3.ID, types.ExecutionStateClaimed)
+		if err != nil {
+			t.Fatalf("Failed to set state to claimed: %v", err)
+		}
+
+		// Try to skip from claimed directly to executing (should fail, must go through assessing)
+		err = store.UpdateExecutionState(ctx, issue3.ID, types.ExecutionStateExecuting)
+		if err == nil {
+			t.Error("Should not be able to skip from claimed to executing")
+		}
+		t.Logf("Correctly rejected skip transition: %v", err)
+
+		// Try to skip from claimed to gates (should fail)
+		err = store.UpdateExecutionState(ctx, issue3.ID, types.ExecutionStateGates)
+		if err == nil {
+			t.Error("Should not be able to skip from claimed to gates")
+		}
+
+		// Try to go backwards from claimed to pending (should fail)
+		err = store.UpdateExecutionState(ctx, issue3.ID, types.ExecutionStatePending)
+		if err == nil {
+			t.Error("Should not be able to go backwards from claimed to pending")
+		}
+	})
+
+	t.Run("terminal states cannot transition", func(t *testing.T) {
+		// Test completed state
+		issue4 := &types.Issue{
+			Title:      "Test completed terminal state",
+			Status:     types.StatusOpen,
+			Priority:   2,
+			IssueType:  types.TypeTask,
+		}
+		err = store.CreateIssue(ctx, issue4, "test")
+		if err != nil {
+			t.Fatalf("Failed to create issue: %v", err)
+		}
+
+		// Transition through to completed
+		transitions := []types.ExecutionState{
+			types.ExecutionStatePending,
+			types.ExecutionStateClaimed,
+			types.ExecutionStateAssessing,
+			types.ExecutionStateExecuting,
+			types.ExecutionStateAnalyzing,
+			types.ExecutionStateGates,
+			types.ExecutionStateCommitting,
+			types.ExecutionStateCompleted,
+		}
+		for _, state := range transitions {
+			err = store.UpdateExecutionState(ctx, issue4.ID, state)
+			if err != nil {
+				t.Fatalf("Failed to transition to %s: %v", state, err)
+			}
+		}
+
+		// Try to transition from completed (should fail)
+		err = store.UpdateExecutionState(ctx, issue4.ID, types.ExecutionStateFailed)
+		if err == nil {
+			t.Error("Should not be able to transition from completed to failed")
+		}
+
+		err = store.UpdateExecutionState(ctx, issue4.ID, types.ExecutionStatePending)
+		if err == nil {
+			t.Error("Should not be able to transition from completed to pending")
+		}
+
+		// Test failed state
+		issue5 := &types.Issue{
+			Title:      "Test failed terminal state",
+			Status:     types.StatusOpen,
+			Priority:   2,
+			IssueType:  types.TypeTask,
+		}
+		err = store.CreateIssue(ctx, issue5, "test")
+		if err != nil {
+			t.Fatalf("Failed to create issue: %v", err)
+		}
+
+		// Set to claimed then fail
+		err = store.UpdateExecutionState(ctx, issue5.ID, types.ExecutionStateClaimed)
+		if err != nil {
+			t.Fatalf("Failed to set state to claimed: %v", err)
+		}
+		err = store.UpdateExecutionState(ctx, issue5.ID, types.ExecutionStateFailed)
+		if err != nil {
+			t.Fatalf("Failed to transition to failed: %v", err)
+		}
+
+		// Try to transition from failed (should fail)
+		err = store.UpdateExecutionState(ctx, issue5.ID, types.ExecutionStateCompleted)
+		if err == nil {
+			t.Error("Should not be able to transition from failed to completed")
+		}
+
+		err = store.UpdateExecutionState(ctx, issue5.ID, types.ExecutionStatePending)
+		if err == nil {
+			t.Error("Should not be able to transition from failed to pending")
+		}
+	})
+
+	t.Run("cannot start in executing state", func(t *testing.T) {
+		issue6 := &types.Issue{
+			Title:      "Test invalid initial state",
+			Status:     types.StatusOpen,
+			Priority:   2,
+			IssueType:  types.TypeTask,
+		}
+		err = store.CreateIssue(ctx, issue6, "test")
+		if err != nil {
+			t.Fatalf("Failed to create issue: %v", err)
+		}
+
+		// Try to transition to executing without existing state (should fail)
+		err = store.UpdateExecutionState(ctx, issue6.ID, types.ExecutionStateExecuting)
+		if err == nil {
+			t.Error("Should not be able to start in executing state")
+		}
+		t.Logf("Correctly rejected invalid initial state: %v", err)
+
+		// Only pending or claimed are valid initial states
+		err = store.UpdateExecutionState(ctx, issue6.ID, types.ExecutionStatePending)
+		if err != nil {
+			t.Errorf("Should be able to start in pending state: %v", err)
 		}
 	})
 }

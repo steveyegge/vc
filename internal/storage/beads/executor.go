@@ -194,6 +194,8 @@ func (s *VCStorage) ClaimIssue(ctx context.Context, issueID, executorInstanceID 
 // GetExecutionState retrieves execution state for an issue
 func (s *VCStorage) GetExecutionState(ctx context.Context, issueID string) (*types.IssueExecutionState, error) {
 	var state types.IssueExecutionState
+	var executorInstanceID sql.NullString
+	var claimedAt sql.NullTime
 	var checkpointData sql.NullString
 	var errorMessage sql.NullString
 
@@ -203,8 +205,8 @@ func (s *VCStorage) GetExecutionState(ctx context.Context, issueID string) (*typ
 		WHERE issue_id = ?
 	`, issueID).Scan(
 		&state.IssueID,
-		&state.ExecutorInstanceID,
-		&state.ClaimedAt,
+		&executorInstanceID,
+		&claimedAt,
 		&state.State,
 		&checkpointData,
 		&errorMessage,
@@ -218,6 +220,12 @@ func (s *VCStorage) GetExecutionState(ctx context.Context, issueID string) (*typ
 		return nil, fmt.Errorf("failed to query execution state: %w", err)
 	}
 
+	if executorInstanceID.Valid {
+		state.ExecutorInstanceID = executorInstanceID.String
+	}
+	if claimedAt.Valid {
+		state.ClaimedAt = claimedAt.Time
+	}
 	if checkpointData.Valid {
 		state.CheckpointData = checkpointData.String
 	}
@@ -228,13 +236,47 @@ func (s *VCStorage) GetExecutionState(ctx context.Context, issueID string) (*typ
 	return &state, nil
 }
 
-// UpdateExecutionState updates the execution state
-func (s *VCStorage) UpdateExecutionState(ctx context.Context, issueID string, state types.ExecutionState) error {
-	_, err := s.db.ExecContext(ctx, `
+// UpdateExecutionState updates the execution state with validation
+// Validates that the state transition is valid according to the execution state machine
+func (s *VCStorage) UpdateExecutionState(ctx context.Context, issueID string, newState types.ExecutionState) error {
+	// Validate that the new state is valid
+	if !newState.IsValid() {
+		return fmt.Errorf("invalid execution state: %s", newState)
+	}
+
+	// Get current state to validate transition
+	currentExecState, err := s.GetExecutionState(ctx, issueID)
+	if err != nil {
+		// If no execution state exists, only allow transition to pending or claimed
+		if newState == types.ExecutionStatePending || newState == types.ExecutionStateClaimed {
+			// Create new execution state record (use ON CONFLICT in case of race)
+			_, err := s.db.ExecContext(ctx, `
+				INSERT INTO vc_issue_execution_state (issue_id, state, updated_at)
+				VALUES (?, ?, ?)
+				ON CONFLICT(issue_id) DO UPDATE SET
+					state = excluded.state,
+					updated_at = excluded.updated_at
+			`, issueID, newState, time.Now())
+			if err != nil {
+				return fmt.Errorf("failed to create execution state: %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("cannot transition to %s without existing execution state", newState)
+	}
+
+	// Validate state transition
+	if !currentExecState.State.CanTransitionTo(newState) {
+		return fmt.Errorf("invalid state transition: cannot transition from %s to %s (valid transitions: %v)",
+			currentExecState.State, newState, currentExecState.State.ValidTransitions())
+	}
+
+	// Update state
+	_, err = s.db.ExecContext(ctx, `
 		UPDATE vc_issue_execution_state
 		SET state = ?, updated_at = ?
 		WHERE issue_id = ?
-	`, state, time.Now(), issueID)
+	`, newState, time.Now(), issueID)
 
 	if err != nil {
 		return fmt.Errorf("failed to update execution state: %w", err)

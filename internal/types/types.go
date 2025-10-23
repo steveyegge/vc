@@ -273,23 +273,78 @@ func (e *ExecutorInstance) Validate() error {
 type ExecutionState string
 
 const (
-	ExecutionStateClaimed    ExecutionState = "claimed"
-	ExecutionStateAssessing  ExecutionState = "assessing"
-	ExecutionStateExecuting  ExecutionState = "executing"
-	ExecutionStateAnalyzing  ExecutionState = "analyzing"
-	ExecutionStateGates      ExecutionState = "gates"
-	ExecutionStateCommitting ExecutionState = "committing"
-	ExecutionStateCompleted  ExecutionState = "completed"
-	ExecutionStateFailed     ExecutionState = "failed"
+	ExecutionStatePending    ExecutionState = "pending"    // Initial state (not yet claimed)
+	ExecutionStateClaimed    ExecutionState = "claimed"    // Claimed by executor
+	ExecutionStateAssessing  ExecutionState = "assessing"  // AI is assessing the task
+	ExecutionStateExecuting  ExecutionState = "executing"  // Agent is executing the work
+	ExecutionStateAnalyzing  ExecutionState = "analyzing"  // AI is analyzing the result
+	ExecutionStateGates      ExecutionState = "gates"      // Running quality gates
+	ExecutionStateCommitting ExecutionState = "committing" // Committing changes
+	ExecutionStateCompleted  ExecutionState = "completed"  // Successfully completed
+	ExecutionStateFailed     ExecutionState = "failed"     // Failed (terminal state)
 )
 
 // IsValid checks if the execution state value is valid
 func (s ExecutionState) IsValid() bool {
 	switch s {
-	case ExecutionStateClaimed, ExecutionStateAssessing, ExecutionStateExecuting,
+	case ExecutionStatePending, ExecutionStateClaimed, ExecutionStateAssessing, ExecutionStateExecuting,
 		ExecutionStateAnalyzing, ExecutionStateGates, ExecutionStateCommitting,
 		ExecutionStateCompleted, ExecutionStateFailed:
 		return true
+	}
+	return false
+}
+
+// ValidTransitions defines the valid state transitions for the execution state machine.
+// The state machine ensures predictable progression through the execution lifecycle.
+//
+// State Machine Diagram:
+//
+//	pending → claimed → assessing → executing → analyzing → gates → committing → completed
+//	    ↓         ↓         ↓           ↓           ↓         ↓          ↓
+//	  failed    failed    failed      failed      failed    failed     failed
+//
+// Valid transitions:
+//   - pending → claimed (executor claims the issue)
+//   - claimed → assessing (start AI assessment)
+//   - assessing → executing (assessment complete, start work)
+//   - executing → analyzing (work complete, start AI analysis)
+//   - analyzing → gates (analysis complete, run quality gates)
+//   - gates → committing (gates passed, commit changes)
+//   - committing → completed (changes committed successfully)
+//   - any state → failed (error occurred at any stage)
+func (s ExecutionState) ValidTransitions() []ExecutionState {
+	switch s {
+	case ExecutionStatePending:
+		return []ExecutionState{ExecutionStateClaimed, ExecutionStateFailed}
+	case ExecutionStateClaimed:
+		return []ExecutionState{ExecutionStateAssessing, ExecutionStateFailed}
+	case ExecutionStateAssessing:
+		return []ExecutionState{ExecutionStateExecuting, ExecutionStateFailed}
+	case ExecutionStateExecuting:
+		return []ExecutionState{ExecutionStateAnalyzing, ExecutionStateFailed}
+	case ExecutionStateAnalyzing:
+		return []ExecutionState{ExecutionStateGates, ExecutionStateFailed}
+	case ExecutionStateGates:
+		return []ExecutionState{ExecutionStateCommitting, ExecutionStateFailed}
+	case ExecutionStateCommitting:
+		return []ExecutionState{ExecutionStateCompleted, ExecutionStateFailed}
+	case ExecutionStateCompleted:
+		return []ExecutionState{} // Terminal state
+	case ExecutionStateFailed:
+		return []ExecutionState{} // Terminal state
+	default:
+		return []ExecutionState{}
+	}
+}
+
+// CanTransitionTo checks if a transition from this state to the target state is valid
+func (s ExecutionState) CanTransitionTo(target ExecutionState) bool {
+	validTransitions := s.ValidTransitions()
+	for _, valid := range validTransitions {
+		if valid == target {
+			return true
+		}
 	}
 	return false
 }
