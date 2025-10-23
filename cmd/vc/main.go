@@ -9,7 +9,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/vc/internal/storage"
-	"github.com/steveyegge/vc/internal/storage/sqlite"
+	"github.com/steveyegge/vc/internal/storage/beads"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -47,7 +47,8 @@ var rootCmd = &cobra.Command{
 			}
 		}
 
-		store, err = sqlite.New(dbPath)
+		ctx := context.Background()
+		store, err = beads.NewVCStorage(ctx, dbPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: failed to open database: %v\n", err)
 			os.Exit(1)

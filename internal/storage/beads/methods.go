@@ -304,8 +304,22 @@ func (s *VCStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, error) 
 // LABELS (delegate to Beads)
 // ======================================================================
 
-// AddLabel, RemoveLabel, GetLabels, GetIssuesByLabel all delegate to Beads
+// AddLabel, RemoveLabel, GetLabels delegate to Beads
 // (These methods are already available via embedded beads.Storage)
+
+// GetIssuesByLabel retrieves issues by label from Beads and converts to VC types
+func (s *VCStorage) GetIssuesByLabel(ctx context.Context, label string) ([]*types.Issue, error) {
+	beadsIssues, err := s.Storage.GetIssuesByLabel(ctx, label)
+	if err != nil {
+		return nil, err
+	}
+
+	vcIssues := make([]*types.Issue, len(beadsIssues))
+	for i, bi := range beadsIssues {
+		vcIssues[i] = beadsIssueToVC(bi)
+	}
+	return vcIssues, nil
+}
 
 // ======================================================================
 // READY WORK & BLOCKING (delegate to Beads)
@@ -353,8 +367,30 @@ func (s *VCStorage) GetBlockedIssues(ctx context.Context) ([]*types.BlockedIssue
 // EVENTS & COMMENTS (delegate to Beads)
 // ======================================================================
 
-// AddComment, GetEvents delegate to Beads
-// (Already available via embedded beads.Storage)
+// AddComment delegates to Beads (already available via embedded beads.Storage)
+
+// GetEvents retrieves events from Beads and converts to VC types
+func (s *VCStorage) GetEvents(ctx context.Context, issueID string, limit int) ([]*types.Event, error) {
+	beadsEvents, err := s.Storage.GetEvents(ctx, issueID, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	vcEvents := make([]*types.Event, len(beadsEvents))
+	for i, be := range beadsEvents {
+		vcEvents[i] = &types.Event{
+			ID:        be.ID,
+			IssueID:   be.IssueID,
+			EventType: types.EventType(be.EventType),
+			Actor:     be.Actor,
+			OldValue:  be.OldValue,
+			NewValue:  be.NewValue,
+			Comment:   be.Comment,
+			CreatedAt: be.CreatedAt,
+		}
+	}
+	return vcEvents, nil
+}
 
 // ======================================================================
 // STATISTICS (delegate to Beads)
