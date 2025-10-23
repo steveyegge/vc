@@ -500,3 +500,210 @@ func TestGetAgentEvents(t *testing.T) {
 		}
 	})
 }
+
+// TestAgentEventDataPersistence verifies that Data field is properly stored and retrieved
+func TestAgentEventDataPersistence(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer store.Close()
+
+	// Create test issue
+	issue := &types.Issue{
+		Title:      "Test issue for data persistence",
+		Status:     types.StatusOpen,
+		Priority:   2,
+		IssueType:  types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, issue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Create event with complex Data structure
+	now := time.Now()
+	originalData := map[string]interface{}{
+		"tool_name":         "Read",
+		"file_path":         "/tmp/test.go",
+		"lines_read":        float64(100),
+		"success":           true,
+		"nested_object": map[string]interface{}{
+			"key1": "value1",
+			"key2": float64(42),
+		},
+		"array_field": []interface{}{"item1", "item2", "item3"},
+	}
+
+	event := &events.AgentEvent{
+		Timestamp: now,
+		IssueID:   issue.ID,
+		Type:      events.EventTypeAgentToolUse,
+		Severity:  events.SeverityInfo,
+		Message:   "Test event with data",
+		Data:      originalData,
+	}
+
+	err = store.StoreAgentEvent(ctx, event)
+	if err != nil {
+		t.Fatalf("Failed to store event: %v", err)
+	}
+
+	t.Run("GetAgentEventsByIssue preserves Data", func(t *testing.T) {
+		results, err := store.GetAgentEventsByIssue(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("GetAgentEventsByIssue failed: %v", err)
+		}
+
+		if len(results) != 1 {
+			t.Fatalf("Expected 1 event, got %d", len(results))
+		}
+
+		retrieved := results[0]
+		if retrieved.Data == nil {
+			t.Fatal("Data field is nil - unmarshaling failed")
+		}
+
+		// Verify all fields
+		if retrieved.Data["tool_name"] != "Read" {
+			t.Errorf("Expected tool_name='Read', got %v", retrieved.Data["tool_name"])
+		}
+		if retrieved.Data["file_path"] != "/tmp/test.go" {
+			t.Errorf("Expected file_path='/tmp/test.go', got %v", retrieved.Data["file_path"])
+		}
+		if retrieved.Data["lines_read"] != float64(100) {
+			t.Errorf("Expected lines_read=100, got %v", retrieved.Data["lines_read"])
+		}
+		if retrieved.Data["success"] != true {
+			t.Errorf("Expected success=true, got %v", retrieved.Data["success"])
+		}
+
+		// Verify nested object
+		nested, ok := retrieved.Data["nested_object"].(map[string]interface{})
+		if !ok {
+			t.Fatal("nested_object is not a map")
+		}
+		if nested["key1"] != "value1" {
+			t.Errorf("Expected nested key1='value1', got %v", nested["key1"])
+		}
+		if nested["key2"] != float64(42) {
+			t.Errorf("Expected nested key2=42, got %v", nested["key2"])
+		}
+
+		// Verify array
+		arr, ok := retrieved.Data["array_field"].([]interface{})
+		if !ok {
+			t.Fatal("array_field is not an array")
+		}
+		if len(arr) != 3 {
+			t.Errorf("Expected array length 3, got %d", len(arr))
+		}
+		if arr[0] != "item1" {
+			t.Errorf("Expected arr[0]='item1', got %v", arr[0])
+		}
+	})
+
+	t.Run("GetRecentAgentEvents preserves Data", func(t *testing.T) {
+		results, err := store.GetRecentAgentEvents(ctx, 10)
+		if err != nil {
+			t.Fatalf("GetRecentAgentEvents failed: %v", err)
+		}
+
+		if len(results) == 0 {
+			t.Fatal("Expected at least 1 event")
+		}
+
+		// Find our test event
+		var retrieved *events.AgentEvent
+		for _, e := range results {
+			if e.IssueID == issue.ID {
+				retrieved = e
+				break
+			}
+		}
+
+		if retrieved == nil {
+			t.Fatal("Test event not found in recent events")
+		}
+
+		if retrieved.Data == nil {
+			t.Fatal("Data field is nil - unmarshaling failed")
+		}
+
+		if retrieved.Data["tool_name"] != "Read" {
+			t.Errorf("Expected tool_name='Read', got %v", retrieved.Data["tool_name"])
+		}
+	})
+
+	t.Run("GetAgentEvents preserves Data", func(t *testing.T) {
+		filter := events.EventFilter{
+			IssueID: issue.ID,
+		}
+		results, err := store.GetAgentEvents(ctx, filter)
+		if err != nil {
+			t.Fatalf("GetAgentEvents failed: %v", err)
+		}
+
+		if len(results) != 1 {
+			t.Fatalf("Expected 1 event, got %d", len(results))
+		}
+
+		retrieved := results[0]
+		if retrieved.Data == nil {
+			t.Fatal("Data field is nil - unmarshaling failed")
+		}
+
+		if retrieved.Data["tool_name"] != "Read" {
+			t.Errorf("Expected tool_name='Read', got %v", retrieved.Data["tool_name"])
+		}
+	})
+
+	t.Run("empty Data field handled correctly", func(t *testing.T) {
+		// Create event with nil Data
+		eventNoData := &events.AgentEvent{
+			Timestamp: now.Add(1 * time.Minute),
+			IssueID:   issue.ID,
+			Type:      events.EventTypeProgress,
+			Severity:  events.SeverityInfo,
+			Message:   "Event without data",
+			Data:      nil,
+		}
+
+		err := store.StoreAgentEvent(ctx, eventNoData)
+		if err != nil {
+			t.Fatalf("Failed to store event without data: %v", err)
+		}
+
+		results, err := store.GetAgentEventsByIssue(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("GetAgentEventsByIssue failed: %v", err)
+		}
+
+		// Should have 2 events now
+		if len(results) != 2 {
+			t.Errorf("Expected 2 events, got %d", len(results))
+		}
+
+		// Find the event without data
+		var noDataEvent *events.AgentEvent
+		for _, e := range results {
+			if e.Type == events.EventTypeProgress {
+				noDataEvent = e
+				break
+			}
+		}
+
+		if noDataEvent == nil {
+			t.Fatal("Event without data not found")
+		}
+
+		// Data should be nil or empty
+		if noDataEvent.Data != nil && len(noDataEvent.Data) > 0 {
+			t.Errorf("Expected empty Data, got %v", noDataEvent.Data)
+		}
+	})
+}
