@@ -15,6 +15,7 @@ package beads
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	"github.com/steveyegge/beads"
@@ -82,6 +83,13 @@ CREATE TABLE IF NOT EXISTS vc_mission_state (
     iteration_count INTEGER DEFAULT 0,
     last_gates_run DATETIME,
     gates_status TEXT CHECK(gates_status IN ('pending', 'running', 'passed', 'failed')),
+    goal TEXT,                   -- High-level mission goal
+    context TEXT,                -- Additional planning context
+    phase_count INTEGER DEFAULT 0,       -- Number of phases in plan
+    current_phase INTEGER DEFAULT 0,     -- Current phase being executed (0-indexed)
+    approval_required BOOLEAN DEFAULT FALSE,  -- Requires human approval before execution
+    approved_at DATETIME,        -- When plan was approved
+    approved_by TEXT,            -- Who approved the plan
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
@@ -126,7 +134,7 @@ CREATE TABLE IF NOT EXISTS vc_issue_execution_state (
     issue_id TEXT PRIMARY KEY,
     executor_instance_id TEXT,
     claimed_at DATETIME,
-    state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending', 'claimed', 'executing', 'analyzing', 'completed', 'failed')),
+    state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending', 'claimed', 'assessing', 'executing', 'analyzing', 'gates', 'committing', 'completed', 'failed')),
     checkpoint_data TEXT,  -- JSON blob for agent state
     error_message TEXT,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -142,10 +150,14 @@ CREATE TABLE IF NOT EXISTS vc_execution_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     issue_id TEXT NOT NULL,
     executor_instance_id TEXT,
+    attempt_number INTEGER NOT NULL,
     started_at DATETIME NOT NULL,
     completed_at DATETIME,
-    state TEXT NOT NULL,
-    error_message TEXT,
+    success BOOLEAN,
+    exit_code INTEGER,
+    summary TEXT,
+    output_sample TEXT,
+    error_sample TEXT,
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
     FOREIGN KEY (executor_instance_id) REFERENCES vc_executor_instances(id) ON DELETE SET NULL
 );
@@ -163,9 +175,11 @@ func (s *VCStorage) StoreAgentEvent(ctx context.Context, event *events.AgentEven
 	// Convert event data to JSON if present
 	var dataJSON string
 	if event.Data != nil {
-		// TODO: Marshal event.Data to JSON
-		// For now, assume Data is already a JSON string
-		dataJSON = fmt.Sprintf("%v", event.Data)
+		jsonBytes, err := json.Marshal(event.Data)
+		if err != nil {
+			return fmt.Errorf("failed to marshal event data: %w", err)
+		}
+		dataJSON = string(jsonBytes)
 	}
 
 	_, err := s.db.ExecContext(ctx, `
@@ -205,7 +219,11 @@ func (s *VCStorage) GetAgentEventsByIssue(ctx context.Context, issueID string) (
 		if err := rows.Scan(&e.ID, &e.Timestamp, &e.IssueID, &e.Type, &e.Severity, &e.Message, &dataJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan agent event: %w", err)
 		}
-		// TODO: Unmarshal dataJSON to e.Data
+		if dataJSON.Valid && dataJSON.String != "" {
+			if err := json.Unmarshal([]byte(dataJSON.String), &e.Data); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal event data: %w", err)
+			}
+		}
 		result = append(result, &e)
 	}
 
@@ -232,7 +250,11 @@ func (s *VCStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*eve
 		if err := rows.Scan(&e.ID, &e.Timestamp, &e.IssueID, &e.Type, &e.Severity, &e.Message, &dataJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan agent event: %w", err)
 		}
-		// TODO: Unmarshal dataJSON to e.Data
+		if dataJSON.Valid && dataJSON.String != "" {
+			if err := json.Unmarshal([]byte(dataJSON.String), &e.Data); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal event data: %w", err)
+			}
+		}
 		result = append(result, &e)
 	}
 

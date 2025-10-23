@@ -137,23 +137,30 @@ func (s *VCStorage) DeleteOldStoppedInstances(ctx context.Context, olderThanSeco
 
 // ClaimIssue atomically claims an issue for execution
 func (s *VCStorage) ClaimIssue(ctx context.Context, issueID, executorInstanceID string) error {
-	// First, check if issue is already claimed
+	// Begin transaction to ensure atomicity
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback() // Rollback if not committed
+
+	// First, check if issue is already claimed or being executed
 	var existingClaim string
-	err := s.db.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		SELECT executor_instance_id
 		FROM vc_issue_execution_state
-		WHERE issue_id = ? AND state = 'claimed'
+		WHERE issue_id = ? AND state IN ('claimed', 'assessing', 'executing', 'analyzing', 'gates', 'committing')
 	`, issueID).Scan(&existingClaim)
 
 	if err == nil {
-		// Already claimed
+		// Already claimed or being executed
 		return fmt.Errorf("issue %s already claimed by %s", issueID, existingClaim)
 	} else if err != sql.ErrNoRows {
 		return fmt.Errorf("failed to check existing claim: %w", err)
 	}
 
 	// Insert or update claim
-	_, err = s.db.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO vc_issue_execution_state (issue_id, executor_instance_id, claimed_at, state, updated_at)
 		VALUES (?, ?, ?, 'claimed', ?)
 		ON CONFLICT(issue_id) DO UPDATE SET
@@ -167,13 +174,18 @@ func (s *VCStorage) ClaimIssue(ctx context.Context, issueID, executorInstanceID 
 		return fmt.Errorf("failed to claim issue: %w", err)
 	}
 
-	// Also update issue status to in_progress in Beads
-	err = s.Storage.UpdateIssue(ctx, issueID, map[string]interface{}{
-		"status": "in_progress",
-	}, executorInstanceID)
+	// Update issue status to in_progress in Beads (through transaction)
+	_, err = tx.ExecContext(ctx, `
+		UPDATE issues SET status = ?, updated_at = ? WHERE id = ?
+	`, "in_progress", time.Now(), issueID)
 
 	if err != nil {
 		return fmt.Errorf("failed to update issue status: %w", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil
@@ -331,10 +343,10 @@ func (s *VCStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, actor, e
 // RecordExecutionAttempt records an execution attempt in history
 func (s *VCStorage) RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO vc_execution_history (issue_id, executor_instance_id, started_at, completed_at, state, error_message)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, attempt.IssueID, attempt.ExecutorInstanceID, attempt.StartedAt, attempt.CompletedAt,
-		attempt.State, attempt.ErrorMessage)
+		INSERT INTO vc_execution_history (issue_id, executor_instance_id, attempt_number, started_at, completed_at, success, exit_code, summary, output_sample, error_sample)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, attempt.IssueID, attempt.ExecutorInstanceID, attempt.AttemptNumber, attempt.StartedAt, attempt.CompletedAt,
+		attempt.Success, attempt.ExitCode, attempt.Summary, attempt.OutputSample, attempt.ErrorSample)
 
 	if err != nil {
 		return fmt.Errorf("failed to record execution attempt: %w", err)
@@ -346,7 +358,7 @@ func (s *VCStorage) RecordExecutionAttempt(ctx context.Context, attempt *types.E
 // GetExecutionHistory retrieves execution history for an issue
 func (s *VCStorage) GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, issue_id, executor_instance_id, started_at, completed_at, state, error_message
+		SELECT id, issue_id, executor_instance_id, attempt_number, started_at, completed_at, success, exit_code, summary, output_sample, error_sample
 		FROM vc_execution_history
 		WHERE issue_id = ?
 		ORDER BY started_at DESC
@@ -360,18 +372,25 @@ func (s *VCStorage) GetExecutionHistory(ctx context.Context, issueID string) ([]
 	for rows.Next() {
 		var attempt types.ExecutionAttempt
 		var completedAt sql.NullTime
-		var errorMessage sql.NullString
+		var success sql.NullBool
+		var exitCode sql.NullInt64
 
 		if err := rows.Scan(&attempt.ID, &attempt.IssueID, &attempt.ExecutorInstanceID,
-			&attempt.StartedAt, &completedAt, &attempt.State, &errorMessage); err != nil {
+			&attempt.AttemptNumber, &attempt.StartedAt, &completedAt, &success, &exitCode,
+			&attempt.Summary, &attempt.OutputSample, &attempt.ErrorSample); err != nil {
 			return nil, fmt.Errorf("failed to scan execution attempt: %w", err)
 		}
 
 		if completedAt.Valid {
 			attempt.CompletedAt = &completedAt.Time
 		}
-		if errorMessage.Valid {
-			attempt.ErrorMessage = errorMessage.String
+		if success.Valid {
+			successVal := success.Bool
+			attempt.Success = &successVal
+		}
+		if exitCode.Valid {
+			exitCodeVal := int(exitCode.Int64)
+			attempt.ExitCode = &exitCodeVal
 		}
 
 		history = append(history, &attempt)

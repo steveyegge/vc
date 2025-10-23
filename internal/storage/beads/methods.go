@@ -54,8 +54,12 @@ func (s *VCStorage) GetMission(ctx context.Context, id string) (*types.Mission, 
 	var mission types.Mission
 	mission.Issue = *issue
 
+	var goal, context, approvedBy sql.NullString
+	var approvedAt sql.NullTime
+
 	err = s.db.QueryRowContext(ctx, `
-		SELECT sandbox_path, branch_name, iteration_count, gates_status
+		SELECT sandbox_path, branch_name, iteration_count, gates_status,
+		       goal, context, phase_count, current_phase, approval_required, approved_at, approved_by
 		FROM vc_mission_state
 		WHERE issue_id = ? AND subtype IN ('mission', 'phase')
 	`, id).Scan(
@@ -63,6 +67,13 @@ func (s *VCStorage) GetMission(ctx context.Context, id string) (*types.Mission, 
 		&mission.BranchName,
 		&mission.IterationCount,
 		&mission.GatesStatus,
+		&goal,
+		&context,
+		&mission.PhaseCount,
+		&mission.CurrentPhase,
+		&mission.ApprovalRequired,
+		&approvedAt,
+		&approvedBy,
 	)
 
 	if err != nil {
@@ -70,6 +81,20 @@ func (s *VCStorage) GetMission(ctx context.Context, id string) (*types.Mission, 
 			return nil, fmt.Errorf("issue %s is not a mission", id)
 		}
 		return nil, fmt.Errorf("failed to query mission metadata: %w", err)
+	}
+
+	// Handle nullable fields
+	if goal.Valid {
+		mission.Goal = goal.String
+	}
+	if context.Valid {
+		mission.Context = context.String
+	}
+	if approvedAt.Valid {
+		mission.ApprovedAt = &approvedAt.Time
+	}
+	if approvedBy.Valid {
+		mission.ApprovedBy = approvedBy.String
 	}
 
 	return &mission, nil
@@ -98,6 +123,31 @@ func (s *VCStorage) CreateIssue(ctx context.Context, issue *types.Issue, actor s
 		if err != nil {
 			return fmt.Errorf("failed to create mission state: %w", err)
 		}
+	}
+
+	return nil
+}
+
+// CreateMission creates a mission with full metadata
+func (s *VCStorage) CreateMission(ctx context.Context, mission *types.Mission, actor string) error {
+	// First create the base issue
+	if err := s.CreateIssue(ctx, &mission.Issue, actor); err != nil {
+		return err
+	}
+
+	// Update the mission state with all mission-specific fields
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE vc_mission_state
+		SET goal = ?, context = ?, phase_count = ?, current_phase = ?,
+		    approval_required = ?, approved_at = ?, approved_by = ?,
+		    updated_at = ?
+		WHERE issue_id = ?
+	`, mission.Goal, mission.Context, mission.PhaseCount, mission.CurrentPhase,
+		mission.ApprovalRequired, mission.ApprovedAt, mission.ApprovedBy,
+		time.Now(), mission.ID)
+
+	if err != nil {
+		return fmt.Errorf("failed to update mission metadata: %w", err)
 	}
 
 	return nil
