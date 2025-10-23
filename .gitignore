@@ -34,3 +34,4 @@ Thumbs.db
 *.log
 logs/
 .beads/daemon.pid
+.beads/daemon.lock
