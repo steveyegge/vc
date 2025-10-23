@@ -907,3 +907,167 @@ func TestGetDependencyTree(t *testing.T) {
 		}
 	})
 }
+
+// TestGetBlockedIssues verifies that GetBlockedIssues returns proper Blockers list
+func TestGetBlockedIssues(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer store.Close()
+
+	// Create issues: A is blocked by B and C
+	issueA := &types.Issue{
+		Title:      "Issue A (blocked)",
+		Status:     types.StatusBlocked,
+		Priority:   1,
+		IssueType:  types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, issueA, "test")
+	if err != nil {
+		t.Fatalf("Failed to create issue A: %v", err)
+	}
+
+	issueB := &types.Issue{
+		Title:      "Issue B (blocker)",
+		Status:     types.StatusOpen,
+		Priority:   1,
+		IssueType:  types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, issueB, "test")
+	if err != nil {
+		t.Fatalf("Failed to create issue B: %v", err)
+	}
+
+	issueC := &types.Issue{
+		Title:      "Issue C (blocker)",
+		Status:     types.StatusOpen,
+		Priority:   1,
+		IssueType:  types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, issueC, "test")
+	if err != nil {
+		t.Fatalf("Failed to create issue C: %v", err)
+	}
+
+	// Add blocking dependencies: A depends on B and C
+	err = store.AddDependency(ctx, &types.Dependency{
+		IssueID:     issueA.ID,
+		DependsOnID: issueB.ID,
+		Type:        types.DepBlocks,
+	}, "test")
+	if err != nil {
+		t.Fatalf("Failed to add A -> B dependency: %v", err)
+	}
+
+	err = store.AddDependency(ctx, &types.Dependency{
+		IssueID:     issueA.ID,
+		DependsOnID: issueC.ID,
+		Type:        types.DepBlocks,
+	}, "test")
+	if err != nil {
+		t.Fatalf("Failed to add A -> C dependency: %v", err)
+	}
+
+	t.Run("GetBlockedIssues returns Blockers list", func(t *testing.T) {
+		blocked, err := store.GetBlockedIssues(ctx)
+		if err != nil {
+			t.Fatalf("GetBlockedIssues failed: %v", err)
+		}
+
+		// Should have at least one blocked issue (A)
+		if len(blocked) == 0 {
+			t.Fatal("Expected at least one blocked issue")
+		}
+
+		// Find issue A in the results
+		var issueABlocked *types.BlockedIssue
+		for _, b := range blocked {
+			if b.ID == issueA.ID {
+				issueABlocked = b
+				break
+			}
+		}
+
+		if issueABlocked == nil {
+			t.Fatal("Issue A not found in blocked issues")
+		}
+
+		// Verify BlockedByCount
+		if issueABlocked.BlockedByCount != 2 {
+			t.Errorf("Expected BlockedByCount=2, got %d", issueABlocked.BlockedByCount)
+		}
+
+		// Verify BlockedBy list is populated
+		if issueABlocked.BlockedBy == nil {
+			t.Fatal("BlockedBy list is nil - conversion failed")
+		}
+
+		if len(issueABlocked.BlockedBy) != 2 {
+			t.Fatalf("Expected 2 blockers in BlockedBy list, got %d", len(issueABlocked.BlockedBy))
+		}
+
+		// Verify both B and C are in the blockers list
+		blockersMap := make(map[string]bool)
+		for _, blockerID := range issueABlocked.BlockedBy {
+			blockersMap[blockerID] = true
+		}
+
+		if !blockersMap[issueB.ID] {
+			t.Errorf("Expected issue B (%s) in blockers list", issueB.ID)
+		}
+
+		if !blockersMap[issueC.ID] {
+			t.Errorf("Expected issue C (%s) in blockers list", issueC.ID)
+		}
+	})
+
+	t.Run("non-blocked issues not in results", func(t *testing.T) {
+		// Create a non-blocked issue
+		nonBlocked := &types.Issue{
+			Title:      "Non-blocked issue",
+			Status:     types.StatusOpen,
+			Priority:   1,
+			IssueType:  types.TypeTask,
+		}
+		err = store.CreateIssue(ctx, nonBlocked, "test")
+		if err != nil {
+			t.Fatalf("Failed to create non-blocked issue: %v", err)
+		}
+
+		blocked, err := store.GetBlockedIssues(ctx)
+		if err != nil {
+			t.Fatalf("GetBlockedIssues failed: %v", err)
+		}
+
+		// Verify non-blocked issue is not in results
+		for _, b := range blocked {
+			if b.ID == nonBlocked.ID {
+				t.Error("Non-blocked issue should not appear in GetBlockedIssues results")
+			}
+		}
+	})
+
+	t.Run("issue with zero blockers not in results", func(t *testing.T) {
+		// Issue A should still be blocked
+		blocked, err := store.GetBlockedIssues(ctx)
+		if err != nil {
+			t.Fatalf("GetBlockedIssues failed: %v", err)
+		}
+
+		// All blocked issues should have BlockedByCount > 0
+		for _, b := range blocked {
+			if b.BlockedByCount <= 0 {
+				t.Errorf("Blocked issue %s has BlockedByCount=%d, expected > 0", b.ID, b.BlockedByCount)
+			}
+			if len(b.BlockedBy) != b.BlockedByCount {
+				t.Errorf("Blocked issue %s: len(BlockedBy)=%d doesn't match BlockedByCount=%d",
+					b.ID, len(b.BlockedBy), b.BlockedByCount)
+			}
+		}
+	})
+}
