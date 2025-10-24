@@ -20,7 +20,7 @@ func TestFindOrphanedMissionBranches(t *testing.T) {
 
 	// Initialize git repo
 	ctx := context.Background()
-	if err := exec.CommandContext(ctx, "git", "init", tmpDir).Run(); err != nil {
+	if err := exec.CommandContext(ctx, "git", "init", "--initial-branch=main", tmpDir).Run(); err != nil {
 		t.Fatalf("failed to init git repo: %v", err)
 	}
 
@@ -87,7 +87,7 @@ func TestCleanupOrphanedBranches(t *testing.T) {
 
 	// Initialize git repo
 	ctx := context.Background()
-	if err := exec.CommandContext(ctx, "git", "init", tmpDir).Run(); err != nil {
+	if err := exec.CommandContext(ctx, "git", "init", "--initial-branch=main", tmpDir).Run(); err != nil {
 		t.Fatalf("failed to init git repo: %v", err)
 	}
 
@@ -170,7 +170,7 @@ func TestListWorktrees(t *testing.T) {
 
 	// Initialize git repo
 	ctx := context.Background()
-	if err := exec.CommandContext(ctx, "git", "init", tmpDir).Run(); err != nil {
+	if err := exec.CommandContext(ctx, "git", "init", "--initial-branch=main", tmpDir).Run(); err != nil {
 		t.Fatalf("failed to init git repo: %v", err)
 	}
 
@@ -222,7 +222,7 @@ func TestGetBranchTimestamp(t *testing.T) {
 
 	// Initialize git repo
 	ctx := context.Background()
-	if err := exec.CommandContext(ctx, "git", "init", tmpDir).Run(); err != nil {
+	if err := exec.CommandContext(ctx, "git", "init", "--initial-branch=main", tmpDir).Run(); err != nil {
 		t.Fatalf("failed to init git repo: %v", err)
 	}
 

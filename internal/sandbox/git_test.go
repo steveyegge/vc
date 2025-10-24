@@ -24,8 +24,9 @@ func setupTestRepo(t *testing.T) (string, func()) {
 		_ = os.RemoveAll(tmpDir) // Cleanup
 	}
 
-	// Initialize git repo
-	cmd := exec.Command("git", "init")
+	// Initialize git repo with 'main' as the default branch
+	// This ensures compatibility across different git versions and configurations
+	cmd := exec.Command("git", "init", "--initial-branch=main")
 	cmd.Dir = tmpDir
 	if err := cmd.Run(); err != nil {
 		cleanup()
@@ -654,8 +655,9 @@ func TestDeleteBranch(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	// Initialize git repo
-	cmd := exec.Command("git", "init")
+	// Initialize git repo with 'main' as the default branch
+	// This ensures compatibility across different git versions and configurations
+	cmd := exec.Command("git", "init", "--initial-branch=main")
 	cmd.Dir = tmpDir
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to init git repo: %v", err)

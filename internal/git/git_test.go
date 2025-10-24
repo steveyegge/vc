@@ -21,7 +21,7 @@ func TestGitOperations(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Initialize a git repository
-	cmd := exec.Command("git", "init")
+	cmd := exec.Command("git", "init", "--initial-branch=main")
 	cmd.Dir = tmpDir
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to init git repo: %v", err)
@@ -213,7 +213,7 @@ func TestGitOperations_ErrorCases(t *testing.T) {
 		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		// Initialize a git repository
-		cmd := exec.Command("git", "init")
+		cmd := exec.Command("git", "init", "--initial-branch=main")
 		cmd.Dir = tmpDir
 		if err := cmd.Run(); err != nil {
 			t.Fatalf("Failed to init git repo: %v", err)
@@ -273,7 +273,7 @@ func TestGitOperations_ErrorCases(t *testing.T) {
 		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		// Initialize a git repository
-		cmd := exec.Command("git", "init")
+		cmd := exec.Command("git", "init", "--initial-branch=main")
 		cmd.Dir = tmpDir
 		if err := cmd.Run(); err != nil {
 			t.Fatalf("Failed to init git repo: %v", err)
@@ -301,7 +301,7 @@ func TestCommitMessageValidation(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Initialize a git repository
-	cmd := exec.Command("git", "init")
+	cmd := exec.Command("git", "init", "--initial-branch=main")
 	cmd.Dir = tmpDir
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to init git repo: %v", err)
@@ -652,7 +652,7 @@ func TestRebaseOperations(t *testing.T) {
 // Helper functions for rebase tests
 
 func initRepo(t *testing.T, dir string) {
-	cmd := exec.Command("git", "init")
+	cmd := exec.Command("git", "init", "--initial-branch=main")
 	cmd.Dir = dir
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to init git repo: %v", err)

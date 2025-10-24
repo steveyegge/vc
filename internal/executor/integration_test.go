@@ -817,8 +817,9 @@ func TestExecutorSandboxIntegration(t *testing.T) {
 func setupGitRepo(t *testing.T, path string) error {
 	t.Helper()
 
-	// Initialize git repo
-	cmd := exec.Command("git", "init")
+	// Initialize git repo with 'main' as the default branch
+	// This ensures compatibility across different git versions and configurations
+	cmd := exec.Command("git", "init", "--initial-branch=main")
 	cmd.Dir = path
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("git init failed: %w", err)
