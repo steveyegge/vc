@@ -63,6 +63,9 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 		Summary:          "",
 	}
 
+	// Declare gateResults at function scope so approval gate can access them (vc-145)
+	var gateResults []*gates.Result
+
 	// Step 1: Extract agent output summary
 	agentOutput := rp.extractSummary(ctx, issue, agentResult)
 
@@ -254,7 +257,8 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			fmt.Printf("Running quality gates (timeout: 5m)...\n")
 
 			// Run gates with timeout protection
-			gateResults, allPassed := gateRunner.RunAll(gateCtx)
+			var allPassed bool
+			gateResults, allPassed = gateRunner.RunAll(gateCtx)
 
 			// Log progress for each gate (vc-245)
 			for _, gateResult := range gateResults {
@@ -421,6 +425,80 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 	}
 
 SkipGates:
+	// Step 3.4: Human Approval Gate (vc-145)
+	// If sandboxes are enabled and quality gates passed, require human approval before merging
+	if agentResult.Success && result.GatesPassed && rp.sandbox != nil {
+		fmt.Printf("\n=== Human Approval Gate ===\n")
+
+		approvalGate, err := gates.NewApprovalGate(&gates.ApprovalConfig{
+			Store:   rp.store,
+			Sandbox: rp.sandbox,
+			Issue:   issue,
+			Results: gateResults,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to create approval gate: %v (skipping approval)\n", err)
+			// Log approval gate error
+			rp.logEvent(ctx, events.EventTypeError, events.SeverityWarning, issue.ID,
+				fmt.Sprintf("Approval gate creation failed: %v", err),
+				map[string]interface{}{
+					"error": err.Error(),
+				})
+		} else {
+			// Run approval gate
+			approvalResult := approvalGate.Run(ctx)
+
+			// Log approval result
+			severity := events.SeverityInfo
+			if !approvalResult.Passed {
+				severity = events.SeverityWarning
+			}
+			rp.logEvent(ctx, events.EventTypeProgress, severity, issue.ID,
+				fmt.Sprintf("Approval gate: %s", approvalResult.Output),
+				map[string]interface{}{
+					"passed": approvalResult.Passed,
+					"output": approvalResult.Output,
+				})
+
+			// Update sandbox approval status
+			if approvalResult.Passed {
+				rp.sandbox.ApprovalStatus = "approved"
+				fmt.Printf("✓ Approved - changes will be merged to main\n")
+			} else {
+				rp.sandbox.ApprovalStatus = "rejected"
+				fmt.Printf("✗ Rejected - changes will not be merged\n")
+
+				// Add comment to issue
+				comment := fmt.Sprintf("**Human Review: Rejected**\n\n%s\n\nSandbox branch %s preserved for debugging.",
+					approvalResult.Output, rp.sandbox.GitBranch)
+				if err := rp.store.AddComment(ctx, issue.ID, rp.actor, comment); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to add approval rejection comment: %v\n", err)
+				}
+
+				// Mark issue as needs-review
+				if err := rp.store.AddLabel(ctx, issue.ID, "needs-review", rp.actor); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to add needs-review label: %v\n", err)
+				}
+
+				// Update to blocked status
+				updates := map[string]interface{}{
+					"status": types.StatusBlocked,
+				}
+				if err := rp.store.UpdateIssue(ctx, issue.ID, updates, rp.actor); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to update issue to blocked: %v\n", err)
+				}
+
+				// Release the execution state
+				if err := rp.releaseExecutionState(ctx, issue.ID); err != nil {
+					return nil, fmt.Errorf("failed to release rejected issue: %w", err)
+				}
+
+				result.Summary = "Human approval rejected - issue blocked for review"
+				return result, nil
+			}
+		}
+	}
+
 	// Step 3.5: Transition to committing state (vc-129)
 	// After quality gates pass, always transition to committing state
 	// This must happen before auto-commit to maintain valid state transitions

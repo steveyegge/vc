@@ -35,6 +35,10 @@ type Sandbox struct {
 
 	// Status is the current status of this sandbox
 	Status SandboxStatus
+
+	// ApprovalStatus tracks whether the human has approved merging this sandbox (vc-145)
+	// Values: "", "pending", "approved", "rejected"
+	ApprovalStatus string
 }
 
 // SandboxStatus represents the lifecycle state of a sandbox

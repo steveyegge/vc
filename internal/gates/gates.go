@@ -17,9 +17,10 @@ import (
 type GateType string
 
 const (
-	GateTest   GateType = "test"
-	GateLint   GateType = "lint"
-	GateBuild  GateType = "build"
+	GateTest     GateType = "test"
+	GateLint     GateType = "lint"
+	GateBuild    GateType = "build"
+	GateApproval GateType = "approval" // Human approval gate (vc-145)
 )
 
 // Result represents the outcome of a quality gate check
