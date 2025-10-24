@@ -73,7 +73,7 @@ type Config struct {
 	StaleThreshold         time.Duration                // How long before an instance is considered stale (default: 5 minutes)
 	EnableAISupervision    bool                         // Enable AI assessment and analysis (default: true)
 	EnableQualityGates     bool                         // Enable quality gates enforcement (default: true)
-	EnableSandboxes        bool                         // Enable sandbox isolation (default: false)
+	EnableSandboxes        bool                         // Enable sandbox isolation (default: true, vc-144)
 	KeepSandboxOnFailure   bool                         // Keep failed sandboxes for debugging (default: false)
 	KeepBranches           bool                         // Keep mission branches after cleanup (default: false)
 	SandboxRetentionCount  int                          // Number of failed sandboxes to keep (default: 3, 0 = keep all)
@@ -103,7 +103,7 @@ func DefaultConfig() *Config {
 		InstanceCleanupKeep:    10,
 		EnableAISupervision:    true,
 		EnableQualityGates:     true,
-		EnableSandboxes:        false,
+		EnableSandboxes:        true, // Changed to true for safety (vc-144)
 		KeepSandboxOnFailure:   false,
 		KeepBranches:           false,
 		SandboxRetentionCount:  3,

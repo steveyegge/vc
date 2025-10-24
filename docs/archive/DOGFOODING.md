@@ -11,8 +11,8 @@
 go build ./cmd/vc
 export ANTHROPIC_API_KEY=your-key-here
 
-# 2. Start executor (autonomous mode)
-./vc execute --enable-sandboxes
+# 2. Start executor (autonomous mode - sandboxes enabled by default)
+./vc execute
 
 # 3. Monitor in separate terminal
 ./vc tail -f
@@ -61,7 +61,11 @@ VC autonomously works on its own codebase:
 
 ### Starting a Run
 ```bash
-./vc execute --enable-sandboxes --poll-interval 2
+# Sandboxes enabled by default (vc-144)
+./vc execute --poll-interval 2
+
+# To disable sandboxes (DANGEROUS - development only):
+./vc execute --disable-sandboxes
 ```
 
 ### Monitoring

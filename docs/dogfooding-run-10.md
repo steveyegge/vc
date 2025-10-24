@@ -34,7 +34,8 @@
 
 ### 12:46:26 - Starting VC executor
 ```bash
-./vc execute --enable-sandboxes --poll-interval 2
+# Note: --enable-sandboxes is now the default (vc-144)
+./vc execute --poll-interval 2
 ```
 - Circuit breaker: threshold=5, timeout=30s
 - AI concurrency: max_concurrent=3

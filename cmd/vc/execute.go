@@ -30,7 +30,7 @@ The executor will:
 	Run: func(cmd *cobra.Command, args []string) {
 		version, _ := cmd.Flags().GetString("version")
 		pollSeconds, _ := cmd.Flags().GetInt("poll-interval")
-		enableSandboxes, _ := cmd.Flags().GetBool("enable-sandboxes")
+		disableSandboxes, _ := cmd.Flags().GetBool("disable-sandboxes")
 		sandboxRoot, _ := cmd.Flags().GetString("sandbox-root")
 		parentRepo, _ := cmd.Flags().GetString("parent-repo")
 
@@ -61,12 +61,20 @@ The executor will:
 		cfg.Store = store
 		cfg.Version = version
 		cfg.WorkingDir = projectRoot // Use project root, not cwd
-		cfg.EnableSandboxes = enableSandboxes
+		cfg.EnableSandboxes = !disableSandboxes // Sandboxes enabled by default (vc-144)
 		cfg.SandboxRoot = sandboxRoot
 		cfg.ParentRepo = parentRepo
 		cfg.DeduplicationConfig = &dedupConfig
 		if pollSeconds > 0 {
 			cfg.PollInterval = time.Duration(pollSeconds) * time.Second
+		}
+
+		// Warn if sandboxes are disabled (vc-144)
+		if disableSandboxes {
+			fmt.Fprintf(os.Stderr, "\n⚠️  WARNING: Sandboxes are disabled!\n")
+			fmt.Fprintf(os.Stderr, "   Agents will work directly in your main workspace.\n")
+			fmt.Fprintf(os.Stderr, "   Failed executions may leave your repository in a dirty state.\n")
+			fmt.Fprintf(os.Stderr, "   This mode is intended for development/testing only.\n\n")
 		}
 
 		// Create executor instance
@@ -122,7 +130,7 @@ The executor will:
 func init() {
 	executeCmd.Flags().String("version", "0.1.0", "Executor version")
 	executeCmd.Flags().IntP("poll-interval", "i", 5, "Poll interval in seconds")
-	executeCmd.Flags().Bool("enable-sandboxes", false, "Enable sandbox isolation for agent execution")
+	executeCmd.Flags().Bool("disable-sandboxes", false, "Disable sandbox isolation (DANGEROUS: for development/testing only)")
 	executeCmd.Flags().String("sandbox-root", ".sandboxes", "Root directory for sandboxes")
 	executeCmd.Flags().String("parent-repo", ".", "Parent repository path")
 	rootCmd.AddCommand(executeCmd)
