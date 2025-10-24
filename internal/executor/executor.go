@@ -792,6 +792,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		Store:      e.store,
 		ExecutorID: e.instanceID,
 		AgentID:    agentID,
+		Monitor:    e.monitor, // Pass monitor for watchdog visibility (vc-118)
 		Sandbox:    sb,
 	}
 

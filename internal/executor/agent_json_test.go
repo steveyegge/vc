@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,6 +12,26 @@ import (
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
+
+// mockMonitor is a test double for the watchdog Monitor (vc-118)
+type mockMonitor struct {
+	mu          sync.Mutex
+	recordedEvents []string
+}
+
+func (m *mockMonitor) RecordEvent(eventType string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.recordedEvents = append(m.recordedEvents, eventType)
+}
+
+func (m *mockMonitor) getRecordedEvents() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]string, len(m.recordedEvents))
+	copy(result, m.recordedEvents)
+	return result
+}
 
 // TestConvertJSONToEvent tests the JSON event parsing in convertJSONToEvent (vc-237)
 // This covers the vc-236 fix that replaced regex parsing with structured JSON parsing
@@ -1205,6 +1226,169 @@ func TestCircuitBreakerDetectsInfiniteLoops(t *testing.T) {
 		// Verify no reads were counted
 		if agent.totalReadCount != 0 {
 			t.Errorf("Expected totalReadCount to be 0, got %d", agent.totalReadCount)
+		}
+	})
+}
+
+// TestConvertJSONToEvent_MonitorIntegration tests that the monitor receives agent_tool_use events (vc-118)
+// This ensures the watchdog can see tool usage for anomaly detection
+func TestConvertJSONToEvent_MonitorIntegration(t *testing.T) {
+	// Setup test agent with mock monitor
+	cfg := storage.DefaultConfig()
+	cfg.Path = ":memory:"
+
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	issue := &types.Issue{
+		ID:          "vc-118-test",
+		Title:       "Test Monitor Integration",
+		Description: "Test that monitor receives events",
+		IssueType:   types.TypeTask,
+		Status:      types.StatusOpen,
+		Priority:    1,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	monitor := &mockMonitor{
+		recordedEvents: []string{},
+	}
+
+	executorID := "test-executor"
+	agentID := "test-agent"
+
+	agent := &Agent{
+		config: AgentConfig{
+			Issue:      issue,
+			Store:      store,
+			ExecutorID: executorID,
+			AgentID:    agentID,
+			StreamJSON: true,
+			Monitor:    monitor, // Pass mock monitor
+		},
+		parser: events.NewOutputParser(issue.ID, executorID, agentID),
+		ctx:    ctx,
+	}
+
+	// Test 1: Convert a tool_use event and verify monitor receives it
+	t.Run("Monitor receives agent_tool_use events", func(t *testing.T) {
+		msg := AgentMessage{
+			Type: "tool_use",
+			ID:   "toolu_monitor_test",
+			Name: "Read",
+			Input: map[string]interface{}{
+				"path": "test_file.go",
+			},
+		}
+
+		rawLine := `{"type":"tool_use","id":"toolu_monitor_test","name":"Read","input":{"path":"test_file.go"}}`
+
+		event := agent.convertJSONToEvent(msg, rawLine)
+		if event == nil {
+			t.Fatal("Expected event to be created, got nil")
+		}
+
+		// Verify monitor recorded the event
+		recorded := monitor.getRecordedEvents()
+		if len(recorded) != 1 {
+			t.Fatalf("Expected 1 recorded event, got %d", len(recorded))
+		}
+
+		expectedEventType := string(events.EventTypeAgentToolUse)
+		if recorded[0] != expectedEventType {
+			t.Errorf("Expected event type %s, got %s", expectedEventType, recorded[0])
+		}
+	})
+
+	// Test 2: Multiple tool uses should all be recorded
+	t.Run("Monitor receives multiple tool_use events", func(t *testing.T) {
+		// Reset monitor
+		monitor = &mockMonitor{recordedEvents: []string{}}
+		agent.config.Monitor = monitor
+
+		toolMessages := []AgentMessage{
+			{Type: "tool_use", ID: "toolu_1", Name: "Read", Input: map[string]interface{}{"path": "file1.go"}},
+			{Type: "tool_use", ID: "toolu_2", Name: "Edit", Input: map[string]interface{}{"path": "file2.go"}},
+			{Type: "tool_use", ID: "toolu_3", Name: "Bash", Input: map[string]interface{}{"cmd": "go test"}},
+		}
+
+		for _, msg := range toolMessages {
+			rawLine := fmt.Sprintf(`{"type":"tool_use","id":"%s","name":"%s"}`, msg.ID, msg.Name)
+			event := agent.convertJSONToEvent(msg, rawLine)
+			if event == nil {
+				t.Errorf("Expected event for %s, got nil", msg.Name)
+			}
+		}
+
+		// Verify all events were recorded
+		recorded := monitor.getRecordedEvents()
+		if len(recorded) != 3 {
+			t.Fatalf("Expected 3 recorded events, got %d", len(recorded))
+		}
+
+		// All should be agent_tool_use events
+		expectedEventType := string(events.EventTypeAgentToolUse)
+		for i, eventType := range recorded {
+			if eventType != expectedEventType {
+				t.Errorf("Event %d: expected type %s, got %s", i, expectedEventType, eventType)
+			}
+		}
+	})
+
+	// Test 3: Non-tool_use events should not be recorded
+	t.Run("Monitor does not receive non-tool_use events", func(t *testing.T) {
+		// Reset monitor
+		monitor = &mockMonitor{recordedEvents: []string{}}
+		agent.config.Monitor = monitor
+
+		nonToolMessages := []AgentMessage{
+			{Type: "system", Subtype: "init", Content: "System initialized"},
+			{Type: "result", Content: "Task completed"},
+		}
+
+		for _, msg := range nonToolMessages {
+			rawLine := fmt.Sprintf(`{"type":"%s"}`, msg.Type)
+			event := agent.convertJSONToEvent(msg, rawLine)
+			// These should return nil (skipped)
+			if event != nil {
+				t.Errorf("Expected nil for %s event, got non-nil", msg.Type)
+			}
+		}
+
+		// Verify no events were recorded
+		recorded := monitor.getRecordedEvents()
+		if len(recorded) != 0 {
+			t.Errorf("Expected 0 recorded events, got %d", len(recorded))
+		}
+	})
+
+	// Test 4: Monitor can be nil (graceful degradation)
+	t.Run("Nil monitor does not crash", func(t *testing.T) {
+		agent.config.Monitor = nil
+
+		msg := AgentMessage{
+			Type: "tool_use",
+			ID:   "toolu_nil_test",
+			Name: "Read",
+			Input: map[string]interface{}{
+				"path": "test.go",
+			},
+		}
+
+		rawLine := `{"type":"tool_use","id":"toolu_nil_test","name":"Read","input":{"path":"test.go"}}`
+
+		// This should not panic even with nil monitor
+		event := agent.convertJSONToEvent(msg, rawLine)
+		if event == nil {
+			t.Error("Expected event to be created even with nil monitor")
 		}
 	})
 }

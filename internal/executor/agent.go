@@ -38,6 +38,8 @@ type AgentConfig struct {
 	Store      storage.Storage
 	ExecutorID string
 	AgentID    string
+	// Watchdog monitoring (optional - if nil, events won't be reported to watchdog)
+	Monitor    interface{ RecordEvent(eventType string) }
 	// Sandbox context (optional - if nil, agent runs in main workspace)
 	Sandbox    *sandbox.Sandbox
 }
@@ -363,6 +365,12 @@ func (a *Agent) parseAndStoreEvents(line string) {
 
 	// Store each event immediately
 	for _, event := range extractedEvents {
+		// Record event with watchdog monitor for anomaly detection (vc-118)
+		// Do this synchronously before async storage to ensure monitor sees events in order
+		if a.config.Monitor != nil {
+			a.config.Monitor.RecordEvent(string(event.Type))
+		}
+
 		// Store event asynchronously to avoid blocking output capture
 		go func(evt *events.AgentEvent) {
 			if err := a.config.Store.StoreAgentEvent(a.ctx, evt); err != nil {
@@ -479,6 +487,11 @@ func (a *Agent) convertJSONToEvent(msg AgentMessage, rawLine string) *events.Age
 	if os.Getenv("VC_DEBUG_EVENTS") != "" {
 		fmt.Fprintf(os.Stderr, "[DEBUG] Parsed tool_use event: tool=%s file=%s command=%s pattern=%s\n",
 			toolName, targetFile, command, pattern)
+	}
+
+	// Record event with watchdog monitor for anomaly detection (vc-118)
+	if a.config.Monitor != nil {
+		a.config.Monitor.RecordEvent(string(events.EventTypeAgentToolUse))
 	}
 
 	return event
