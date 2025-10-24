@@ -571,24 +571,22 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	e.monitor.RecordEvent(string(events.EventTypeIssueClaimed))
 
 	// Phase 1: AI Assessment (if enabled)
-	var assessment *ai.Assessment
-	var assessmentRan bool
-	if e.enableAISupervision && e.supervisor != nil {
-		assessmentRan = true
-		// Update execution state to assessing
-		if err := e.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateAssessing); err != nil {
-			// Check if context was canceled (shutdown initiated)
-			if ctx.Err() != nil {
-				// Use background context for cleanup since main context is canceled
-				cleanupCtx := context.Background()
-				e.releaseIssueWithError(cleanupCtx, issue.ID, fmt.Sprintf("Execution canceled during state transition: %v", ctx.Err()))
-				e.monitor.EndExecution(false, false)
-				return ctx.Err()
-			}
-			fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
+	// Always transition to assessing state for state machine consistency (vc-110)
+	if err := e.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateAssessing); err != nil {
+		// Check if context was canceled (shutdown initiated)
+		if ctx.Err() != nil {
+			// Use background context for cleanup since main context is canceled
+			cleanupCtx := context.Background()
+			e.releaseIssueWithError(cleanupCtx, issue.ID, fmt.Sprintf("Execution canceled during state transition: %v", ctx.Err()))
+			e.monitor.EndExecution(false, false)
+			return ctx.Err()
 		}
-		e.monitor.RecordStateTransition(types.ExecutionStateClaimed, types.ExecutionStateAssessing)
+		fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
+	}
+	e.monitor.RecordStateTransition(types.ExecutionStateClaimed, types.ExecutionStateAssessing)
 
+	var assessment *ai.Assessment
+	if e.enableAISupervision && e.supervisor != nil {
 		// Log assessment started
 		e.logEvent(ctx, events.EventTypeAssessmentStarted, events.SeverityInfo, issue.ID,
 			fmt.Sprintf("Starting AI assessment for issue %s", issue.ID),
@@ -644,6 +642,9 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 					"risks_count":      len(assessment.Risks),
 				})
 		}
+	} else {
+		// AI supervision disabled - assessing state is a no-op
+		fmt.Printf("Skipping AI assessment (supervision disabled)\n")
 	}
 
 	// Phase 2: Create sandbox if enabled
@@ -715,12 +716,8 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		}
 		fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
 	}
-	// Record state transition based on whether assessment actually ran
-	if assessmentRan {
-		e.monitor.RecordStateTransition(types.ExecutionStateAssessing, types.ExecutionStateExecuting)
-	} else {
-		e.monitor.RecordStateTransition(types.ExecutionStateClaimed, types.ExecutionStateExecuting)
-	}
+	// Always transition from assessing→executing (vc-110)
+	e.monitor.RecordStateTransition(types.ExecutionStateAssessing, types.ExecutionStateExecuting)
 
 	// Create a cancelable context for the agent so watchdog can intervene
 	agentCtx, agentCancel := context.WithCancel(ctx)
