@@ -1,147 +1,139 @@
-# Linting Exceptions
+# Linting in VC
 
-This document tracks known linting warnings that are acceptable and should not be "fixed".
+## Overview
 
-## Status: 9 acceptable warnings (2025-10-19)
+VC uses `golangci-lint` to maintain code quality. This document explains our linting strategy and how to work with lint errors.
 
-All remaining linting warnings are either intentional design choices or low-priority style suggestions that don't affect correctness.
+## Current Status
 
-## Unused Code (2 issues)
+As of 2025-10-24, we have **36 lint issues** to address:
+- **20** unparam (unused parameters)
+- **12** staticcheck (code quality improvements)
+- **3** misspell (cancelled → canceled)
+- **1** ineffassign (ineffectual assignment)
 
-### 1. `internal/executor/results.go:1020` - `createCodeReviewIssue` function
+## Strategy
 
-**Warning**: `func (*ResultsProcessor).createCodeReviewIssue is unused`
+We're taking an **incremental approach** similar to Beads:
 
-**Status**: ACCEPTED - Intentional for future use
-
-**Reason**: This function implements AI-driven code review issue creation. It's complete and tested, but not yet integrated into the main workflow. Will be activated when we enable GitOps and automated code review.
-
-**Location**: `internal/executor/results.go:1020-1078`
-
----
-
-### 2. `internal/repl/approval.go:13` - `displayMissionPlan` function
-
-**Warning**: `func displayMissionPlan is unused`
-
-**Status**: ACCEPTED - Intentional for future use
-
-**Reason**: Per comment at line 11-12: "This is no longer accessible via slash commands, but kept for potential future use by the AI conversational interface." This function provides formatted mission plan display for manual approval workflows.
-
-**Location**: `internal/repl/approval.go:13-99`
-
----
-
-## StaticCheck Suggestions (7 issues)
-
-These are style/optimization suggestions from staticcheck. They don't affect correctness and changing them would not meaningfully improve the code.
-
-### 3. `internal/ai/json_parser.go:325` - Tagged switch suggestion
-
-**Warning**: `QF1003: could use tagged switch on firstChar`
-
-**Status**: ACCEPTED - Low priority style suggestion
-
-**Reason**: Simple if/else is clear and readable for this case. Tagged switch would not improve readability.
-
----
-
-### 4. `internal/ai/supervisor.go:1109` - Tagged switch suggestion
-
-**Warning**: `QF1003: could use tagged switch on issue.IssueSubtype`
-
-**Status**: ACCEPTED - Low priority style suggestion
-
-**Reason**: Single condition check. Tagged switch would be overkill.
-
----
-
-### 5. `internal/executor/results.go:1008` - De Morgan's law
-
-**Warning**: `QF1001: could apply De Morgan's law`
-
-**Status**: ACCEPTED - Current form is more readable
-
-**Reason**: The current boolean expression is explicit and clear. Applying De Morgan's law would make it less obvious what the condition checks.
-
----
-
-### 6. `internal/repl/conversation.go:1180` - Unnecessary fmt.Sprintf
-
-**Warning**: `S1039: unnecessary use of fmt.Sprintf`
-
-**Status**: ACCEPTED - Consistency with surrounding code
-
-**Reason**: Part of string building pattern. Could be simplified but not worth the churn.
-
----
-
-### 7. `internal/repl/conversation.go:1184` - Unnecessary fmt.Sprintf
-
-**Warning**: `S1039: unnecessary use of fmt.Sprintf`
-
-**Status**: ACCEPTED - Consistency with surrounding code
-
-**Reason**: Part of string building pattern. Could be simplified but not worth the churn.
-
----
-
-### 8. `internal/sandbox/manager.go:296` - Merge conditional assignment
-
-**Warning**: `QF1007: could merge conditional assignment into variable declaration`
-
-**Status**: ACCEPTED - Current form is clearer
-
-**Reason**: Separating declaration from conditional logic improves readability.
-
----
-
-### 9. `internal/watchdog/monitor_test.go:104` - time.Time.Equal usage
-
-**Warning**: `QF1009: probably want to use time.Time.Equal instead`
-
-**Status**: ACCEPTED - Zero value check is intentional
-
-**Reason**: Checking if time is uninitialized (zero value), not comparing two times. The current approach is correct for this use case.
-
----
-
-## Fixed Issues (2025-10-19)
-
-The following issues were fixed:
-
-1. ✅ **ineffassign** (2 issues) - `internal/git/event_tracker.go:101, 219` - Removed ineffectual assignments
-2. ✅ **staticcheck SA1012** - `internal/ai/planner_test.go:173` - Changed nil Context to context.Background()
-3. ✅ **staticcheck S1039** - `internal/executor/results.go:545, 875, 877` - Removed unnecessary fmt.Sprintf
-4. ✅ **unused field** - `internal/executor/executor.go:47` - Removed unused `heartbeatTicker` field
-
-## Summary
-
-- **Total warnings**: 9
-- **Acceptable**: 9 (100%)
-- **Must fix**: 0
-
-All remaining warnings are acceptable and documented. The codebase is in good shape for linting compliance.
-
-## Updating This Document
-
-When new linting warnings appear:
-
-1. Evaluate if the warning indicates a real issue
-2. If yes: Fix the issue
-3. If no: Add to this document with justification
-4. Update the summary counts
-5. Commit changes with the code that introduces the warning
+1. **Conservative initial configuration** - Most linters disabled to avoid overwhelming noise
+2. **Fix as we go** - Address lint issues opportunistically when working on code
+3. **Enable linters gradually** - Turn on more linters as the codebase improves
 
 ## Running the Linter
 
 ```bash
-# Full lint check
-golangci-lint run ./...
+# Run all linters
+golangci-lint run
 
-# Check specific file
-golangci-lint run path/to/file.go
+# Run specific linters
+golangci-lint run --disable-all -E misspell
 
-# Errcheck only
-errcheck ./...
+# Auto-fix some issues
+golangci-lint run --fix
 ```
+
+## Enabled Linters
+
+Currently enabled (in `.golangci.yml`):
+- **misspell** - Catch spelling mistakes (e.g., "cancelled" → "canceled")
+- **unconvert** - Remove unnecessary type conversions
+- **unparam** - Detect unused function parameters
+
+## Disabled Linters
+
+Temporarily disabled (will enable gradually):
+- **dupl** - Duplicate code detection (threshold: 100)
+- **errcheck** - Unchecked errors (too noisy initially)
+- **goconst** - Repeated strings that could be constants
+- **gosec** - Security issues (many false positives)
+- **revive** - General code style (too opinionated initially)
+- **gocyclo** - Cyclomatic complexity (acceptable during bootstrap)
+
+## Common Issues
+
+### Misspelling: cancelled vs canceled
+
+**Issue:** US English uses "canceled" (one 'l'), but British English uses "cancelled"
+
+**Fix:** Use "canceled" consistently
+```go
+// Before
+// context is being cancelled
+fmt.Errorf("context cancelled")
+
+// After
+// context is being canceled
+fmt.Errorf("context canceled")
+```
+
+### Unparam: Unused Parameters
+
+**Issue:** Function parameters that are never used
+
+**Options:**
+1. Remove if truly unused
+2. Use underscore prefix if required by interface: `_paramName`
+3. Add a comment explaining why it's there for future use
+
+```go
+// Before
+func process(ctx context.Context, id string, unused string) error {
+    return doWork(ctx, id)
+}
+
+// Option 1: Remove
+func process(ctx context.Context, id string) error {
+    return doWork(ctx, id)
+}
+
+// Option 2: Interface requirement
+func process(ctx context.Context, id string, _reserved string) error {
+    return doWork(ctx, id)
+}
+```
+
+### Staticcheck Issues
+
+Various code quality improvements:
+- Use tagged switch instead of if-else chains
+- Simplify boolean logic (De Morgan's law)
+- Remove unnecessary `fmt.Sprintf()` calls
+- Remove unnecessary nil checks before `len()`
+- Use `time.Time.Equal()` for time comparisons
+
+## Philosophy
+
+Our linting philosophy mirrors Beads:
+
+1. **Code quality > perfection** - We prefer working code to perfectly linted code
+2. **Incremental improvement** - Fix issues when touching code, don't stop everything for linting
+3. **Pragmatic exclusions** - Some lint rules are too strict; we exclude patterns that make sense
+4. **Developer experience** - Linting should help, not hinder development
+
+## Adding Exclusions
+
+If a lint rule produces false positives or is too strict, add an exclusion to `.golangci.yml`:
+
+```yaml
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec  # Security checks too strict for tests
+    - text: "G201: SQL string formatting"  # We use prepared statements
+```
+
+## Future Work
+
+As we clean up existing issues, we'll gradually enable more linters:
+1. Enable `errcheck` after adding proper error handling
+2. Enable `goconst` after identifying repeated strings
+3. Enable `gocyclo` after refactoring complex functions
+4. Consider enabling `revive` with custom rules
+
+## References
+
+- [golangci-lint documentation](https://golangci-lint.run/)
+- [Effective Go](https://golang.org/doc/effective_go.html)
+- Beads LINTING.md for similar approach
