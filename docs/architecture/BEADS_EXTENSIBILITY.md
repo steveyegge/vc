@@ -554,20 +554,13 @@ func InitializeVC(ctx context.Context, dbPath string) error {
 
 ### VC Schema Migrations
 
-**VC manages its own migrations** (separate from Beads):
+**vc-37**: VC manages schema migrations inline in code:
 
-```
-internal/storage/migrations/
-├── 001_initial_schema.sql      # vc_mission_state, vc_agent_events
-├── 002_add_iteration_count.sql
-└── 003_add_gates_timeout.sql
-```
+- **Extension table creation**: `vcExtensionSchema` constant in `internal/storage/beads/wrapper.go`
+- **Column migrations**: `migrateAgentEventsTable()` function checks for missing columns and adds them
+- **No separate migration files**: Schema is part of the code, applied at startup
 
-**Migration tracking** (in Beads `metadata` table):
-
-```sql
--- VC stores migration version in Beads metadata
-INSERT INTO metadata (key, value) VALUES ('vc_schema_version', '3');
+This approach is simpler and more maintainable for the extension model. The old `internal/storage/migrations/` directory has been removed.
 ```
 
 Or VC creates its own tracking table:

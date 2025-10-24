@@ -276,28 +276,16 @@ VC_DB_PATH=/path/to/db.sqlite ./scripts/init-db.sh
 
 ### Schema Migrations
 
-The migration framework is in `internal/storage/migrations/`. It provides:
+**vc-37**: VC now uses Beads v0.12.0 as its storage library. Schema management works as follows:
 
-- **Version tracking**: `schema_version` table tracks applied migrations
-- **Up/down migrations**: Forward and rollback support
-- **Ordered execution**: Migrations applied in version order
-- **Transaction safety**: Each migration runs in a transaction
+- **Beads core tables**: Managed by the Beads library (issues, dependencies, labels, etc.)
+- **VC extension tables**: Created inline in `internal/storage/beads/wrapper.go`
+- **Column migrations**: Handled by `migrateAgentEventsTable()` function
 
-Example migration:
-
-```go
-import "github.com/steveyegge/vc/internal/storage/migrations"
-
-manager := migrations.NewManager()
-manager.Register(migrations.Migration{
-    Version:     1,
-    Description: "Add new feature table",
-    Up:          "CREATE TABLE ...",
-    Down:        "DROP TABLE ...",
-})
-
-// Apply migrations
-err := manager.ApplySQLite(db)
+The old `internal/storage/migrations/` framework has been removed. VC follows the IntelliJ/Android Studio extension model:
+- Beads provides the platform (general-purpose issue tracking)
+- VC adds extension tables in the same database
+- No modifications to Beads core schema
 ```
 
 ### Storage Configuration
