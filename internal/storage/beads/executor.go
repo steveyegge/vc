@@ -17,8 +17,10 @@ import (
 
 // RegisterInstance registers a new executor instance
 func (s *VCStorage) RegisterInstance(ctx context.Context, instance *types.ExecutorInstance) error {
+	// Use INSERT OR REPLACE to handle re-registration (vc-130)
+	// This allows executors to restart with the same ID
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO vc_executor_instances (id, hostname, pid, version, started_at, last_heartbeat, status)
+		INSERT OR REPLACE INTO vc_executor_instances (id, hostname, pid, version, started_at, last_heartbeat, status)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, instance.InstanceID, instance.Hostname, instance.PID, instance.Version,
 		instance.StartedAt, instance.LastHeartbeat, instance.Status)
