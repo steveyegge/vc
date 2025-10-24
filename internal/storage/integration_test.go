@@ -478,11 +478,7 @@ func TestResumeAfterInterruption(t *testing.T) {
 			}
 
 			// Close the issue
-			closeUpdates := map[string]interface{}{
-				"status":    types.StatusClosed,
-				"closed_at": time.Now(),
-			}
-			if err := store.UpdateIssue(ctx, issue.ID, closeUpdates, executor2.InstanceID); err != nil {
+			if err := store.CloseIssue(ctx, issue.ID, "test completed", executor2.InstanceID); err != nil {
 				t.Fatalf("Failed to close issue: %v", err)
 			}
 
@@ -529,6 +525,7 @@ func TestCompleteExecutorWorkflow(t *testing.T) {
 				types.ExecutionStateExecuting,
 				types.ExecutionStateAnalyzing,
 				types.ExecutionStateGates,
+				types.ExecutionStateCommitting,
 				types.ExecutionStateCompleted,
 			}
 
@@ -809,23 +806,27 @@ func TestGetMissionWithApprovalMetadata(t *testing.T) {
 			defer func() { _ = store.Close() }()
 
 			// Create a mission (epic issue type)
-			mission := &types.Issue{
-				ID:                 "", // Will be auto-generated
-				Title:              "Test Mission",
-				Description:        "Mission for testing approval metadata",
-				IssueType:          types.TypeEpic,
-				Status:             types.StatusOpen,
-				Priority:           0,
-				AcceptanceCriteria: "All phases complete",
-				CreatedAt:          time.Now(),
-				UpdatedAt:          time.Now(),
+			mission := &types.Mission{
+				Issue: types.Issue{
+					ID:                 "", // Will be auto-generated
+					Title:              "Test Mission",
+					Description:        "Mission for testing approval metadata",
+					IssueType:          types.TypeEpic,
+					IssueSubtype:       types.SubtypeMission, // Required for vc_mission_state table
+					Status:             types.StatusOpen,
+					Priority:           0,
+					AcceptanceCriteria: "All phases complete",
+					CreatedAt:          time.Now(),
+					UpdatedAt:          time.Now(),
+				},
+				ApprovalRequired: false, // Test without approval first
 			}
-			if err := store.CreateIssue(ctx, mission, "test"); err != nil {
+			if err := store.CreateMission(ctx, mission, "test"); err != nil {
 				t.Fatalf("Failed to create mission: %v", err)
 			}
 
 			// Test 1: Mission without approval (ApprovedAt = nil)
-			retrieved, err := store.GetMission(ctx, mission.ID)
+			retrieved, err := store.GetMission(ctx, mission.Issue.ID)
 			if err != nil {
 				t.Fatalf("Failed to get mission: %v", err)
 			}
@@ -846,12 +847,12 @@ func TestGetMissionWithApprovalMetadata(t *testing.T) {
 				"approved_at": approvalTime,
 				"approved_by": approver,
 			}
-			if err := store.UpdateIssue(ctx, mission.ID, updates, "test"); err != nil {
+			if err := store.UpdateIssue(ctx, mission.Issue.ID, updates, "test"); err != nil {
 				t.Fatalf("Failed to update mission with approval: %v", err)
 			}
 
 			// Test 3: Retrieve mission again and verify approval fields are populated
-			approved, err := store.GetMission(ctx, mission.ID)
+			approved, err := store.GetMission(ctx, mission.Issue.ID)
 			if err != nil {
 				t.Fatalf("Failed to get approved mission: %v", err)
 			}

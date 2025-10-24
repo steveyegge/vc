@@ -590,7 +590,7 @@ func (s *VCStorage) GetExecutionHistory(ctx context.Context, issueID string) ([]
 		SELECT id, issue_id, executor_instance_id, attempt_number, started_at, completed_at, success, exit_code, summary, output_sample, error_sample
 		FROM vc_execution_history
 		WHERE issue_id = ?
-		ORDER BY started_at DESC
+		ORDER BY started_at ASC
 	`, issueID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query execution history: %w", err)

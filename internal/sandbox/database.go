@@ -176,10 +176,17 @@ func copyCoreIssues(ctx context.Context, mainDB, sandboxDB storage.Storage, miss
 	}
 
 	// Copy all collected issues to sandbox DB
+	copiedIDs := make(map[string]bool)
 	for _, issue := range issuesToCopy {
+		// Skip if already copied (defensive check for duplicates in issuesToCopy)
+		if copiedIDs[issue.ID] {
+			continue
+		}
+
 		if err := sandboxDB.CreateIssue(ctx, issue, "sandbox-init"); err != nil {
 			return fmt.Errorf("failed to copy issue %s: %w", issue.ID, err)
 		}
+		copiedIDs[issue.ID] = true
 
 		// Copy labels
 		labels, err := mainDB.GetLabels(ctx, issue.ID)
@@ -296,11 +303,20 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 
 	// Update status if it changed
 	if sandboxMission.Status != mainMission.Status {
-		updates := map[string]interface{}{
-			"status": sandboxMission.Status,
-		}
-		if err := mainDB.UpdateIssue(ctx, missionID, updates, "sandbox-merge"); err != nil {
-			return fmt.Errorf("failed to update mission status: %w", err)
+		// Use CloseIssue if the sandbox mission was closed
+		if sandboxMission.Status == types.StatusClosed {
+			closeReason := "Completed in sandbox execution"
+			if err := mainDB.CloseIssue(ctx, missionID, closeReason, "sandbox-merge"); err != nil {
+				return fmt.Errorf("failed to close mission: %w", err)
+			}
+		} else {
+			// For other status changes, use UpdateIssue
+			updates := map[string]interface{}{
+				"status": sandboxMission.Status,
+			}
+			if err := mainDB.UpdateIssue(ctx, missionID, updates, "sandbox-merge"); err != nil {
+				return fmt.Errorf("failed to update mission status: %w", err)
+			}
 		}
 	}
 

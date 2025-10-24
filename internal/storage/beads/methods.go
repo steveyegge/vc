@@ -53,8 +53,9 @@ func (s *VCStorage) GetMission(ctx context.Context, id string) (*types.Mission, 
 	var mission types.Mission
 	mission.Issue = *issue
 
-	var goal, context, approvedBy sql.NullString
+	var sandboxPath, branchName, gatesStatus, goal, context, approvedBy sql.NullString
 	var approvedAt sql.NullTime
+	var iterationCount sql.NullInt64
 
 	err = s.db.QueryRowContext(ctx, `
 		SELECT sandbox_path, branch_name, iteration_count, gates_status,
@@ -62,10 +63,10 @@ func (s *VCStorage) GetMission(ctx context.Context, id string) (*types.Mission, 
 		FROM vc_mission_state
 		WHERE issue_id = ? AND subtype IN ('mission', 'phase')
 	`, id).Scan(
-		&mission.SandboxPath,
-		&mission.BranchName,
-		&mission.IterationCount,
-		&mission.GatesStatus,
+		&sandboxPath,
+		&branchName,
+		&iterationCount,
+		&gatesStatus,
 		&goal,
 		&context,
 		&mission.PhaseCount,
@@ -83,6 +84,18 @@ func (s *VCStorage) GetMission(ctx context.Context, id string) (*types.Mission, 
 	}
 
 	// Handle nullable fields
+	if sandboxPath.Valid {
+		mission.SandboxPath = sandboxPath.String
+	}
+	if branchName.Valid {
+		mission.BranchName = branchName.String
+	}
+	if iterationCount.Valid {
+		mission.IterationCount = int(iterationCount.Int64)
+	}
+	if gatesStatus.Valid {
+		mission.GatesStatus = gatesStatus.String
+	}
 	if goal.Valid {
 		mission.Goal = goal.String
 	}
@@ -143,7 +156,7 @@ func (s *VCStorage) CreateMission(ctx context.Context, mission *types.Mission, a
 		WHERE issue_id = ?
 	`, mission.Goal, mission.Context, mission.PhaseCount, mission.CurrentPhase,
 		mission.ApprovalRequired, mission.ApprovedAt, mission.ApprovedBy,
-		time.Now(), mission.ID)
+		time.Now(), mission.Issue.ID)
 
 	if err != nil {
 		return fmt.Errorf("failed to update mission metadata: %w", err)

@@ -35,6 +35,7 @@ type Storage interface {
 	// Issues
 	CreateIssue(ctx context.Context, issue *types.Issue, actor string) error
 	GetIssue(ctx context.Context, id string) (*types.Issue, error)
+	CreateMission(ctx context.Context, mission *types.Mission, actor string) error
 	GetMission(ctx context.Context, id string) (*types.Mission, error)
 	UpdateIssue(ctx context.Context, id string, updates map[string]interface{}, actor string) error
 	CloseIssue(ctx context.Context, id string, reason string, actor string) error

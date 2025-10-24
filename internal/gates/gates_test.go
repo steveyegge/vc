@@ -184,8 +184,8 @@ func TestRunAll(t *testing.T) {
 		t.Fatalf("Expected 3 results, got %d", len(results))
 	}
 
-	// Verify gate types
-	expectedGates := []GateType{GateTest, GateLint, GateBuild}
+	// Verify gate types (build -> test -> lint)
+	expectedGates := []GateType{GateBuild, GateTest, GateLint}
 	for i, expected := range expectedGates {
 		if results[i].Gate != expected {
 			t.Errorf("Result %d: expected gate %s, got %s", i, expected, results[i].Gate)

@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
@@ -218,15 +217,15 @@ func TestCopyCoreIssues(t *testing.T) {
 func TestCopyCoreIssuesRecursive(t *testing.T) {
 	ctx := context.Background()
 
-	// Create main database
-	mainDB, err := storage.NewStorage(ctx, &storage.Config{Path: ":memory:"})
+	// Create temporary databases (not :memory: to avoid potential shared state issues)
+	tmpDir := t.TempDir()
+	mainDB, err := storage.NewStorage(ctx, &storage.Config{Path: filepath.Join(tmpDir, "main.db")})
 	if err != nil {
 		t.Fatalf("failed to create main DB: %v", err)
 	}
 	defer func() { _ = mainDB.Close() }()
 
-	// Create sandbox database
-	sandboxDB, err := storage.NewStorage(ctx, &storage.Config{Path: ":memory:"})
+	sandboxDB, err := storage.NewStorage(ctx, &storage.Config{Path: filepath.Join(tmpDir, "sandbox.db")})
 	if err != nil {
 		t.Fatalf("failed to create sandbox DB: %v", err)
 	}
@@ -304,15 +303,15 @@ func TestCopyCoreIssuesRecursive(t *testing.T) {
 func TestMergeResults(t *testing.T) {
 	ctx := context.Background()
 
-	// Create main database
-	mainDB, err := storage.NewStorage(ctx, &storage.Config{Path: ":memory:"})
+	// Create temporary databases (not :memory: to avoid potential shared state issues)
+	tmpDir := t.TempDir()
+	mainDB, err := storage.NewStorage(ctx, &storage.Config{Path: filepath.Join(tmpDir, "main.db")})
 	if err != nil {
 		t.Fatalf("failed to create main DB: %v", err)
 	}
 	defer func() { _ = mainDB.Close() }()
 
-	// Create sandbox database
-	sandboxDB, err := storage.NewStorage(ctx, &storage.Config{Path: ":memory:"})
+	sandboxDB, err := storage.NewStorage(ctx, &storage.Config{Path: filepath.Join(tmpDir, "sandbox.db")})
 	if err != nil {
 		t.Fatalf("failed to create sandbox DB: %v", err)
 	}
@@ -335,11 +334,8 @@ func TestMergeResults(t *testing.T) {
 	}
 
 	// Update mission status in sandbox
-	if err := sandboxDB.UpdateIssue(ctx, mission.ID, map[string]interface{}{
-		"status":    types.StatusClosed,
-		"closed_at": time.Now(),
-	}, "agent"); err != nil {
-		t.Fatalf("failed to update mission in sandbox: %v", err)
+	if err := sandboxDB.CloseIssue(ctx, mission.ID, "test completed", "agent"); err != nil {
+		t.Fatalf("failed to close mission in sandbox: %v", err)
 	}
 
 	// Create a discovered issue in sandbox (doesn't exist in main)
@@ -415,15 +411,15 @@ func TestMergeResults(t *testing.T) {
 func TestMergeResultsWithComments(t *testing.T) {
 	ctx := context.Background()
 
-	// Create main database
-	mainDB, err := storage.NewStorage(ctx, &storage.Config{Path: ":memory:"})
+	// Create temporary databases (not :memory: to avoid potential shared state issues)
+	tmpDir := t.TempDir()
+	mainDB, err := storage.NewStorage(ctx, &storage.Config{Path: filepath.Join(tmpDir, "main.db")})
 	if err != nil {
 		t.Fatalf("failed to create main DB: %v", err)
 	}
 	defer func() { _ = mainDB.Close() }()
 
-	// Create sandbox database
-	sandboxDB, err := storage.NewStorage(ctx, &storage.Config{Path: ":memory:"})
+	sandboxDB, err := storage.NewStorage(ctx, &storage.Config{Path: filepath.Join(tmpDir, "sandbox.db")})
 	if err != nil {
 		t.Fatalf("failed to create sandbox DB: %v", err)
 	}
