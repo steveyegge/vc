@@ -1026,8 +1026,9 @@ func TestCircuitBreakerDetectsInfiniteLoops(t *testing.T) {
 			loopDetected:   false,
 		}
 
-		// Simulate reading the same file maxSameFileReads+1 times
+		// Simulate reading the same file beyond the threshold
 		samePath := "go.mod"
+		// Test just at and just over the threshold
 		for i := 0; i <= maxSameFileReads; i++ {
 			msg := AgentMessage{
 				Type: "tool_use",

@@ -1,13 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/vc/internal/storage"
-	"github.com/steveyegge/vc/internal/storage/sqlite"
 )
 
 var initCmd = &cobra.Command{
@@ -49,7 +49,8 @@ Example:
 		}
 
 		// Initialize the database schema by opening and closing it
-		db, err := sqlite.New(dbPath)
+		ctx := context.Background()
+		db, err := storage.NewStorage(ctx, &storage.Config{Path: dbPath})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: failed to initialize database: %v\n", err)
 			os.Exit(1)

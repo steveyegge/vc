@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/steveyegge/vc/internal/events"
+	"github.com/steveyegge/vc/internal/storage/beads"
 	"github.com/steveyegge/vc/internal/storage/sqlite"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -116,10 +117,8 @@ func DefaultConfig() *Config {
 	}
 }
 
-// NewStorage creates a new SQLite storage backend
-// The ctx parameter is currently unused but kept for API consistency
-// and future extension possibilities
-//
+// NewStorage creates a new Beads storage backend with VC extensions
+// vc-37: Migrated from internal SQLite to Beads library v0.12.0
 // vc-235: Respects VC_DB_PATH environment variable for test isolation
 func NewStorage(ctx context.Context, cfg *Config) (Storage, error) {
 	if cfg == nil {
@@ -135,5 +134,5 @@ func NewStorage(ctx context.Context, cfg *Config) (Storage, error) {
 		}
 	}
 
-	return sqlite.New(cfg.Path)
+	return beads.NewVCStorage(ctx, cfg.Path)
 }

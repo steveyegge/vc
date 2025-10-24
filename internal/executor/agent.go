@@ -48,12 +48,15 @@ const (
 	maxOutputLines = 10000
 
 	// maxFileReads is the maximum number of Read tool invocations per execution (vc-117)
-	// This prevents infinite loops where agents read files repeatedly without making progress
-	maxFileReads = 100
+	// This is a catastrophic failure backstop - watchdog should detect stuck agents before this
+	// Set high enough to allow normal exploration but catch truly pathological loops
+	// Pragmatic hybrid: ZFC violation for safety, but high enough to rarely trigger
+	maxFileReads = 500
 
 	// maxSameFileReads is the maximum number of times the same file can be read (vc-117)
-	// If an agent reads the same file more than this many times, it's likely stuck in a loop
-	maxSameFileReads = 5
+	// Backstop for pathological same-file loops - watchdog should catch normal stuckness
+	// Even complex refactoring shouldn't read the same file 20+ times
+	maxSameFileReads = 20
 )
 
 // AgentResult contains the output and status from agent execution
