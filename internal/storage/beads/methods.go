@@ -745,8 +745,9 @@ func (s *VCStorage) GetEventCounts(ctx context.Context) (*types.EventCounts, err
 	}
 
 	// Events by severity
+	// vc-127: Use COALESCE to handle NULL severity values
 	rows, err = s.db.QueryContext(ctx, `
-		SELECT severity, COUNT(*)
+		SELECT COALESCE(severity, 'unknown'), COUNT(*)
 		FROM vc_agent_events
 		GROUP BY severity
 	`)

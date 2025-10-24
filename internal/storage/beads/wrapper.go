@@ -69,15 +69,22 @@ func (s *VCStorage) Close() error {
 // createVCExtensionTables creates VC-specific tables in the Beads database
 // These tables extend Beads with mission workflow metadata
 func createVCExtensionTables(ctx context.Context, db *sql.DB) error {
-	// Create tables (if they don't exist)
-	_, err := db.ExecContext(ctx, vcExtensionSchema)
+	// Step 1: Create tables (without indexes that depend on columns that might not exist)
+	_, err := db.ExecContext(ctx, vcExtensionTableSchema)
 	if err != nil {
-		return fmt.Errorf("failed to create VC extension schema: %w", err)
+		return fmt.Errorf("failed to create VC extension tables: %w", err)
 	}
 
-	// Run migrations to add missing columns to existing tables
+	// Step 2: Run migrations to add missing columns to existing tables
+	// This must run BEFORE creating indexes that depend on those columns
 	if err := migrateAgentEventsTable(ctx, db); err != nil {
 		return fmt.Errorf("failed to migrate agent_events table: %w", err)
+	}
+
+	// Step 3: Create indexes (now that all columns exist)
+	_, err = db.ExecContext(ctx, vcExtensionIndexSchema)
+	if err != nil {
+		return fmt.Errorf("failed to create VC extension indexes: %w", err)
 	}
 
 	return nil
@@ -159,12 +166,13 @@ func migrateAgentEventsTable(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// VC-specific extension schema
+// VC-specific extension schema - TABLE DEFINITIONS ONLY
 // These tables coexist with Beads core tables in the same database
-const vcExtensionSchema = `
+// Following the IntelliJ/Android Studio extensibility model
+// vc-126: Split into two parts to allow migration between table and index creation
+const vcExtensionTableSchema = `
 -- VC Extension Tables
 -- These tables extend Beads issues with mission workflow metadata
--- Following the IntelliJ/Android Studio extensibility model
 
 -- Mission state (maps issue_id → mission metadata)
 CREATE TABLE IF NOT EXISTS vc_mission_state (
@@ -187,29 +195,21 @@ CREATE TABLE IF NOT EXISTS vc_mission_state (
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_vc_mission_subtype ON vc_mission_state(subtype);
-CREATE INDEX IF NOT EXISTS idx_vc_mission_gates ON vc_mission_state(gates_status);
-
 -- Agent events (activity feed for VC execution)
 -- Separate from Beads 'events' table which tracks issue lifecycle
 CREATE TABLE IF NOT EXISTS vc_agent_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    issue_id TEXT,
+    issue_id TEXT,     -- Issue reference (no FK constraint to allow system-level events, vc-128)
     executor_id TEXT,  -- Executor instance that created this event (no FK constraint for flexibility)
     agent_id TEXT,     -- Agent that created this event (if applicable)
     type TEXT NOT NULL,
     severity TEXT CHECK(severity IN ('info', 'warning', 'error')),
     message TEXT NOT NULL,
     data TEXT,  -- JSON blob with event-specific details
-    source_line INTEGER DEFAULT 0,  -- Line number in agent output (if applicable)
-    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
+    source_line INTEGER DEFAULT 0  -- Line number in agent output (if applicable)
+    -- No FK constraints: events are logs/metrics, system-level events use NULL issue_id
 );
-
-CREATE INDEX IF NOT EXISTS idx_vc_agent_events_issue ON vc_agent_events(issue_id);
-CREATE INDEX IF NOT EXISTS idx_vc_agent_events_executor ON vc_agent_events(executor_id);
-CREATE INDEX IF NOT EXISTS idx_vc_agent_events_timestamp ON vc_agent_events(timestamp);
-CREATE INDEX IF NOT EXISTS idx_vc_agent_events_type ON vc_agent_events(type);
 
 -- Executor instances (for tracking active VC executors)
 CREATE TABLE IF NOT EXISTS vc_executor_instances (
@@ -221,9 +221,6 @@ CREATE TABLE IF NOT EXISTS vc_executor_instances (
     last_heartbeat DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running', 'stopped', 'crashed'))
 );
-
-CREATE INDEX IF NOT EXISTS idx_vc_executor_status ON vc_executor_instances(status);
-CREATE INDEX IF NOT EXISTS idx_vc_executor_heartbeat ON vc_executor_instances(last_heartbeat);
 
 -- Issue execution state (checkpoint/resume for long-running tasks)
 CREATE TABLE IF NOT EXISTS vc_issue_execution_state (
@@ -237,9 +234,6 @@ CREATE TABLE IF NOT EXISTS vc_issue_execution_state (
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
     FOREIGN KEY (executor_instance_id) REFERENCES vc_executor_instances(id) ON DELETE SET NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_vc_execution_state ON vc_issue_execution_state(state);
-CREATE INDEX IF NOT EXISTS idx_vc_execution_executor ON vc_issue_execution_state(executor_instance_id);
 
 -- Execution history (audit trail of execution attempts)
 CREATE TABLE IF NOT EXISTS vc_execution_history (
@@ -257,7 +251,32 @@ CREATE TABLE IF NOT EXISTS vc_execution_history (
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
     FOREIGN KEY (executor_instance_id) REFERENCES vc_executor_instances(id) ON DELETE SET NULL
 );
+`
 
+// VC-specific extension schema - INDEX DEFINITIONS
+// vc-126: Indexes created AFTER migrations to ensure columns exist
+const vcExtensionIndexSchema = `
+-- Indexes for VC Extension Tables
+
+-- Mission state indexes
+CREATE INDEX IF NOT EXISTS idx_vc_mission_subtype ON vc_mission_state(subtype);
+CREATE INDEX IF NOT EXISTS idx_vc_mission_gates ON vc_mission_state(gates_status);
+
+-- Agent events indexes
+CREATE INDEX IF NOT EXISTS idx_vc_agent_events_issue ON vc_agent_events(issue_id);
+CREATE INDEX IF NOT EXISTS idx_vc_agent_events_executor ON vc_agent_events(executor_id);
+CREATE INDEX IF NOT EXISTS idx_vc_agent_events_timestamp ON vc_agent_events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_vc_agent_events_type ON vc_agent_events(type);
+
+-- Executor instances indexes
+CREATE INDEX IF NOT EXISTS idx_vc_executor_status ON vc_executor_instances(status);
+CREATE INDEX IF NOT EXISTS idx_vc_executor_heartbeat ON vc_executor_instances(last_heartbeat);
+
+-- Issue execution state indexes
+CREATE INDEX IF NOT EXISTS idx_vc_execution_state ON vc_issue_execution_state(state);
+CREATE INDEX IF NOT EXISTS idx_vc_execution_executor ON vc_issue_execution_state(executor_instance_id);
+
+-- Execution history indexes
 CREATE INDEX IF NOT EXISTS idx_vc_history_issue ON vc_execution_history(issue_id);
 CREATE INDEX IF NOT EXISTS idx_vc_history_started ON vc_execution_history(started_at);
 `
