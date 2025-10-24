@@ -239,6 +239,15 @@ IMPORTANT: Base your analysis on the DATA provided, not on hardcoded thresholds.
 			for eventType, count := range current.EventCounts {
 				prompt.WriteString(fmt.Sprintf("    %s: %d\n", eventType, count))
 			}
+
+			// Highlight agent progress indicators (vc-125)
+			// Tool usage indicates the agent is actively working, not stuck
+			toolUseCount := current.EventCounts["agent_tool_use"]
+			if toolUseCount > 0 {
+				prompt.WriteString(fmt.Sprintf("\n  IMPORTANT: Agent has used tools %d times, indicating active work in progress.\n", toolUseCount))
+				prompt.WriteString("  Tool usage (Read, Edit, Write, Bash, etc.) means the agent is actively executing, NOT stuck.\n")
+				prompt.WriteString("  Periods without tool usage may indicate AI thinking/planning, which is normal.\n")
+			}
 		}
 	}
 
@@ -259,6 +268,12 @@ Consider:
    - Execution gaps (unusual delays between retries)
    - Trends over time (getting slower/faster)
    - Burst detection (sudden spike in activity)
+7. AGENT PROGRESS INDICATORS (vc-125): Before flagging as "stuck", consider:
+   - agent_tool_use events indicate active work (Read, Edit, Write, Bash, etc.)
+   - Periods without events may be normal AI thinking/planning time
+   - An agent making API calls may take 10-30 seconds between tool uses
+   - Only flag as stuck if BOTH: (a) no tool usage AND (b) excessive time in same state
+   - Short executions (<5 minutes) with tool activity are NOT stuck
 
 Provide your analysis as a JSON object:
 {

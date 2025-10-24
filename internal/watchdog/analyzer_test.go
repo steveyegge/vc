@@ -538,6 +538,71 @@ func TestBuildAnomalyDetectionPrompt_TemporalContext(t *testing.T) {
 	t.Log("✓ Temporal context successfully added to anomaly detection prompts (vc-78)")
 }
 
+// TestBuildAnomalyDetectionPrompt_AgentProgressIndicators verifies vc-125: agent tool usage guidance
+func TestBuildAnomalyDetectionPrompt_AgentProgressIndicators(t *testing.T) {
+	monitor := NewMonitor(nil)
+	supervisor := createTestSupervisor(t)
+	store := &mockStorage{}
+
+	// Start current execution with agent tool usage
+	monitor.StartExecution("vc-active", "executor-1")
+	monitor.RecordStateTransition(types.ExecutionStateClaimed, types.ExecutionStateExecuting)
+
+	// Simulate agent tool usage (which indicates active work)
+	monitor.RecordEvent("agent_tool_use")
+	monitor.RecordEvent("agent_tool_use")
+	monitor.RecordEvent("agent_tool_use")
+
+	analyzer, err := NewAnalyzer(&AnalyzerConfig{
+		Monitor:    monitor,
+		Supervisor: supervisor,
+		Store:      store,
+	})
+	if err != nil {
+		t.Fatalf("failed to create analyzer: %v", err)
+	}
+
+	current := monitor.GetCurrentExecution()
+	prompt, err := analyzer.buildAnomalyDetectionPrompt(nil, current)
+	if err != nil {
+		t.Fatalf("buildAnomalyDetectionPrompt failed: %v", err)
+	}
+
+	// vc-125 acceptance criteria: verify agent progress indicators in prompt
+
+	// Should highlight tool usage count
+	if !containsIgnoreCase(prompt, "Agent has used tools") {
+		t.Error("prompt should highlight agent tool usage count (vc-125)")
+	}
+
+	// Should explain that tool usage means active work
+	if !containsIgnoreCase(prompt, "actively executing") {
+		t.Error("prompt should explain that tool usage indicates active work (vc-125)")
+	}
+
+	// Should mention that periods without tool usage may be normal
+	if !containsIgnoreCase(prompt, "AI thinking/planning") {
+		t.Error("prompt should explain that gaps may be normal AI thinking time (vc-125)")
+	}
+
+	// Should include AGENT PROGRESS INDICATORS section in analysis guidance
+	if !containsIgnoreCase(prompt, "AGENT PROGRESS INDICATORS") {
+		t.Error("prompt should include AGENT PROGRESS INDICATORS section in guidance (vc-125)")
+	}
+
+	// Should warn against flagging short executions as stuck
+	if !containsIgnoreCase(prompt, "Short executions") {
+		t.Error("prompt should warn against flagging short executions with tool activity as stuck (vc-125)")
+	}
+
+	// Should mention checking for both no tool usage AND excessive time
+	if !containsIgnoreCase(prompt, "no tool usage AND") {
+		t.Error("prompt should require BOTH no tool usage AND excessive time to flag as stuck (vc-125)")
+	}
+
+	t.Log("✓ Agent progress indicators successfully added to anomaly detection prompts (vc-125)")
+}
+
 func TestAnomalyReport_ZFCCompliance(t *testing.T) {
 	// This test verifies that the analyzer follows ZFC principles:
 	// - No hardcoded thresholds
