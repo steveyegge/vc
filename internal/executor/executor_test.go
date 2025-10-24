@@ -134,7 +134,20 @@ func TestExecutorStateTransitions(t *testing.T) {
 		t.Errorf("Expected state %s, got %s", types.ExecutionStateGates, state.State)
 	}
 
-	// Test 6: Transition to completed
+	// Test 6: Transition to committing (vc-129)
+	if err := store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateCommitting); err != nil {
+		t.Fatalf("Failed to update execution state: %v", err)
+	}
+
+	state, err = store.GetExecutionState(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get execution state: %v", err)
+	}
+	if state.State != types.ExecutionStateCommitting {
+		t.Errorf("Expected state %s, got %s", types.ExecutionStateCommitting, state.State)
+	}
+
+	// Test 7: Transition to completed
 	if err := store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateCompleted); err != nil {
 		t.Fatalf("Failed to update execution state: %v", err)
 	}
@@ -147,18 +160,22 @@ func TestExecutorStateTransitions(t *testing.T) {
 		t.Errorf("Expected state %s, got %s", types.ExecutionStateCompleted, state.State)
 	}
 
-	// Test 4: Release the issue
+	// Test 8: Release the issue (vc-129: updated comment numbering)
+	// Note: ReleaseIssue sets state to completed, it doesn't delete the record
 	if err := store.ReleaseIssue(ctx, issue.ID); err != nil {
 		t.Fatalf("Failed to release issue: %v", err)
 	}
 
-	// Verify execution state is cleared
+	// Verify execution state still exists (for audit trail) but is marked completed
 	state, err = store.GetExecutionState(ctx, issue.ID)
 	if err != nil {
 		t.Fatalf("Failed to get execution state: %v", err)
 	}
-	if state != nil {
-		t.Error("Expected execution state to be nil after release")
+	if state == nil {
+		t.Error("Expected execution state to exist after release (for audit trail)")
+	}
+	if state.State != types.ExecutionStateCompleted {
+		t.Errorf("Expected state to be %s after release, got %s", types.ExecutionStateCompleted, state.State)
 	}
 }
 
@@ -264,6 +281,7 @@ func TestExecutorStateSequence(t *testing.T) {
 		types.ExecutionStateExecuting,
 		types.ExecutionStateAnalyzing,
 		types.ExecutionStateGates,
+		types.ExecutionStateCommitting, // vc-129: must go through committing state
 		types.ExecutionStateCompleted,
 	}
 
@@ -299,11 +317,13 @@ func TestExecutorStateSequenceWithAI(t *testing.T) {
 	// Since we can't test with real AI, we just document the expected sequence
 
 	expectedStatesWithAI := []types.ExecutionState{
-		types.ExecutionStateClaimed,   // Issue is claimed
-		types.ExecutionStateAssessing, // AI assesses the issue
-		types.ExecutionStateExecuting, // Agent executes the work
-		types.ExecutionStateAnalyzing, // AI analyzes the result
-		types.ExecutionStateCompleted, // Work is complete
+		types.ExecutionStateClaimed,    // Issue is claimed
+		types.ExecutionStateAssessing,  // AI assesses the issue
+		types.ExecutionStateExecuting,  // Agent executes the work
+		types.ExecutionStateAnalyzing,  // AI analyzes the result
+		types.ExecutionStateGates,      // Quality gates are run
+		types.ExecutionStateCommitting, // Changes are committed (vc-129)
+		types.ExecutionStateCompleted,  // Work is complete
 	}
 
 	// Verify all states are valid

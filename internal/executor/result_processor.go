@@ -484,7 +484,16 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 	}
 
 SkipGates:
-	// Step 3.5: Test Coverage Analysis (vc-217)
+	// Step 3.5: Transition to committing state (vc-129)
+	// After quality gates pass, always transition to committing state
+	// This must happen before auto-commit to maintain valid state transitions
+	if agentResult.Success && result.GatesPassed {
+		if err := rp.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateCommitting); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to update execution state to committing: %v\n", err)
+		}
+	}
+
+	// Step 3.6: Test Coverage Analysis (vc-217)
 	// After quality gates pass, analyze test coverage and file test improvement issues
 	if agentResult.Success && result.GatesPassed && rp.supervisor != nil && rp.gitOps != nil {
 		fmt.Printf("\n=== Test Coverage Analysis ===\n")
@@ -543,13 +552,9 @@ SkipGates:
 		}
 	}
 
-	// Step 3.6: Auto-commit changes (if enabled, agent succeeded, and gates passed)
+	// Step 3.7: Auto-commit changes (if enabled, agent succeeded, and gates passed)
+	// Note: Execution state was already transitioned to 'committing' in Step 3.5 (vc-129)
 	if agentResult.Success && result.GatesPassed && rp.enableAutoCommit && rp.gitOps != nil && rp.messageGen != nil {
-		// Update execution state to committing
-		if err := rp.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateCommitting); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to update execution state to committing: %v\n", err)
-		}
-
 		commitHash, err := rp.autoCommit(ctx, issue)
 		if err != nil {
 			// Don't fail - just log and continue

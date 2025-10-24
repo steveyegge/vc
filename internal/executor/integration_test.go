@@ -328,6 +328,9 @@ func TestErrorRecoveryAndResume(t *testing.T) {
 	if err := store.UpdateExecutionState(ctx, task.ID, types.ExecutionStateGates); err != nil {
 		t.Fatalf("Failed to update to gates: %v", err)
 	}
+	if err := store.UpdateExecutionState(ctx, task.ID, types.ExecutionStateCommitting); err != nil {
+		t.Fatalf("Failed to update to committing: %v", err)
+	}
 	if err := store.UpdateExecutionState(ctx, task.ID, types.ExecutionStateCompleted); err != nil {
 		t.Fatalf("Failed to complete: %v", err)
 	}
@@ -469,7 +472,10 @@ func TestQualityGateBlocking(t *testing.T) {
 		t.Error("Quality gates should pass after fixes")
 	}
 
-	// Now task can complete
+	// Now task can complete (vc-129: must go through committing state)
+	if err := store.UpdateExecutionState(ctx, task.ID, types.ExecutionStateCommitting); err != nil {
+		t.Fatalf("Failed to update to committing: %v", err)
+	}
 	if err := store.UpdateExecutionState(ctx, task.ID, types.ExecutionStateCompleted); err != nil {
 		t.Fatalf("Failed to complete task: %v", err)
 	}
@@ -910,13 +916,14 @@ func executeAndCompleteTask(t *testing.T, ctx context.Context, store storage.Sto
 		t.Fatalf("Failed to claim task %s: %v", task.ID, err)
 	}
 
-	// Execute through states - must follow strict sequence
-	// claimed -> assessing -> executing -> analyzing -> gates -> completed
+	// Execute through states - must follow strict sequence (vc-129)
+	// claimed -> assessing -> executing -> analyzing -> gates -> committing -> completed
 	states := []types.ExecutionState{
 		types.ExecutionStateAssessing,
 		types.ExecutionStateExecuting,
 		types.ExecutionStateAnalyzing,
 		types.ExecutionStateGates,
+		types.ExecutionStateCommitting,
 		types.ExecutionStateCompleted,
 	}
 

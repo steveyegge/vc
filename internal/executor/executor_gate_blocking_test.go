@@ -428,19 +428,18 @@ func TestQualityGateBlockingWithStoreValidation(t *testing.T) {
 		t.Fatalf("Failed to handle gate results: %v", err)
 	}
 
-	// Attempt to transition to completed state while gates have failed
-	// This should be prevented if store enforces gate blocking
+	// Attempt to transition to completed state directly from gates
+	// This should fail because the state machine requires gates → committing → completed (vc-129)
 	err = store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateCompleted)
 
-	// Document the current behavior:
-	// The store currently DOES NOT enforce gate blocking at the state transition level
-	// Blocking is enforced by the executor/results processor setting StatusBlocked
-	// This is a valid design choice - the executor is responsible for enforcing workflow
+	// The store now enforces state machine transitions at the storage layer (vc-129)
+	// This prevents invalid state transitions like gates → completed
+	// Valid transitions from gates are: gates → committing or gates → failed
 	if err != nil {
 		t.Logf("Store enforces gate blocking: %v", err)
 	} else {
-		t.Logf("Store does NOT enforce gate blocking at state transition level")
-		t.Logf("Blocking is enforced by executor setting StatusBlocked")
+		t.Errorf("Store should enforce state machine transitions (expected error, got nil)")
+		t.Logf("Blocking should be enforced by state machine validation")
 
 		// Verify issue is blocked at the issue status level
 		blockedIssue, err := store.GetIssue(ctx, issue.ID)
