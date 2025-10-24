@@ -20,6 +20,7 @@ func (m *mockStorage) GetAgentEvents(ctx context.Context, filter events.EventFil
 func (m *mockStorage) GetAgentEventsByIssue(ctx context.Context, issueID string) ([]*events.AgentEvent, error) { return nil, nil }
 func (m *mockStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*events.AgentEvent, error) { return nil, nil }
 func (m *mockStorage) CreateIssue(ctx context.Context, issue *types.Issue, actor string) error { return nil }
+func (m *mockStorage) CreateMission(ctx context.Context, mission *types.Mission, actor string) error { return nil }
 func (m *mockStorage) GetIssue(ctx context.Context, id string) (*types.Issue, error) { return nil, nil }
 func (m *mockStorage) GetMission(ctx context.Context, id string) (*types.Mission, error) { return nil, nil }
 func (m *mockStorage) UpdateIssue(ctx context.Context, id string, updates map[string]interface{}, actor string) error { return nil }

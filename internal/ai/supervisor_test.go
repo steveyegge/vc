@@ -45,6 +45,11 @@ func (m *mockStorage) CreateIssue(ctx context.Context, issue *types.Issue, actor
 	return nil
 }
 
+func (m *mockStorage) CreateMission(ctx context.Context, mission *types.Mission, actor string) error {
+	// Generate a simple ID for mission-based issues
+	return m.CreateIssue(ctx, &mission.Issue, actor)
+}
+
 func (m *mockStorage) AddComment(ctx context.Context, issueID, actor, comment string) error {
 	m.comments = append(m.comments, comment)
 	return nil

@@ -34,6 +34,11 @@ func (m *mockStorageIntegration) CreateIssue(ctx context.Context, issue *types.I
 	return nil
 }
 
+func (m *mockStorageIntegration) CreateMission(ctx context.Context, mission *types.Mission, actor string) error {
+	// Generate a simple ID for mission-based issues
+	return m.CreateIssue(ctx, &mission.Issue, actor)
+}
+
 func (m *mockStorageIntegration) GetReadyWork(ctx context.Context, filter types.WorkFilter) ([]*types.Issue, error) {
 	if m.readyWork != nil {
 		result := m.readyWork

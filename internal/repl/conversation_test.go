@@ -109,6 +109,9 @@ func (m *mockStorage) GetAgentEvents(ctx context.Context, filter events.EventFil
 func (m *mockStorage) CreateIssue(ctx context.Context, issue *types.Issue, actor string) error {
 	return nil
 }
+func (m *mockStorage) CreateMission(ctx context.Context, mission *types.Mission, actor string) error {
+	return nil
+}
 func (m *mockStorage) GetMission(ctx context.Context, id string) (*types.Mission, error) {
 	return nil, nil
 }
