@@ -713,3 +713,202 @@ func TestDeleteBranch(t *testing.T) {
 		t.Fatalf("deleteBranch should not error on non-existent branch: %v", err)
 	}
 }
+
+func TestMergeBranchToMain(t *testing.T) {
+	// Create a test repository
+	repo, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create a feature branch
+	cmd := exec.Command("git", "checkout", "-b", "feature/test-merge")
+	cmd.Dir = repo
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create feature branch: %v", err)
+	}
+
+	// Make a change on the feature branch
+	testFile := filepath.Join(repo, "feature.txt")
+	if err := os.WriteFile(testFile, []byte("new feature\n"), 0644); err != nil {
+		t.Fatalf("Failed to create feature file: %v", err)
+	}
+
+	cmd = exec.Command("git", "add", "feature.txt")
+	cmd.Dir = repo
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+
+	cmd = exec.Command("git", "commit", "-m", "Add new feature")
+	cmd.Dir = repo
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to commit: %v", err)
+	}
+
+	// Switch back to main
+	cmd = exec.Command("git", "checkout", "main")
+	cmd.Dir = repo
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to checkout main: %v", err)
+	}
+
+	// Merge the feature branch
+	if err := mergeBranchToMain(ctx, repo, "feature/test-merge", "main"); err != nil {
+		t.Fatalf("mergeBranchToMain failed: %v", err)
+	}
+
+	// Verify we're still on main
+	cmd = exec.Command("git", "branch", "--show-current")
+	cmd.Dir = repo
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to get current branch: %v", err)
+	}
+	currentBranch := strings.TrimSpace(string(output))
+	if currentBranch != "main" {
+		t.Errorf("Expected to be on main branch, got: %s", currentBranch)
+	}
+
+	// Verify the feature file exists on main
+	if _, err := os.Stat(testFile); err != nil {
+		t.Errorf("Feature file should exist on main after merge: %v", err)
+	}
+
+	// Verify merge commit was created
+	cmd = exec.Command("git", "log", "--oneline", "-1")
+	cmd.Dir = repo
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to get log: %v", err)
+	}
+	logOutput := string(output)
+	if !strings.Contains(logOutput, "Merge mission branch") {
+		t.Errorf("Expected merge commit message, got: %s", logOutput)
+	}
+}
+
+func TestMergeBranchToMainWithConflicts(t *testing.T) {
+	// Create a test repository
+	repo, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create a file on main (initial version)
+	conflictFile := filepath.Join(repo, "conflict.txt")
+	if err := os.WriteFile(conflictFile, []byte("initial version\n"), 0644); err != nil {
+		t.Fatalf("Failed to create conflict file: %v", err)
+	}
+
+	cmd := exec.Command("git", "add", "conflict.txt")
+	cmd.Dir = repo
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+
+	cmd = exec.Command("git", "commit", "-m", "Add conflict file")
+	cmd.Dir = repo
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to commit initial version: %v", err)
+	}
+
+	// Create a feature branch from this point
+	cmd = exec.Command("git", "checkout", "-b", "feature/conflict-test")
+	cmd.Dir = repo
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create feature branch: %v", err)
+	}
+
+	// Modify the file on feature branch
+	if err := os.WriteFile(conflictFile, []byte("feature version\n"), 0644); err != nil {
+		t.Fatalf("Failed to modify conflict file on feature: %v", err)
+	}
+
+	cmd = exec.Command("git", "add", "conflict.txt")
+	cmd.Dir = repo
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git add on feature: %v", err)
+	}
+
+	cmd = exec.Command("git", "commit", "-m", "Modify conflict file on feature")
+	cmd.Dir = repo
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to commit on feature: %v", err)
+	}
+
+	// Switch back to main
+	cmd = exec.Command("git", "checkout", "main")
+	cmd.Dir = repo
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to checkout main: %v", err)
+	}
+
+	// Modify the SAME file on main (creating a conflict)
+	if err := os.WriteFile(conflictFile, []byte("main version\n"), 0644); err != nil {
+		t.Fatalf("Failed to modify conflict file on main: %v", err)
+	}
+
+	cmd = exec.Command("git", "add", "conflict.txt")
+	cmd.Dir = repo
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git add on main: %v", err)
+	}
+
+	cmd = exec.Command("git", "commit", "-m", "Modify conflict file on main")
+	cmd.Dir = repo
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to commit on main: %v", err)
+	}
+
+	// Attempt to merge - should fail with conflict error
+	err := mergeBranchToMain(ctx, repo, "feature/conflict-test", "main")
+	if err == nil {
+		t.Fatal("mergeBranchToMain should fail with merge conflicts")
+	}
+
+	if !strings.Contains(err.Error(), "merge conflicts detected") {
+		t.Errorf("Expected 'merge conflicts detected' error, got: %v", err)
+	}
+
+	// Verify we're still on main and merge was aborted
+	cmd = exec.Command("git", "branch", "--show-current")
+	cmd.Dir = repo
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to get current branch: %v", err)
+	}
+	currentBranch := strings.TrimSpace(string(output))
+	if currentBranch != "main" {
+		t.Errorf("Expected to be on main branch after failed merge, got: %s", currentBranch)
+	}
+
+	// Verify no merge is in progress
+	cmd = exec.Command("git", "status", "--porcelain")
+	cmd.Dir = repo
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to get status: %v", err)
+	}
+	if strings.Contains(string(output), "UU ") {
+		t.Error("Merge should be aborted, but conflicts still exist")
+	}
+}
+
+func TestMergeBranchToMainNonExistent(t *testing.T) {
+	// Create a test repository
+	repo, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Attempt to merge non-existent branch
+	err := mergeBranchToMain(ctx, repo, "nonexistent-branch", "main")
+	if err == nil {
+		t.Fatal("mergeBranchToMain should fail with non-existent branch")
+	}
+
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("Expected 'does not exist' error, got: %v", err)
+	}
+}

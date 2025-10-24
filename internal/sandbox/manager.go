@@ -302,6 +302,21 @@ func (m *manager) Cleanup(ctx context.Context, sandbox *Sandbox) error {
 		_ = sandboxDB.Close() // Best-effort cleanup
 	}
 
+	// Merge code changes to main if sandbox was approved (vc-143)
+	// This must happen AFTER merging database results but BEFORE deleting the branch
+	if sandbox.ApprovalStatus == "approved" {
+		fmt.Printf("Merging approved code changes from %s to main...\n", sandbox.GitBranch)
+		if err := mergeBranchToMain(ctx, sandbox.ParentRepo, sandbox.GitBranch, "main"); err != nil {
+			return fmt.Errorf("failed to merge code changes: %w", err)
+		}
+		fmt.Printf("✓ Code changes merged to main\n")
+	} else if sandbox.ApprovalStatus == "rejected" {
+		fmt.Printf("Skipping code merge - sandbox was rejected by human review\n")
+	} else if sandbox.Status == SandboxStatusCompleted {
+		// Sandbox completed but no approval status set - log warning
+		fmt.Fprintf(os.Stderr, "warning: sandbox completed but no approval status set (branch %s will be deleted without merging)\n", sandbox.GitBranch)
+	}
+
 	// Determine if we should remove the sandbox directory
 	//nolint:staticcheck // Explicit form is more readable than De Morgan simplification
 	shouldRemove := true

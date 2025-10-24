@@ -280,6 +280,86 @@ func validateGitRefName(name string) error {
 	return nil
 }
 
+// mergeBranchToMain merges a mission branch to the main branch.
+// This preserves code changes made during sandbox execution.
+// The merge is performed in the parent repository (not the worktree).
+//
+// Returns an error if the merge fails or if there are conflicts.
+// The caller should handle merge conflicts appropriately.
+func mergeBranchToMain(ctx context.Context, repoPath, branchName, mainBranch string) error {
+	// Validate repo is a git repository
+	if err := validateGitRepo(repoPath); err != nil {
+		return fmt.Errorf("repo validation failed: %w", err)
+	}
+
+	// Validate branch name
+	if err := validateGitRefName(branchName); err != nil {
+		return fmt.Errorf("invalid branch name: %w", err)
+	}
+
+	// Check if branch exists
+	checkCmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", branchName)
+	checkCmd.Dir = repoPath
+	if err := checkCmd.Run(); err != nil {
+		return fmt.Errorf("branch %s does not exist", branchName)
+	}
+
+	// Save current branch so we can return to it
+	getCurrentBranchCmd := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD")
+	getCurrentBranchCmd.Dir = repoPath
+	currentBranchOutput, err := getCurrentBranchCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to get current branch: %w (output: %s)", err, string(currentBranchOutput))
+	}
+	currentBranch := strings.TrimSpace(string(currentBranchOutput))
+
+	// Checkout main branch
+	checkoutCmd := exec.CommandContext(ctx, "git", "checkout", mainBranch)
+	checkoutCmd.Dir = repoPath
+	output, err := checkoutCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to checkout %s: %w (output: %s)", mainBranch, err, string(output))
+	}
+
+	// Attempt the merge
+	// Use --no-ff to always create a merge commit (preserves history)
+	mergeCmd := exec.CommandContext(ctx, "git", "merge", "--no-ff", "-m",
+		fmt.Sprintf("Merge mission branch %s", branchName), branchName)
+	mergeCmd.Dir = repoPath
+	mergeOutput, mergeErr := mergeCmd.CombinedOutput()
+
+	// If merge succeeded, we're done
+	if mergeErr == nil {
+		return nil
+	}
+
+	// Merge failed - check if it's due to conflicts
+	statusCmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
+	statusCmd.Dir = repoPath
+	statusOutput, statusErr := statusCmd.CombinedOutput()
+
+	// Try to return to original branch before reporting error
+	if currentBranch != mainBranch {
+		returnCmd := exec.CommandContext(ctx, "git", "checkout", currentBranch)
+		returnCmd.Dir = repoPath
+		_ = returnCmd.Run() // Best-effort, ignore error
+	}
+
+	// Check if we have merge conflicts
+	if statusErr == nil && strings.Contains(string(statusOutput), "UU ") {
+		// Abort the merge
+		abortCmd := exec.CommandContext(ctx, "git", "merge", "--abort")
+		abortCmd.Dir = repoPath
+		_ = abortCmd.Run() // Best-effort
+
+		return fmt.Errorf("merge conflicts detected when merging %s to %s: %s",
+			branchName, mainBranch, string(mergeOutput))
+	}
+
+	// Some other merge error
+	return fmt.Errorf("git merge failed: %w (output: %s)", mergeErr, string(mergeOutput))
+}
+
 // validateGitRepo checks if a directory is a git repository.
 // Returns an error if the path doesn't exist or is not a git repo.
 func validateGitRepo(path string) error {
