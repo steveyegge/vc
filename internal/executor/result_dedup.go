@@ -92,7 +92,7 @@ func (rp *ResultsProcessor) deduplicateDiscoveredIssues(ctx context.Context, par
 
 // logDeduplicationBatchStarted logs a deduplication batch start event (vc-151)
 func (rp *ResultsProcessor) logDeduplicationBatchStarted(ctx context.Context, issueID string, candidateCount int, parentIssueID string) {
-	// Skip logging if context is cancelled
+	// Skip logging if context is canceled
 	if ctx.Err() != nil {
 		return
 	}
@@ -120,7 +120,7 @@ func (rp *ResultsProcessor) logDeduplicationBatchStarted(ctx context.Context, is
 
 // logDeduplicationBatchCompleted logs a deduplication batch completion event with stats and decisions (vc-151)
 func (rp *ResultsProcessor) logDeduplicationBatchCompleted(ctx context.Context, issueID string, result *deduplication.DeduplicationResult, err error) {
-	// Skip logging if context is cancelled
+	// Skip logging if context is canceled
 	if ctx.Err() != nil {
 		return
 	}
@@ -188,7 +188,7 @@ func (rp *ResultsProcessor) logDeduplicationBatchCompleted(ctx context.Context, 
 
 // logDeduplicationDecision logs an individual deduplication decision (vc-151)
 func (rp *ResultsProcessor) logDeduplicationDecision(ctx context.Context, issueID string, decision deduplication.DecisionDetail) {
-	// Skip logging if context is cancelled
+	// Skip logging if context is canceled
 	if ctx.Err() != nil {
 		return
 	}

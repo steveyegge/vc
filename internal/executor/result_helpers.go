@@ -1,5 +1,7 @@
 package executor
 
+import "unicode/utf8"
+
 // getOutputSample returns the last N lines of output, or all if fewer than N
 func getOutputSample(output []string, maxLines int) []string {
 	if len(output) == 0 {
@@ -49,13 +51,5 @@ func safeTruncateUTF8(s string, maxLen int) string {
 
 // isValidUTF8 checks if a string contains valid UTF-8
 func isValidUTF8(s string) bool {
-	// Quick check: if the last byte is ASCII (0-127), it's always valid
-	if len(s) > 0 && s[len(s)-1] < 128 {
-		return true
-	}
-	// For multi-byte sequences, check if it's valid
-	for range s {
-		// If we can iterate without panic, it's valid UTF-8
-	}
-	return true
+	return utf8.ValidString(s)
 }

@@ -10,6 +10,8 @@ import (
 // displayMissionPlan formats and displays a mission plan
 // Note: This is no longer accessible via slash commands, but kept for potential
 // future use by the AI conversational interface
+//
+//nolint:unused // Reserved for future conversational interface feature
 func displayMissionPlan(mission *types.Issue, plan *types.MissionPlan) {
 	cyan := color.New(color.FgCyan, color.Bold).SprintFunc()
 	green := color.New(color.FgGreen).SprintFunc()

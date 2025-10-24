@@ -206,7 +206,7 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 	// Check if parent context is already done
 	select {
 	case <-ctx.Done():
-		return nil, fmt.Errorf("agent wait called with already-cancelled context: %w", ctx.Err())
+		return nil, fmt.Errorf("agent wait called with already-canceled context: %w", ctx.Err())
 	default:
 	}
 
@@ -222,9 +222,9 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 
 	select {
 	case <-timeoutCtx.Done():
-		// Check why timeout context was cancelled
+		// Check why timeout context was canceled
 		// context.DeadlineExceeded means actual timeout
-		// context.Canceled means parent context was cancelled
+		// context.Canceled means parent context was canceled
 		if timeoutCtx.Err() == context.DeadlineExceeded {
 			// Actual timeout - kill the process
 			if err := a.Kill(); err != nil {
@@ -232,11 +232,11 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 			}
 			return nil, fmt.Errorf("agent execution timed out after %v", a.config.Timeout)
 		}
-		// Parent context was cancelled (not a timeout)
+		// Parent context was canceled (not a timeout)
 		if err := a.Kill(); err != nil {
-			return nil, fmt.Errorf("agent execution cancelled (parent context): %w (kill failed: %v)", timeoutCtx.Err(), err)
+			return nil, fmt.Errorf("agent execution canceled (parent context): %w (kill failed: %v)", timeoutCtx.Err(), err)
 		}
-		return nil, fmt.Errorf("agent execution cancelled (parent context): %w", timeoutCtx.Err())
+		return nil, fmt.Errorf("agent execution canceled (parent context): %w", timeoutCtx.Err())
 	case err := <-errCh:
 		// Process completed
 		a.mu.Lock()
@@ -530,7 +530,7 @@ func shouldSkipTool(toolName string) bool {
 }
 
 // buildClaudeCodeCommand constructs the Claude Code CLI command
-func buildClaudeCodeCommand(cfg AgentConfig, prompt string) *exec.Cmd {
+func buildClaudeCodeCommand(_ AgentConfig, prompt string) *exec.Cmd {
 	args := []string{}
 
 	// Always bypass permission checks for autonomous agent operation (vc-117)

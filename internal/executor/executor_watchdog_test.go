@@ -234,13 +234,13 @@ func TestWatchdogIntegration_AgentContextCancellation(t *testing.T) {
 			t.Fatal("Expected intervention to succeed")
 		}
 
-		// Verify agent context was cancelled
+		// Verify agent context was canceled
 		select {
 		case <-agentCtx.Done():
-			// Good - context was cancelled
-			t.Log("✓ Agent context successfully cancelled by watchdog intervention")
+			// Good - context was canceled
+			t.Log("✓ Agent context successfully canceled by watchdog intervention")
 		case <-time.After(100 * time.Millisecond):
-			t.Fatal("Agent context was not cancelled")
+			t.Fatal("Agent context was not canceled")
 		}
 
 		// Verify escalation issue was created

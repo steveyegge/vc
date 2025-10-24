@@ -64,70 +64,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 	}
 
 	// Step 1: Extract agent output summary
-	agentOutput, err := rp.extractSummary(ctx, issue, agentResult)
-	if err != nil {
-		// AI summarization failed - this is a critical error (ZFC requires AI)
-		// Mark the issue as blocked and require human intervention
-		fmt.Fprintf(os.Stderr, "\n✗ AI summarization failed: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Marking issue %s as blocked - human intervention required\n", issue.ID)
-
-		// Add error comment explaining the failure
-		// Include last 100 lines of raw output so human can review it
-		outputSample := getOutputSample(agentResult.Output, 100)
-
-		errorComment := fmt.Sprintf("**AI Summarization Failed**\n\n"+
-			"The AI supervisor failed to summarize agent output after multiple retries.\n\n"+
-			"Error: %v\n\n"+
-			"This violates ZFC principles (no heuristic fallbacks). The issue has been marked as blocked.\n\n"+
-			"**Human Action Required:**\n"+
-			"1. Check ANTHROPIC_API_KEY is set and valid\n"+
-			"2. Check network connectivity to Anthropic API\n"+
-			"3. Review agent output below\n"+
-			"4. Resolve the underlying issue and retry\n\n"+
-			"**Agent Execution Details:**\n"+
-			"- Success: %v\n"+
-			"- Exit Code: %d\n"+
-			"- Duration: %v\n"+
-			"- Output Lines: %d\n\n"+
-			"**Raw Agent Output (last %d lines):**\n```\n%s\n```",
-			err, agentResult.Success, agentResult.ExitCode, agentResult.Duration, len(agentResult.Output),
-			len(outputSample), strings.Join(outputSample, "\n"))
-
-		if addErr := rp.store.AddComment(ctx, issue.ID, rp.actor, errorComment); addErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to add error comment: %v\n", addErr)
-		}
-
-		// Update issue to blocked status
-		updates := map[string]interface{}{
-			"status": types.StatusBlocked,
-		}
-		if updateErr := rp.store.UpdateIssue(ctx, issue.ID, updates, rp.actor); updateErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to update issue to blocked: %v\n", updateErr)
-		}
-
-		// Log the event
-		rp.logEvent(ctx, events.EventTypeError, events.SeverityError, issue.ID,
-			fmt.Sprintf("AI summarization failed for issue %s - marked as blocked", issue.ID),
-			map[string]interface{}{
-				"error":        err.Error(),
-				"error_type":   "ai_summarization_failed",
-				"exit_code":    agentResult.ExitCode,
-				"output_lines": len(agentResult.Output),
-			})
-
-		// Mark sandbox as failed (vc-134)
-		if rp.sandbox != nil {
-			rp.sandbox.Status = sandbox.SandboxStatusFailed
-		}
-
-		// Release the execution state
-		if releaseErr := rp.releaseExecutionState(ctx, issue.ID); releaseErr != nil {
-			return nil, fmt.Errorf("failed to release issue after summarization failure: %w", releaseErr)
-		}
-
-		result.Summary = fmt.Sprintf("AI summarization failed - issue blocked (ZFC compliance): %v", err)
-		return result, nil
-	}
+	agentOutput := rp.extractSummary(ctx, issue, agentResult)
 
 	fmt.Printf("\n=== Agent Execution Complete ===\n")
 	fmt.Printf("Success: %v\n", agentResult.Success)
@@ -338,17 +275,17 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 					})
 			}
 
-			// Check if we timed out or were cancelled (vc-128)
+			// Check if we timed out or were canceled (vc-128)
 			timedOut := gateCtx.Err() == context.DeadlineExceeded
-			cancelled := gateCtx.Err() == context.Canceled || ctx.Err() == context.Canceled
+			canceled := gateCtx.Err() == context.Canceled || ctx.Err() == context.Canceled
 
 			if timedOut {
 				fmt.Fprintf(os.Stderr, "Warning: quality gates timed out after 5 minutes\n")
 				result.GatesPassed = false
 				allPassed = false // Override allPassed on timeout
-			} else if cancelled {
+			} else if canceled {
 				// Executor is shutting down - don't mark as failed, return issue to open
-				fmt.Fprintf(os.Stderr, "Warning: quality gates cancelled due to executor shutdown\n")
+				fmt.Fprintf(os.Stderr, "Warning: quality gates canceled due to executor shutdown\n")
 				result.GatesPassed = false
 				allPassed = false // Don't pass gates on cancellation
 				// Don't handle gate results - let the executor release the issue
@@ -358,7 +295,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 
 			// Handle gate results (creates blocking issues on failure)
 			// Skip this on cancellation - let executor release issue back to open (vc-128)
-			if !cancelled {
+			if !canceled {
 				if err := gateRunner.HandleGateResults(ctx, issue, gateResults, allPassed); err != nil {
 					fmt.Fprintf(os.Stderr, "Warning: failed to handle gate results: %v\n", err)
 				}
@@ -369,7 +306,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				"all_passed": allPassed,
 				"gates_run":  len(gateResults),
 				"timeout":    timedOut,
-				"cancelled":  cancelled,
+				"canceled":  canceled,
 			}
 
 			// Count passed and failed gates
@@ -393,11 +330,11 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				severity = events.SeverityError
 				message = fmt.Sprintf("Quality gates timed out after 5 minutes for issue %s", issue.ID)
 				gateData["error"] = "deadline exceeded"
-			} else if cancelled {
+			} else if canceled {
 				// Cancellation due to shutdown is not an error - it's expected (vc-128)
 				severity = events.SeverityInfo
-				message = fmt.Sprintf("Quality gates cancelled for issue %s due to executor shutdown", issue.ID)
-				gateData["error"] = "context cancelled"
+				message = fmt.Sprintf("Quality gates canceled for issue %s due to executor shutdown", issue.ID)
+				gateData["error"] = "context canceled"
 			} else if !allPassed {
 				severity = events.SeverityWarning
 			}
@@ -407,15 +344,15 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 
 			// Update sandbox status based on quality gate results (vc-134)
 			if rp.sandbox != nil {
-				if allPassed && !cancelled && !timedOut {
+				if allPassed && !canceled && !timedOut {
 					rp.sandbox.Status = sandbox.SandboxStatusCompleted
 				} else {
 					rp.sandbox.Status = sandbox.SandboxStatusFailed
 				}
 			}
 
-			// Skip blocking logic if cancelled - executor will release issue (vc-128)
-			if !cancelled && !allPassed {
+			// Skip blocking logic if canceled - executor will release issue (vc-128)
+			if !canceled && !allPassed {
 				fmt.Printf("\n=== Quality Gates Failed ===\n")
 				fmt.Printf("Issue %s marked as blocked due to failing quality gates\n", issue.ID)
 
@@ -778,9 +715,9 @@ SkipGates:
 
 // extractSummary extracts a summary from agent output using AI.
 // When AI supervisor is not available, returns a simple data summary (not a heuristic).
-func (rp *ResultsProcessor) extractSummary(ctx context.Context, issue *types.Issue, result *AgentResult) (string, error) {
+func (rp *ResultsProcessor) extractSummary(ctx context.Context, issue *types.Issue, result *AgentResult) string {
 	if len(result.Output) == 0 {
-		return "Agent completed with no output", nil
+		return "Agent completed with no output"
 	}
 
 	// Join output lines into full text
@@ -793,7 +730,7 @@ func (rp *ResultsProcessor) extractSummary(ctx context.Context, issue *types.Iss
 		sample := getOutputSample(result.Output, 50)
 		basicSummary := fmt.Sprintf("Agent completed with exit code %d\n\nLast %d lines of output:\n%s",
 			result.ExitCode, len(sample), strings.Join(sample, "\n"))
-		return basicSummary, nil
+		return basicSummary
 	}
 
 	// Target summary length: aim for ~2000 chars (enough for meaningful summary)
@@ -807,10 +744,10 @@ func (rp *ResultsProcessor) extractSummary(ctx context.Context, issue *types.Iss
 		sample := getOutputSample(result.Output, 50)
 		basicSummary := fmt.Sprintf("Agent completed with exit code %d\n\n(AI summarization failed: %v)\n\nLast %d lines of output:\n%s",
 			result.ExitCode, err, len(sample), strings.Join(sample, "\n"))
-		return basicSummary, nil
+		return basicSummary
 	}
 
-	return summary, nil
+	return summary
 }
 
 // releaseExecutionState releases the execution state for an issue.
@@ -905,7 +842,7 @@ func (rp *ResultsProcessor) buildSummary(issue *types.Issue, agentResult *AgentR
 
 // logEvent creates and stores an agent event for observability
 func (rp *ResultsProcessor) logEvent(ctx context.Context, eventType events.EventType, severity events.EventSeverity, issueID, message string, data map[string]interface{}) {
-	// Skip logging if context is cancelled (e.g., during shutdown)
+	// Skip logging if context is canceled (e.g., during shutdown)
 	if ctx.Err() != nil {
 		return
 	}

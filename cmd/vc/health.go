@@ -288,7 +288,7 @@ func fileHealthIssue(ctx context.Context, store storage.Storage, monitor health.
 }
 
 // buildIssueTitle creates a concise title for the health issue.
-func buildIssueTitle(monitor health.HealthMonitor, discovered health.DiscoveredIssue) string {
+func buildIssueTitle(_ health.HealthMonitor, discovered health.DiscoveredIssue) string {
 	// Extract the first sentence or first 80 chars of description
 	desc := discovered.Description
 	if idx := strings.Index(desc, "."); idx > 0 && idx < 80 {

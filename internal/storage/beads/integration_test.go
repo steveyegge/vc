@@ -703,7 +703,7 @@ func TestAgentEventDataPersistence(t *testing.T) {
 		}
 
 		// Data should be nil or empty
-		if noDataEvent.Data != nil && len(noDataEvent.Data) > 0 {
+		if len(noDataEvent.Data) > 0 {
 			t.Errorf("Expected empty Data, got %v", noDataEvent.Data)
 		}
 	})

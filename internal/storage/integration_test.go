@@ -713,7 +713,7 @@ func TestEpicChildDependencyDirection(t *testing.T) {
 
 // Helper functions
 
-func setupStorage(t *testing.T, backend string) Storage {
+func setupStorage(t *testing.T, _ string) Storage {
 	t.Helper()
 
 	ctx := context.Background()
@@ -829,7 +829,7 @@ func TestGetMissionWithApprovalMetadata(t *testing.T) {
 			}
 
 			// Test 1: Mission without approval (ApprovedAt = nil)
-			retrieved, err := store.GetMission(ctx, mission.Issue.ID)
+			retrieved, err := store.GetMission(ctx, mission.ID)
 			if err != nil {
 				t.Fatalf("Failed to get mission: %v", err)
 			}
@@ -850,12 +850,12 @@ func TestGetMissionWithApprovalMetadata(t *testing.T) {
 				"approved_at": approvalTime,
 				"approved_by": approver,
 			}
-			if err := store.UpdateMission(ctx, mission.Issue.ID, updates, "test"); err != nil {
+			if err := store.UpdateMission(ctx, mission.ID, updates, "test"); err != nil {
 				t.Fatalf("Failed to update mission with approval: %v", err)
 			}
 
 			// Test 3: Retrieve mission again and verify approval fields are populated
-			approved, err := store.GetMission(ctx, mission.Issue.ID)
+			approved, err := store.GetMission(ctx, mission.ID)
 			if err != nil {
 				t.Fatalf("Failed to get approved mission: %v", err)
 			}
@@ -912,7 +912,7 @@ func TestGetMissionWithApprovalMetadata(t *testing.T) {
 				t.Fatalf("Failed to create unapproved mission: %v", err)
 			}
 
-			unapproved, err := store.GetMission(ctx, unapprovedMission.Issue.ID)
+			unapproved, err := store.GetMission(ctx, unapprovedMission.ID)
 			if err != nil {
 				t.Fatalf("Failed to get unapproved mission: %v", err)
 			}

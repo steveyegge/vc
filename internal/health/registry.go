@@ -167,7 +167,8 @@ func (r *MonitorRegistry) shouldRun(schedule ScheduleConfig, state *MonitorRunSt
 
 // checkEventTrigger evaluates event-based triggers.
 // Event trigger format: "every_N_issues" or "every_N_commits"
-func (r *MonitorRegistry) checkEventTrigger(trigger string, state *MonitorRunState, issuesClosed int, commits int) bool {
+//nolint:unparam // commits parameter reserved for future event-based triggers
+func (r *MonitorRegistry) checkEventTrigger(trigger string, state *MonitorRunState, _ int, commits int) bool {
 	if trigger == "" {
 		return false
 	}

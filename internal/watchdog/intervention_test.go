@@ -102,12 +102,12 @@ func TestInterventionController_PauseAgent(t *testing.T) {
 		t.Error("Expected agent cancel function to be called")
 	}
 
-	// Verify agent context was cancelled
+	// Verify agent context was canceled
 	select {
 	case <-agentCtx.Done():
-		// Expected - context was cancelled
+		// Expected - context was canceled
 	case <-time.After(100 * time.Millisecond):
-		t.Error("Agent context was not cancelled")
+		t.Error("Agent context was not canceled")
 	}
 
 	// Verify escalation issue was created
@@ -234,12 +234,12 @@ func TestInterventionController_KillAgent(t *testing.T) {
 		t.Error("Expected agent cancel function to be called")
 	}
 
-	// Verify agent context was cancelled
+	// Verify agent context was canceled
 	select {
 	case <-agentCtx.Done():
 		// Expected
 	case <-time.After(100 * time.Millisecond):
-		t.Error("Agent context was not cancelled")
+		t.Error("Agent context was not canceled")
 	}
 }
 
@@ -343,13 +343,13 @@ func TestInterventionController_Intervene(t *testing.T) {
 				t.Error("Expected cancel to be called")
 			}
 
-			// Verify context was cancelled
+			// Verify context was canceled
 			if tc.expectKill || tc.expectPause {
 				select {
 				case <-agentCtx.Done():
 					// Expected
 				case <-time.After(100 * time.Millisecond):
-					t.Error("Agent context was not cancelled")
+					t.Error("Agent context was not canceled")
 				}
 			}
 

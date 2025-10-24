@@ -685,7 +685,7 @@ func (d *ZFCDetector) buildIssues(eval *zfcEvaluation) []DiscoveredIssue {
 }
 
 // buildIssueDescription creates a description for a ZFC violation issue.
-func (d *ZFCDetector) buildIssueDescription(impact string, violations []zfcViolationAssessment, guidance string) string {
+func (d *ZFCDetector) buildIssueDescription(impact string, violations []zfcViolationAssessment, _ string) string {
 	// Count by type
 	byType := make(map[string]int)
 	for _, v := range violations {

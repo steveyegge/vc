@@ -592,7 +592,7 @@ func (s *VCStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, actor, e
 
 	// Add comment explaining the failure
 	if errorComment != "" {
-		err = s.Storage.AddComment(ctx, issueID, actor, errorComment)
+		err = s.AddComment(ctx, issueID, actor, errorComment)
 		if err != nil {
 			return fmt.Errorf("failed to add error comment: %w", err)
 		}

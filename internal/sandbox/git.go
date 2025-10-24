@@ -14,7 +14,7 @@ import (
 // The branch should be created separately using createBranch after the worktree is set up.
 //
 // Returns the absolute path to the created worktree, or an error if creation fails.
-func createWorktree(ctx context.Context, cfg SandboxConfig, branchName string) (string, error) {
+func createWorktree(ctx context.Context, cfg SandboxConfig, _ string) (string, error) {
 	// Validate parent repo is a git repository
 	if err := validateGitRepo(cfg.ParentRepo); err != nil {
 		return "", fmt.Errorf("parent repo validation failed: %w", err)

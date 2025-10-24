@@ -1177,11 +1177,11 @@ func (c *ConversationHandler) executeIssue(ctx context.Context, issue *types.Iss
 func (c *ConversationHandler) formatContinueLoopResult(completed, partial, failed []string, iterations int, stopReason string, elapsed time.Duration) string {
 	var result string
 
-	result += fmt.Sprintf("⚡ Autonomous Execution Complete\n\n")
+	result += "⚡ Autonomous Execution Complete\n\n"
 	result += fmt.Sprintf("Stop Reason: %s\n", stopReason)
 	result += fmt.Sprintf("Iterations: %d\n", iterations)
 	result += fmt.Sprintf("Elapsed Time: %s\n", elapsed.Round(time.Second))
-	result += fmt.Sprintf("\n")
+	result += "\n"
 
 	// Completed issues (fully closed)
 	result += fmt.Sprintf("Completed: %d issues\n", len(completed))

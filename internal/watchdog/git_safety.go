@@ -235,7 +235,9 @@ IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences. J
 
 // callAISupervisor sends the prompt to AI and parses the response
 // This follows the same pattern as the analyzer in internal/watchdog/analyzer.go
-func (gsm *GitSafetyMonitor) callAISupervisor(ctx context.Context, prompt string) (*GitSafetyEvaluation, error) {
+//
+//nolint:unparam // prompt parameter reserved for future AI integration
+func (gsm *GitSafetyMonitor) callAISupervisor(_ context.Context, prompt string) (*GitSafetyEvaluation, error) {
 	// NOTE: This is a simplified implementation
 	// In production, we should add a generic CallAI method to the supervisor
 	// For now, we use a mock response to demonstrate the architecture

@@ -271,9 +271,9 @@ func (s *Supervisor) retryWithBackoff(ctx context.Context, operation string, fn 
 			break
 		}
 
-		// Check if context is already cancelled
+		// Check if context is already canceled
 		if ctx.Err() != nil {
-			return fmt.Errorf("%s failed: context cancelled: %w", operation, ctx.Err())
+			return fmt.Errorf("%s failed: context canceled: %w", operation, ctx.Err())
 		}
 
 		// Log the retry
@@ -289,7 +289,7 @@ func (s *Supervisor) retryWithBackoff(ctx context.Context, operation string, fn 
 				backoff = s.retry.MaxBackoff
 			}
 		case <-ctx.Done():
-			return fmt.Errorf("%s failed: context cancelled during backoff: %w", operation, ctx.Err())
+			return fmt.Errorf("%s failed: context canceled during backoff: %w", operation, ctx.Err())
 		}
 	}
 

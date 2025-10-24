@@ -101,7 +101,7 @@ func TestMonitor_StartEndExecution(t *testing.T) {
 	if !telemetry[0].GatesPassed {
 		t.Error("expected gates passed = true")
 	}
-	if telemetry[0].EndTime == (time.Time{}) {
+	if telemetry[0].EndTime.Equal(time.Time{}) {
 		t.Error("expected non-zero end time")
 	}
 }

@@ -280,10 +280,10 @@ func TestGitOperations_ErrorCases(t *testing.T) {
 		}
 
 		// Cancel context immediately
-		cancelledCtx, cancel := context.WithCancel(ctx)
+		canceledCtx, cancel := context.WithCancel(ctx)
 		cancel()
 
-		_, err = git.GetStatus(cancelledCtx, tmpDir)
+		_, err = git.GetStatus(canceledCtx, tmpDir)
 		// Error may or may not occur depending on timing
 		// Just ensure it doesn't panic
 		_ = err

@@ -521,7 +521,7 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 
 // logSandboxDeduplicationBatchStarted logs a deduplication batch start event from sandbox merge (vc-151)
 func logSandboxDeduplicationBatchStarted(ctx context.Context, store storage.Storage, issueID string, candidateCount int) {
-	// Skip logging if context is cancelled
+	// Skip logging if context is canceled
 	if ctx.Err() != nil {
 		return
 	}
@@ -549,7 +549,7 @@ func logSandboxDeduplicationBatchStarted(ctx context.Context, store storage.Stor
 
 // logSandboxDeduplicationBatchCompleted logs a deduplication batch completion event from sandbox merge (vc-151)
 func logSandboxDeduplicationBatchCompleted(ctx context.Context, store storage.Storage, issueID string, result *deduplication.DeduplicationResult, dedupErr error) {
-	// Skip logging if context is cancelled
+	// Skip logging if context is canceled
 	if ctx.Err() != nil {
 		return
 	}
@@ -617,7 +617,7 @@ func logSandboxDeduplicationBatchCompleted(ctx context.Context, store storage.St
 
 // logSandboxDeduplicationDecision logs an individual deduplication decision from sandbox merge (vc-151)
 func logSandboxDeduplicationDecision(ctx context.Context, store storage.Storage, issueID string, decision deduplication.DecisionDetail) {
-	// Skip logging if context is cancelled
+	// Skip logging if context is canceled
 	if ctx.Err() != nil {
 		return
 	}

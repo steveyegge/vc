@@ -158,7 +158,7 @@ func LoadFromEnv() *WatchdogConfig {
 
 	// Overall watchdog settings
 	if val := os.Getenv("VC_WATCHDOG_ENABLED"); val != "" {
-		cfg.Enabled = parseBool(val, true)
+		cfg.Enabled = parseBool(val)
 	}
 
 	if val := os.Getenv("VC_WATCHDOG_CHECK_INTERVAL"); val != "" {
@@ -191,12 +191,12 @@ func LoadFromEnv() *WatchdogConfig {
 	}
 
 	if val := os.Getenv("VC_WATCHDOG_LOG_ANOMALIES"); val != "" {
-		cfg.AIConfig.EnableAnomalyLogging = parseBool(val, true)
+		cfg.AIConfig.EnableAnomalyLogging = parseBool(val)
 	}
 
 	// Intervention config
 	if val := os.Getenv("VC_WATCHDOG_AUTO_KILL"); val != "" {
-		cfg.InterventionConfig.AutoKillEnabled = parseBool(val, true)
+		cfg.InterventionConfig.AutoKillEnabled = parseBool(val)
 	}
 
 	if val := os.Getenv("VC_WATCHDOG_MAX_RETRIES"); val != "" {
@@ -206,7 +206,7 @@ func LoadFromEnv() *WatchdogConfig {
 	}
 
 	if val := os.Getenv("VC_WATCHDOG_ESCALATE_CRITICAL"); val != "" {
-		cfg.InterventionConfig.EscalateOnCritical = parseBool(val, true)
+		cfg.InterventionConfig.EscalateOnCritical = parseBool(val)
 	}
 
 	// Validate after loading from env
@@ -218,15 +218,15 @@ func LoadFromEnv() *WatchdogConfig {
 	return cfg
 }
 
-// parseBool parses a boolean string with a default value
-func parseBool(val string, defaultVal bool) bool {
+// parseBool parses a boolean string with a default value of true
+func parseBool(val string) bool {
 	switch val {
 	case "true", "1", "yes", "on":
 		return true
 	case "false", "0", "no", "off":
 		return false
 	default:
-		return defaultVal
+		return true
 	}
 }
 

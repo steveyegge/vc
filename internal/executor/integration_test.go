@@ -25,7 +25,7 @@ func TestFullWorkflowEndToEnd(t *testing.T) {
 	store := setupTestStorage(t, ctx)
 	defer func() { _ = store.Close() }()
 
-	exec := setupTestExecutor(t, store, false)
+	exec := setupTestExecutor(t, store)
 
 	var mission *types.Issue
 	var tasks []*types.Issue
@@ -133,7 +133,7 @@ func TestSandboxIsolation(t *testing.T) {
 	store := setupTestStorage(t, ctx)
 	defer func() { _ = store.Close() }()
 
-	exec := setupTestExecutor(t, store, false)
+	exec := setupTestExecutor(t, store)
 
 	// Create test directory structure
 	testDir := t.TempDir()
@@ -226,7 +226,7 @@ func TestErrorRecoveryAndResume(t *testing.T) {
 	store := setupTestStorage(t, ctx)
 	defer func() { _ = store.Close() }()
 
-	exec1 := setupTestExecutor(t, store, false)
+	exec1 := setupTestExecutor(t, store)
 
 	// Create a task
 	task := &types.Issue{
@@ -297,7 +297,7 @@ func TestErrorRecoveryAndResume(t *testing.T) {
 	}
 
 	// Phase 2: New executor resumes work
-	exec2 := setupTestExecutor(t, store, false)
+	exec2 := setupTestExecutor(t, store)
 
 	// Claim the task
 	if err := store.ClaimIssue(ctx, task.ID, exec2.instanceID); err != nil {
@@ -361,7 +361,7 @@ func TestQualityGateBlocking(t *testing.T) {
 	store := setupTestStorage(t, ctx)
 	defer func() { _ = store.Close() }()
 
-	exec := setupTestExecutor(t, store, false)
+	exec := setupTestExecutor(t, store)
 
 	// Create a task
 	task := &types.Issue{
@@ -495,7 +495,7 @@ func TestMultiTaskCoordination(t *testing.T) {
 	store := setupTestStorage(t, ctx)
 	defer func() { _ = store.Close() }()
 
-	exec := setupTestExecutor(t, store, false)
+	exec := setupTestExecutor(t, store)
 
 	// Create a dependency chain: task1 -> task2 -> task3
 	// (task2 depends on task1, task3 depends on task2)
@@ -874,12 +874,12 @@ func setupTestStorage(t *testing.T, ctx context.Context) storage.Storage {
 	return store
 }
 
-func setupTestExecutor(t *testing.T, store storage.Storage, enableAI bool) *Executor {
+func setupTestExecutor(t *testing.T, store storage.Storage) *Executor {
 	t.Helper()
 
 	cfg := DefaultConfig()
 	cfg.Store = store
-	cfg.EnableAISupervision = enableAI
+	cfg.EnableAISupervision = false
 	cfg.PollInterval = 100 * time.Millisecond
 
 	exec, err := New(cfg)

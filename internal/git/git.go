@@ -286,6 +286,8 @@ func (g *Git) Rebase(ctx context.Context, repoPath string, opts RebaseOptions) (
 
 // hasConflicts checks if there are unmerged files (merge conflicts).
 // This uses git diff --diff-filter=U which specifically checks for unmerged paths.
+//
+//nolint:unparam // error return reserved for future error conditions
 func (g *Git) hasConflicts(ctx context.Context, repoPath string) (bool, error) {
 	// Use git diff to check for unmerged paths (conflicts)
 	cmd := exec.CommandContext(ctx, g.gitPath, "-C", repoPath, "diff", "--name-only", "--diff-filter=U")

@@ -320,14 +320,13 @@ func extractJSON(text string) string {
 
 	// Quick check: if text starts with { or [, we know the type
 	if len(trimmed) > 0 {
-		firstChar := trimmed[0]
-
-		if firstChar == '[' {
+		switch trimmed[0] {
+		case '[':
 			// It's an array - extract the full array
 			if match := arrayRegex.FindString(text); match != "" {
 				return match
 			}
-		} else if firstChar == '{' {
+		case '{':
 			// It's an object - extract the object
 			if match := objectRegex.FindString(text); match != "" {
 				return match

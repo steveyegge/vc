@@ -200,9 +200,7 @@ func EventRetentionConfigFromEnv() (EventRetentionConfig, error) {
 	if err := parseEnvBool("VC_EVENT_CLEANUP_ENABLED", &cfg.CleanupEnabled); err != nil {
 		return cfg, err
 	}
-	if err := parseEnvString("VC_EVENT_CLEANUP_STRATEGY", &cfg.CleanupStrategy); err != nil {
-		return cfg, err
-	}
+	parseEnvString("VC_EVENT_CLEANUP_STRATEGY", &cfg.CleanupStrategy)
 	if err := parseEnvBool("VC_EVENT_CLEANUP_VACUUM", &cfg.CleanupVacuum); err != nil {
 		return cfg, err
 	}
@@ -244,11 +242,9 @@ func parseEnvBool(key string, dest *bool) error {
 }
 
 // parseEnvString parses a string from an environment variable
-func parseEnvString(key string, dest *string) error {
+func parseEnvString(key string, dest *string) {
 	value := os.Getenv(key)
-	if value == "" {
-		return nil // Use default
+	if value != "" {
+		*dest = value
 	}
-	*dest = value
-	return nil
 }

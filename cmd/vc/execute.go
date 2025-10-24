@@ -106,7 +106,7 @@ The executor will:
 		fmt.Println("\n\nShutting down executor...")
 
 		// Stop the executor gracefully
-		// Use a fresh context for shutdown since main context is being cancelled
+		// Use a fresh context for shutdown since main context is being canceled
 		cancel()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer shutdownCancel()

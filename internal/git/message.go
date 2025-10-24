@@ -146,9 +146,9 @@ func (m *MessageGenerator) retryWithBackoff(ctx context.Context, operation strin
 
 		lastErr = err
 
-		// Check if context is cancelled
+		// Check if context is canceled
 		if ctx.Err() != nil {
-			return fmt.Errorf("%s cancelled: %w", operation, ctx.Err())
+			return fmt.Errorf("%s canceled: %w", operation, ctx.Err())
 		}
 
 		// Don't retry on last attempt

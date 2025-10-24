@@ -934,7 +934,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 
 // logEvent creates and stores an agent event for observability
 func (e *Executor) logEvent(ctx context.Context, eventType events.EventType, severity events.EventSeverity, issueID, message string, data map[string]interface{}) {
-	// Skip logging if context is cancelled (e.g., during shutdown)
+	// Skip logging if context is canceled (e.g., during shutdown)
 	if ctx.Err() != nil {
 		return
 	}
@@ -1364,7 +1364,7 @@ func (e *Executor) runEventCleanup(ctx context.Context, cfg config.EventRetentio
 
 // logCleanupEvent creates and stores a structured event for cleanup metrics (vc-196)
 func (e *Executor) logCleanupEvent(ctx context.Context, totalDeleted, timeBasedDeleted, perIssueDeleted, globalLimitDeleted int, processingTimeMs int64, vacuumRan bool, eventsRemaining int, success bool, errorMsg string) {
-	// Skip logging if context is cancelled (e.g., during shutdown)
+	// Skip logging if context is canceled (e.g., during shutdown)
 	if ctx.Err() != nil {
 		return
 	}

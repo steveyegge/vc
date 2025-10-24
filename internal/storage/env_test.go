@@ -40,7 +40,7 @@ func TestVC_DB_PATH_Discovery(t *testing.T) {
 
 	// Test without env var (should use normal discovery or fail)
 	_ = os.Unsetenv("VC_DB_PATH")
-	_, err = DiscoverDatabase()
+	_, _ = DiscoverDatabase()
 	// May succeed (if in a project with .beads/) or fail (if not)
 	// We don't assert either way, just verify it doesn't panic
 }

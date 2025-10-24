@@ -11,6 +11,8 @@ import (
 )
 
 // createCodeReviewIssue creates a blocking code review issue for the given commit
+//
+//nolint:unused // Reserved for future code review feature
 func (rp *ResultsProcessor) createCodeReviewIssue(ctx context.Context, parentIssue *types.Issue, commitHash, reasoning string) (string, error) {
 	// Create issue title
 	title := fmt.Sprintf("Code review: %s", parentIssue.Title)

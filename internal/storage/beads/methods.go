@@ -157,7 +157,7 @@ func (s *VCStorage) CreateMission(ctx context.Context, mission *types.Mission, a
 		WHERE issue_id = ?
 	`, mission.Goal, mission.Context, mission.PhaseCount, mission.CurrentPhase,
 		mission.ApprovalRequired, mission.ApprovedAt, mission.ApprovedBy,
-		time.Now(), mission.Issue.ID)
+		time.Now(), mission.ID)
 
 	if err != nil {
 		return fmt.Errorf("failed to update mission metadata: %w", err)

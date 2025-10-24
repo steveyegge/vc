@@ -52,7 +52,7 @@ func (e *Executor) checkHealthMonitors(ctx context.Context) error {
 }
 
 // runHealthMonitor executes a single health monitor and files any discovered issues.
-func (e *Executor) runHealthMonitor(ctx context.Context, monitor health.HealthMonitor, projectRoot string) error {
+func (e *Executor) runHealthMonitor(ctx context.Context, monitor health.HealthMonitor, _ string) error {
 	monitorName := monitor.Name()
 	fmt.Printf("Health: Running %s\n", monitorName)
 
@@ -156,7 +156,7 @@ func (e *Executor) fileHealthIssue(ctx context.Context, monitor health.HealthMon
 }
 
 // buildHealthIssueTitle creates a concise title for the health issue.
-func buildHealthIssueTitle(monitor health.HealthMonitor, discovered health.DiscoveredIssue) string {
+func buildHealthIssueTitle(_ health.HealthMonitor, discovered health.DiscoveredIssue) string {
 	// Use the first sentence or first 80 chars of description
 	desc := discovered.Description
 	for idx := 0; idx < len(desc); idx++ {
@@ -209,7 +209,7 @@ func buildHealthIssueDescription(monitor health.HealthMonitor, discovered health
 }
 
 // getProjectRootFromStore determines the project root from the storage configuration.
-func getProjectRootFromStore(store interface{}) (string, error) {
+func getProjectRootFromStore(_ interface{}) (string, error) {
 	// For SQLite storage, the database path should be .beads/vc.db
 	// The project root is the parent of .beads/
 	// This is a simplified implementation - in production, you'd want to

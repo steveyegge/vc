@@ -72,6 +72,8 @@ func discoverDatabaseInDir(dir string) (string, error) {
 // discoverDatabaseFromDir walks up from the given directory.
 // DEPRECATED: Use discoverDatabaseInDir instead (vc-240).
 // Kept for potential future use or reference.
+//
+//nolint:unused // DEPRECATED - kept for reference
 func discoverDatabaseFromDir(startDir string) (string, error) {
 	dir := startDir
 

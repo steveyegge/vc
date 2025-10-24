@@ -96,10 +96,10 @@ func (r *Runner) RunAll(ctx context.Context) ([]*Result, bool) {
 	}
 
 	for _, gate := range gates {
-		// Check if context is already cancelled before starting gate (vc-119)
+		// Check if context is already canceled before starting gate (vc-119)
 		if ctx.Err() != nil {
-			// Context cancelled - stop running gates and return what we have
-			fmt.Printf("Quality gates cancelled: %v\n", ctx.Err())
+			// Context canceled - stop running gates and return what we have
+			fmt.Printf("Quality gates canceled: %v\n", ctx.Err())
 			return results, false
 		}
 
@@ -143,9 +143,9 @@ func (r *Runner) runTestGate(ctx context.Context) *Result {
 	// Check if command was killed due to context cancellation (vc-119)
 	if ctx.Err() != nil {
 		result.Passed = false
-		result.Error = fmt.Errorf("go test cancelled: %w", ctx.Err())
+		result.Error = fmt.Errorf("go test canceled: %w", ctx.Err())
 		if result.Output == "" {
-			result.Output = "Test execution cancelled due to timeout"
+			result.Output = "Test execution canceled due to timeout"
 		}
 		return result
 	}
@@ -181,9 +181,9 @@ func (r *Runner) runLintGate(ctx context.Context) *Result {
 	// Check if command was killed due to context cancellation (vc-119)
 	if ctx.Err() != nil {
 		result.Passed = false
-		result.Error = fmt.Errorf("golangci-lint cancelled: %w", ctx.Err())
+		result.Error = fmt.Errorf("golangci-lint canceled: %w", ctx.Err())
 		if result.Output == "" {
-			result.Output = "Lint execution cancelled due to timeout"
+			result.Output = "Lint execution canceled due to timeout"
 		}
 		return result
 	}
@@ -211,9 +211,9 @@ func (r *Runner) runBuildGate(ctx context.Context) *Result {
 	// Check if command was killed due to context cancellation (vc-119)
 	if ctx.Err() != nil {
 		result.Passed = false
-		result.Error = fmt.Errorf("go build cancelled: %w", ctx.Err())
+		result.Error = fmt.Errorf("go build canceled: %w", ctx.Err())
 		if result.Output == "" {
-			result.Output = "Build execution cancelled due to timeout"
+			result.Output = "Build execution canceled due to timeout"
 		}
 		return result
 	}
@@ -567,6 +567,8 @@ func (r *Runner) executeEscalate(ctx context.Context, originalIssue *types.Issue
 }
 
 // executeRetry suggests retry without creating blocking issues
+//
+//nolint:unparam // error return reserved for future error conditions
 func (r *Runner) executeRetry(ctx context.Context, originalIssue *types.Issue, strategy *ai.RecoveryStrategy) error {
 	// Add retry suggestion comment
 	retryComment := fmt.Sprintf("🔄 **Retry suggested**\n\n%s\n\nThe issue remains open for retry.", strategy.AddComment)

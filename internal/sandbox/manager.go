@@ -303,6 +303,7 @@ func (m *manager) Cleanup(ctx context.Context, sandbox *Sandbox) error {
 	}
 
 	// Determine if we should remove the sandbox directory
+	//nolint:staticcheck // Explicit form is more readable than De Morgan simplification
 	shouldRemove := true
 	if sandbox.Status == SandboxStatusFailed && m.config.PreserveOnFailure {
 		shouldRemove = false

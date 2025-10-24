@@ -42,7 +42,7 @@ func NewVCStorage(ctx context.Context, dbPath string) (*VCStorage, error) {
 	// 2. Get underlying DB connection for VC extension tables
 	db := beadsStore.UnderlyingDB()
 	if db == nil {
-		return nil, fmt.Errorf("Beads storage did not provide underlying DB")
+		return nil, fmt.Errorf("beads storage did not provide underlying DB")
 	}
 
 	// 3. Create VC extension tables

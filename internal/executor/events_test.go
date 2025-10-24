@@ -575,10 +575,10 @@ func TestContextCancellationHandling(t *testing.T) {
 		}
 	})
 
-	// Test 2: Logging with cancelled context
+	// Test 2: Logging with canceled context
 	t.Run("CancelledContext", func(t *testing.T) {
-		// Create a cancelled context
-		cancelledCtx, cancel := context.WithCancel(ctx)
+		// Create a canceled context
+		canceledCtx, cancel := context.WithCancel(ctx)
 		cancel() // Cancel it immediately
 
 		// Count events before
@@ -588,8 +588,8 @@ func TestContextCancellationHandling(t *testing.T) {
 		}
 		countBefore := len(eventsBefore)
 
-		// Try to log with cancelled context
-		executor.logEvent(cancelledCtx, events.EventTypeAgentSpawned, events.SeverityInfo, issue.ID,
+		// Try to log with canceled context
+		executor.logEvent(canceledCtx, events.EventTypeAgentSpawned, events.SeverityInfo, issue.ID,
 			"Should not be logged", map[string]interface{}{})
 
 		// Count events after
@@ -601,7 +601,7 @@ func TestContextCancellationHandling(t *testing.T) {
 
 		// Should NOT have added a new event
 		if countAfter > countBefore {
-			t.Error("Expected no event to be stored with cancelled context")
+			t.Error("Expected no event to be stored with canceled context")
 		}
 	})
 

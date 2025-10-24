@@ -173,7 +173,7 @@ func (r *REPL) printWelcome() {
 }
 
 // cmdExit exits the REPL
-func (r *REPL) cmdExit(args []string) error {
+func (r *REPL) cmdExit(_ []string) error {
 	green := color.New(color.FgGreen).SprintFunc()
 	fmt.Printf("\n%s Goodbye!\n", green("✓"))
 	if err := r.rl.Close(); err != nil {

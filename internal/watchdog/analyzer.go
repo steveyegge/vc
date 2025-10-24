@@ -161,6 +161,8 @@ func (a *Analyzer) DetectAnomalies(ctx context.Context) (*AnomalyReport, error) 
 }
 
 // buildAnomalyDetectionPrompt constructs the prompt for AI anomaly detection
+//
+//nolint:unparam // error return reserved for future error conditions
 func (a *Analyzer) buildAnomalyDetectionPrompt(telemetry []*ExecutionTelemetry, current *ExecutionTelemetry) (string, error) {
 	var prompt strings.Builder
 

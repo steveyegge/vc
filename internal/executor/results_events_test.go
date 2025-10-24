@@ -643,8 +643,8 @@ func TestResultsProcessorContextCancellation(t *testing.T) {
 	})
 
 	t.Run("CancelledContext", func(t *testing.T) {
-		// Create cancelled context
-		cancelledCtx, cancel := context.WithCancel(ctx)
+		// Create canceled context
+		canceledCtx, cancel := context.WithCancel(ctx)
 		cancel()
 
 		// Count events before
@@ -654,8 +654,8 @@ func TestResultsProcessorContextCancellation(t *testing.T) {
 		}
 		countBefore := len(eventsBefore)
 
-		// Try to log with cancelled context
-		processor.logEvent(cancelledCtx, events.EventTypeQualityGatesCompleted, events.SeverityInfo, issue.ID,
+		// Try to log with canceled context
+		processor.logEvent(canceledCtx, events.EventTypeQualityGatesCompleted, events.SeverityInfo, issue.ID,
 			"Should not be logged", map[string]interface{}{})
 
 		// Count events after
@@ -667,7 +667,7 @@ func TestResultsProcessorContextCancellation(t *testing.T) {
 
 		// Should NOT have added a new event
 		if countAfter > countBefore {
-			t.Error("Expected no event to be stored with cancelled context")
+			t.Error("Expected no event to be stored with canceled context")
 		}
 	})
 }
