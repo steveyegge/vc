@@ -170,10 +170,14 @@ func (m *MockStorage) RegisterInstance(ctx context.Context, instance *types.Exec
 	return nil
 }
 func (m *MockStorage) UpdateHeartbeat(ctx context.Context, instanceID string) error { return nil }
+func (m *MockStorage) MarkInstanceStopped(ctx context.Context, instanceID string) error { return nil }
 func (m *MockStorage) GetActiveInstances(ctx context.Context) ([]*types.ExecutorInstance, error) {
 	return nil, nil
 }
 func (m *MockStorage) CleanupStaleInstances(ctx context.Context, staleThreshold int) (int, error) {
+	return 0, nil
+}
+func (m *MockStorage) DeleteOldStoppedInstances(ctx context.Context, olderThanSeconds int, maxToKeep int) (int, error) {
 	return 0, nil
 }
 func (m *MockStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) ([]*types.Issue, error) {
