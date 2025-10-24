@@ -46,6 +46,14 @@ const (
 	// maxOutputLines is the maximum number of output lines to capture
 	// This prevents memory exhaustion from long-running agents
 	maxOutputLines = 10000
+
+	// maxFileReads is the maximum number of Read tool invocations per execution (vc-117)
+	// This prevents infinite loops where agents read files repeatedly without making progress
+	maxFileReads = 100
+
+	// maxSameFileReads is the maximum number of times the same file can be read (vc-117)
+	// If an agent reads the same file more than this many times, it's likely stuck in a loop
+	maxSameFileReads = 5
 )
 
 // AgentResult contains the output and status from agent execution
@@ -105,6 +113,12 @@ type Agent struct {
 	mu     sync.Mutex
 	result AgentResult
 	parser *events.OutputParser // Parser for extracting events from output
+
+	// Circuit breaker state for detecting infinite loops (vc-117)
+	totalReadCount int            // Total number of Read tool invocations
+	fileReadCounts map[string]int // Number of times each file has been read
+	loopDetected   bool           // Whether an infinite loop was detected
+	loopReason     string         // Reason for loop detection (for error messages)
 }
 
 // SpawnAgent starts a coding agent process with a pre-built prompt
@@ -164,6 +178,11 @@ func SpawnAgent(ctx context.Context, cfg AgentConfig, prompt string) (*Agent, er
 			Output: []string{},
 			Errors: []string{},
 		},
+		// Initialize circuit breaker state (vc-117)
+		totalReadCount: 0,
+		fileReadCounts: make(map[string]int),
+		loopDetected:   false,
+		loopReason:     "",
 	}
 
 	// Initialize OutputParser if event storage is enabled
@@ -238,7 +257,7 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 
 // Kill forcefully terminates the agent process
 func (a *Agent) Kill() error {
-	if a.cmd.Process != nil {
+	if a.cmd != nil && a.cmd.Process != nil {
 		return a.cmd.Process.Kill()
 	}
 	return nil
@@ -374,6 +393,28 @@ func (a *Agent) convertJSONToEvent(msg AgentMessage, rawLine string) *events.Age
 			fmt.Fprintf(os.Stderr, "[DEBUG] Skipping internal tool: name=%s\n", msg.Name)
 		}
 		return nil
+	}
+
+	// Circuit breaker: Track Read tool usage to detect infinite loops (vc-117)
+	if toolName == "read" {
+		// Extract file path from input
+		var filePath string
+		if msg.Input != nil {
+			if pathVal, ok := msg.Input["path"].(string); ok {
+				filePath = pathVal
+			}
+		}
+
+		// Check for infinite loop condition
+		if err := a.checkCircuitBreaker(filePath); err != nil {
+			// Kill the agent immediately
+			fmt.Fprintf(os.Stderr, "\n!!! CIRCUIT BREAKER TRIGGERED !!!\n%v\n", err)
+			if killErr := a.Kill(); killErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to kill agent after circuit breaker: %v\n", killErr)
+			}
+			// Don't return an event - the agent will be terminated
+			return nil
+		}
 	}
 
 	// Create agent_tool_use event from structured JSON
@@ -529,4 +570,37 @@ func (a *Agent) GetErrors() []string {
 	errors := make([]string, len(a.result.Errors))
 	copy(errors, a.result.Errors)
 	return errors
+}
+
+// checkCircuitBreaker checks if the agent is stuck in an infinite loop (vc-117)
+// This must be called with the mutex held
+func (a *Agent) checkCircuitBreaker(filePath string) error {
+	// Initialize map if needed (for tests that create agents without using SpawnAgent)
+	if a.fileReadCounts == nil {
+		a.fileReadCounts = make(map[string]int)
+	}
+
+	// Increment total read count
+	a.totalReadCount++
+
+	// Track per-file read count
+	if filePath != "" {
+		a.fileReadCounts[filePath]++
+
+		// Check if same file read too many times
+		if a.fileReadCounts[filePath] > maxSameFileReads {
+			a.loopDetected = true
+			a.loopReason = fmt.Sprintf("Read file %s %d times (limit: %d)", filePath, a.fileReadCounts[filePath], maxSameFileReads)
+			return fmt.Errorf("infinite loop detected: %s", a.loopReason)
+		}
+	}
+
+	// Check if total reads exceeded
+	if a.totalReadCount > maxFileReads {
+		a.loopDetected = true
+		a.loopReason = fmt.Sprintf("Total Read operations: %d (limit: %d)", a.totalReadCount, maxFileReads)
+		return fmt.Errorf("infinite loop detected: %s", a.loopReason)
+	}
+
+	return nil
 }

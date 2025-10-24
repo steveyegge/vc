@@ -984,3 +984,226 @@ func TestConvertJSONToEventDebugLogging(t *testing.T) {
 //
 // Current coverage: ~90% (all practical code paths covered)
 // Uncovered: Error handling in SetAgentToolUseData (defensive error path)
+
+// TestCircuitBreakerDetectsInfiniteLoops tests the circuit breaker for Read tool loops (vc-117)
+func TestCircuitBreakerDetectsInfiniteLoops(t *testing.T) {
+	ctx := context.Background()
+	cfg := storage.DefaultConfig()
+	cfg.Path = ":memory:"
+
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	issue := &types.Issue{
+		ID:        "vc-test-circuit-breaker",
+		Title:     "Test Circuit Breaker",
+		IssueType: types.TypeTask,
+		Status:    types.StatusOpen,
+		Priority:  1,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	t.Run("Circuit breaker triggers on excessive same-file reads", func(t *testing.T) {
+		agent := &Agent{
+			config: AgentConfig{
+				Issue:      issue,
+				Store:      store,
+				ExecutorID: "exec",
+				AgentID:    "agent",
+				StreamJSON: true,
+			},
+			parser:         events.NewOutputParser(issue.ID, "exec", "agent"),
+			ctx:            ctx,
+			totalReadCount: 0,
+			fileReadCounts: make(map[string]int),
+			loopDetected:   false,
+		}
+
+		// Simulate reading the same file maxSameFileReads+1 times
+		samePath := "go.mod"
+		for i := 0; i <= maxSameFileReads; i++ {
+			msg := AgentMessage{
+				Type: "tool_use",
+				ID:   fmt.Sprintf("toolu_test_%d", i),
+				Name: "Read",
+				Input: map[string]interface{}{
+					"path": samePath,
+				},
+			}
+
+			rawJSON, _ := json.Marshal(msg)
+			event := agent.convertJSONToEvent(msg, string(rawJSON))
+
+			// First maxSameFileReads should succeed
+			if i < maxSameFileReads {
+				if event == nil {
+					t.Errorf("Expected event to be created for read %d", i)
+				}
+				if agent.loopDetected {
+					t.Errorf("Loop should not be detected until read %d, but detected at %d", maxSameFileReads+1, i+1)
+				}
+			} else {
+				// maxSameFileReads+1 should trigger circuit breaker
+				if event != nil {
+					t.Error("Expected nil event after circuit breaker triggers")
+				}
+				if !agent.loopDetected {
+					t.Error("Expected loopDetected to be true after exceeding maxSameFileReads")
+				}
+				if agent.loopReason == "" {
+					t.Error("Expected loopReason to be set")
+				}
+				t.Logf("Circuit breaker triggered: %s", agent.loopReason)
+			}
+		}
+	})
+
+	t.Run("Circuit breaker triggers on excessive total reads", func(t *testing.T) {
+		agent := &Agent{
+			config: AgentConfig{
+				Issue:      issue,
+				Store:      store,
+				ExecutorID: "exec",
+				AgentID:    "agent",
+				StreamJSON: true,
+			},
+			parser:         events.NewOutputParser(issue.ID, "exec", "agent"),
+			ctx:            ctx,
+			totalReadCount: 0,
+			fileReadCounts: make(map[string]int),
+			loopDetected:   false,
+		}
+
+		// Simulate reading different files maxFileReads+1 times
+		for i := 0; i <= maxFileReads; i++ {
+			msg := AgentMessage{
+				Type: "tool_use",
+				ID:   fmt.Sprintf("toolu_test_%d", i),
+				Name: "Read",
+				Input: map[string]interface{}{
+					"path": fmt.Sprintf("file_%d.go", i), // Different file each time
+				},
+			}
+
+			rawJSON, _ := json.Marshal(msg)
+			event := agent.convertJSONToEvent(msg, string(rawJSON))
+
+			// First maxFileReads should succeed
+			if i < maxFileReads {
+				if event == nil {
+					t.Errorf("Expected event to be created for read %d", i)
+				}
+				if agent.loopDetected {
+					t.Errorf("Loop should not be detected until read %d, but detected at %d", maxFileReads+1, i+1)
+				}
+			} else {
+				// maxFileReads+1 should trigger circuit breaker
+				if event != nil {
+					t.Error("Expected nil event after circuit breaker triggers")
+				}
+				if !agent.loopDetected {
+					t.Error("Expected loopDetected to be true after exceeding maxFileReads")
+				}
+				if agent.loopReason == "" {
+					t.Error("Expected loopReason to be set")
+				}
+				t.Logf("Circuit breaker triggered: %s", agent.loopReason)
+			}
+		}
+	})
+
+	t.Run("Circuit breaker does not trigger for normal operation", func(t *testing.T) {
+		agent := &Agent{
+			config: AgentConfig{
+				Issue:      issue,
+				Store:      store,
+				ExecutorID: "exec",
+				AgentID:    "agent",
+				StreamJSON: true,
+			},
+			parser:         events.NewOutputParser(issue.ID, "exec", "agent"),
+			ctx:            ctx,
+			totalReadCount: 0,
+			fileReadCounts: make(map[string]int),
+			loopDetected:   false,
+		}
+
+		// Simulate normal operation: read different files a few times each
+		files := []string{"go.mod", "internal/storage/storage.go", "cmd/vc/main.go"}
+		for _, file := range files {
+			for i := 0; i < 3; i++ { // Read each file 3 times (< maxSameFileReads)
+				msg := AgentMessage{
+					Type: "tool_use",
+					ID:   fmt.Sprintf("toolu_test_%s_%d", file, i),
+					Name: "Read",
+					Input: map[string]interface{}{
+						"path": file,
+					},
+				}
+
+				rawJSON, _ := json.Marshal(msg)
+				event := agent.convertJSONToEvent(msg, string(rawJSON))
+
+				if event == nil {
+					t.Errorf("Expected event to be created for %s read %d", file, i)
+				}
+				if agent.loopDetected {
+					t.Errorf("Loop should not be detected during normal operation")
+				}
+			}
+		}
+
+		t.Logf("Normal operation: %d total reads, no loop detected", agent.totalReadCount)
+	})
+
+	t.Run("Circuit breaker ignores non-Read tools", func(t *testing.T) {
+		agent := &Agent{
+			config: AgentConfig{
+				Issue:      issue,
+				Store:      store,
+				ExecutorID: "exec",
+				AgentID:    "agent",
+				StreamJSON: true,
+			},
+			parser:         events.NewOutputParser(issue.ID, "exec", "agent"),
+			ctx:            ctx,
+			totalReadCount: 0,
+			fileReadCounts: make(map[string]int),
+			loopDetected:   false,
+		}
+
+		// Simulate many Write/Edit/Bash operations (should not trigger circuit breaker)
+		for i := 0; i < maxFileReads+10; i++ {
+			msg := AgentMessage{
+				Type: "tool_use",
+				ID:   fmt.Sprintf("toolu_test_%d", i),
+				Name: "Bash",
+				Input: map[string]interface{}{
+					"cmd": "echo test",
+				},
+			}
+
+			rawJSON, _ := json.Marshal(msg)
+			event := agent.convertJSONToEvent(msg, string(rawJSON))
+
+			if event == nil {
+				t.Errorf("Expected event to be created for Bash tool")
+			}
+			if agent.loopDetected {
+				t.Error("Circuit breaker should only trigger for Read tool, not Bash")
+			}
+		}
+
+		// Verify no reads were counted
+		if agent.totalReadCount != 0 {
+			t.Errorf("Expected totalReadCount to be 0, got %d", agent.totalReadCount)
+		}
+	})
+}
