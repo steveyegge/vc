@@ -108,10 +108,10 @@ func TestDiscoverDatabaseInDir_EmptyBeadsDir(t *testing.T) {
 func TestDiscoverDatabase_WithEnvVar(t *testing.T) {
 	// Save and restore original env var
 	origPath := os.Getenv("VC_DB_PATH")
-	defer os.Setenv("VC_DB_PATH", origPath)
+	defer func() { _ = os.Setenv("VC_DB_PATH", origPath) }()
 
 	testPath := "/tmp/custom.db"
-	os.Setenv("VC_DB_PATH", testPath)
+	_ = os.Setenv("VC_DB_PATH", testPath)
 
 	dbPath, err := DiscoverDatabase()
 	if err != nil {

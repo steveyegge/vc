@@ -16,7 +16,7 @@ func TestFindOrphanedMissionBranches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Initialize git repo
 	ctx := context.Background()
@@ -25,8 +25,8 @@ func TestFindOrphanedMissionBranches(t *testing.T) {
 	}
 
 	// Configure git
-	exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.name", "Test User").Run()
-	exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.email", "test@example.com").Run()
+	_ = exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.name", "Test User").Run()
+	_ = exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.email", "test@example.com").Run()
 
 	// Create initial commit
 	readmePath := filepath.Join(tmpDir, "README.md")
@@ -83,7 +83,7 @@ func TestCleanupOrphanedBranches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Initialize git repo
 	ctx := context.Background()
@@ -92,8 +92,8 @@ func TestCleanupOrphanedBranches(t *testing.T) {
 	}
 
 	// Configure git
-	exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.name", "Test User").Run()
-	exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.email", "test@example.com").Run()
+	_ = exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.name", "Test User").Run()
+	_ = exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.email", "test@example.com").Run()
 
 	// Create initial commit
 	readmePath := filepath.Join(tmpDir, "README.md")
@@ -166,7 +166,7 @@ func TestListWorktrees(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Initialize git repo
 	ctx := context.Background()
@@ -175,8 +175,8 @@ func TestListWorktrees(t *testing.T) {
 	}
 
 	// Configure git
-	exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.name", "Test User").Run()
-	exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.email", "test@example.com").Run()
+	_ = exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.name", "Test User").Run()
+	_ = exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.email", "test@example.com").Run()
 
 	// Create initial commit
 	readmePath := filepath.Join(tmpDir, "README.md")
@@ -218,7 +218,7 @@ func TestGetBranchTimestamp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Initialize git repo
 	ctx := context.Background()
@@ -227,8 +227,8 @@ func TestGetBranchTimestamp(t *testing.T) {
 	}
 
 	// Configure git
-	exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.name", "Test User").Run()
-	exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.email", "test@example.com").Run()
+	_ = exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.name", "Test User").Run()
+	_ = exec.CommandContext(ctx, "git", "-C", tmpDir, "config", "user.email", "test@example.com").Run()
 
 	// Create initial commit
 	readmePath := filepath.Join(tmpDir, "README.md")

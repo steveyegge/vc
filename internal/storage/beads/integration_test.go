@@ -25,7 +25,7 @@ func TestBeadsIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create VC storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Verify database file was created
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -235,7 +235,7 @@ func TestBeadsExtensionTablesCreated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create VC storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Query each extension table to verify it exists
 	tables := []string{
@@ -270,7 +270,7 @@ func TestBeadsCoreTables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create VC storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Query Beads core tables
 	beadsTables := []string{
@@ -305,7 +305,7 @@ func TestGetAgentEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create VC storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create test issues
 	issue := &types.Issue{
@@ -512,7 +512,7 @@ func TestAgentEventDataPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create VC storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create test issue
 	issue := &types.Issue{
@@ -719,7 +719,7 @@ func TestGetDependencyTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create VC storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create a dependency chain (traversing upward):
 	//   leaf (depth 0) -> depends on middle1, middle2
@@ -919,7 +919,7 @@ func TestGetBlockedIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create VC storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create issues: A is blocked by B and C
 	issueA := &types.Issue{
@@ -1170,7 +1170,7 @@ func TestExecutionStateTransitions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create VC storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Create test issue
 	issue := &types.Issue{

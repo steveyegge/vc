@@ -409,7 +409,7 @@ func (d *ZFCDetector) scanFilePatterns(absPath, relPath string) ([]zfcViolation,
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var violations []zfcViolation
 	scanner := bufio.NewScanner(file)
@@ -492,7 +492,7 @@ func (d *ZFCDetector) getLineContent(filePath string, lineNumber int) string {
 	if err != nil {
 		return ""
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	currentLine := 0

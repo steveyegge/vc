@@ -89,7 +89,7 @@ func (s *VCStorage) GetActiveInstances(ctx context.Context) ([]*types.ExecutorIn
 	if err != nil {
 		return nil, fmt.Errorf("failed to query active instances: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var instances []*types.ExecutorInstance
 	for rows.Next() {
@@ -327,7 +327,7 @@ func (s *VCStorage) ClaimIssue(ctx context.Context, issueID, executorInstanceID 
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback() // Rollback if not committed
+	defer func() { _ = tx.Rollback() }() // Rollback if not committed
 
 	// First, check if issue is already claimed or being executed
 	var existingClaim string
@@ -593,7 +593,7 @@ func (s *VCStorage) GetExecutionHistory(ctx context.Context, issueID string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("failed to query execution history: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var history []*types.ExecutionAttempt
 	for rows.Next() {

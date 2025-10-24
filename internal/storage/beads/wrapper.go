@@ -359,7 +359,7 @@ func (s *VCStorage) GetAgentEvents(ctx context.Context, filter events.EventFilte
 	if err != nil {
 		return nil, fmt.Errorf("failed to query agent events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []*events.AgentEvent
 	for rows.Next() {
@@ -404,7 +404,7 @@ func (s *VCStorage) GetAgentEventsByIssue(ctx context.Context, issueID string) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to query agent events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []*events.AgentEvent
 	for rows.Next() {
@@ -449,7 +449,7 @@ func (s *VCStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*eve
 	if err != nil {
 		return nil, fmt.Errorf("failed to query recent agent events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []*events.AgentEvent
 	for rows.Next() {
