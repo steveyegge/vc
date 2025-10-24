@@ -257,10 +257,10 @@ func (s *SQLiteStorage) CleanupStaleInstances(ctx context.Context, staleThreshol
 				return 0, fmt.Errorf("failed to delete execution state for issue %s: %w", issueID, err)
 			}
 
-			// Reset issue status to 'open'
+			// Reset issue status to 'open' and clear closed_at
 			_, err = tx.ExecContext(ctx, `
 				UPDATE issues
-				SET status = ?, updated_at = ?
+				SET status = ?, updated_at = ?, closed_at = NULL
 				WHERE id = ?
 			`, types.StatusOpen, time.Now(), issueID)
 			if err != nil {
