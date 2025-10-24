@@ -679,7 +679,8 @@ SkipGates:
 		// Update issue status
 		if shouldClose {
 			updates := map[string]interface{}{
-				"status": types.StatusClosed,
+				"status":    types.StatusClosed,
+				"closed_at": time.Now(),
 			}
 			if err := rp.store.UpdateIssue(ctx, issue.ID, updates, rp.actor); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to close issue: %v\n", err)

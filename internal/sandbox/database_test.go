@@ -335,7 +335,8 @@ func TestMergeResults(t *testing.T) {
 
 	// Update mission status in sandbox
 	if err := sandboxDB.UpdateIssue(ctx, mission.ID, map[string]interface{}{
-		"status": types.StatusClosed,
+		"status":    types.StatusClosed,
+		"closed_at": time.Now(),
 	}, "agent"); err != nil {
 		t.Fatalf("failed to update mission in sandbox: %v", err)
 	}

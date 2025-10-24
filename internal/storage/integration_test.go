@@ -478,7 +478,10 @@ func TestResumeAfterInterruption(t *testing.T) {
 			}
 
 			// Close the issue
-			closeUpdates := map[string]interface{}{"status": types.StatusClosed}
+			closeUpdates := map[string]interface{}{
+				"status":    types.StatusClosed,
+				"closed_at": time.Now(),
+			}
 			if err := store.UpdateIssue(ctx, issue.ID, closeUpdates, executor2.InstanceID); err != nil {
 				t.Fatalf("Failed to close issue: %v", err)
 			}

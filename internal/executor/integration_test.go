@@ -117,7 +117,10 @@ func TestFullWorkflowEndToEnd(t *testing.T) {
 		}
 
 		// Close mission
-		updates := map[string]interface{}{"status": types.StatusClosed}
+		updates := map[string]interface{}{
+			"status":    types.StatusClosed,
+			"closed_at": time.Now(),
+		}
 		if err := store.UpdateIssue(ctx, mission.ID, updates, "test"); err != nil {
 			t.Fatalf("Failed to close mission: %v", err)
 		}
@@ -336,7 +339,10 @@ func TestErrorRecoveryAndResume(t *testing.T) {
 	}
 
 	// Close task
-	closeUpdates := map[string]interface{}{"status": types.StatusClosed}
+	closeUpdates := map[string]interface{}{
+		"status":    types.StatusClosed,
+		"closed_at": time.Now(),
+	}
 	if err := store.UpdateIssue(ctx, task.ID, closeUpdates, exec2.instanceID); err != nil {
 		t.Fatalf("Failed to close task: %v", err)
 	}
@@ -480,7 +486,10 @@ func TestQualityGateBlocking(t *testing.T) {
 		t.Fatalf("Failed to complete task: %v", err)
 	}
 
-	updates := map[string]interface{}{"status": types.StatusClosed}
+	updates := map[string]interface{}{
+		"status":    types.StatusClosed,
+		"closed_at": time.Now(),
+	}
 	if err := store.UpdateIssue(ctx, task.ID, updates, exec.instanceID); err != nil {
 		t.Fatalf("Failed to close task: %v", err)
 	}
@@ -934,7 +943,10 @@ func executeAndCompleteTask(t *testing.T, ctx context.Context, store storage.Sto
 	}
 
 	// Close
-	updates := map[string]interface{}{"status": types.StatusClosed}
+	updates := map[string]interface{}{
+		"status":    types.StatusClosed,
+		"closed_at": time.Now(),
+	}
 	if err := store.UpdateIssue(ctx, task.ID, updates, exec.instanceID); err != nil {
 		t.Fatalf("Failed to close task %s: %v", task.ID, err)
 	}
