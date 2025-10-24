@@ -115,6 +115,9 @@ func (m *mockStorage) CreateMission(ctx context.Context, mission *types.Mission,
 func (m *mockStorage) GetMission(ctx context.Context, id string) (*types.Mission, error) {
 	return nil, nil
 }
+func (m *mockStorage) UpdateMission(ctx context.Context, id string, updates map[string]interface{}, actor string) error {
+	return nil
+}
 func (m *mockStorage) UpdateIssue(ctx context.Context, id string, updates map[string]interface{}, actor string) error {
 	return nil
 }

@@ -23,6 +23,10 @@ func (m *mockStorage) CreateIssue(ctx context.Context, issue *types.Issue, actor
 func (m *mockStorage) CreateMission(ctx context.Context, mission *types.Mission, actor string) error { return nil }
 func (m *mockStorage) GetIssue(ctx context.Context, id string) (*types.Issue, error) { return nil, nil }
 func (m *mockStorage) GetMission(ctx context.Context, id string) (*types.Mission, error) { return nil, nil }
+
+func (m *mockStorage) UpdateMission(ctx context.Context, id string, updates map[string]interface{}, actor string) error {
+	return nil
+}
 func (m *mockStorage) UpdateIssue(ctx context.Context, id string, updates map[string]interface{}, actor string) error { return nil }
 func (m *mockStorage) CloseIssue(ctx context.Context, id string, reason string, actor string) error { return nil }
 func (m *mockStorage) SearchIssues(ctx context.Context, query string, filter types.IssueFilter) ([]*types.Issue, error) { return nil, nil }

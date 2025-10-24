@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/steveyegge/beads"
@@ -160,6 +161,63 @@ func (s *VCStorage) CreateMission(ctx context.Context, mission *types.Mission, a
 
 	if err != nil {
 		return fmt.Errorf("failed to update mission metadata: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateMission updates both base issue fields and mission-specific fields
+func (s *VCStorage) UpdateMission(ctx context.Context, id string, updates map[string]interface{}, actor string) error {
+	// Separate updates into base issue fields and mission-specific fields
+	missionFields := map[string]interface{}{
+		"approved_at": nil,
+		"approved_by": nil,
+		"goal":        nil,
+		"context":     nil,
+	}
+
+	baseUpdates := make(map[string]interface{})
+	missionUpdates := make(map[string]interface{})
+
+	for key, value := range updates {
+		if _, isMissionField := missionFields[key]; isMissionField {
+			missionUpdates[key] = value
+		} else {
+			baseUpdates[key] = value
+		}
+	}
+
+	// Update base issue fields if any
+	if len(baseUpdates) > 0 {
+		if err := s.Storage.UpdateIssue(ctx, id, baseUpdates, actor); err != nil {
+			return fmt.Errorf("failed to update base issue fields: %w", err)
+		}
+	}
+
+	// Update mission-specific fields if any
+	if len(missionUpdates) > 0 {
+		// Build dynamic UPDATE query
+		setClauses := []string{}
+		args := []interface{}{}
+
+		for key, value := range missionUpdates {
+			setClauses = append(setClauses, fmt.Sprintf("%s = ?", key))
+			args = append(args, value)
+		}
+
+		setClauses = append(setClauses, "updated_at = ?")
+		args = append(args, time.Now())
+		args = append(args, id) // WHERE clause
+
+		query := fmt.Sprintf(`
+			UPDATE vc_mission_state
+			SET %s
+			WHERE issue_id = ?
+		`, strings.Join(setClauses, ", "))
+
+		if _, err := s.db.ExecContext(ctx, query, args...); err != nil {
+			return fmt.Errorf("failed to update mission metadata: %w", err)
+		}
 	}
 
 	return nil

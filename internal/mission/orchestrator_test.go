@@ -74,6 +74,10 @@ func (m *MockStorage) GetMission(ctx context.Context, id string) (*types.Mission
 	}, nil
 }
 
+func (m *MockStorage) UpdateMission(ctx context.Context, id string, updates map[string]interface{}, actor string) error {
+	return nil
+}
+
 func (m *MockStorage) CreateIssue(ctx context.Context, issue *types.Issue, actor string) error {
 	// Generate ID if not set
 	if issue.ID == "" {

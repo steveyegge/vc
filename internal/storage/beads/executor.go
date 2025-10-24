@@ -17,11 +17,20 @@ import (
 
 // RegisterInstance registers a new executor instance
 func (s *VCStorage) RegisterInstance(ctx context.Context, instance *types.ExecutorInstance) error {
-	// Use INSERT OR REPLACE to handle re-registration (vc-130)
+	// Use INSERT ... ON CONFLICT DO UPDATE to handle re-registration (vc-130)
 	// This allows executors to restart with the same ID
+	// IMPORTANT: We use ON CONFLICT DO UPDATE instead of INSERT OR REPLACE because
+	// REPLACE triggers DELETE, which cascades to execution_state.executor_instance_id (ON DELETE SET NULL)
 	_, err := s.db.ExecContext(ctx, `
-		INSERT OR REPLACE INTO vc_executor_instances (id, hostname, pid, version, started_at, last_heartbeat, status)
+		INSERT INTO vc_executor_instances (id, hostname, pid, version, started_at, last_heartbeat, status)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			hostname = excluded.hostname,
+			pid = excluded.pid,
+			version = excluded.version,
+			started_at = excluded.started_at,
+			last_heartbeat = excluded.last_heartbeat,
+			status = excluded.status
 	`, instance.InstanceID, instance.Hostname, instance.PID, instance.Version,
 		instance.StartedAt, instance.LastHeartbeat, instance.Status)
 
@@ -213,13 +222,17 @@ func (s *VCStorage) CleanupStaleInstances(ctx context.Context, staleThresholdSec
 
 		// Release each claimed issue
 		for _, issueID := range issueIDs {
-			// Delete execution state
+			// Clear the executor claim but preserve checkpoint data
+			// This allows recovery/resume after cleanup
 			_, err = tx.ExecContext(ctx, `
-				DELETE FROM vc_issue_execution_state
+				UPDATE vc_issue_execution_state
+				SET executor_instance_id = NULL,
+				    state = ?,
+				    updated_at = ?
 				WHERE issue_id = ?
-			`, issueID)
+			`, types.ExecutionStatePending, time.Now(), issueID)
 			if err != nil {
-				return 0, fmt.Errorf("failed to delete execution state for issue %s: %w", issueID, err)
+				return 0, fmt.Errorf("failed to release execution state for issue %s: %w", issueID, err)
 			}
 
 			// Reset issue status to 'open' and clear closed_at
@@ -379,6 +392,7 @@ func (s *VCStorage) ClaimIssue(ctx context.Context, issueID, executorInstanceID 
 }
 
 // GetExecutionState retrieves execution state for an issue
+// Returns (nil, nil) if no execution state exists (not an error condition)
 func (s *VCStorage) GetExecutionState(ctx context.Context, issueID string) (*types.IssueExecutionState, error) {
 	var state types.IssueExecutionState
 	var executorInstanceID sql.NullString
@@ -402,7 +416,8 @@ func (s *VCStorage) GetExecutionState(ctx context.Context, issueID string) (*typ
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("no execution state for issue %s", issueID)
+			// No execution state exists - this is not an error condition
+			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to query execution state: %w", err)
 	}
@@ -434,6 +449,9 @@ func (s *VCStorage) UpdateExecutionState(ctx context.Context, issueID string, ne
 	// Get current state to validate transition
 	currentExecState, err := s.GetExecutionState(ctx, issueID)
 	if err != nil {
+		return fmt.Errorf("failed to get current execution state: %w", err)
+	}
+	if currentExecState == nil {
 		// If no execution state exists, only allow transition to pending or claimed
 		if newState == types.ExecutionStatePending || newState == types.ExecutionStateClaimed {
 			// Create new execution state record (use ON CONFLICT in case of race)
@@ -517,16 +535,34 @@ func (s *VCStorage) GetCheckpoint(ctx context.Context, issueID string) (string, 
 	return "", nil
 }
 
-// ReleaseIssue releases an issue claim (keeps execution state)
+// ReleaseIssue releases an issue claim (deletes execution state)
 func (s *VCStorage) ReleaseIssue(ctx context.Context, issueID string) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE vc_issue_execution_state
-		SET state = ?, updated_at = ?
+	// Check if execution state exists first
+	state, err := s.GetExecutionState(ctx, issueID)
+	if err != nil {
+		return fmt.Errorf("failed to check execution state for issue %s: %w", issueID, err)
+	}
+	if state == nil {
+		return fmt.Errorf("execution state not found for issue %s", issueID)
+	}
+
+	// Delete the execution state
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM vc_issue_execution_state
 		WHERE issue_id = ?
-	`, types.ExecutionStateCompleted, time.Now(), issueID)
+	`, issueID)
 
 	if err != nil {
-		return fmt.Errorf("failed to release issue: %w", err)
+		return fmt.Errorf("failed to delete execution state: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("execution state not found for issue %s", issueID)
 	}
 
 	return nil

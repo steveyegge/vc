@@ -473,6 +473,9 @@ func TestResumeAfterInterruption(t *testing.T) {
 			if err := store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateGates); err != nil {
 				t.Fatalf("Failed to update state to gates: %v", err)
 			}
+			if err := store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateCommitting); err != nil {
+				t.Fatalf("Failed to update state to committing: %v", err)
+			}
 			if err := store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateCompleted); err != nil {
 				t.Fatalf("Failed to update state to completed: %v", err)
 			}
@@ -847,7 +850,7 @@ func TestGetMissionWithApprovalMetadata(t *testing.T) {
 				"approved_at": approvalTime,
 				"approved_by": approver,
 			}
-			if err := store.UpdateIssue(ctx, mission.Issue.ID, updates, "test"); err != nil {
+			if err := store.UpdateMission(ctx, mission.Issue.ID, updates, "test"); err != nil {
 				t.Fatalf("Failed to update mission with approval: %v", err)
 			}
 
@@ -890,25 +893,29 @@ func TestGetMissionWithApprovalMetadata(t *testing.T) {
 			}
 
 			// Test 5: Create a mission that requires approval but hasn't been approved
-			unapprovedMission := &types.Issue{
-				Title:              "Unapproved Mission",
-				Description:        "Mission requiring approval",
-				IssueType:          types.TypeEpic,
-				Status:             types.StatusOpen,
-				Priority:           0,
-				AcceptanceCriteria: "Needs approval",
-				CreatedAt:          time.Now(),
-				UpdatedAt:          time.Now(),
+			unapprovedMission := &types.Mission{
+				Issue: types.Issue{
+					ID:                 "", // Will be auto-generated
+					Title:              "Unapproved Mission",
+					Description:        "Mission requiring approval",
+					IssueType:          types.TypeEpic,
+					IssueSubtype:       types.SubtypeMission, // Required for vc_mission_state table
+					Status:             types.StatusOpen,
+					Priority:           0,
+					AcceptanceCriteria: "Needs approval",
+					CreatedAt:          time.Now(),
+					UpdatedAt:          time.Now(),
+				},
+				ApprovalRequired: true, // Requires approval
 			}
-			if err := store.CreateIssue(ctx, unapprovedMission, "test"); err != nil {
+			if err := store.CreateMission(ctx, unapprovedMission, "test"); err != nil {
 				t.Fatalf("Failed to create unapproved mission: %v", err)
 			}
 
-			unapproved, err := store.GetMission(ctx, unapprovedMission.ID)
+			unapproved, err := store.GetMission(ctx, unapprovedMission.Issue.ID)
 			if err != nil {
 				t.Fatalf("Failed to get unapproved mission: %v", err)
 			}
-			unapproved.ApprovalRequired = true
 			if unapproved.IsApproved() {
 				t.Error("Mission with ApprovalRequired=true and ApprovedAt=nil should not be approved")
 			}

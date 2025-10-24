@@ -166,16 +166,13 @@ func TestExecutorStateTransitions(t *testing.T) {
 		t.Fatalf("Failed to release issue: %v", err)
 	}
 
-	// Verify execution state still exists (for audit trail) but is marked completed
+	// Verify execution state is deleted after release (vc-134 fix)
 	state, err = store.GetExecutionState(ctx, issue.ID)
 	if err != nil {
 		t.Fatalf("Failed to get execution state: %v", err)
 	}
-	if state == nil {
-		t.Error("Expected execution state to exist after release (for audit trail)")
-	}
-	if state.State != types.ExecutionStateCompleted {
-		t.Errorf("Expected state to be %s after release, got %s", types.ExecutionStateCompleted, state.State)
+	if state != nil {
+		t.Error("Expected execution state to be deleted after release")
 	}
 }
 

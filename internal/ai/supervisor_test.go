@@ -77,6 +77,9 @@ func (m *mockStorage) GetMission(ctx context.Context, id string) (*types.Mission
 	}
 	return &types.Mission{Issue: *issue}, nil
 }
+func (m *mockStorage) UpdateMission(ctx context.Context, id string, updates map[string]interface{}, actor string) error {
+	return nil
+}
 func (m *mockStorage) UpdateIssue(ctx context.Context, id string, updates map[string]interface{}, actor string) error {
 	return nil
 }
