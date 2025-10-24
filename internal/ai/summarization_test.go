@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/steveyegge/vc/internal/storage/sqlite"
+	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -161,7 +161,7 @@ func TestSummarizeAgentOutput_LargeOutput(t *testing.T) {
 func TestSummarizeAgentOutput_ErrorHandling(t *testing.T) {
 	// Create supervisor with invalid API key to force errors
 	tmpDB := t.TempDir() + "/test.db"
-	store, err := sqlite.New(tmpDB)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: tmpDB})
 	if err != nil {
 		t.Fatalf("Failed to create test store: %v", err)
 	}
@@ -206,7 +206,7 @@ func createTestSupervisor(t *testing.T) (*Supervisor, error) {
 
 	// Use temp SQLite database for testing
 	tmpDB := t.TempDir() + "/test.db"
-	store, err := sqlite.New(tmpDB)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: tmpDB})
 	if err != nil {
 		return nil, err
 	}

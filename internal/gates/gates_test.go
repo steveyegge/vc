@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/steveyegge/vc/internal/ai"
-	"github.com/steveyegge/vc/internal/storage/sqlite"
+	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -16,7 +16,7 @@ func TestNewRunner(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	store, err := sqlite.New(dbPath)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: dbPath})
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestRunTestGate_Success(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	store, err := sqlite.New(dbPath)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: dbPath})
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestRunLintGate(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	store, err := sqlite.New(dbPath)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: dbPath})
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestRunBuildGate_Success(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	store, err := sqlite.New(dbPath)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: dbPath})
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestRunAll(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	store, err := sqlite.New(dbPath)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: dbPath})
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestCreateBlockingIssue(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	store, err := sqlite.New(dbPath)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: dbPath})
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestHandleGateResults_AllPassed(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	store, err := sqlite.New(dbPath)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: dbPath})
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -369,7 +369,7 @@ func TestHandleGateResults_SomeFailed(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	store, err := sqlite.New(dbPath)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: dbPath})
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -517,7 +517,7 @@ func TestHandleGateResults_WithAI(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	store, err := sqlite.New(dbPath)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: dbPath})
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -603,7 +603,7 @@ func TestHandleGateResults_WithAI_CriticalFailures(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	store, err := sqlite.New(dbPath)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: dbPath})
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -682,7 +682,7 @@ func TestHandleGateResults_NoAI_Fallback(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	store, err := sqlite.New(dbPath)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: dbPath})
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -749,7 +749,7 @@ func TestRunTestGate_DatabaseIsolation(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	store, err := sqlite.New(dbPath)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: dbPath})
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}

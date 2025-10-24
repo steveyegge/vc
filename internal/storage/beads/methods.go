@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/steveyegge/beads"
-	"github.com/steveyegge/vc/internal/storage/sqlite"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -418,27 +417,380 @@ func (s *VCStorage) GetStatistics(ctx context.Context) (*types.Statistics, error
 
 // CleanupEventsByAge cleans up old events from vc_agent_events table
 func (s *VCStorage) CleanupEventsByAge(ctx context.Context, retentionDays, criticalRetentionDays, batchSize int) (int, error) {
-	// TODO: Implement event cleanup logic
-	// For now, return 0 (no events deleted)
-	return 0, nil
+	if retentionDays < 0 || criticalRetentionDays < 0 {
+		return 0, fmt.Errorf("retention days cannot be negative")
+	}
+	if batchSize < 1 {
+		return 0, fmt.Errorf("batch size must be at least 1")
+	}
+
+	totalDeleted := 0
+
+	// Step 1: Delete old regular events (severity = info or warning)
+	regularCutoff := time.Now().AddDate(0, 0, -retentionDays)
+	deleted, err := s.deleteOldEventsBatch(ctx, regularCutoff, []string{"info", "warning"}, batchSize)
+	if err != nil {
+		return totalDeleted, fmt.Errorf("failed to delete old regular events: %w", err)
+	}
+	totalDeleted += deleted
+
+	// Step 2: Delete old critical events (severity = error or critical)
+	// Only if critical retention is different from regular retention
+	if criticalRetentionDays != retentionDays {
+		criticalCutoff := time.Now().AddDate(0, 0, -criticalRetentionDays)
+		deleted, err = s.deleteOldEventsBatch(ctx, criticalCutoff, []string{"error", "critical"}, batchSize)
+		if err != nil {
+			return totalDeleted, fmt.Errorf("failed to delete old critical events: %w", err)
+		}
+		totalDeleted += deleted
+	}
+
+	return totalDeleted, nil
+}
+
+// deleteOldEventsBatch deletes events older than cutoff with specified severities in batches
+func (s *VCStorage) deleteOldEventsBatch(ctx context.Context, cutoff time.Time, severities []string, batchSize int) (int, error) {
+	totalDeleted := 0
+
+	for {
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return totalDeleted, ctx.Err()
+		default:
+		}
+
+		// Build severity IN clause
+		severityPlaceholders := ""
+		args := []interface{}{cutoff}
+		for i, sev := range severities {
+			if i > 0 {
+				severityPlaceholders += ", "
+			}
+			severityPlaceholders += "?"
+			args = append(args, sev)
+		}
+		args = append(args, batchSize)
+
+		// Delete a batch
+		query := fmt.Sprintf(`
+			DELETE FROM vc_agent_events
+			WHERE id IN (
+				SELECT id FROM vc_agent_events
+				WHERE timestamp < ?
+				AND severity IN (%s)
+				ORDER BY timestamp ASC
+				LIMIT ?
+			)
+		`, severityPlaceholders)
+
+		result, err := s.db.ExecContext(ctx, query, args...)
+		if err != nil {
+			return totalDeleted, fmt.Errorf("failed to execute delete: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return totalDeleted, fmt.Errorf("failed to get rows affected: %w", err)
+		}
+
+		totalDeleted += int(rowsAffected)
+
+		// If we deleted fewer than batchSize, we're done
+		if rowsAffected < int64(batchSize) {
+			break
+		}
+	}
+
+	return totalDeleted, nil
 }
 
 // CleanupEventsByIssueLimit limits events per issue
 func (s *VCStorage) CleanupEventsByIssueLimit(ctx context.Context, perIssueLimit, batchSize int) (int, error) {
-	// TODO: Implement per-issue limit cleanup
-	return 0, nil
+	if perIssueLimit < 0 {
+		return 0, fmt.Errorf("per-issue limit cannot be negative")
+	}
+	if perIssueLimit == 0 {
+		// 0 means unlimited
+		return 0, nil
+	}
+	if batchSize < 1 {
+		return 0, fmt.Errorf("batch size must be at least 1")
+	}
+
+	totalDeleted := 0
+
+	// Find issues exceeding the limit
+	query := `
+		SELECT issue_id, COUNT(*) as event_count
+		FROM vc_agent_events
+		GROUP BY issue_id
+		HAVING event_count > ?
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, perIssueLimit)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query issue event counts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var issues []struct {
+		issueID    string
+		eventCount int
+	}
+
+	for rows.Next() {
+		var issueID string
+		var count int
+		if err := rows.Scan(&issueID, &count); err != nil {
+			return totalDeleted, fmt.Errorf("failed to scan issue count: %w", err)
+		}
+		issues = append(issues, struct {
+			issueID    string
+			eventCount int
+		}{issueID, count})
+	}
+
+	if err := rows.Err(); err != nil {
+		return totalDeleted, fmt.Errorf("error iterating issue counts: %w", err)
+	}
+
+	// For each issue exceeding the limit, delete oldest non-critical events
+	for _, issue := range issues {
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return totalDeleted, ctx.Err()
+		default:
+		}
+
+		eventsToDelete := issue.eventCount - perIssueLimit
+		if eventsToDelete <= 0 {
+			continue
+		}
+
+		deleted, err := s.deleteOldestEventsForIssue(ctx, issue.issueID, eventsToDelete, batchSize)
+		if err != nil {
+			return totalDeleted, fmt.Errorf("failed to delete events for issue %s: %w", issue.issueID, err)
+		}
+		totalDeleted += deleted
+	}
+
+	return totalDeleted, nil
+}
+
+// deleteOldestEventsForIssue deletes the oldest non-critical events for a specific issue
+func (s *VCStorage) deleteOldestEventsForIssue(ctx context.Context, issueID string, count, batchSize int) (int, error) {
+	totalDeleted := 0
+	remaining := count
+
+	for remaining > 0 {
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return totalDeleted, ctx.Err()
+		default:
+		}
+
+		// Delete up to batchSize events
+		limitThisBatch := batchSize
+		if remaining < batchSize {
+			limitThisBatch = remaining
+		}
+
+		query := `
+			DELETE FROM vc_agent_events
+			WHERE id IN (
+				SELECT id FROM vc_agent_events
+				WHERE issue_id = ?
+				AND severity NOT IN ('error', 'critical')
+				ORDER BY timestamp ASC
+				LIMIT ?
+			)
+		`
+
+		result, err := s.db.ExecContext(ctx, query, issueID, limitThisBatch)
+		if err != nil {
+			return totalDeleted, fmt.Errorf("failed to execute delete: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return totalDeleted, fmt.Errorf("failed to get rows affected: %w", err)
+		}
+
+		totalDeleted += int(rowsAffected)
+		remaining -= int(rowsAffected)
+
+		// If we deleted fewer than requested, no more non-critical events to delete
+		if rowsAffected < int64(limitThisBatch) {
+			break
+		}
+	}
+
+	return totalDeleted, nil
 }
 
 // CleanupEventsByGlobalLimit enforces global event limit
 func (s *VCStorage) CleanupEventsByGlobalLimit(ctx context.Context, globalLimit, batchSize int) (int, error) {
-	// TODO: Implement global limit cleanup
-	return 0, nil
+	if globalLimit < 1 {
+		return 0, fmt.Errorf("global limit must be at least 1")
+	}
+	if batchSize < 1 {
+		return 0, fmt.Errorf("batch size must be at least 1")
+	}
+
+	// Get current event count
+	var currentCount int
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM vc_agent_events").Scan(&currentCount)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get event count: %w", err)
+	}
+
+	// If under the limit, nothing to do
+	if currentCount <= globalLimit {
+		return 0, nil
+	}
+
+	eventsToDelete := currentCount - globalLimit
+	totalDeleted := 0
+
+	// Delete oldest non-critical events in batches
+	for eventsToDelete > 0 {
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return totalDeleted, ctx.Err()
+		default:
+		}
+
+		// Delete up to batchSize events
+		limitThisBatch := batchSize
+		if eventsToDelete < batchSize {
+			limitThisBatch = eventsToDelete
+		}
+
+		query := `
+			DELETE FROM vc_agent_events
+			WHERE id IN (
+				SELECT id FROM vc_agent_events
+				WHERE severity NOT IN ('error', 'critical')
+				ORDER BY timestamp ASC
+				LIMIT ?
+			)
+		`
+
+		result, err := s.db.ExecContext(ctx, query, limitThisBatch)
+		if err != nil {
+			return totalDeleted, fmt.Errorf("failed to execute delete: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return totalDeleted, fmt.Errorf("failed to get rows affected: %w", err)
+		}
+
+		totalDeleted += int(rowsAffected)
+		eventsToDelete -= int(rowsAffected)
+
+		// If we deleted fewer than requested, no more non-critical events to delete
+		if rowsAffected < int64(limitThisBatch) {
+			break
+		}
+	}
+
+	return totalDeleted, nil
 }
 
 // GetEventCounts returns event statistics
-func (s *VCStorage) GetEventCounts(ctx context.Context) (*sqlite.EventCounts, error) {
-	// TODO: Implement event counts query
-	return &sqlite.EventCounts{}, nil
+func (s *VCStorage) GetEventCounts(ctx context.Context) (*types.EventCounts, error) {
+	counts := &types.EventCounts{
+		EventsByIssue:    make(map[string]int),
+		EventsBySeverity: make(map[string]int),
+		EventsByType:     make(map[string]int),
+	}
+
+	// Total events
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM vc_agent_events").Scan(&counts.TotalEvents)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get total event count: %w", err)
+	}
+
+	// Events by issue
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT issue_id, COUNT(*)
+		FROM vc_agent_events
+		GROUP BY issue_id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query events by issue: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var issueID sql.NullString
+		var count int
+		if err := rows.Scan(&issueID, &count); err != nil {
+			return nil, fmt.Errorf("failed to scan issue count: %w", err)
+		}
+		// Use empty string for NULL issue_id (system events)
+		key := ""
+		if issueID.Valid {
+			key = issueID.String
+		}
+		counts.EventsByIssue[key] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating issue counts: %w", err)
+	}
+
+	// Events by severity
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT severity, COUNT(*)
+		FROM vc_agent_events
+		GROUP BY severity
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query events by severity: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var severity string
+		var count int
+		if err := rows.Scan(&severity, &count); err != nil {
+			return nil, fmt.Errorf("failed to scan severity count: %w", err)
+		}
+		counts.EventsBySeverity[severity] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating severity counts: %w", err)
+	}
+
+	// Events by type
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT type, COUNT(*)
+		FROM vc_agent_events
+		GROUP BY type
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query events by type: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var eventType string
+		var count int
+		if err := rows.Scan(&eventType, &count); err != nil {
+			return nil, fmt.Errorf("failed to scan type count: %w", err)
+		}
+		counts.EventsByType[eventType] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating type counts: %w", err)
+	}
+
+	return counts, nil
 }
 
 // VacuumDatabase runs VACUUM on the database

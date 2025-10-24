@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/steveyegge/vc/internal/events"
-	"github.com/steveyegge/vc/internal/storage/sqlite"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -40,14 +39,14 @@ func (m *MockPlanner) ValidatePhaseStructure(ctx context.Context, phases []types
 
 // MockStorage is a minimal mock for testing (only implements methods we need)
 type MockStorage struct {
-	issues           map[string]*types.Issue
-	comments         []string
-	dependencies     []*types.Dependency
-	closedIssues     []string // Track closed issues for rollback testing
-	nextID           int
-	failOnIssueID    string // Simulate failure when creating this issue ID
-	failOnDepCount   int    // Fail after N AddDependency calls (0 = never fail)
-	depCallCount     int    // Track AddDependency call count
+	issues         map[string]*types.Issue
+	comments       []string
+	dependencies   []*types.Dependency
+	closedIssues   []string // Track closed issues for rollback testing
+	nextID         int
+	failOnIssueID  string // Simulate failure when creating this issue ID
+	failOnDepCount int    // Fail after N AddDependency calls (0 = never fail)
+	depCallCount   int    // Track AddDependency call count
 }
 
 func NewMockStorage() *MockStorage {
@@ -169,7 +168,7 @@ func (m *MockStorage) GetStatistics(ctx context.Context) (*types.Statistics, err
 func (m *MockStorage) RegisterInstance(ctx context.Context, instance *types.ExecutorInstance) error {
 	return nil
 }
-func (m *MockStorage) UpdateHeartbeat(ctx context.Context, instanceID string) error { return nil }
+func (m *MockStorage) UpdateHeartbeat(ctx context.Context, instanceID string) error     { return nil }
 func (m *MockStorage) MarkInstanceStopped(ctx context.Context, instanceID string) error { return nil }
 func (m *MockStorage) GetActiveInstances(ctx context.Context) ([]*types.ExecutorInstance, error) {
 	return nil, nil
@@ -188,7 +187,9 @@ func (m *MockStorage) GetBlockedIssues(ctx context.Context) ([]*types.BlockedIss
 }
 func (m *MockStorage) ClaimIssue(ctx context.Context, issueID, instanceID string) error { return nil }
 func (m *MockStorage) ReleaseIssue(ctx context.Context, issueID string) error           { return nil }
-func (m *MockStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, actor, errorComment string) error { return nil }
+func (m *MockStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, actor, errorComment string) error {
+	return nil
+}
 func (m *MockStorage) UpdateExecutionState(ctx context.Context, issueID string, state types.ExecutionState) error {
 	return nil
 }
@@ -234,8 +235,8 @@ func (m *MockStorage) CleanupEventsByIssueLimit(ctx context.Context, perIssueLim
 func (m *MockStorage) CleanupEventsByGlobalLimit(ctx context.Context, globalLimit, batchSize int) (int, error) {
 	return 0, nil
 }
-func (m *MockStorage) GetEventCounts(ctx context.Context) (*sqlite.EventCounts, error) {
-	return &sqlite.EventCounts{}, nil
+func (m *MockStorage) GetEventCounts(ctx context.Context) (*types.EventCounts, error) {
+	return &types.EventCounts{}, nil
 }
 func (m *MockStorage) VacuumDatabase(ctx context.Context) error {
 	return nil

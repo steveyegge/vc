@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/steveyegge/vc/internal/storage/sqlite"
+	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -187,7 +187,7 @@ func TestAssessCompletion_EmptyChildren(t *testing.T) {
 func TestAssessCompletion_ErrorHandling(t *testing.T) {
 	// Create supervisor with invalid API key to force errors
 	tmpDB := t.TempDir() + "/test.db"
-	store, err := sqlite.New(tmpDB)
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: tmpDB})
 	if err != nil {
 		t.Fatalf("Failed to create test store: %v", err)
 	}

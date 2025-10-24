@@ -6,7 +6,6 @@ import (
 
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/storage/beads"
-	"github.com/steveyegge/vc/internal/storage/sqlite"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -30,7 +29,7 @@ type Storage interface {
 	CleanupEventsByAge(ctx context.Context, retentionDays, criticalRetentionDays, batchSize int) (int, error)
 	CleanupEventsByIssueLimit(ctx context.Context, perIssueLimit, batchSize int) (int, error)
 	CleanupEventsByGlobalLimit(ctx context.Context, globalLimit, batchSize int) (int, error)
-	GetEventCounts(ctx context.Context) (*sqlite.EventCounts, error)
+	GetEventCounts(ctx context.Context) (*types.EventCounts, error)
 	VacuumDatabase(ctx context.Context) error
 
 	// Issues

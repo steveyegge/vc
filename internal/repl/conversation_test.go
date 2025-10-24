@@ -9,7 +9,6 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/steveyegge/vc/internal/events"
-	"github.com/steveyegge/vc/internal/storage/sqlite"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -212,8 +211,8 @@ func (m *mockStorage) CleanupEventsByIssueLimit(ctx context.Context, perIssueLim
 func (m *mockStorage) CleanupEventsByGlobalLimit(ctx context.Context, globalLimit, batchSize int) (int, error) {
 	return 0, nil
 }
-func (m *mockStorage) GetEventCounts(ctx context.Context) (*sqlite.EventCounts, error) {
-	return &sqlite.EventCounts{}, nil
+func (m *mockStorage) GetEventCounts(ctx context.Context) (*types.EventCounts, error) {
+	return &types.EventCounts{}, nil
 }
 func (m *mockStorage) VacuumDatabase(ctx context.Context) error {
 	return nil

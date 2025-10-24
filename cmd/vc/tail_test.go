@@ -7,14 +7,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/events"
-	"github.com/steveyegge/vc/internal/storage/sqlite"
+	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
 
 func TestTailCommand(t *testing.T) {
 	// Create temporary database
 	tmpDB := t.TempDir() + "/test.db"
-	testStore, err := sqlite.New(tmpDB)
+	testStore, err := storage.NewStorage(context.Background(), &storage.Config{Path: tmpDB})
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}

@@ -159,6 +159,14 @@ type Event struct {
 	CreatedAt time.Time  `json:"created_at"`
 }
 
+// EventCounts holds event count statistics for monitoring
+type EventCounts struct {
+	TotalEvents      int
+	EventsByIssue    map[string]int
+	EventsBySeverity map[string]int
+	EventsByType     map[string]int
+}
+
 // EventType categorizes audit trail events
 type EventType string
 

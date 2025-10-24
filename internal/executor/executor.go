@@ -1393,7 +1393,7 @@ func (e *Executor) logCleanupEvent(ctx context.Context, totalDeleted, timeBasedD
 		ID:         uuid.New().String(),
 		Type:       events.EventTypeEventCleanupCompleted,
 		Timestamp:  time.Now(),
-		IssueID:    "", // System-level event - empty string stores as NULL to avoid FK constraint violation (vc-100)
+		IssueID:    "SYSTEM", // System-level event (requires SYSTEM pseudo-issue to exist)
 		ExecutorID: e.instanceID,
 		AgentID:    "", // Not produced by a coding agent
 		Severity:   events.SeverityInfo,

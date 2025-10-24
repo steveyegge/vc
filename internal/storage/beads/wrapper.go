@@ -69,10 +69,93 @@ func (s *VCStorage) Close() error {
 // createVCExtensionTables creates VC-specific tables in the Beads database
 // These tables extend Beads with mission workflow metadata
 func createVCExtensionTables(ctx context.Context, db *sql.DB) error {
+	// Create tables (if they don't exist)
 	_, err := db.ExecContext(ctx, vcExtensionSchema)
 	if err != nil {
 		return fmt.Errorf("failed to create VC extension schema: %w", err)
 	}
+
+	// Run migrations to add missing columns to existing tables
+	if err := migrateAgentEventsTable(ctx, db); err != nil {
+		return fmt.Errorf("failed to migrate agent_events table: %w", err)
+	}
+
+	return nil
+}
+
+// migrateAgentEventsTable adds missing columns to existing vc_agent_events tables
+func migrateAgentEventsTable(ctx context.Context, db *sql.DB) error {
+	// Check if executor_id column exists
+	var hasExecutorID bool
+	err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) > 0
+		FROM pragma_table_info('vc_agent_events')
+		WHERE name = 'executor_id'
+	`).Scan(&hasExecutorID)
+	if err != nil {
+		return fmt.Errorf("failed to check for executor_id column: %w", err)
+	}
+
+	if !hasExecutorID {
+		// Add executor_id column
+		_, err = db.ExecContext(ctx, `
+			ALTER TABLE vc_agent_events ADD COLUMN executor_id TEXT
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to add executor_id column: %w", err)
+		}
+
+		// Create index
+		_, err = db.ExecContext(ctx, `
+			CREATE INDEX IF NOT EXISTS idx_vc_agent_events_executor ON vc_agent_events(executor_id)
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create executor_id index: %w", err)
+		}
+	}
+
+	// Check if agent_id column exists
+	var hasAgentID bool
+	err = db.QueryRowContext(ctx, `
+		SELECT COUNT(*) > 0
+		FROM pragma_table_info('vc_agent_events')
+		WHERE name = 'agent_id'
+	`).Scan(&hasAgentID)
+	if err != nil {
+		return fmt.Errorf("failed to check for agent_id column: %w", err)
+	}
+
+	if !hasAgentID {
+		// Add agent_id column
+		_, err = db.ExecContext(ctx, `
+			ALTER TABLE vc_agent_events ADD COLUMN agent_id TEXT
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to add agent_id column: %w", err)
+		}
+	}
+
+	// Check if source_line column exists
+	var hasSourceLine bool
+	err = db.QueryRowContext(ctx, `
+		SELECT COUNT(*) > 0
+		FROM pragma_table_info('vc_agent_events')
+		WHERE name = 'source_line'
+	`).Scan(&hasSourceLine)
+	if err != nil {
+		return fmt.Errorf("failed to check for source_line column: %w", err)
+	}
+
+	if !hasSourceLine {
+		// Add source_line column
+		_, err = db.ExecContext(ctx, `
+			ALTER TABLE vc_agent_events ADD COLUMN source_line INTEGER DEFAULT 0
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to add source_line column: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -113,14 +196,18 @@ CREATE TABLE IF NOT EXISTS vc_agent_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     issue_id TEXT,
+    executor_id TEXT,  -- Executor instance that created this event (no FK constraint for flexibility)
+    agent_id TEXT,     -- Agent that created this event (if applicable)
     type TEXT NOT NULL,
     severity TEXT CHECK(severity IN ('info', 'warning', 'error')),
     message TEXT NOT NULL,
     data TEXT,  -- JSON blob with event-specific details
+    source_line INTEGER DEFAULT 0,  -- Line number in agent output (if applicable)
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_vc_agent_events_issue ON vc_agent_events(issue_id);
+CREATE INDEX IF NOT EXISTS idx_vc_agent_events_executor ON vc_agent_events(executor_id);
 CREATE INDEX IF NOT EXISTS idx_vc_agent_events_timestamp ON vc_agent_events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_vc_agent_events_type ON vc_agent_events(type);
 
@@ -199,10 +286,25 @@ func (s *VCStorage) StoreAgentEvent(ctx context.Context, event *events.AgentEven
 		issueID = event.IssueID
 	}
 
+	// Convert empty executor_id and agent_id to NULL
+	var executorID interface{}
+	if event.ExecutorID == "" {
+		executorID = nil
+	} else {
+		executorID = event.ExecutorID
+	}
+
+	var agentID interface{}
+	if event.AgentID == "" {
+		agentID = nil
+	} else {
+		agentID = event.AgentID
+	}
+
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO vc_agent_events (timestamp, issue_id, type, severity, message, data)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, event.Timestamp, issueID, event.Type, event.Severity, event.Message, dataJSON)
+		INSERT INTO vc_agent_events (timestamp, issue_id, executor_id, agent_id, type, severity, message, data, source_line)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, event.Timestamp, issueID, executorID, agentID, event.Type, event.Severity, event.Message, dataJSON, event.SourceLine)
 
 	if err != nil {
 		return fmt.Errorf("failed to store agent event: %w", err)
@@ -242,7 +344,7 @@ func (s *VCStorage) GetAgentEvents(ctx context.Context, filter events.EventFilte
 	}
 
 	// Build the query
-	query := `SELECT id, timestamp, issue_id, type, severity, message, data FROM vc_agent_events`
+	query := `SELECT id, timestamp, issue_id, executor_id, agent_id, type, severity, message, data, source_line FROM vc_agent_events`
 	if len(whereClauses) > 0 {
 		query += " WHERE " + strings.Join(whereClauses, " AND ")
 	}
@@ -262,13 +364,23 @@ func (s *VCStorage) GetAgentEvents(ctx context.Context, filter events.EventFilte
 	var result []*events.AgentEvent
 	for rows.Next() {
 		var e events.AgentEvent
-		var issueID sql.NullString
+		var issueID, executorID, agentID sql.NullString
 		var dataJSON sql.NullString
-		if err := rows.Scan(&e.ID, &e.Timestamp, &issueID, &e.Type, &e.Severity, &e.Message, &dataJSON); err != nil {
+		var sourceLine sql.NullInt64
+		if err := rows.Scan(&e.ID, &e.Timestamp, &issueID, &executorID, &agentID, &e.Type, &e.Severity, &e.Message, &dataJSON, &sourceLine); err != nil {
 			return nil, fmt.Errorf("failed to scan agent event: %w", err)
 		}
 		if issueID.Valid {
 			e.IssueID = issueID.String
+		}
+		if executorID.Valid {
+			e.ExecutorID = executorID.String
+		}
+		if agentID.Valid {
+			e.AgentID = agentID.String
+		}
+		if sourceLine.Valid {
+			e.SourceLine = int(sourceLine.Int64)
 		}
 		if dataJSON.Valid && dataJSON.String != "" {
 			if err := json.Unmarshal([]byte(dataJSON.String), &e.Data); err != nil {
@@ -284,7 +396,7 @@ func (s *VCStorage) GetAgentEvents(ctx context.Context, filter events.EventFilte
 // GetAgentEventsByIssue retrieves all agent events for a specific issue
 func (s *VCStorage) GetAgentEventsByIssue(ctx context.Context, issueID string) ([]*events.AgentEvent, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, timestamp, issue_id, type, severity, message, data
+		SELECT id, timestamp, issue_id, executor_id, agent_id, type, severity, message, data, source_line
 		FROM vc_agent_events
 		WHERE issue_id = ?
 		ORDER BY timestamp
@@ -297,13 +409,23 @@ func (s *VCStorage) GetAgentEventsByIssue(ctx context.Context, issueID string) (
 	var result []*events.AgentEvent
 	for rows.Next() {
 		var e events.AgentEvent
-		var issueIDNull sql.NullString
+		var issueIDNull, executorID, agentID sql.NullString
 		var dataJSON sql.NullString
-		if err := rows.Scan(&e.ID, &e.Timestamp, &issueIDNull, &e.Type, &e.Severity, &e.Message, &dataJSON); err != nil {
+		var sourceLine sql.NullInt64
+		if err := rows.Scan(&e.ID, &e.Timestamp, &issueIDNull, &executorID, &agentID, &e.Type, &e.Severity, &e.Message, &dataJSON, &sourceLine); err != nil {
 			return nil, fmt.Errorf("failed to scan agent event: %w", err)
 		}
 		if issueIDNull.Valid {
 			e.IssueID = issueIDNull.String
+		}
+		if executorID.Valid {
+			e.ExecutorID = executorID.String
+		}
+		if agentID.Valid {
+			e.AgentID = agentID.String
+		}
+		if sourceLine.Valid {
+			e.SourceLine = int(sourceLine.Int64)
 		}
 		if dataJSON.Valid && dataJSON.String != "" {
 			if err := json.Unmarshal([]byte(dataJSON.String), &e.Data); err != nil {
@@ -319,7 +441,7 @@ func (s *VCStorage) GetAgentEventsByIssue(ctx context.Context, issueID string) (
 // GetRecentAgentEvents retrieves the most recent N agent events
 func (s *VCStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*events.AgentEvent, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, timestamp, issue_id, type, severity, message, data
+		SELECT id, timestamp, issue_id, executor_id, agent_id, type, severity, message, data, source_line
 		FROM vc_agent_events
 		ORDER BY timestamp DESC
 		LIMIT ?
@@ -332,13 +454,23 @@ func (s *VCStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*eve
 	var result []*events.AgentEvent
 	for rows.Next() {
 		var e events.AgentEvent
-		var issueIDNull sql.NullString
+		var issueIDNull, executorID, agentID sql.NullString
 		var dataJSON sql.NullString
-		if err := rows.Scan(&e.ID, &e.Timestamp, &issueIDNull, &e.Type, &e.Severity, &e.Message, &dataJSON); err != nil {
+		var sourceLine sql.NullInt64
+		if err := rows.Scan(&e.ID, &e.Timestamp, &issueIDNull, &executorID, &agentID, &e.Type, &e.Severity, &e.Message, &dataJSON, &sourceLine); err != nil {
 			return nil, fmt.Errorf("failed to scan agent event: %w", err)
 		}
 		if issueIDNull.Valid {
 			e.IssueID = issueIDNull.String
+		}
+		if executorID.Valid {
+			e.ExecutorID = executorID.String
+		}
+		if agentID.Valid {
+			e.AgentID = agentID.String
+		}
+		if sourceLine.Valid {
+			e.SourceLine = int(sourceLine.Int64)
 		}
 		if dataJSON.Valid && dataJSON.String != "" {
 			if err := json.Unmarshal([]byte(dataJSON.String), &e.Data); err != nil {

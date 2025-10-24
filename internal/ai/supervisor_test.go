@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/steveyegge/vc/internal/events"
-	"github.com/steveyegge/vc/internal/storage/sqlite"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -207,8 +206,8 @@ func (m *mockStorage) CleanupEventsByIssueLimit(ctx context.Context, perIssueLim
 	return 0, nil
 }
 
-func (m *mockStorage) GetEventCounts(ctx context.Context) (*sqlite.EventCounts, error) {
-	return &sqlite.EventCounts{}, nil
+func (m *mockStorage) GetEventCounts(ctx context.Context) (*types.EventCounts, error) {
+	return &types.EventCounts{}, nil
 }
 
 func (m *mockStorage) VacuumDatabase(ctx context.Context) error {
@@ -329,10 +328,10 @@ func TestCreateDiscoveredIssues(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
-		discovered    []DiscoveredIssue
-		wantCount     int
-		wantTypes     []types.IssueType
+		name           string
+		discovered     []DiscoveredIssue
+		wantCount      int
+		wantTypes      []types.IssueType
 		wantPriorities []int
 	}{
 		{
@@ -553,9 +552,9 @@ func TestPriorityMapping(t *testing.T) {
 		{"P1", 1},
 		{"P2", 2},
 		{"P3", 3},
-		{"P4", 2},       // unknown, defaults to P2
-		{"invalid", 2},  // unknown, defaults to P2
-		{"", 2},         // empty, defaults to P2
+		{"P4", 2},      // unknown, defaults to P2
+		{"invalid", 2}, // unknown, defaults to P2
+		{"", 2},        // empty, defaults to P2
 	}
 
 	store := newMockStorage()
@@ -610,8 +609,8 @@ func TestTypeMapping(t *testing.T) {
 		{"enhancement", types.TypeFeature}, // maps to feature
 		{"epic", types.TypeEpic},
 		{"chore", types.TypeChore},
-		{"unknown", types.TypeTask},  // unknown, defaults to task
-		{"", types.TypeTask},         // empty, defaults to task
+		{"unknown", types.TypeTask}, // unknown, defaults to task
+		{"", types.TypeTask},        // empty, defaults to task
 	}
 
 	store := newMockStorage()
