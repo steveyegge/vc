@@ -1448,3 +1448,137 @@ func TestExecutionStateTransitions(t *testing.T) {
 		}
 	})
 }
+
+// TestAgentEventsNullSeverity validates that NULL severity values are handled gracefully (vc-164)
+func TestAgentEventsNullSeverity(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a test issue
+	issue := &types.Issue{
+		Title:     "Test issue for NULL severity",
+		Status:    types.StatusOpen,
+		Priority:  2,
+		IssueType: types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, issue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Insert an event with NULL severity directly into the database
+	// First insert with a valid severity, then update to NULL
+	// This simulates events created by older code or database corruption
+	result, err := store.db.ExecContext(ctx, `
+		INSERT INTO vc_agent_events (timestamp, issue_id, type, severity, message)
+		VALUES (?, ?, ?, ?, ?)
+	`, time.Now(), issue.ID, events.EventTypeProgress, "info", "Event with NULL severity")
+	if err != nil {
+		t.Fatalf("Failed to insert event: %v", err)
+	}
+
+	// Get the inserted row ID
+	rowID, err := result.LastInsertId()
+	if err != nil {
+		t.Fatalf("Failed to get inserted row ID: %v", err)
+	}
+
+	// Update severity to NULL to simulate corrupted data
+	_, err = store.db.ExecContext(ctx, `
+		UPDATE vc_agent_events SET severity = NULL WHERE id = ?
+	`, rowID)
+	if err != nil {
+		t.Fatalf("Failed to update severity to NULL: %v", err)
+	}
+
+	// Also insert an event with a valid severity for comparison
+	validEvent := &events.AgentEvent{
+		Timestamp: time.Now(),
+		IssueID:   issue.ID,
+		Type:      events.EventTypeProgress,
+		Severity:  events.SeverityInfo,
+		Message:   "Event with valid severity",
+	}
+	err = store.StoreAgentEvent(ctx, validEvent)
+	if err != nil {
+		t.Fatalf("Failed to store valid event: %v", err)
+	}
+
+	t.Run("GetAgentEvents handles NULL severity", func(t *testing.T) {
+		filter := events.EventFilter{
+			IssueID: issue.ID,
+		}
+		results, err := store.GetAgentEvents(ctx, filter)
+		if err != nil {
+			t.Fatalf("GetAgentEvents failed with NULL severity: %v", err)
+		}
+
+		if len(results) != 2 {
+			t.Fatalf("Expected 2 events, got %d", len(results))
+		}
+
+		// Find the NULL severity event
+		var nullEvent *events.AgentEvent
+		for _, e := range results {
+			if e.Message == "Event with NULL severity" {
+				nullEvent = e
+				break
+			}
+		}
+
+		if nullEvent == nil {
+			t.Fatal("NULL severity event not found in results")
+		}
+
+		// Severity should be empty string (zero value) for NULL
+		if nullEvent.Severity != "" {
+			t.Errorf("Expected empty severity for NULL, got: %s", nullEvent.Severity)
+		}
+	})
+
+	t.Run("GetAgentEventsByIssue handles NULL severity", func(t *testing.T) {
+		results, err := store.GetAgentEventsByIssue(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("GetAgentEventsByIssue failed with NULL severity: %v", err)
+		}
+
+		if len(results) != 2 {
+			t.Fatalf("Expected 2 events, got %d", len(results))
+		}
+
+		// Verify at least one event has NULL severity
+		foundNull := false
+		for _, e := range results {
+			if e.Message == "Event with NULL severity" && e.Severity == "" {
+				foundNull = true
+				break
+			}
+		}
+
+		if !foundNull {
+			t.Error("NULL severity event not properly handled")
+		}
+	})
+
+	t.Run("GetRecentAgentEvents handles NULL severity", func(t *testing.T) {
+		results, err := store.GetRecentAgentEvents(ctx, 10)
+		if err != nil {
+			t.Fatalf("GetRecentAgentEvents failed with NULL severity: %v", err)
+		}
+
+		if len(results) < 1 {
+			t.Fatal("Expected at least 1 event")
+		}
+
+		// Should successfully retrieve events even with NULL severity present
+		// The command should not crash
+		t.Logf("Successfully retrieved %d events with NULL severity present", len(results))
+	})
+}

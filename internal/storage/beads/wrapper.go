@@ -383,10 +383,10 @@ func (s *VCStorage) GetAgentEvents(ctx context.Context, filter events.EventFilte
 	var result []*events.AgentEvent
 	for rows.Next() {
 		var e events.AgentEvent
-		var issueID, executorID, agentID sql.NullString
+		var issueID, executorID, agentID, severity sql.NullString
 		var dataJSON sql.NullString
 		var sourceLine sql.NullInt64
-		if err := rows.Scan(&e.ID, &e.Timestamp, &issueID, &executorID, &agentID, &e.Type, &e.Severity, &e.Message, &dataJSON, &sourceLine); err != nil {
+		if err := rows.Scan(&e.ID, &e.Timestamp, &issueID, &executorID, &agentID, &e.Type, &severity, &e.Message, &dataJSON, &sourceLine); err != nil {
 			return nil, fmt.Errorf("failed to scan agent event: %w", err)
 		}
 		if issueID.Valid {
@@ -397,6 +397,9 @@ func (s *VCStorage) GetAgentEvents(ctx context.Context, filter events.EventFilte
 		}
 		if agentID.Valid {
 			e.AgentID = agentID.String
+		}
+		if severity.Valid {
+			e.Severity = events.EventSeverity(severity.String)
 		}
 		if sourceLine.Valid {
 			e.SourceLine = int(sourceLine.Int64)
@@ -428,10 +431,10 @@ func (s *VCStorage) GetAgentEventsByIssue(ctx context.Context, issueID string) (
 	var result []*events.AgentEvent
 	for rows.Next() {
 		var e events.AgentEvent
-		var issueIDNull, executorID, agentID sql.NullString
+		var issueIDNull, executorID, agentID, severity sql.NullString
 		var dataJSON sql.NullString
 		var sourceLine sql.NullInt64
-		if err := rows.Scan(&e.ID, &e.Timestamp, &issueIDNull, &executorID, &agentID, &e.Type, &e.Severity, &e.Message, &dataJSON, &sourceLine); err != nil {
+		if err := rows.Scan(&e.ID, &e.Timestamp, &issueIDNull, &executorID, &agentID, &e.Type, &severity, &e.Message, &dataJSON, &sourceLine); err != nil {
 			return nil, fmt.Errorf("failed to scan agent event: %w", err)
 		}
 		if issueIDNull.Valid {
@@ -442,6 +445,9 @@ func (s *VCStorage) GetAgentEventsByIssue(ctx context.Context, issueID string) (
 		}
 		if agentID.Valid {
 			e.AgentID = agentID.String
+		}
+		if severity.Valid {
+			e.Severity = events.EventSeverity(severity.String)
 		}
 		if sourceLine.Valid {
 			e.SourceLine = int(sourceLine.Int64)
@@ -473,10 +479,10 @@ func (s *VCStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*eve
 	var result []*events.AgentEvent
 	for rows.Next() {
 		var e events.AgentEvent
-		var issueIDNull, executorID, agentID sql.NullString
+		var issueIDNull, executorID, agentID, severity sql.NullString
 		var dataJSON sql.NullString
 		var sourceLine sql.NullInt64
-		if err := rows.Scan(&e.ID, &e.Timestamp, &issueIDNull, &executorID, &agentID, &e.Type, &e.Severity, &e.Message, &dataJSON, &sourceLine); err != nil {
+		if err := rows.Scan(&e.ID, &e.Timestamp, &issueIDNull, &executorID, &agentID, &e.Type, &severity, &e.Message, &dataJSON, &sourceLine); err != nil {
 			return nil, fmt.Errorf("failed to scan agent event: %w", err)
 		}
 		if issueIDNull.Valid {
@@ -487,6 +493,9 @@ func (s *VCStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*eve
 		}
 		if agentID.Valid {
 			e.AgentID = agentID.String
+		}
+		if severity.Valid {
+			e.Severity = events.EventSeverity(severity.String)
 		}
 		if sourceLine.Valid {
 			e.SourceLine = int(sourceLine.Int64)
