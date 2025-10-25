@@ -412,33 +412,56 @@ func (r *Runner) handleGateResultsFallback(ctx context.Context, originalIssue *t
 
 // executeFixInPlace creates blocking issues and marks original as blocked
 func (r *Runner) executeFixInPlace(ctx context.Context, originalIssue *types.Issue, strategy *ai.RecoveryStrategy) error {
-	// Create issues from AI recommendations
+	// vc-163: Use CreateDiscoveredIssues helper for consistency
+	// This ensures proper discovery type labels, priority calculation, and discovered-from dependencies
 	var createdIssues []string
-	for _, discoveredIssue := range strategy.CreateIssues {
-		issue := &types.Issue{
-			Title:              discoveredIssue.Title,
-			Description:        discoveredIssue.Description,
-			Status:             types.StatusOpen,
-			Priority:           originalIssue.Priority, // Inherit priority
-			IssueType:          types.TypeBug,
-			Design:             "Fix the quality gate failure described above",
-			AcceptanceCriteria: "Gate passes without errors",
+	if r.supervisor != nil {
+		discoveredIDs, err := r.supervisor.CreateDiscoveredIssues(ctx, originalIssue, strategy.CreateIssues)
+		if err != nil {
+			return fmt.Errorf("failed to create discovered issues: %w", err)
 		}
+		createdIssues = discoveredIDs
 
-		if err := r.store.CreateIssue(ctx, issue, "ai-supervisor"); err != nil {
-			return fmt.Errorf("failed to create AI-recommended issue: %w", err)
+		// Add blocking dependencies for fix_in_place strategy
+		// (CreateDiscoveredIssues already added discovered-from deps)
+		for _, id := range discoveredIDs {
+			dep := &types.Dependency{
+				IssueID:     originalIssue.ID,
+				DependsOnID: id,
+				Type:        types.DepBlocks,
+			}
+			if err := r.store.AddDependency(ctx, dep, "ai-supervisor"); err != nil {
+				return fmt.Errorf("failed to create blocking dependency: %w", err)
+			}
 		}
+	} else {
+		// Fallback: manual creation if supervisor not available
+		for _, discoveredIssue := range strategy.CreateIssues {
+			issue := &types.Issue{
+				Title:              discoveredIssue.Title,
+				Description:        discoveredIssue.Description,
+				Status:             types.StatusOpen,
+				Priority:           originalIssue.Priority, // Inherit priority
+				IssueType:          types.TypeBug,
+				Design:             "Fix the quality gate failure described above",
+				AcceptanceCriteria: "Gate passes without errors",
+			}
 
-		createdIssues = append(createdIssues, issue.ID)
+			if err := r.store.CreateIssue(ctx, issue, "ai-supervisor"); err != nil {
+				return fmt.Errorf("failed to create AI-recommended issue: %w", err)
+			}
 
-		// Add blocking dependency
-		dep := &types.Dependency{
-			IssueID:     originalIssue.ID,
-			DependsOnID: issue.ID,
-			Type:        types.DepBlocks,
-		}
-		if err := r.store.AddDependency(ctx, dep, "ai-supervisor"); err != nil {
-			return fmt.Errorf("failed to create blocking dependency: %w", err)
+			createdIssues = append(createdIssues, issue.ID)
+
+			// Add blocking dependency
+			dep := &types.Dependency{
+				IssueID:     originalIssue.ID,
+				DependsOnID: issue.ID,
+				Type:        types.DepBlocks,
+			}
+			if err := r.store.AddDependency(ctx, dep, "ai-supervisor"); err != nil {
+				return fmt.Errorf("failed to create blocking dependency: %w", err)
+			}
 		}
 	}
 
@@ -520,33 +543,44 @@ func (r *Runner) executeAcceptableFailure(ctx context.Context, originalIssue *ty
 
 // executeSplitWork creates new issues and closes original
 func (r *Runner) executeSplitWork(ctx context.Context, originalIssue *types.Issue, strategy *ai.RecoveryStrategy) error {
-	// Create issues from AI recommendations
+	// vc-163: Use CreateDiscoveredIssues helper for consistency
+	// This ensures proper discovery type labels, priority calculation, and discovered-from dependencies
 	var createdIssues []string
-	for _, discoveredIssue := range strategy.CreateIssues {
-		issue := &types.Issue{
-			Title:              discoveredIssue.Title,
-			Description:        discoveredIssue.Description,
-			Status:             types.StatusOpen,
-			Priority:           originalIssue.Priority,
-			IssueType:          types.TypeBug,
-			Design:             "Fix the quality gate failure described above",
-			AcceptanceCriteria: "Issue resolved and gates pass",
+	if r.supervisor != nil {
+		discoveredIDs, err := r.supervisor.CreateDiscoveredIssues(ctx, originalIssue, strategy.CreateIssues)
+		if err != nil {
+			return fmt.Errorf("failed to create discovered issues: %w", err)
 		}
+		createdIssues = discoveredIDs
+		// CreateDiscoveredIssues already handles discovered-from dependencies, so no need to add them manually
+	} else {
+		// Fallback: manual creation if supervisor not available
+		for _, discoveredIssue := range strategy.CreateIssues {
+			issue := &types.Issue{
+				Title:              discoveredIssue.Title,
+				Description:        discoveredIssue.Description,
+				Status:             types.StatusOpen,
+				Priority:           originalIssue.Priority,
+				IssueType:          types.TypeBug,
+				Design:             "Fix the quality gate failure described above",
+				AcceptanceCriteria: "Issue resolved and gates pass",
+			}
 
-		if err := r.store.CreateIssue(ctx, issue, "ai-supervisor"); err != nil {
-			return fmt.Errorf("failed to create split work issue: %w", err)
-		}
+			if err := r.store.CreateIssue(ctx, issue, "ai-supervisor"); err != nil {
+				return fmt.Errorf("failed to create split work issue: %w", err)
+			}
 
-		createdIssues = append(createdIssues, issue.ID)
+			createdIssues = append(createdIssues, issue.ID)
 
-		// Add discovered-from dependency (not blocking)
-		dep := &types.Dependency{
-			IssueID:     issue.ID,
-			DependsOnID: originalIssue.ID,
-			Type:        types.DepDiscoveredFrom,
-		}
-		if err := r.store.AddDependency(ctx, dep, "ai-supervisor"); err != nil {
-			fmt.Printf("warning: failed to add discovered-from dependency: %v\n", err)
+			// Add discovered-from dependency (not blocking)
+			dep := &types.Dependency{
+				IssueID:     issue.ID,
+				DependsOnID: originalIssue.ID,
+				Type:        types.DepDiscoveredFrom,
+			}
+			if err := r.store.AddDependency(ctx, dep, "ai-supervisor"); err != nil {
+				fmt.Printf("warning: failed to add discovered-from dependency: %v\n", err)
+			}
 		}
 	}
 
