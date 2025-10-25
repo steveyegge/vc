@@ -30,6 +30,7 @@ type Executor struct {
 	watchdogConfig *watchdog.WatchdogConfig
 	sandboxMgr     sandbox.Manager
 	healthRegistry *health.MonitorRegistry
+	deduplicator   deduplication.Deduplicator // Shared deduplicator for sandbox manager and results processor (vc-137)
 	config         *Config
 	instanceID     string
 	hostname       string
@@ -208,31 +209,31 @@ func New(cfg *Config) (*Executor, error) {
 		}
 	}
 
-	// Initialize sandbox manager if enabled
-	if cfg.EnableSandboxes {
-		// Create deduplicator if we have a supervisor (vc-148)
-		var dedup deduplication.Deduplicator
-		if e.supervisor != nil {
-			// Get deduplication config from executor config or use defaults
-			dedupConfig := deduplication.DefaultConfig()
-			if cfg.DeduplicationConfig != nil {
-				dedupConfig = *cfg.DeduplicationConfig
-			}
-
-			var err error
-			dedup, err = deduplication.NewAIDeduplicator(e.supervisor, cfg.Store, dedupConfig)
-			if err != nil {
-				// Don't fail - just continue without deduplication
-				fmt.Fprintf(os.Stderr, "Warning: failed to create deduplicator: %v (continuing without deduplication)\n", err)
-				dedup = nil
-			}
+	// Create deduplicator if we have a supervisor (vc-137, vc-148)
+	// Shared by both sandbox manager and results processor
+	if e.supervisor != nil {
+		// Get deduplication config from executor config or use defaults
+		dedupConfig := deduplication.DefaultConfig()
+		if cfg.DeduplicationConfig != nil {
+			dedupConfig = *cfg.DeduplicationConfig
 		}
 
+		var err error
+		e.deduplicator, err = deduplication.NewAIDeduplicator(e.supervisor, cfg.Store, dedupConfig)
+		if err != nil {
+			// Don't fail - just continue without deduplication
+			fmt.Fprintf(os.Stderr, "Warning: failed to create deduplicator: %v (continuing without deduplication)\n", err)
+			e.deduplicator = nil
+		}
+	}
+
+	// Initialize sandbox manager if enabled
+	if cfg.EnableSandboxes {
 		sandboxMgr, err := sandbox.NewManager(sandbox.Config{
 			SandboxRoot:         sandboxRoot,
 			ParentRepo:          parentRepo,
 			MainDB:              cfg.Store,
-			Deduplicator:        dedup, // Pass deduplicator for sandbox merge deduplication
+			Deduplicator:        e.deduplicator, // Use shared deduplicator (vc-137)
 			DeduplicationConfig: cfg.DeduplicationConfig,
 			PreserveOnFailure:   cfg.KeepSandboxOnFailure, // Preserve failed sandboxes for debugging (vc-134)
 			KeepBranches:        cfg.KeepBranches,         // Keep mission branches after cleanup (vc-134)
@@ -936,30 +937,12 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		fmt.Sprintf("Starting results processing for issue %s", issue.ID),
 		map[string]interface{}{})
 
-	// Create deduplicator if AI supervision is enabled (vc-145)
-	var dedup deduplication.Deduplicator
-	if e.supervisor != nil {
-		// Get deduplication config from executor config or use defaults
-		dedupConfig := deduplication.DefaultConfig()
-		if e.config != nil && e.config.DeduplicationConfig != nil {
-			dedupConfig = *e.config.DeduplicationConfig
-		}
-
-		var err error
-		dedup, err = deduplication.NewAIDeduplicator(e.supervisor, e.store, dedupConfig)
-		if err != nil {
-			// Log warning but continue without deduplication (fail-safe behavior)
-			e.logEvent(ctx, events.EventTypeError, events.SeverityWarning, issue.ID,
-				fmt.Sprintf("Failed to create deduplicator: %v (continuing without deduplication)", err),
-				map[string]interface{}{"error": err.Error()})
-			dedup = nil
-		}
-	}
-
+	// Use shared deduplicator instance (vc-137)
+	// Created once in New() and reused for both sandbox manager and results processor
 	processor, err := NewResultsProcessor(&ResultsProcessorConfig{
 		Store:              e.store,
 		Supervisor:         e.supervisor,
-		Deduplicator:       dedup,
+		Deduplicator:       e.deduplicator, // Use shared instance (vc-137)
 		EnableQualityGates: e.enableQualityGates,
 		WorkingDir:         workingDir, // Use sandbox path if sandboxing is enabled (vc-117)
 		Actor:              e.instanceID,
