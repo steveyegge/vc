@@ -1,0 +1,151 @@
+package beads
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/steveyegge/vc/internal/types"
+)
+
+// TestClaimClosedIssue verifies that ClaimIssue refuses to claim closed issues (vc-173)
+func TestClaimClosedIssue(t *testing.T) {
+	ctx := context.Background()
+
+	// Create test storage
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create test storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Register an executor instance first (required for foreign key in ClaimIssue)
+	instance := &types.ExecutorInstance{
+		InstanceID: "test-instance-1",
+		Version:    "test",
+		StartedAt:  time.Now(),
+		Hostname:   "test-host",
+		Status:     "running",
+	}
+	err = store.RegisterInstance(ctx, instance)
+	if err != nil {
+		t.Fatalf("Failed to register instance: %v", err)
+	}
+
+	// Create an open issue
+	closedIssue := &types.Issue{
+		ID:          "test-closed",
+		Title:       "Test Closed Issue",
+		Description: "This issue is closed",
+		Status:      types.StatusOpen,  // Start as open
+		Priority:    1,
+		IssueType:   types.TypeTask,
+	}
+
+	err = store.CreateIssue(ctx, closedIssue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Now close it
+	err = store.CloseIssue(ctx, closedIssue.ID, "Completed", "test")
+	if err != nil {
+		t.Fatalf("Failed to close issue: %v", err)
+	}
+
+	// Try to claim the closed issue - should fail
+	err = store.ClaimIssue(ctx, closedIssue.ID, "test-instance-1")
+	if err == nil {
+		t.Fatal("Expected error claiming closed issue, got nil")
+	}
+
+	// Verify error message mentions the issue is not open
+	expectedMsg := "not open"
+	if !contains(err.Error(), expectedMsg) {
+		t.Errorf("Expected error message to contain %q, got: %v", expectedMsg, err)
+	}
+
+	// Verify issue status is still closed (not changed to in_progress)
+	issue, err := store.GetIssue(ctx, closedIssue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get issue: %v", err)
+	}
+
+	if issue.Status != types.StatusClosed {
+		t.Errorf("Expected status to remain 'closed', got: %s", issue.Status)
+	}
+}
+
+// TestClaimOpenIssue verifies that ClaimIssue still works for open issues
+func TestClaimOpenIssue(t *testing.T) {
+	ctx := context.Background()
+
+	// Create test storage
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create test storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Register an executor instance first (required for foreign key)
+	instance := &types.ExecutorInstance{
+		InstanceID: "test-instance",
+		Version:    "test",
+		StartedAt:  time.Now(),
+		Hostname:   "test-host",
+		Status:     "running",
+	}
+	err = store.RegisterInstance(ctx, instance)
+	if err != nil {
+		t.Fatalf("Failed to register instance: %v", err)
+	}
+
+	// Create an open issue
+	openIssue := &types.Issue{
+		ID:          "test-open",
+		Title:       "Test Open Issue",
+		Description: "This issue is open",
+		Status:      types.StatusOpen,
+		Priority:    1,
+		IssueType:   types.TypeTask,
+	}
+
+	err = store.CreateIssue(ctx, openIssue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create open issue: %v", err)
+	}
+
+	// Claim the open issue - should succeed
+	err = store.ClaimIssue(ctx, openIssue.ID, "test-instance")
+	if err != nil {
+		t.Fatalf("Expected to claim open issue, got error: %v", err)
+	}
+
+	// Verify issue status changed to in_progress
+	issue, err := store.GetIssue(ctx, openIssue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get issue: %v", err)
+	}
+
+	if issue.Status != types.StatusInProgress {
+		t.Errorf("Expected status 'in_progress', got: %s", issue.Status)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && findSubstring(s, substr))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
