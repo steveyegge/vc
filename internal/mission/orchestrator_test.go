@@ -194,6 +194,9 @@ func (m *MockStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter)
 func (m *MockStorage) GetBlockedIssues(ctx context.Context) ([]*types.BlockedIssue, error) {
 	return nil, nil
 }
+func (m *MockStorage) GetReadyBlockers(ctx context.Context, limit int) ([]*types.Issue, error) {
+	return nil, nil
+}
 func (m *MockStorage) ClaimIssue(ctx context.Context, issueID, instanceID string) error { return nil }
 func (m *MockStorage) ReleaseIssue(ctx context.Context, issueID string) error           { return nil }
 func (m *MockStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, actor, errorComment string) error {
