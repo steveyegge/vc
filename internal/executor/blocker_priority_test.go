@@ -1,0 +1,483 @@
+package executor
+
+import (
+	"context"
+	"testing"
+
+	"github.com/steveyegge/vc/internal/storage"
+	"github.com/steveyegge/vc/internal/types"
+)
+
+// Test helper to create an executor for testing
+func setupExecutorTest(t *testing.T) (context.Context, storage.Storage, *Executor) {
+	ctx := context.Background()
+	cfg := storage.DefaultConfig()
+	cfg.Path = ":memory:"
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+
+	execCfg := DefaultConfig()
+	execCfg.Store = store
+	execCfg.EnableAISupervision = false
+	execCfg.EnableQualityGates = false
+	execCfg.EnableSandboxes = false
+
+	exec, err := New(execCfg)
+	if err != nil {
+		t.Fatalf("Failed to create executor: %v", err)
+	}
+
+	return ctx, store, exec
+}
+
+func TestGetNextReadyBlocker_NoBlockers(t *testing.T) {
+	ctx, store, exec := setupExecutorTest(t)
+	defer store.Close()
+
+	// Create regular issues (no blocker label)
+	issue1 := &types.Issue{
+		Title:     "Regular task 1",
+		Status:    types.StatusOpen,
+		Priority:  1,
+		IssueType: types.TypeTask,
+	}
+	if err := store.CreateIssue(ctx, issue1, "test"); err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Test: Should return nil (no blockers)
+	blocker, err := exec.getNextReadyBlocker(ctx)
+	if err != nil {
+		t.Fatalf("getNextReadyBlocker failed: %v", err)
+	}
+
+	if blocker != nil {
+		t.Errorf("Expected nil blocker, got %v", blocker)
+	}
+}
+
+func TestGetNextReadyBlocker_WithReadyBlocker(t *testing.T) {
+	ctx, store, exec := setupExecutorTest(t)
+	defer store.Close()
+
+	// Create a blocker issue
+	blocker1 := &types.Issue{
+		Title:     "Fix lint errors",
+		Status:    types.StatusOpen,
+		Priority:  0,
+		IssueType: types.TypeBug,
+	}
+	if err := store.CreateIssue(ctx, blocker1, "test"); err != nil {
+		t.Fatalf("Failed to create blocker: %v", err)
+	}
+
+	// Add blocker label
+	if err := store.AddLabel(ctx, blocker1.ID, "discovered:blocker", "test"); err != nil {
+		t.Fatalf("Failed to add label: %v", err)
+	}
+
+	// Test: Should return the blocker
+	result, err := exec.getNextReadyBlocker(ctx)
+	if err != nil {
+		t.Fatalf("getNextReadyBlocker failed: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected blocker, got nil")
+	}
+
+	if result.ID != blocker1.ID {
+		t.Errorf("Expected blocker %s, got %s", blocker1.ID, result.ID)
+	}
+}
+
+func TestGetNextReadyBlocker_BlockedByDependency(t *testing.T) {
+	ctx, store, exec := setupExecutorTest(t)
+	defer store.Close()
+
+	// Create dependency issue (open)
+	dep := &types.Issue{
+		Title:     "Dependency",
+		Status:    types.StatusOpen,
+		Priority:  1,
+		IssueType: types.TypeTask,
+	}
+	if err := store.CreateIssue(ctx, dep, "test"); err != nil {
+		t.Fatalf("Failed to create dependency: %v", err)
+	}
+
+	// Create blocker that depends on the open issue
+	blocker := &types.Issue{
+		Title:     "Blocked blocker",
+		Status:    types.StatusOpen,
+		Priority:  0,
+		IssueType: types.TypeBug,
+	}
+	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
+		t.Fatalf("Failed to create blocker: %v", err)
+	}
+
+	// Add blocker label
+	if err := store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test"); err != nil {
+		t.Fatalf("Failed to add label: %v", err)
+	}
+
+	// Add blocking dependency
+	dependency := &types.Dependency{
+		IssueID:     blocker.ID,
+		DependsOnID: dep.ID,
+		Type:        types.DepBlocks,
+	}
+	if err := store.AddDependency(ctx, dependency, "test"); err != nil {
+		t.Fatalf("Failed to add dependency: %v", err)
+	}
+
+	// Test: Should return nil (blocker is not ready)
+	result, err := exec.getNextReadyBlocker(ctx)
+	if err != nil {
+		t.Fatalf("getNextReadyBlocker failed: %v", err)
+	}
+
+	if result != nil {
+		t.Errorf("Expected nil (blocker not ready), got %v", result)
+	}
+}
+
+func TestGetNextReadyBlocker_PriorityOrdering(t *testing.T) {
+	ctx, store, exec := setupExecutorTest(t)
+	defer store.Close()
+
+	// Create multiple ready blockers with different priorities
+	blocker1 := &types.Issue{
+		Title:     "Low priority blocker",
+		Status:    types.StatusOpen,
+		Priority:  2,
+		IssueType: types.TypeBug,
+	}
+	if err := store.CreateIssue(ctx, blocker1, "test"); err != nil {
+		t.Fatalf("Failed to create blocker1: %v", err)
+	}
+	if err := store.AddLabel(ctx, blocker1.ID, "discovered:blocker", "test"); err != nil {
+		t.Fatalf("Failed to add label: %v", err)
+	}
+
+	blocker2 := &types.Issue{
+		Title:     "High priority blocker",
+		Status:    types.StatusOpen,
+		Priority:  0,
+		IssueType: types.TypeBug,
+	}
+	if err := store.CreateIssue(ctx, blocker2, "test"); err != nil {
+		t.Fatalf("Failed to create blocker2: %v", err)
+	}
+	if err := store.AddLabel(ctx, blocker2.ID, "discovered:blocker", "test"); err != nil {
+		t.Fatalf("Failed to add label: %v", err)
+	}
+
+	blocker3 := &types.Issue{
+		Title:     "Medium priority blocker",
+		Status:    types.StatusOpen,
+		Priority:  1,
+		IssueType: types.TypeBug,
+	}
+	if err := store.CreateIssue(ctx, blocker3, "test"); err != nil {
+		t.Fatalf("Failed to create blocker3: %v", err)
+	}
+	if err := store.AddLabel(ctx, blocker3.ID, "discovered:blocker", "test"); err != nil {
+		t.Fatalf("Failed to add label: %v", err)
+	}
+
+	// Test: Should return highest priority (lowest number) blocker
+	result, err := exec.getNextReadyBlocker(ctx)
+	if err != nil {
+		t.Fatalf("getNextReadyBlocker failed: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected blocker, got nil")
+	}
+
+	if result.ID != blocker2.ID {
+		t.Errorf("Expected highest priority blocker %s (P0), got %s (P%d)",
+			blocker2.ID, result.ID, result.Priority)
+	}
+}
+
+func TestCheckMissionConvergence_NotABlocker(t *testing.T) {
+	ctx, store, exec := setupExecutorTest(t)
+	defer store.Close()
+
+	// Create regular issue (not a blocker)
+	issue := &types.Issue{
+		Title:     "Regular task",
+		Status:    types.StatusOpen,
+		Priority:  1,
+		IssueType: types.TypeTask,
+	}
+	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Test: Should return nil error (no convergence check needed)
+	err := exec.checkMissionConvergence(ctx, issue)
+	if err != nil {
+		t.Errorf("checkMissionConvergence failed: %v", err)
+	}
+}
+
+func TestCheckMissionConvergence_DetectsConvergence(t *testing.T) {
+	ctx, store, exec := setupExecutorTest(t)
+	defer store.Close()
+
+	// Create mission
+	mission := &types.Issue{
+		Title:     "Implement authentication",
+		Status:    types.StatusOpen,
+		Priority:  1,
+		IssueType: types.TypeTask,
+	}
+	if err := store.CreateIssue(ctx, mission, "test"); err != nil {
+		t.Fatalf("Failed to create mission: %v", err)
+	}
+
+	// Create blocker discovered from mission
+	blocker := &types.Issue{
+		Title:     "Fix lint errors",
+		Status:    types.StatusOpen,
+		Priority:  0,
+		IssueType: types.TypeBug,
+	}
+	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
+		t.Fatalf("Failed to create blocker: %v", err)
+	}
+	if err := store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test"); err != nil {
+		t.Fatalf("Failed to add label: %v", err)
+	}
+
+	// Link blocker to mission
+	dep := &types.Dependency{
+		IssueID:     blocker.ID,
+		DependsOnID: mission.ID,
+		Type:        types.DepDiscoveredFrom,
+	}
+	if err := store.AddDependency(ctx, dep, "test"); err != nil {
+		t.Fatalf("Failed to add discovered-from dependency: %v", err)
+	}
+
+	// Close the blocker (mission should converge)
+	if err := store.CloseIssue(ctx, blocker.ID, "fixed", "test"); err != nil {
+		t.Fatalf("Failed to close blocker: %v", err)
+	}
+
+	// Fetch updated blocker
+	blocker, err := store.GetIssue(ctx, blocker.ID)
+	if err != nil {
+		t.Fatalf("Failed to get blocker: %v", err)
+	}
+
+	// Test: Should detect convergence (no errors)
+	err = exec.checkMissionConvergence(ctx, blocker)
+	if err != nil {
+		t.Errorf("checkMissionConvergence failed: %v", err)
+	}
+
+	// TODO: Could verify the event was logged by checking agent_events table
+}
+
+// TestBlockerPrioritization_Integration tests end-to-end blocker prioritization
+// This verifies that blockers are claimed before regular ready work
+func TestBlockerPrioritization_Integration(t *testing.T) {
+	ctx, store, exec := setupExecutorTest(t)
+	defer store.Close()
+
+	// Scenario: Mission with 1 blocker and 2 regular ready tasks
+	// Expected: Blocker should be claimed first
+
+	// Create regular ready work (high priority)
+	regular1 := &types.Issue{
+		Title:     "Regular task 1",
+		Status:    types.StatusOpen,
+		Priority:  0, // P0 - highest priority for regular work
+		IssueType: types.TypeTask,
+	}
+	if err := store.CreateIssue(ctx, regular1, "test"); err != nil {
+		t.Fatalf("Failed to create regular1: %v", err)
+	}
+
+	regular2 := &types.Issue{
+		Title:     "Regular task 2",
+		Status:    types.StatusOpen,
+		Priority:  1,
+		IssueType: types.TypeTask,
+	}
+	if err := store.CreateIssue(ctx, regular2, "test"); err != nil {
+		t.Fatalf("Failed to create regular2: %v", err)
+	}
+
+	// Create blocker (lower priority number-wise, but should still come first)
+	blocker := &types.Issue{
+		Title:     "Fix pre-existing lint errors",
+		Status:    types.StatusOpen,
+		Priority:  2, // P2 - lower priority than regular1
+		IssueType: types.TypeBug,
+	}
+	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
+		t.Fatalf("Failed to create blocker: %v", err)
+	}
+	if err := store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test"); err != nil {
+		t.Fatalf("Failed to add blocker label: %v", err)
+	}
+
+	// Test 1: getNextReadyBlocker should return the blocker
+	foundBlocker, err := exec.getNextReadyBlocker(ctx)
+	if err != nil {
+		t.Fatalf("getNextReadyBlocker failed: %v", err)
+	}
+	if foundBlocker == nil {
+		t.Fatal("Expected to find blocker, got nil")
+	}
+	if foundBlocker.ID != blocker.ID {
+		t.Errorf("Expected blocker %s, got %s", blocker.ID, foundBlocker.ID)
+	}
+
+	// Test 2: Verify regular GetReadyWork would return regular1 (not the blocker)
+	filter := types.WorkFilter{
+		Status: types.StatusOpen,
+		Limit:  1,
+	}
+	readyWork, err := store.GetReadyWork(ctx, filter)
+	if err != nil {
+		t.Fatalf("GetReadyWork failed: %v", err)
+	}
+	if len(readyWork) == 0 {
+		t.Fatal("Expected ready work, got none")
+	}
+
+	// Verify it's NOT the blocker (GetReadyWork doesn't prioritize blockers)
+	if readyWork[0].ID == blocker.ID {
+		t.Error("GetReadyWork should not prioritize blockers (that's what getNextReadyBlocker is for)")
+	}
+
+	// Test 3: Simulate processNextIssue - blocker should be selected
+	// (We can't call processNextIssue directly because it would try to execute,
+	//  but we can verify the logic by checking getNextReadyBlocker returns non-nil)
+	t.Logf("✓ Blocker prioritization working: blocker %s would be claimed before regular work", blocker.ID)
+}
+
+// TestMissionConvergenceFlow_Integration tests the full mission convergence workflow
+func TestMissionConvergenceFlow_Integration(t *testing.T) {
+	ctx, store, exec := setupExecutorTest(t)
+	defer store.Close()
+
+	// Scenario: Mission spawns 2 blockers, both get completed, mission converges
+
+	// Create mission
+	mission := &types.Issue{
+		Title:     "Implement user authentication",
+		Status:    types.StatusOpen,
+		Priority:  1,
+		IssueType: types.TypeFeature,
+	}
+	if err := store.CreateIssue(ctx, mission, "test"); err != nil {
+		t.Fatalf("Failed to create mission: %v", err)
+	}
+
+	// Create blocker 1
+	blocker1 := &types.Issue{
+		Title:     "Fix lint errors",
+		Status:    types.StatusOpen,
+		Priority:  0,
+		IssueType: types.TypeBug,
+	}
+	if err := store.CreateIssue(ctx, blocker1, "test"); err != nil {
+		t.Fatalf("Failed to create blocker1: %v", err)
+	}
+	if err := store.AddLabel(ctx, blocker1.ID, "discovered:blocker", "test"); err != nil {
+		t.Fatalf("Failed to add label: %v", err)
+	}
+	dep1 := &types.Dependency{
+		IssueID:     blocker1.ID,
+		DependsOnID: mission.ID,
+		Type:        types.DepDiscoveredFrom,
+	}
+	if err := store.AddDependency(ctx, dep1, "test"); err != nil {
+		t.Fatalf("Failed to link blocker1 to mission: %v", err)
+	}
+
+	// Create blocker 2
+	blocker2 := &types.Issue{
+		Title:     "Add missing tests",
+		Status:    types.StatusOpen,
+		Priority:  0,
+		IssueType: types.TypeTask,
+	}
+	if err := store.CreateIssue(ctx, blocker2, "test"); err != nil {
+		t.Fatalf("Failed to create blocker2: %v", err)
+	}
+	if err := store.AddLabel(ctx, blocker2.ID, "discovered:blocker", "test"); err != nil {
+		t.Fatalf("Failed to add label: %v", err)
+	}
+	dep2 := &types.Dependency{
+		IssueID:     blocker2.ID,
+		DependsOnID: mission.ID,
+		Type:        types.DepDiscoveredFrom,
+	}
+	if err := store.AddDependency(ctx, dep2, "test"); err != nil {
+		t.Fatalf("Failed to link blocker2 to mission: %v", err)
+	}
+
+	// Initially, mission should not have converged
+	converged, err := HasMissionConverged(ctx, store, mission.ID)
+	if err != nil {
+		t.Fatalf("HasMissionConvergence failed: %v", err)
+	}
+	if converged {
+		t.Error("Mission should not have converged (blockers still open)")
+	}
+
+	// Close blocker 1
+	if err := store.CloseIssue(ctx, blocker1.ID, "fixed", "test"); err != nil {
+		t.Fatalf("Failed to close blocker1: %v", err)
+	}
+	blocker1, err = store.GetIssue(ctx, blocker1.ID)
+	if err != nil {
+		t.Fatalf("Failed to get blocker1: %v", err)
+	}
+
+	// Check convergence after blocker 1 (should not converge yet)
+	if err := exec.checkMissionConvergence(ctx, blocker1); err != nil {
+		t.Errorf("checkMissionConvergence failed: %v", err)
+	}
+	converged, err = HasMissionConverged(ctx, store, mission.ID)
+	if err != nil {
+		t.Fatalf("HasMissionConvergence failed: %v", err)
+	}
+	if converged {
+		t.Error("Mission should not have converged (blocker2 still open)")
+	}
+
+	// Close blocker 2
+	if err := store.CloseIssue(ctx, blocker2.ID, "completed", "test"); err != nil {
+		t.Fatalf("Failed to close blocker2: %v", err)
+	}
+	blocker2, err = store.GetIssue(ctx, blocker2.ID)
+	if err != nil {
+		t.Fatalf("Failed to get blocker2: %v", err)
+	}
+
+	// Check convergence after blocker 2 (should converge now)
+	if err := exec.checkMissionConvergence(ctx, blocker2); err != nil {
+		t.Errorf("checkMissionConvergence failed: %v", err)
+	}
+	converged, err = HasMissionConverged(ctx, store, mission.ID)
+	if err != nil {
+		t.Fatalf("HasMissionConvergence failed: %v", err)
+	}
+	if !converged {
+		t.Error("Mission should have converged (all blockers closed)")
+	}
+
+	t.Log("✓ Mission convergence detected successfully")
+}

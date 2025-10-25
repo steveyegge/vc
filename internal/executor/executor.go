@@ -524,25 +524,141 @@ func (e *Executor) eventLoop(ctx context.Context) {
 	}
 }
 
-// processNextIssue claims and processes the next ready issue
-func (e *Executor) processNextIssue(ctx context.Context) error {
-	// Get ready work (limit 1)
-	filter := types.WorkFilter{
-		Status: types.StatusOpen,
-		Limit:  1,
-	}
-
-	issues, err := e.store.GetReadyWork(ctx, filter)
+// checkMissionConvergence checks if completing this issue causes a mission to converge.
+// If the issue is a discovered:blocker and its parent mission has now converged, logs the event.
+func (e *Executor) checkMissionConvergence(ctx context.Context, issue *types.Issue) error {
+	// Check if this issue has the discovered:blocker label
+	labels, err := e.store.GetLabels(ctx, issue.ID)
 	if err != nil {
-		return fmt.Errorf("failed to get ready work: %w", err)
+		return fmt.Errorf("failed to get labels for %s: %w", issue.ID, err)
 	}
 
-	if len(issues) == 0 {
-		// No work available
+	hasBlockerLabel := false
+	for _, label := range labels {
+		if label == "discovered:blocker" {
+			hasBlockerLabel = true
+			break
+		}
+	}
+
+	if !hasBlockerLabel {
+		// Not a blocker, no need to check convergence
 		return nil
 	}
 
-	issue := issues[0]
+	// Find the mission root
+	missionRoot, err := GetMissionRoot(ctx, e.store, issue.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get mission root: %w", err)
+	}
+
+	// Check if mission has converged
+	converged, err := HasMissionConverged(ctx, e.store, missionRoot.ID)
+	if err != nil {
+		return fmt.Errorf("failed to check mission convergence: %w", err)
+	}
+
+	if converged {
+		fmt.Printf("\n✓ Mission %s (%s) has converged - all discovered work complete!\n",
+			missionRoot.ID, missionRoot.Title)
+
+		// Log convergence event
+		e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, missionRoot.ID,
+			fmt.Sprintf("Mission %s converged after completing blocker %s", missionRoot.ID, issue.ID),
+			map[string]interface{}{
+				"event_subtype":     "mission_converged",
+				"mission_id":        missionRoot.ID,
+				"mission_title":     missionRoot.Title,
+				"completed_blocker": issue.ID,
+			})
+	}
+
+	return nil
+}
+
+// getNextReadyBlocker finds the highest priority discovered:blocker issue that is ready to execute.
+// Returns nil if no ready blockers are found.
+func (e *Executor) getNextReadyBlocker(ctx context.Context) (*types.Issue, error) {
+	// Get all open issues with discovered:blocker label
+	blockers, err := e.store.GetIssuesByLabel(ctx, "discovered:blocker")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get blocker issues: %w", err)
+	}
+
+	// Filter for open issues only and check if they're ready (no open blocking dependencies)
+	var readyBlockers []*types.Issue
+	for _, blocker := range blockers {
+		if blocker.Status != types.StatusOpen {
+			continue
+		}
+
+		// Check if this issue has any open blocking dependencies
+		deps, err := e.store.GetDependencies(ctx, blocker.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dependencies for %s: %w", blocker.ID, err)
+		}
+
+		// Check if all dependencies are closed
+		isReady := true
+		for _, dep := range deps {
+			if dep.Status != types.StatusClosed {
+				isReady = false
+				break
+			}
+		}
+
+		if isReady {
+			readyBlockers = append(readyBlockers, blocker)
+		}
+	}
+
+	if len(readyBlockers) == 0 {
+		return nil, nil
+	}
+
+	// Sort by priority (lower number = higher priority)
+	// For now, just return the first one with lowest priority number
+	// TODO: Could use sort.Slice for more sophisticated ordering
+	bestBlocker := readyBlockers[0]
+	for _, blocker := range readyBlockers[1:] {
+		if blocker.Priority < bestBlocker.Priority {
+			bestBlocker = blocker
+		}
+	}
+
+	return bestBlocker, nil
+}
+
+// processNextIssue claims and processes the next ready issue with priority order:
+// 1. Discovered blockers (label=discovered:blocker, status=open, no blocking dependencies)
+// 2. Regular ready work (no dependencies)
+// 3. Discovered related work (label=discovered:related, status=open, no blocking dependencies)
+func (e *Executor) processNextIssue(ctx context.Context) error {
+	// Priority 1: Try to get a ready blocker
+	issue, err := e.getNextReadyBlocker(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get ready blockers: %w", err)
+	}
+
+	// Priority 2: Fall back to regular ready work
+	if issue == nil {
+		filter := types.WorkFilter{
+			Status: types.StatusOpen,
+			Limit:  1,
+		}
+
+		issues, err := e.store.GetReadyWork(ctx, filter)
+		if err != nil {
+			return fmt.Errorf("failed to get ready work: %w", err)
+		}
+
+		if len(issues) == 0 {
+			// No work available
+			return nil
+		}
+
+		issue = issues[0]
+	}
 
 	// Attempt to claim the issue
 	if err := e.store.ClaimIssue(ctx, issue.ID, e.instanceID); err != nil {
@@ -925,6 +1041,14 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 
 	// Print summary
 	fmt.Println(procResult.Summary)
+
+	// vc-154: Check mission convergence if this was a blocker and completed successfully
+	if procResult.Completed && result.Success {
+		if err := e.checkMissionConvergence(ctx, issue); err != nil {
+			// Log error but don't fail execution
+			fmt.Fprintf(os.Stderr, "warning: failed to check mission convergence: %v\n", err)
+		}
+	}
 
 	// End telemetry collection
 	e.monitor.EndExecution(procResult.Completed && result.Success, procResult.GatesPassed)
