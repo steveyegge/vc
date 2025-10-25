@@ -153,6 +153,11 @@ Please analyze the execution systematically:
    - What follow-on work was mentioned but not completed?
    - Were any new bugs, tasks, or improvements discovered?
 
+   For each discovered issue, classify its relationship to the parent mission:
+   - "blocker": Blocks parent mission from completing (quality gate failures, missing dependencies, pre-existing bugs)
+   - "related": Related to parent mission but not blocking (tech debt, improvements, follow-on enhancements)
+   - "background": Opportunistic discoveries unrelated to mission (general refactoring, unrelated bugs)
+
 Provide your analysis as a JSON object:
 {
   "completed": true,
@@ -170,7 +175,8 @@ Provide your analysis as a JSON object:
       "title": "New issue title",
       "description": "Issue description",
       "type": "bug|task|enhancement",
-      "priority": "P0|P1|P2|P3"
+      "priority": "P0|P1|P2|P3",
+      "discovery_type": "blocker|related|background"
     }
   ],
   "quality_issues": ["Quality problem 1", ...],

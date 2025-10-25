@@ -18,7 +18,8 @@ type mockStorage struct {
 	issues       map[string]*types.Issue
 	comments     []string
 	dependencies []types.Dependency
-	createError  error // Inject errors for testing
+	labels       map[string][]string                                                // issueID -> labels (vc-151)
+	createError  error                                                              // Inject errors for testing
 	depError     error
 	createFunc   func(ctx context.Context, issue *types.Issue, actor string) error // Allow overriding
 }
@@ -28,6 +29,7 @@ func newMockStorage() *mockStorage {
 		issues:       make(map[string]*types.Issue),
 		comments:     []string{},
 		dependencies: []types.Dependency{},
+		labels:       make(map[string][]string), // vc-151
 	}
 }
 
@@ -108,13 +110,19 @@ func (m *mockStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, error
 	return nil, nil
 }
 func (m *mockStorage) AddLabel(ctx context.Context, issueID, label, actor string) error {
+	// vc-151: Actually store labels for testing
+	if m.labels[issueID] == nil {
+		m.labels[issueID] = []string{}
+	}
+	m.labels[issueID] = append(m.labels[issueID], label)
 	return nil
 }
 func (m *mockStorage) RemoveLabel(ctx context.Context, issueID, label, actor string) error {
 	return nil
 }
 func (m *mockStorage) GetLabels(ctx context.Context, issueID string) ([]string, error) {
-	return nil, nil
+	// vc-151: Return stored labels
+	return m.labels[issueID], nil
 }
 func (m *mockStorage) GetIssuesByLabel(ctx context.Context, label string) ([]*types.Issue, error) {
 	return nil, nil
@@ -331,8 +339,9 @@ func TestCreateDiscoveredIssues(t *testing.T) {
 	}
 
 	parentIssue := &types.Issue{
-		ID:    "parent-1",
-		Title: "Parent task",
+		ID:       "parent-1",
+		Title:    "Parent task",
+		Priority: 2, // P2 priority - allows testing priority inheritance (vc-152)
 	}
 
 	tests := []struct {
@@ -349,12 +358,12 @@ func TestCreateDiscoveredIssues(t *testing.T) {
 					Title:       "Found a bug",
 					Description: "Bug description",
 					Type:        "bug",
-					Priority:    "P0",
+					Priority:    "P0", // AI suggests P0, inherits P2 from parent (no discovery_type)
 				},
 			},
 			wantCount:      1,
 			wantTypes:      []types.IssueType{types.TypeBug},
-			wantPriorities: []int{0},
+			wantPriorities: []int{2}, // vc-152: Inherits parent priority (P2)
 		},
 		{
 			name: "multiple issues with different types",
@@ -363,24 +372,24 @@ func TestCreateDiscoveredIssues(t *testing.T) {
 					Title:       "Add test",
 					Description: "Missing test",
 					Type:        "task",
-					Priority:    "P1",
+					Priority:    "P1", // AI suggests P1, inherits P2 from parent (no discovery_type)
 				},
 				{
 					Title:       "Refactor code",
 					Description: "Code needs cleanup",
 					Type:        "enhancement",
-					Priority:    "P2",
+					Priority:    "P2", // AI suggests P2, inherits P2 from parent (no discovery_type)
 				},
 				{
 					Title:       "Fix typo",
 					Description: "Documentation typo",
 					Type:        "chore",
-					Priority:    "P3",
+					Priority:    "P3", // AI suggests P3, inherits P2 from parent (no discovery_type)
 				},
 			},
 			wantCount:      3,
 			wantTypes:      []types.IssueType{types.TypeTask, types.TypeFeature, types.TypeChore},
-			wantPriorities: []int{1, 2, 3},
+			wantPriorities: []int{2, 2, 2}, // vc-152: All inherit parent priority (P2)
 		},
 		{
 			name: "default values when type/priority unknown",
@@ -396,6 +405,35 @@ func TestCreateDiscoveredIssues(t *testing.T) {
 			wantTypes:      []types.IssueType{types.TypeTask}, // default
 			wantPriorities: []int{2},                          // default P2
 		},
+		{
+			name: "discovery type labels (vc-151/vc-152)",
+			discovered: []DiscoveredIssue{
+				{
+					Title:        "Fix lint errors",
+					Description:  "Pre-existing lint errors block quality gates",
+					Type:         "bug",
+					Priority:     "P1", // AI suggests P1, but calculated as P0 (blocker from P2 parent)
+					DiscoveryType: "blocker",
+				},
+				{
+					Title:        "Add logging",
+					Description:  "Would help debugging similar issues",
+					Type:         "task",
+					Priority:     "P2", // AI suggests P2, but calculated as P3 (related from P2 parent)
+					DiscoveryType: "related",
+				},
+				{
+					Title:        "Refactor utils",
+					Description:  "Noticed during work but unrelated",
+					Type:         "chore",
+					Priority:     "P3", // AI suggests P3, but calculated as P2 (background always P2)
+					DiscoveryType: "background",
+				},
+			},
+			wantCount:      3,
+			wantTypes:      []types.IssueType{types.TypeBug, types.TypeTask, types.TypeChore},
+			wantPriorities: []int{0, 3, 2}, // vc-152: blocker=P0, related=P3 (P2+1), background=P2
+		},
 	}
 
 	for _, tt := range tests {
@@ -403,6 +441,7 @@ func TestCreateDiscoveredIssues(t *testing.T) {
 			// Reset store
 			store.issues = make(map[string]*types.Issue)
 			store.dependencies = []types.Dependency{}
+			store.labels = make(map[string][]string) // vc-151
 
 			ctx := context.Background()
 			createdIDs, err := supervisor.CreateDiscoveredIssues(ctx, parentIssue, tt.discovered)
@@ -450,6 +489,28 @@ func TestCreateDiscoveredIssues(t *testing.T) {
 				}
 				if dep.Type != types.DepDiscoveredFrom {
 					t.Errorf("Dependency type should be %s, got %s", types.DepDiscoveredFrom, dep.Type)
+				}
+			}
+
+			// Verify discovery type labels (vc-151)
+			for i, id := range createdIDs {
+				labels, err := store.GetLabels(ctx, id)
+				if err != nil {
+					t.Errorf("Issue %d: failed to get labels: %v", i, err)
+				}
+				// Only check labels if discovery_type was specified
+				if tt.discovered[i].DiscoveryType != "" {
+					expectedLabel := fmt.Sprintf("discovered:%s", tt.discovered[i].DiscoveryType)
+					found := false
+					for _, label := range labels {
+						if label == expectedLabel {
+							found = true
+							break
+						}
+					}
+					if !found {
+						t.Errorf("Issue %d: expected label %s, got labels: %v", i, expectedLabel, labels)
+					}
 				}
 			}
 		})
@@ -551,18 +612,22 @@ func TestTruncateString(t *testing.T) {
 }
 
 // TestPriorityMapping tests all priority mappings
+// NOTE (vc-152): Priority is now calculated based on discovery_type and parent priority,
+// not directly from AI-suggested priority. This test verifies that without discovery_type,
+// issues inherit the parent's priority.
 func TestPriorityMapping(t *testing.T) {
 	tests := []struct {
-		input string
-		want  int
+		input        string
+		parentPriority int
+		want         int
 	}{
-		{"P0", 0},
-		{"P1", 1},
-		{"P2", 2},
-		{"P3", 3},
-		{"P4", 2},      // unknown, defaults to P2
-		{"invalid", 2}, // unknown, defaults to P2
-		{"", 2},        // empty, defaults to P2
+		{"P0", 0, 0}, // Inherits parent P0
+		{"P1", 1, 1}, // Inherits parent P1
+		{"P2", 2, 2}, // Inherits parent P2
+		{"P3", 3, 3}, // Inherits parent P3
+		{"P4", 2, 2}, // Unknown AI priority, inherits parent P2
+		{"invalid", 2, 2}, // Invalid AI priority, inherits parent P2
+		{"", 2, 2},   // Empty AI priority, inherits parent P2
 	}
 
 	store := newMockStorage()
@@ -571,11 +636,16 @@ func TestPriorityMapping(t *testing.T) {
 		model: "test-model",
 	}
 
-	parentIssue := &types.Issue{ID: "parent", Title: "Parent"}
-
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			store.issues = make(map[string]*types.Issue)
+
+			// Create parent with specific priority for this test (vc-152)
+			parentIssue := &types.Issue{
+				ID:       "parent",
+				Title:    "Parent",
+				Priority: tt.parentPriority,
+			}
 
 			discovered := []DiscoveredIssue{
 				{
@@ -583,6 +653,7 @@ func TestPriorityMapping(t *testing.T) {
 					Description: "Test",
 					Type:        "task",
 					Priority:    tt.input,
+					// No discovery_type - should inherit parent priority
 				},
 			}
 
