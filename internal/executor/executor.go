@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/config"
@@ -31,6 +33,8 @@ type Executor struct {
 	sandboxMgr     sandbox.Manager
 	healthRegistry *health.MonitorRegistry
 	deduplicator   deduplication.Deduplicator // Shared deduplicator for sandbox manager and results processor (vc-137)
+	gitOps         git.GitOperations          // Git operations for auto-commit (vc-136)
+	messageGen     *git.MessageGenerator      // Commit message generator (vc-136)
 	config         *Config
 	instanceID     string
 	hostname       string
@@ -206,6 +210,30 @@ func New(cfg *Config) (*Executor, error) {
 			e.enableAISupervision = false
 		} else {
 			e.supervisor = supervisor
+		}
+	}
+
+	// Initialize git operations for auto-commit (vc-136)
+	// This is required for auto-commit, test coverage analysis, and code quality analysis
+	gitOps, err := git.NewGit(context.Background())
+	if err != nil {
+		// Don't fail - just log warning and continue without git operations
+		fmt.Fprintf(os.Stderr, "Warning: failed to initialize git operations: %v (auto-commit disabled)\n", err)
+	} else {
+		e.gitOps = gitOps
+	}
+
+	// Initialize message generator for auto-commit (vc-136)
+	// Only if we have AI supervisor (need API client)
+	if e.supervisor != nil {
+		// Get Anthropic API key
+		apiKey := os.Getenv("ANTHROPIC_API_KEY")
+		if apiKey != "" {
+			// Create Anthropic client for message generation
+			client := anthropic.NewClient(option.WithAPIKey(apiKey))
+			e.messageGen = git.NewMessageGenerator(&client, "claude-sonnet-4-5-20250929")
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: ANTHROPIC_API_KEY not set (auto-commit message generation disabled)\n")
 		}
 	}
 
@@ -943,6 +971,8 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		Store:              e.store,
 		Supervisor:         e.supervisor,
 		Deduplicator:       e.deduplicator, // Use shared instance (vc-137)
+		GitOps:             e.gitOps,       // Git operations for auto-commit (vc-136)
+		MessageGen:         e.messageGen,   // Commit message generator (vc-136)
 		EnableQualityGates: e.enableQualityGates,
 		WorkingDir:         workingDir, // Use sandbox path if sandboxing is enabled (vc-117)
 		Actor:              e.instanceID,
