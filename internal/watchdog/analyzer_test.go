@@ -45,6 +45,7 @@ func (m *mockStorage) GetLabels(ctx context.Context, issueID string) ([]string, 
 func (m *mockStorage) GetIssuesByLabel(ctx context.Context, label string) ([]*types.Issue, error) { return nil, nil }
 func (m *mockStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) ([]*types.Issue, error) { return nil, nil }
 func (m *mockStorage) GetBlockedIssues(ctx context.Context) ([]*types.BlockedIssue, error) { return nil, nil }
+func (m *mockStorage) GetReadyBlockers(ctx context.Context, limit int) ([]*types.Issue, error) { return nil, nil }
 func (m *mockStorage) AddComment(ctx context.Context, issueID, actor, comment string) error { return nil }
 func (m *mockStorage) GetEvents(ctx context.Context, issueID string, limit int) ([]*types.Event, error) { return nil, nil }
 func (m *mockStorage) GetStatistics(ctx context.Context) (*types.Statistics, error) { return nil, nil }

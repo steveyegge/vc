@@ -578,55 +578,21 @@ func (e *Executor) checkMissionConvergence(ctx context.Context, issue *types.Iss
 
 // getNextReadyBlocker finds the highest priority discovered:blocker issue that is ready to execute.
 // Returns nil if no ready blockers are found.
+// vc-156: Optimized to use single SQL query instead of N+1 queries
 func (e *Executor) getNextReadyBlocker(ctx context.Context) (*types.Issue, error) {
-	// Get all open issues with discovered:blocker label
-	blockers, err := e.store.GetIssuesByLabel(ctx, "discovered:blocker")
+	// Use optimized storage method that does filtering in SQL (vc-156)
+	// This replaces the old approach of fetching all blockers then checking dependencies one by one
+	// Performance: O(1) query instead of O(N) queries where N = number of blockers
+	blockers, err := e.store.GetReadyBlockers(ctx, 1)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get blocker issues: %w", err)
+		return nil, fmt.Errorf("failed to get ready blockers: %w", err)
 	}
 
-	// Filter for open issues only and check if they're ready (no open blocking dependencies)
-	var readyBlockers []*types.Issue
-	for _, blocker := range blockers {
-		if blocker.Status != types.StatusOpen {
-			continue
-		}
-
-		// Check if this issue has any open blocking dependencies
-		deps, err := e.store.GetDependencies(ctx, blocker.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get dependencies for %s: %w", blocker.ID, err)
-		}
-
-		// Check if all dependencies are closed
-		isReady := true
-		for _, dep := range deps {
-			if dep.Status != types.StatusClosed {
-				isReady = false
-				break
-			}
-		}
-
-		if isReady {
-			readyBlockers = append(readyBlockers, blocker)
-		}
-	}
-
-	if len(readyBlockers) == 0 {
+	if len(blockers) == 0 {
 		return nil, nil
 	}
 
-	// Sort by priority (lower number = higher priority)
-	// For now, just return the first one with lowest priority number
-	// TODO: Could use sort.Slice for more sophisticated ordering
-	bestBlocker := readyBlockers[0]
-	for _, blocker := range readyBlockers[1:] {
-		if blocker.Priority < bestBlocker.Priority {
-			bestBlocker = blocker
-		}
-	}
-
-	return bestBlocker, nil
+	return blockers[0], nil
 }
 
 // processNextIssue claims and processes the next ready issue with priority order:

@@ -433,6 +433,90 @@ func (s *VCStorage) GetBlockedIssues(ctx context.Context) ([]*types.BlockedIssue
 	return vcBlocked, nil
 }
 
+// GetReadyBlockers retrieves blocker issues that are ready to execute
+// This is an optimized query that filters for label='discovered:blocker' AND status='open'
+// and checks for open blocking dependencies in a single SQL query (vc-156)
+func (s *VCStorage) GetReadyBlockers(ctx context.Context, limit int) ([]*types.Issue, error) {
+	// Optimized single SQL query that:
+	// 1. Filters for issues with discovered:blocker label
+	// 2. Filters for status='open'
+	// 3. LEFT JOINs to check for open blocking dependencies
+	// 4. Returns only issues with NO open blockers (ready to execute)
+	// 5. Orders by priority (lower = higher priority)
+	query := `
+		SELECT DISTINCT i.id, i.title, i.description, i.design, i.acceptance_criteria,
+		       i.notes, i.status, i.priority, i.issue_type, i.assignee,
+		       i.estimated_minutes, i.created_at, i.updated_at, i.closed_at
+		FROM issues i
+		INNER JOIN labels l ON i.id = l.issue_id
+		WHERE l.label = 'discovered:blocker'
+		  AND i.status = 'open'
+		  AND NOT EXISTS (
+		    -- Check if this issue has any open dependencies
+		    SELECT 1 FROM dependencies d
+		    INNER JOIN issues dep_issue ON d.depends_on_id = dep_issue.id
+		    WHERE d.issue_id = i.id
+		      AND dep_issue.status != 'closed'
+		  )
+		ORDER BY i.priority ASC
+		LIMIT ?
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query ready blockers: %w", err)
+	}
+	defer rows.Close()
+
+	var issues []*types.Issue
+	for rows.Next() {
+		var issue types.Issue
+		var closedAt sql.NullTime
+		var assignee sql.NullString
+		var estimatedMinutes sql.NullInt64
+
+		err := rows.Scan(
+			&issue.ID,
+			&issue.Title,
+			&issue.Description,
+			&issue.Design,
+			&issue.AcceptanceCriteria,
+			&issue.Notes,
+			&issue.Status,
+			&issue.Priority,
+			&issue.IssueType,
+			&assignee,
+			&estimatedMinutes,
+			&issue.CreatedAt,
+			&issue.UpdatedAt,
+			&closedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan issue: %w", err)
+		}
+
+		// Handle nullable fields
+		if closedAt.Valid {
+			issue.ClosedAt = &closedAt.Time
+		}
+		if assignee.Valid {
+			issue.Assignee = assignee.String
+		}
+		if estimatedMinutes.Valid {
+			val := int(estimatedMinutes.Int64)
+			issue.EstimatedMinutes = &val
+		}
+
+		issues = append(issues, &issue)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	return issues, nil
+}
+
 // ======================================================================
 // EVENTS & COMMENTS (delegate to Beads)
 // ======================================================================
