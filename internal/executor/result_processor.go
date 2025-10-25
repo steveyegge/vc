@@ -79,6 +79,10 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 	fullOutput := strings.Join(agentResult.Output, "\n")
 	agentReport, hasReport := ParseAgentReport(fullOutput)
 
+	// Track whether the structured report was successfully handled (vc-138)
+	// If true, we skip AI analysis to avoid redundancy
+	reportHandled := false
+
 	if hasReport {
 		fmt.Printf("\n✓ Found structured agent report (status: %s)\n", agentReport.Status)
 
@@ -88,8 +92,10 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to handle agent report: %v (falling back to AI analysis)\n", err)
 			// Don't fail - fall through to AI analysis
+			reportHandled = false
 		} else {
 			// Structured report was handled successfully
+			reportHandled = true
 			result.Completed = completed
 
 			// For certain statuses, we can skip quality gates and AI analysis
@@ -134,9 +140,11 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 		fmt.Printf("\nℹ No structured agent report found - will use AI analysis\n")
 	}
 
-	// Step 2: AI Analysis (if supervisor available and no structured report handled)
+	// Step 2: AI Analysis (vc-138: skip if structured report was successfully handled)
 	var analysis *ai.Analysis
-	if rp.supervisor != nil {
+	if reportHandled {
+		fmt.Printf("Using structured agent report - skipping AI analysis\n")
+	} else if rp.supervisor != nil {
 		// Update execution state to analyzing
 		if err := rp.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateAnalyzing); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
