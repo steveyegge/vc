@@ -2,36 +2,32 @@
 
 **Goal**: Systematically dogfood VC to make it fix itself, proving the architecture works and reaching the point where we prefer VC over manual/Claude Code for all future development.
 
-## Overview
-
-This document tracks VC's journey toward self-hosting through systematic dogfooding missions. VC autonomously works on its own codebase for hours-to-days with minimal human intervention.
-
 ## Current Status
 
-**Phase**: Bootstrap - Building AI-supervised workflow in Go  
-**Epic**: vc-5 (Beads Integration and Executor Tables)  
-**Updated**: 2025-10-23
+**Phase**: Bootstrap - Building AI-supervised workflow in Go
+**Updated**: 2025-10-24
 
 ### Success Metrics
 
-- **Total missions**: 23 (updated 2025-10-23)
-- **Successful missions**: 12 (run #23 found and fixed executor bug!)
-- **Critical bugs found and fixed**: 1 (run #23 - vc-109, startup cleanup)
-- **False alarms**: 1 (run #22 - vc-108, valuable investigation practice)
-- **Quality gate pass rate**: 10/11 (90.9%)
+- **Total missions**: 24
+- **Successful missions**: 13
+- **Recent bugs found**: vc-148 (CLI help text), vc-109 (executor startup cleanup)
+- **Quality gate pass rate**: 90.9% (10/11)
 - **Activity feed**: ✅ Working reliably
-- **Executor status**: ✅ FIXED - Startup cleanup working
+- **Executor**: ✅ FIXED - Startup cleanup working
+- **CLI Infrastructure**: ✅ VALIDATED - All commands working
 - **GitOps**: ❌ Intentionally disabled for safety
-- **Auto-mission selection**: ❌ Human-guided for now
 - **Human intervention rate**: ~35% (target: <10%)
-- **Longest autonomous run**: ~3 hours (run #19)
+- **Longest autonomous run**: ~3 hours
 
-### Milestones
+### Recent Highlights
 
-✅ **Runs #1-16**: Foundation building, basic executor functionality  
-✅ **Run #17**: Discovered 4 critical bugs in executor lifecycle  
-✅ **Run #18**: Fixed vc-101 (P0 state transition errors)  
-✅ **Run #19**: Fixed vc-102, vc-100, vc-103 - **EXECUTOR NOW RUNS CLEANLY!** 🎉
+✅ **Run #24** (2025-10-24): CLI testing phase - validated infrastructure, found vc-148
+✅ **Run #23** (2025-10-23): Found and fixed vc-109 - executor startup cleanup bug
+✅ **Run #22** (2025-10-23): Investigation practice (false alarm, but valuable learning)
+✅ **Run #19** (2025-10-23): Fixed vc-102, vc-100, vc-103 - executor runs cleanly!
+✅ **Run #18**: Fixed vc-101 (P0 state transition errors)
+✅ **Run #17**: Discovered 4 critical bugs in executor lifecycle
 
 ## The Dogfooding Process
 
@@ -162,104 +158,19 @@ Before merging changes from any mission:
 
 ## Recent Missions
 
-### Run #23 - 2025-10-23 (CRITICAL BUG FOUND AND FIXED!)
+Detailed run logs archived in `docs/` and `docs/archive/`. Summary of key runs:
 
-**Target**: Run executor on real work (vc-31 or similar) to test full workflow
-**Duration**: ~2 hours (investigation + fix + testing)
-**Issues fixed**: vc-109 (P0 - executor startup cleanup)
-**Result**: ✅ **SUCCESS** - Bug identified, fixed, tested, and verified
+**Run #24** (2025-10-24): CLI Testing Phase - Systematic testing of all VC CLI commands (stats, activity, tail, cleanup, repl, health). Validated database integration (Beads library usage, VC extension tables). Found vc-148 (misleading --db help text). All tested infrastructure working correctly. Full report: `docs/DOGFOOD_RUN24.md`.
 
-**Bug Found**:
-🐛 **vc-109** [P0]: Executor polls but never claims ready work
-- Executor ran, polled every 5s, updated heartbeat
-- 10+ ready issues available (verified with `bd ready`)
-- **ZERO issues claimed** - no errors, just silent failure
-- Debug logging revealed: `GetReadyWork()` returned issues but `ClaimIssue()` failed
+**Run #23** (2025-10-23): Found and fixed vc-109 - executor startup cleanup bug. Silent failure where executor polled but never claimed work due to orphaned claims from previous sessions.
 
-**Root Cause**:
-- Orphaned claim from stopped executor (vc-37 claimed by instance from run #21)
-- CleanupStaleInstances only ran periodically (every 5min) when executor was running
-- Between executor sessions (13:30-14:19), no cleanup happened
-- GetReadyWork returned vc-37, but ClaimIssue failed: "already claimed by stopped instance"
-- Executor silently ignored claim failure and continued polling
+**Run #22** (2025-10-23): False alarm investigation - vc-108 closed as invalid. Valuable lesson: check git history before filing schema bugs, stale data can look like new bugs.
 
-**Fix** (internal/executor/executor.go:373-382):
-```go
-// Clean up orphaned claims and stale instances on startup
-staleThresholdSecs := int(e.staleThreshold.Seconds())
-cleaned, err := e.store.CleanupStaleInstances(ctx, staleThresholdSecs)
-if cleaned > 0 {
-    fmt.Printf("Cleanup: Cleaned up %d stale/orphaned instance(s) on startup\n", cleaned)
-}
-```
+**Run #19** (2025-10-23): Fixed vc-102, vc-100, vc-103 - executor now runs cleanly with no errors!
 
-**Testing**:
-1. Added debug logging to trace GetReadyWork → ClaimIssue flow
-2. Found orphaned claim blocking work
-3. Implemented startup cleanup before event loop
-4. Tested with recreated orphaned claim - executor cleaned it up and started working
-5. Removed debug logging, finalized fix
+**Runs #17-18**: Discovered and fixed 4 critical executor lifecycle bugs.
 
-**Before**: Executor completely broken (silent failure, appeared healthy)
-**After**: Executor cleans up orphaned state on startup, works correctly
-
-**Key Learning**: Silent failures are the worst kind of bug - add logging to critical paths!
-
-### Run #22 - 2025-10-23 (INVESTIGATION PRACTICE - FALSE ALARM)
-
-**Target**: Continue dogfooding vc-44, find bugs naturally
-**Duration**: ~25 minutes
-**Issues filed**: vc-108 (closed as false alarm)
-**Result**: ⚠️ **FALSE ALARM** - No new bugs, but valuable investigation practice
-
-**Investigation**:
-- Observed vc-37 stuck in 'in_progress' with no executor claim
-- Found stale executor instance from 2 days ago (2025-10-21)
-- Initially diagnosed as CHECK constraint violation (missing 'crashed' status)
-- **Reality**: Stale instance was from BEFORE vc-105 fix (CleanupStaleInstances)
-- Schema ALWAYS had 'crashed' status from first commit (verified via git history)
-
-**Key insights**:
-1. Residual data from old bugs can look like new bugs
-2. Git history is essential for schema/infrastructure investigations
-3. Manual testing (sqlite3 INSERT/UPDATE) validates assumptions quickly
-4. False alarms are valuable - teach investigation discipline
-
-**Before**: Assumed schema was wrong
-**After**: Verified schema correct, understood root cause was fixed bug
-
-### Run #19 - 2025-10-23 (ALL P1 BUGS FIXED!)
-
-**Target**: Fix remaining P1/P2 executor bugs from run #17  
-**Duration**: ~1 hour  
-**Issues fixed**: vc-102, vc-100, vc-103  
-**Result**: ✅ **COMPLETE SUCCESS** - Executor runs cleanly with no errors!
-
-**Bugs fixed**:
-1. **vc-102** [P1]: Unique constraint on executor stop
-   - Added `MarkInstanceStopped()` method (UPDATE instead of INSERT)
-   - Updated storage interface + all implementations + mocks
-
-2. **vc-100** [P1]: FK constraint on cleanup events
-   - Convert empty issue_id to NULL for system events
-   - FK constraints allow NULL (bypasses the check)
-
-3. **vc-103** [P2]: Shutdown error logging
-   - Auto-fixed by vc-101 context cancellation handling
-   - Clear messages instead of confusing errors
-
-**Before**: UNIQUE constraint errors, FK violations, confusing shutdown errors  
-**After**: Clean startup, clean shutdown, NO ERRORS! 🎉
-
-### Run #18 - 2025-10-22
-
-**Target**: Fix vc-101 (P0 state transition errors)  
-**Result**: ✅ SUCCESS - State machine now handles context cancellation properly
-
-### Run #17 - 2025-10-21
-
-**Target**: First full execution cycle test  
-**Result**: ⚠️ DISCOVERED 4 CRITICAL BUGS - Filed vc-100, vc-101, vc-102, vc-103
+**Runs #9-10** (archived): Test gate timeout fixed (vc-130), AI supervision validated (catches agent blind spots).
 
 ## Safety & Rollback
 
@@ -327,27 +238,24 @@ ps aux | grep vc
 
 ## Success Criteria (from vc-26)
 
-- ✅ Workflow documented (this file exists)
+- ✅ Workflow documented
 - ✅ Process for mission selection defined
-- ✅ Activity feed monitoring working reliably
-- ✅ Process for issue triage defined
+- ✅ Activity feed monitoring working
+- ✅ Issue triage process defined
 - ✅ Sandbox cleanup process defined
-- ⏳ Success metrics tracked systematically (in progress)
-- ⏳ 20+ successful missions with 90%+ quality gate pass rate (11/20, 90.9%)
+- ⏳ Success metrics tracked (in progress)
+- ⏳ 20+ successful missions with 90%+ pass rate (12/23, goal: 20+)
 - ⏳ Proven convergence (VC finishes work, doesn't spin)
 - ⏳ GitOps enabled after stability proven
-- ⏳ Human intervention < 10% of missions (currently ~35%)
-- ⏳ VC autonomously runs for 24+ hours on complex epic
-
-**Next milestone**: Run 9 more successful missions to reach 20+ threshold, then enable GitOps and test full autonomous mode.
+- ⏳ Human intervention < 10% (currently ~35%)
+- ⏳ VC autonomously runs 24+ hours on complex epic
 
 ## Next Steps
 
-1. **Validate fixes**: Run executor with actual work (not just startup/shutdown)
-2. **Test mission cycle**: Complete vc-44 (Beads migration dogfooding validation)
-3. **Enable AI supervision**: Test assess → analyze → execute flow
-4. **Reduce intervention**: Aim for <10% human intervention rate
-5. **Longer runs**: Test 24+ hour autonomous operation on complex epic
+1. Continue dogfooding runs to reach 20+ successful missions
+2. Reduce human intervention rate from 35% to <10%
+3. Test longer autonomous runs (24+ hours)
+4. Enable GitOps after stability proven
 
 ## Resources
 

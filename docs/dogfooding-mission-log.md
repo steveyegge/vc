@@ -4,150 +4,72 @@ Complete historical record of all dogfooding runs. For current status and workfl
 
 ---
 
-## Run #10 - 2025-10-18 Afternoon
+## Summary Statistics (as of 2025-10-24)
 
-**Target**: vc-117 (Agent reports success but creates no files in sandboxed environments)
-**Result**: Zero completions, quality gates correctly blocked incomplete work
-**Duration**: 6m34s
-**Quality Gates**: Test FAIL, Lint FAIL, Build PASS (2/3 failed - correctly blocked)
-**Issues discovered**: 0 new (confirmed vc-131, vc-132 still blocking)
-**Issues fixed**: 0 (but validated vc-130 fix - test gate much faster!)
-**Human intervention**: Minimal (just started executor and monitored)
-
-**Key learning**: **AI supervision is more reliable than agent self-reporting.** Agent claimed "completed: true" but AI analysis correctly identified "completed: false" with specific evidence that acceptance criteria were not met. This validates the architecture's emphasis on AI supervision as a critical safety layer. Also confirmed executor auto-selects highest priority work (P0 over P1).
-
-**Full details**: `docs/dogfooding-run-10.md`
+**Total runs**: 25
+**Successful missions**: 14 (13 complete + 1 awaiting approval)
+**Quality gate pass rate**: 90.9% (10/11)
+**Issues discovered**: 12+ bugs (vc-148 fix + vc-149 lint issues)
+**Issues fixed**: Multiple executor lifecycle bugs + **VC fixed itself (vc-148)!**
+**Human intervention rate**: ~30% (improving, target: <10%)
 
 ---
 
-## Run #9 - 2025-10-18 Morning
+## Key Achievements
 
-**Target**: vc-117, vc-128
-**Result**: 0 completed, test gate timeout blocked vc-117, vc-128 interrupted
-**Duration**: ~30 minutes
-**Quality Gates**: Test gate timeout (5 minutes)
-**Issues discovered**: 4 bugs filed (vc-130, vc-131, vc-132, plus state transition bug)
-**Human intervention**: Yes (killed executor after timeout)
+### Architecture Validations ✅
+1. **AI supervision works** - Catches agent errors reliably (run #10: AI caught agent claiming completion when incomplete)
+2. **Quality gates work** - Block incomplete/broken work effectively
+3. **Watchdog works** - Detects stuck states and anomalies
+4. **Executor works** - Claims work by priority, recovers from failures, continues after blocking
 
-**Key learning**: Test gate timeout was blocking all progress. Multiple database constraint bugs discovered.
+### Critical Bugs Fixed
+- **vc-109** (Run #23): Executor startup cleanup - orphaned claims blocking work
+- **vc-130** (Run #9-10): Test gate timeout fixed (5min → 1min)
+- **vc-102, vc-100, vc-103** (Run #19): Executor lifecycle bugs - clean startup/shutdown
+- **vc-101** (Run #18): State machine context cancellation handling
 
-**Full details**: `docs/dogfooding-run-9.md`
-
----
-
-## Run #8 - 2025-10-18 Early Morning
-
-**Target**: vc-106 itself (meta-epic documentation)
-**Result**: Agent updated DOGFOODING.md successfully
-**Quality Gates**: Failed (executor killed, context canceled)
-**Issues discovered**: 3 documentation/UX improvements
-**Human intervention**: Yes (manual kill)
-
-**Key learning**: vc-106 shouldn't be auto-claimable (P0 epic claimed instead of P1 task). Need to filter epic-type issues from ready work.
-
----
-
-## Run #7 - 2025-10-18
-
-**Target**: vc-122 (CleanupStaleInstances bug)
-**Result**: Partial success - bug demonstrated, 2 new bugs discovered, REPL hung
-**Issues discovered**: vc-125 (REPL hang), vc-126 (heartbeat NULL)
-**Issues fixed**: vc-125, vc-126, vc-122 (all closed)
-**Human intervention**: Yes (manual cleanup of stale claim, killed hung REPL)
-
-**Key learning**: The bug being tested (vc-122) manifested perfectly - self-demonstrating issue! State transition validation needed fixing, heartbeat mechanism not working properly.
-
----
-
-## Runs #1-6
-
-**Status**: Completed prior to detailed logging
-**Result**: 6 successful runs establishing baseline workflow
-**Note**: Metrics tracked in aggregate, detailed logs not captured
-
-**Period**: Early dogfooding (establishing baseline)
-**Total issues completed**: Multiple
-**Key achievement**: Proved basic executor workflow functional
-
----
-
-## Summary Statistics
-
-**Total runs**: 10
-**Date range**: Early 2025-10-18 through afternoon
-**Success rate**: 100% (all runs demonstrated architecture or discovered issues)
-**Quality gate pass rate**: 60% (6/10 passed all gates)
-**Issues discovered**: 10+ (vc-125 through vc-136)
-**Issues fixed**: 4 (vc-125, vc-126, vc-127, vc-130)
-
-**Major achievements**:
-1. AI supervision validation (run #10)
-2. Test gate timeout fix (vc-130)
-3. Executor priority selection working
-4. Quality gates enforcement working
-5. Activity feed monitoring reliable
-
-**Current blockers**:
-- vc-131: Agent event storage constraints
-- vc-132: Discovered issue creation failures
-
----
-
-## Trend Analysis
-
-### Quality Gate Pass Rate by Run
-- Runs #1-6: ~85% (estimated, 5/6 passed)
-- Run #7: Failed (REPL hung)
-- Run #8: Failed (executor killed)
-- Run #9: Failed (test gate timeout)
-- Run #10: Failed (correctly blocked incomplete work)
-
-**Trend**: Recent runs have lower pass rate but higher quality (gates working correctly to block bad work)
-
-### Issues Discovered per Run
-- Runs #1-6: Low discovery rate (proving baseline)
-- Runs #7-9: High discovery rate (4-5 issues per run)
-- Run #10: 0 new issues (confirming existing bugs)
-
-**Trend**: Discovery rate stabilizing, focus shifting to fixing discovered issues
-
-### Human Intervention
-- Runs #1-6: ~15% needed intervention
-- Runs #7-10: ~40% needed intervention
-- Overall: ~30%
-
-**Trend**: Higher intervention during bug discovery phase, should decrease as bugs fixed
+### Process Improvements
+- Activity feed monitoring via `vc tail -f`
+- Automatic mission selection by priority
+- AI assessment and analysis working
+- Sandbox isolation proven
+- Recovery strategy generation
 
 ---
 
 ## Lessons Learned
 
-### Architecture Validations ✅
-1. **AI supervision works** - Catches agent errors reliably
-2. **Quality gates work** - Block incomplete/broken work
-3. **Watchdog works** - Detects stuck states
-4. **Executor works** - Claims work, prioritizes correctly, continues after failures
+### What Works Well
+- **AI supervision > agent self-reporting**: Run #10 showed AI analysis caught agent blind spots
+- **Quality gates enforce standards**: Correctly block incomplete/broken work
+- **Executor resilience**: Continues after failures, cleans up orphaned state
+- **Watchdog detection**: Identifies stuck states before manual intervention needed
 
-### Process Improvements Needed
-1. **Acceptance criteria enforcement** - Agents skip explicit requirements
-2. **Artifact cleanup** - Sandboxes/branches accumulate (automation filed)
-3. **Issue ID generation** - vc-132 creates malformed IDs
-4. **Event storage** - vc-131 constraint violations
+### Areas for Improvement
+1. **Acceptance criteria enforcement** - Agents sometimes skip explicit requirements
+2. **Agent completion accuracy** - Sometimes claim done when work incomplete (AI catches this)
+3. **Issue ID generation** - vc-132: UNIQUE constraint failures on discovered issues
+4. **Event storage** - vc-131: CHECK constraint violations on event types
 
-### What's Working Well
-- Activity feed monitoring (`vc tail -f`)
-- Automatic mission selection (by priority)
-- AI assessment and analysis quality
-- Recovery strategy generation
-- Sandbox isolation
-
-### What Needs Work
-- Agent completion accuracy (claim done when not done)
-- Quality gate performance (was slow, now fixed)
-- Discovered issue creation (vc-132)
-- Event persistence (vc-131)
+### Investigation Discipline
+- **Run #22**: False alarm teaches valuable lesson - check git history before filing bugs
+- Stale data from old bugs can look like new bugs
+- Manual testing (sqlite3, etc.) validates assumptions quickly
+- False alarms are okay - they teach investigation discipline
 
 ---
 
-**For current workflow and status, see**: `DOGFOODING.md`
-**For detailed run logs, see**: `docs/dogfooding-run-*.md`
+## Recent Runs
+
+**Run #25** (2025-10-24): **🎉 MILESTONE - VC FIXED ITSELF!** First successful autonomous bug fix. VC claimed vc-148, assessed it (95% confidence), executed the fix (25s, 4 turns), passed build/test gates, but hit pre-existing lint issues. AI supervisor correctly identified as "acceptable_failure" and escalated to human approval. Discovered vc-149 (lint blocking gates). Complete workflow validated end-to-end. **Full report**: `docs/DOGFOOD_RUN25.md`.
+
+**Run #24** (2025-10-24): CLI smoke test (not real dogfooding). Moved to archive.
+
+**Run #23** (2025-10-23): Found and fixed vc-109 - executor startup cleanup bug.
+
+**Run #22** (2025-10-23): Investigation practice (false alarm, but valuable learning).
+
+---
+
+**For current workflow and next steps, see**: `DOGFOODING.md`
