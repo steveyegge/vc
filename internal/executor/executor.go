@@ -78,6 +78,7 @@ type Config struct {
 	StaleThreshold         time.Duration                // How long before an instance is considered stale (default: 5 minutes)
 	EnableAISupervision    bool                         // Enable AI assessment and analysis (default: true)
 	EnableQualityGates     bool                         // Enable quality gates enforcement (default: true)
+	EnableAutoCommit       bool                         // Enable automatic git commits after successful execution (default: false, vc-142)
 	EnableSandboxes        bool                         // Enable sandbox isolation (default: true, vc-144)
 	KeepSandboxOnFailure   bool                         // Keep failed sandboxes for debugging (default: false)
 	KeepBranches           bool                         // Keep mission branches after cleanup (default: false)
@@ -974,7 +975,8 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		GitOps:             e.gitOps,       // Git operations for auto-commit (vc-136)
 		MessageGen:         e.messageGen,   // Commit message generator (vc-136)
 		EnableQualityGates: e.enableQualityGates,
-		WorkingDir:         workingDir, // Use sandbox path if sandboxing is enabled (vc-117)
+		EnableAutoCommit:   e.config.EnableAutoCommit, // Auto-commit configuration (vc-142)
+		WorkingDir:         workingDir,                // Use sandbox path if sandboxing is enabled (vc-117)
 		Actor:              e.instanceID,
 		Sandbox:            sb, // Pass sandbox for status tracking (vc-134)
 	})

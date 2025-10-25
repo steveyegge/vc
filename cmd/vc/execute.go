@@ -33,6 +33,12 @@ The executor will:
 		disableSandboxes, _ := cmd.Flags().GetBool("disable-sandboxes")
 		sandboxRoot, _ := cmd.Flags().GetString("sandbox-root")
 		parentRepo, _ := cmd.Flags().GetString("parent-repo")
+		enableAutoCommit, _ := cmd.Flags().GetBool("enable-auto-commit")
+
+		// Check environment variable as fallback for auto-commit (vc-142)
+		if !enableAutoCommit {
+			enableAutoCommit = os.Getenv("VC_ENABLE_AUTO_COMMIT") == "true"
+		}
 
 		// Derive working directory from database location
 		// This ensures database and code are in the same project
@@ -65,6 +71,7 @@ The executor will:
 		cfg.SandboxRoot = sandboxRoot
 		cfg.ParentRepo = parentRepo
 		cfg.DeduplicationConfig = &dedupConfig
+		cfg.EnableAutoCommit = enableAutoCommit // vc-142: expose auto-commit configuration
 		if pollSeconds > 0 {
 			cfg.PollInterval = time.Duration(pollSeconds) * time.Second
 		}
@@ -133,5 +140,6 @@ func init() {
 	executeCmd.Flags().Bool("disable-sandboxes", false, "Disable sandbox isolation (DANGEROUS: for development/testing only)")
 	executeCmd.Flags().String("sandbox-root", ".sandboxes", "Root directory for sandboxes")
 	executeCmd.Flags().String("parent-repo", ".", "Parent repository path")
+	executeCmd.Flags().Bool("enable-auto-commit", false, "Enable automatic git commits after successful execution (can also use VC_ENABLE_AUTO_COMMIT=true)")
 	rootCmd.AddCommand(executeCmd)
 }
