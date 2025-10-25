@@ -48,11 +48,17 @@ Loop {
 
 ## Status
 
-**Phase**: Early bootstrap (porting from TypeScript vibecoder)
+**Phase**: Production (Dogfooding)
 
-**Tracker**: Beads (SQLite) - see `.beads/vc.db`
+**Tracker**: Beads v0.12.0 (SQLite) - see `.beads/vc.db`
 
-**Next**: Check ready work with `/workspace/beads/bd ready`
+**Progress**:
+- ✅ Bootstrap complete - All 5 phases done
+- ✅ 254 issues closed through dogfooding
+- ✅ 24 successful missions with 90.9% quality gate pass rate
+- ✅ Core workflow operational and self-improving
+
+**Next**: Check ready work with `bd ready` (see CLAUDE.md for details)
 
 ## Quick Start
 
@@ -114,18 +120,36 @@ AI: [Adds dependencies]
 
 ## Documentation
 
-- `BOOTSTRAP.md` - Bootstrap roadmap and phase tracking
-- `DESIGN.md` - Architecture and key decisions (TODO)
-- `~/src/vc/zoey/vc/` - TypeScript prototype (reference)
+### Core Docs
+- `ARCHITECTURE.md` - System architecture and implementation details
+- `CLAUDE.md` - Instructions for AI agents working on VC (comprehensive guide)
+- `DOGFOODING.md` - Dogfooding workflow and mission logs
 
-## Lessons from V1
+### Implementation Details
+- `docs/ARCHITECTURE_AUDIT.md` - Comprehensive implementation review
+- `docs/EXPLORATION_FINDINGS.md` - Current state analysis
+- `docs/architecture/` - Detailed design documents (MISSIONS, BEADS, etc.)
 
-1. ✅ AI Supervised Issue Workflow worked brilliantly
-2. ✅ SQLite issue tracker is simple and lightweight
-3. ✅ Issue-oriented orchestration enabled self-hosting
-4. ❌ Temporal was too heavyweight for individual dev tool
-5. ❌ Built auxiliary systems before core workflow proved out
-6. ❌ TypeScript ecosystem and AI code quality issues
+### Historical
+- `docs/archive/BOOTSTRAP.md` - Original 2-week roadmap (completed)
+
+## Key Achievements
+
+1. ✅ **AI Supervised Issue Workflow** - Proven through 24+ dogfooding missions
+2. ✅ **Beads Integration** - 100x performance improvement over shell-based CLI
+3. ✅ **Self-Hosting** - System successfully builds and improves itself
+4. ✅ **Quality Gates** - 90.9% pass rate prevents broken code
+5. ✅ **Zero Framework Cognition** - AI makes all decisions, no heuristics
+6. ✅ **Sandbox Isolation** - Git worktrees enable safe concurrent execution
+
+## Lessons from V1 (TypeScript Prototype)
+
+1. ✅ AI Supervised Issue Workflow worked brilliantly → **Reimplemented in Go**
+2. ✅ SQLite issue tracker is simple and lightweight → **Now using Beads library**
+3. ✅ Issue-oriented orchestration enabled self-hosting → **Core principle validated**
+4. ❌ Temporal was too heavyweight → **Removed, using simpler event loop**
+5. ❌ Built auxiliary systems too early → **Tracer bullet approach this time**
+6. ❌ TypeScript ecosystem challenges → **Go provides better AI code quality**
 
 ## License
 

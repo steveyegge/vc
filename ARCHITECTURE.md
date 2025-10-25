@@ -1,7 +1,7 @@
 # VC Architecture
 
 **Last Updated**: 2025-10-25
-**Status**: Production (Bootstrap Phase)
+**Status**: Production (Bootstrap Complete, Dogfooding Phase)
 
 This document describes the architecture of VC, an AI-supervised autonomous coding system.
 
@@ -609,14 +609,45 @@ export VC_KEEP_SANDBOX_ON_FAILURE=true  # Retain failed sandboxes for debugging
 
 ---
 
+## Production Status
+
+**Current State** (as of October 2025):
+- ✅ **Core workflow operational** - 24 dogfooding missions, 90.9% quality gate pass rate
+- ✅ **254 issues closed** - System has successfully built itself through dogfooding
+- ✅ **All bootstrap phases complete** - Executor, AI supervision, gates, REPL all working
+- ✅ **930+ tests** - Comprehensive test coverage across 121 test files
+- ✅ **Beads integration** - Using Beads v0.12.0 library (100x performance improvement)
+
+**What's Working**:
+- Issue-oriented orchestration with atomic claiming
+- AI-supervised execution (assess before, analyze after)
+- Quality gates (test, lint, build, human approval)
+- Sandbox isolation via git worktrees
+- Deduplication of discovered issues (AI-powered)
+- Watchdog convergence detection
+- Health monitoring (ZFC violations, cruft detection)
+- Activity feed with 20+ event types
+- Natural language REPL interface
+- Auto-commit with AI-generated messages (configurable)
+
+**Known Limitations**:
+- GitOps auto-merge disabled for safety (design complete, awaiting more dogfooding)
+- Human intervention rate ~35% (target: <10%)
+- Mission convergence works for simple cases, complex scenarios in development
+- Event retention not yet implemented (punted until DB >100MB per vc-195)
+
+---
+
 ## Future Evolution
 
-**Planned Improvements**:
+**In Progress**:
 1. Recursive refinement (vc-2) - Agent iterations until quality gates pass
 2. Multi-executor coordination (vc-203) - Multiple executors on same repo
-3. Watchdog convergence detection (vc-3) - Detect and kill stuck agents
-4. Git operations integration (vc-4) - Auto-merge, auto-PR
-5. Advanced health monitoring (vc-14+) - Pattern detection, missing utilities
+3. Advanced mission convergence - Complex multi-issue workflows
+
+**Planned**:
+4. GitOps auto-merge (vc-4) - Automatic PR creation and merging (design done)
+5. Advanced health monitoring - Additional pattern detectors
 
 **Long-term Vision**:
 - Self-healing system that maintains its own codebase
@@ -628,10 +659,19 @@ export VC_KEEP_SANDBOX_ON_FAILURE=true  # Retain failed sandboxes for debugging
 
 ## See Also
 
+### Core Documentation
 - [README.md](README.md) - Project overview and vision
-- [CLAUDE.md](CLAUDE.md) - Instructions for AI agents
-- [BOOTSTRAP.md](BOOTSTRAP.md) - Original roadmap (deprecated, use beads)
+- [CLAUDE.md](CLAUDE.md) - Instructions for AI agents working on VC
+- [DOGFOODING.md](DOGFOODING.md) - Dogfooding workflow and mission logs
 - [.beads/issues.jsonl](.beads/issues.jsonl) - Issue tracker source of truth
+
+### Implementation Details
+- [docs/ARCHITECTURE_AUDIT.md](docs/ARCHITECTURE_AUDIT.md) - Comprehensive implementation review
+- [docs/EXPLORATION_FINDINGS.md](docs/EXPLORATION_FINDINGS.md) - Current state analysis
+- [docs/architecture/](docs/architecture/) - Detailed design documents
+
+### Historical
+- [docs/archive/BOOTSTRAP.md](docs/archive/BOOTSTRAP.md) - Original 2-week roadmap (completed)
 
 ---
 

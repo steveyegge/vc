@@ -1,6 +1,14 @@
 # VC Bootstrap Roadmap
 
+**Status**: ✅ COMPLETE (as of October 2025)
+**Archived**: This document represents the original 2-week roadmap. All phases are now complete.
+**Current Tracking**: Work is tracked in `.beads/issues.jsonl` and the Beads database.
+
+---
+
 Tracer bullet approach: Get end-to-end workflow working before expanding.
+
+**Historical Context**: This was the original bootstrap plan. The actual implementation exceeded this plan with additional features like deduplication, watchdog, health monitoring, and comprehensive testing infrastructure.
 
 ## Phase 1: Beads Integration (1-2 days)
 
