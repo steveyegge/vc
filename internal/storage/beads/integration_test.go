@@ -1582,3 +1582,179 @@ func TestAgentEventsNullSeverity(t *testing.T) {
 		t.Logf("Successfully retrieved %d events with NULL severity present", len(results))
 	})
 }
+
+// TestGetReadyBlockersFiltersDependencyTypes validates that GetReadyBlockers only checks
+// blocking dependencies, not related/parent-child/discovered-from (vc-157)
+func TestGetReadyBlockersFiltersDependencyTypes(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a parent mission issue (will remain open)
+	mission := &types.Issue{
+		Title:     "Parent mission",
+		Status:    types.StatusOpen,
+		Priority:  1,
+		IssueType: types.TypeEpic,
+	}
+	err = store.CreateIssue(ctx, mission, "test")
+	if err != nil {
+		t.Fatalf("Failed to create mission: %v", err)
+	}
+
+	// Create a blocker issue with discovered:blocker label
+	blocker := &types.Issue{
+		Title:     "Test blocker issue",
+		Status:    types.StatusOpen,
+		Priority:  2,
+		IssueType: types.TypeBug,
+	}
+	err = store.CreateIssue(ctx, blocker, "test")
+	if err != nil {
+		t.Fatalf("Failed to create blocker: %v", err)
+	}
+
+	// Add discovered:blocker label
+	err = store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test")
+	if err != nil {
+		t.Fatalf("Failed to add label: %v", err)
+	}
+
+	// Add a discovered-from dependency (blocker discovered from mission)
+	// This should NOT block execution
+	err = store.AddDependency(ctx, &types.Dependency{
+		IssueID:     blocker.ID,
+		DependsOnID: mission.ID,
+		Type:        types.DepDiscoveredFrom,
+	}, "test")
+	if err != nil {
+		t.Fatalf("Failed to add discovered-from dependency: %v", err)
+	}
+
+	t.Run("blocker with discovered-from dependency is ready", func(t *testing.T) {
+		// GetReadyBlockers should return the blocker because discovered-from doesn't block
+		blockers, err := store.GetReadyBlockers(ctx, 10)
+		if err != nil {
+			t.Fatalf("GetReadyBlockers failed: %v", err)
+		}
+
+		if len(blockers) != 1 {
+			t.Fatalf("Expected 1 ready blocker, got %d", len(blockers))
+		}
+
+		if blockers[0].ID != blocker.ID {
+			t.Errorf("Expected blocker %s, got %s", blocker.ID, blockers[0].ID)
+		}
+
+		t.Logf("✓ Blocker %s correctly identified as ready despite discovered-from dependency", blocker.ID)
+	})
+
+	// Now add a real blocking dependency
+	blockingIssue := &types.Issue{
+		Title:     "Blocking issue",
+		Status:    types.StatusOpen,
+		Priority:  1,
+		IssueType: types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, blockingIssue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create blocking issue: %v", err)
+	}
+
+	// Add a blocks dependency
+	err = store.AddDependency(ctx, &types.Dependency{
+		IssueID:     blocker.ID,
+		DependsOnID: blockingIssue.ID,
+		Type:        types.DepBlocks,
+	}, "test")
+	if err != nil {
+		t.Fatalf("Failed to add blocks dependency: %v", err)
+	}
+
+	t.Run("blocker with open blocks dependency is not ready", func(t *testing.T) {
+		// Now the blocker should NOT be ready (has open blocking dependency)
+		blockers, err := store.GetReadyBlockers(ctx, 10)
+		if err != nil {
+			t.Fatalf("GetReadyBlockers failed: %v", err)
+		}
+
+		if len(blockers) != 0 {
+			t.Errorf("Expected 0 ready blockers (has open blocks dependency), got %d", len(blockers))
+		}
+
+		t.Logf("✓ Blocker correctly filtered out due to open blocking dependency")
+	})
+
+	// Close the blocking issue
+	err = store.CloseIssue(ctx, blockingIssue.ID, "Test completed", "test")
+	if err != nil {
+		t.Fatalf("Failed to close blocking issue: %v", err)
+	}
+
+	t.Run("blocker becomes ready when blocking dependency closes", func(t *testing.T) {
+		// Now the blocker should be ready again (blocking dependency closed)
+		blockers, err := store.GetReadyBlockers(ctx, 10)
+		if err != nil {
+			t.Fatalf("GetReadyBlockers failed: %v", err)
+		}
+
+		if len(blockers) != 1 {
+			t.Fatalf("Expected 1 ready blocker (blocking dep closed), got %d", len(blockers))
+		}
+
+		if blockers[0].ID != blocker.ID {
+			t.Errorf("Expected blocker %s, got %s", blocker.ID, blockers[0].ID)
+		}
+
+		t.Logf("✓ Blocker correctly becomes ready after blocking dependency closes")
+	})
+
+	// Test with parent-child relationship
+	t.Run("blocker with parent-child dependency is ready", func(t *testing.T) {
+		// Create another blocker
+		childBlocker := &types.Issue{
+			Title:     "Child blocker",
+			Status:    types.StatusOpen,
+			Priority:  2,
+			IssueType: types.TypeBug,
+		}
+		err = store.CreateIssue(ctx, childBlocker, "test")
+		if err != nil {
+			t.Fatalf("Failed to create child blocker: %v", err)
+		}
+
+		err = store.AddLabel(ctx, childBlocker.ID, "discovered:blocker", "test")
+		if err != nil {
+			t.Fatalf("Failed to add label: %v", err)
+		}
+
+		// Add parent-child dependency (child of mission)
+		err = store.AddDependency(ctx, &types.Dependency{
+			IssueID:     childBlocker.ID,
+			DependsOnID: mission.ID,
+			Type:        types.DepParentChild,
+		}, "test")
+		if err != nil {
+			t.Fatalf("Failed to add parent-child dependency: %v", err)
+		}
+
+		// Should still be ready (parent-child doesn't block)
+		blockers, err := store.GetReadyBlockers(ctx, 10)
+		if err != nil {
+			t.Fatalf("GetReadyBlockers failed: %v", err)
+		}
+
+		// Should have both blockers now (original + child)
+		if len(blockers) != 2 {
+			t.Errorf("Expected 2 ready blockers, got %d", len(blockers))
+		}
+
+		t.Logf("✓ Blocker with parent-child dependency correctly identified as ready")
+	})
+}

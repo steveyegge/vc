@@ -452,10 +452,12 @@ func (s *VCStorage) GetReadyBlockers(ctx context.Context, limit int) ([]*types.I
 		WHERE l.label = 'discovered:blocker'
 		  AND i.status = 'open'
 		  AND NOT EXISTS (
-		    -- Check if this issue has any open dependencies
+		    -- Check if this issue has any open blocking dependencies (vc-157)
+		    -- Only check type='blocks', not related/parent-child/discovered-from
 		    SELECT 1 FROM dependencies d
 		    INNER JOIN issues dep_issue ON d.depends_on_id = dep_issue.id
 		    WHERE d.issue_id = i.id
+		      AND d.type = 'blocks'
 		      AND dep_issue.status != 'closed'
 		  )
 		ORDER BY i.priority ASC
