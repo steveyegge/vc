@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestDiscoverDatabaseInDir_CurrentDirOnly verifies that discoverDatabaseInDir
@@ -120,4 +121,134 @@ func TestDiscoverDatabase_WithEnvVar(t *testing.T) {
 	if dbPath != testPath {
 		t.Errorf("Expected database path %s, got %s", testPath, dbPath)
 	}
+}
+
+// TestValidateDatabaseFreshness_FreshDatabase verifies no error when database is up to date (vc-173)
+func TestValidateDatabaseFreshness_FreshDatabase(t *testing.T) {
+	// Create test directory structure
+	tmpDir := t.TempDir()
+	beadsDir := filepath.Join(tmpDir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatalf("failed to create .beads dir: %v", err)
+	}
+
+	dbPath := filepath.Join(beadsDir, "test.db")
+	jsonlPath := filepath.Join(beadsDir, "issues.jsonl")
+
+	// Create database file first (older)
+	if err := os.WriteFile(dbPath, []byte("db content"), 0644); err != nil {
+		t.Fatalf("failed to create database: %v", err)
+	}
+
+	// Wait a bit to ensure different timestamps
+	time.Sleep(10 * time.Millisecond)
+
+	// Touch database to make it newer than jsonl (if jsonl exists at all)
+	now := time.Now()
+	if err := os.Chtimes(dbPath, now, now); err != nil {
+		t.Fatalf("failed to update database timestamp: %v", err)
+	}
+
+	// Create JSONL file after database (newer would fail, but we touch db above)
+	if err := os.WriteFile(jsonlPath, []byte("{}"), 0644); err != nil {
+		t.Fatalf("failed to create issues.jsonl: %v", err)
+	}
+
+	// Make JSONL older than database
+	oldTime := now.Add(-1 * time.Minute)
+	if err := os.Chtimes(jsonlPath, oldTime, oldTime); err != nil {
+		t.Fatalf("failed to update jsonl timestamp: %v", err)
+	}
+
+	// Database is newer than JSONL - should pass
+	err := ValidateDatabaseFreshness(dbPath)
+	if err != nil {
+		t.Errorf("Expected no error for fresh database, got: %v", err)
+	}
+}
+
+// TestValidateDatabaseFreshness_StaleDatabase verifies error when JSONL is newer (vc-173)
+func TestValidateDatabaseFreshness_StaleDatabase(t *testing.T) {
+	// Create test directory structure
+	tmpDir := t.TempDir()
+	beadsDir := filepath.Join(tmpDir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatalf("failed to create .beads dir: %v", err)
+	}
+
+	dbPath := filepath.Join(beadsDir, "test.db")
+	jsonlPath := filepath.Join(beadsDir, "issues.jsonl")
+
+	// Create database file first
+	if err := os.WriteFile(dbPath, []byte("db content"), 0644); err != nil {
+		t.Fatalf("failed to create database: %v", err)
+	}
+
+	// Make database old
+	oldTime := time.Now().Add(-1 * time.Hour)
+	if err := os.Chtimes(dbPath, oldTime, oldTime); err != nil {
+		t.Fatalf("failed to update database timestamp: %v", err)
+	}
+
+	// Wait to ensure different timestamps
+	time.Sleep(10 * time.Millisecond)
+
+	// Create JSONL file after database (simulates git pull updating JSONL)
+	if err := os.WriteFile(jsonlPath, []byte("{}"), 0644); err != nil {
+		t.Fatalf("failed to create issues.jsonl: %v", err)
+	}
+
+	// JSONL is newer than database - should fail
+	err := ValidateDatabaseFreshness(dbPath)
+	if err == nil {
+		t.Error("Expected error for stale database, got nil")
+	}
+
+	// Error message should mention staleness
+	if err != nil {
+		errMsg := err.Error()
+		if !contains(errMsg, "out of sync") && !contains(errMsg, "stale") {
+			t.Errorf("Expected error message to mention staleness, got: %s", errMsg)
+		}
+		if !contains(errMsg, "bd import") {
+			t.Errorf("Expected error message to suggest 'bd import', got: %s", errMsg)
+		}
+	}
+}
+
+// TestValidateDatabaseFreshness_NoJSONL verifies no error when issues.jsonl doesn't exist (vc-173)
+func TestValidateDatabaseFreshness_NoJSONL(t *testing.T) {
+	// Create test directory structure
+	tmpDir := t.TempDir()
+	beadsDir := filepath.Join(tmpDir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatalf("failed to create .beads dir: %v", err)
+	}
+
+	dbPath := filepath.Join(beadsDir, "test.db")
+
+	// Create database file only (no issues.jsonl)
+	if err := os.WriteFile(dbPath, []byte("db content"), 0644); err != nil {
+		t.Fatalf("failed to create database: %v", err)
+	}
+
+	// Should pass - database is authoritative when JSONL doesn't exist
+	err := ValidateDatabaseFreshness(dbPath)
+	if err != nil {
+		t.Errorf("Expected no error when issues.jsonl doesn't exist, got: %v", err)
+	}
+}
+
+// Helper function to check if string contains substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && findSubstring(s, substr)
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

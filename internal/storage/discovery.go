@@ -176,6 +176,65 @@ func ValidateAlignment(dbPath, workingDir string) error {
 	return nil
 }
 
+// ValidateDatabaseFreshness checks if the database is in sync with the JSONL source of truth.
+// Returns an error if .beads/issues.jsonl is newer than .beads/vc.db, indicating the database
+// is stale and needs to be synced with 'bd import .beads/issues.jsonl'.
+//
+// This prevents bugs like vc-173 where the executor claimed closed issues because the database
+// was out of sync with git after pulling updates.
+//
+// vc-173: Database staleness detection - prevents claiming closed issues when database is stale
+func ValidateDatabaseFreshness(dbPath string) error {
+	// Get project root to find issues.jsonl
+	projectRoot, err := GetProjectRoot(dbPath)
+	if err != nil {
+		return fmt.Errorf("invalid database path: %w", err)
+	}
+
+	jsonlPath := filepath.Join(projectRoot, ".beads", "issues.jsonl")
+
+	// Get modification times for both files
+	dbInfo, err := os.Stat(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to stat database: %w", err)
+	}
+
+	jsonlInfo, err := os.Stat(jsonlPath)
+	if err != nil {
+		// If issues.jsonl doesn't exist, that's OK - database might be authoritative
+		// This can happen in test environments or fresh clones
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to stat issues.jsonl: %w", err)
+	}
+
+	// Compare modification times
+	dbMtime := dbInfo.ModTime()
+	jsonlMtime := jsonlInfo.ModTime()
+
+	// If JSONL is newer than database, the database is stale
+	if jsonlMtime.After(dbMtime) {
+		return fmt.Errorf(
+			"database is out of sync with issues.jsonl:\n"+
+				"  database: %s (modified: %s)\n"+
+				"  issues.jsonl: %s (modified: %s)\n"+
+				"\n"+
+				"The database is stale by %v.\n"+
+				"This can happen after pulling git updates that modified issues.jsonl.\n"+
+				"\n"+
+				"To fix this, sync your database with the canonical JSONL:\n"+
+				"  bd import .beads/issues.jsonl\n"+
+				"\n"+
+				"Then run vc again.",
+			dbPath, dbMtime.Format("2006-01-02 15:04:05"),
+			jsonlPath, jsonlMtime.Format("2006-01-02 15:04:05"),
+			jsonlMtime.Sub(dbMtime))
+	}
+
+	return nil
+}
+
 // isAtOrBelow checks if path is at or below root in the directory tree
 func isAtOrBelow(path, root string) bool {
 	// Normalize paths

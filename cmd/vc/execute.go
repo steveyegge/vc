@@ -55,6 +55,13 @@ The executor will:
 			os.Exit(1)
 		}
 
+		// vc-173: Validate database is in sync with issues.jsonl
+		// This prevents claiming closed issues when database is stale after git pull
+		if err := storage.ValidateDatabaseFreshness(dbPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 		// Load deduplication configuration from environment
 		dedupConfig, err := deduplication.ConfigFromEnv()
 		if err != nil {
