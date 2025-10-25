@@ -13,12 +13,11 @@ import (
 
 // Assessment represents an AI assessment of an issue before execution
 type Assessment struct {
-	Strategy        string   `json:"strategy"`         // High-level strategy for completing the issue
-	Steps           []string `json:"steps"`            // Specific steps to take
-	Risks           []string `json:"risks"`            // Potential risks or challenges
-	Confidence      float64  `json:"confidence"`       // Confidence score (0.0-1.0)
-	Reasoning       string   `json:"reasoning"`        // Detailed reasoning
-	EstimatedEffort string   `json:"estimated_effort"` // e.g., "5 minutes", "1 hour", "4 hours"
+	Strategy   string   `json:"strategy"`   // High-level strategy for completing the issue
+	Steps      []string `json:"steps"`      // Specific steps to take
+	Risks      []string `json:"risks"`      // Potential risks or challenges
+	Confidence float64  `json:"confidence"` // Confidence score (0.0-1.0)
+	Reasoning  string   `json:"reasoning"`  // Detailed reasoning
 }
 
 // CompletionAssessment represents AI assessment of whether an epic/mission is complete
@@ -77,8 +76,8 @@ func (s *Supervisor) AssessIssueState(ctx context.Context, issue *types.Issue) (
 
 	// Log the assessment
 	duration := time.Since(startTime)
-	fmt.Printf("AI Assessment for %s: confidence=%.2f, effort=%s, duration=%v\n",
-		issue.ID, assessment.Confidence, assessment.EstimatedEffort, duration)
+	fmt.Printf("AI Assessment for %s: confidence=%.2f, duration=%v\n",
+		issue.ID, assessment.Confidence, duration)
 
 	// Log AI usage to events
 	if err := s.logAIUsage(ctx, issue.ID, "assessment", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
@@ -179,8 +178,7 @@ Please provide your assessment as a JSON object with the following structure:
   "steps": ["Step 1", "Step 2", ...],
   "risks": ["Risk 1", "Risk 2", ...],
   "confidence": 0.85,
-  "reasoning": "Detailed reasoning about the approach",
-  "estimated_effort": "30 minutes"
+  "reasoning": "Detailed reasoning about the approach"
 }
 
 Focus on:
@@ -188,7 +186,6 @@ Focus on:
 2. What are the key steps in order?
 3. What could go wrong or needs special attention?
 4. How confident are you this can be completed successfully?
-5. How long will this likely take?
 
 IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (`+"`"+`). Just the JSON object.`,
 		issue.ID, issue.Title, issue.IssueType, issue.Priority,

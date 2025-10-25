@@ -727,8 +727,8 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 				})
 		} else {
 			// Log the assessment as a comment
-			assessmentComment := fmt.Sprintf("**AI Assessment**\n\nStrategy: %s\n\nConfidence: %.0f%%\n\nEstimated Effort: %s\n\nSteps:\n",
-				assessment.Strategy, assessment.Confidence*100, assessment.EstimatedEffort)
+			assessmentComment := fmt.Sprintf("**AI Assessment**\n\nStrategy: %s\n\nConfidence: %.0f%%\n\nSteps:\n",
+				assessment.Strategy, assessment.Confidence*100)
 			for i, step := range assessment.Steps {
 				assessmentComment += fmt.Sprintf("%d. %s\n", i+1, step)
 			}
@@ -746,12 +746,11 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 			e.logEvent(ctx, events.EventTypeAssessmentCompleted, events.SeverityInfo, issue.ID,
 				fmt.Sprintf("AI assessment completed for issue %s", issue.ID),
 				map[string]interface{}{
-					"success":          true,
-					"strategy":         assessment.Strategy,
-					"confidence":       assessment.Confidence,
-					"estimated_effort": assessment.EstimatedEffort,
-					"steps_count":      len(assessment.Steps),
-					"risks_count":      len(assessment.Risks),
+					"success":     true,
+					"strategy":    assessment.Strategy,
+					"confidence":  assessment.Confidence,
+					"steps_count": len(assessment.Steps),
+					"risks_count": len(assessment.Risks),
 				})
 		}
 	} else {
