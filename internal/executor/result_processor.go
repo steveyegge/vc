@@ -292,6 +292,40 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				fmt.Fprintf(os.Stderr, "Warning: quality gates canceled due to executor shutdown\n")
 				result.GatesPassed = false
 				allPassed = false // Don't pass gates on cancellation
+
+				// vc-140: Log partial results before cleanup
+				if len(gateResults) > 0 {
+					comment := "**Quality Gates Canceled During Execution**\n\nPartial results:\n"
+					for _, gateResult := range gateResults {
+						status := "PASS"
+						if !gateResult.Passed {
+							status = "FAIL"
+						}
+						comment += fmt.Sprintf("- %s: %s\n", gateResult.Gate, status)
+					}
+					comment += "\nIssue returned to 'open' status for retry."
+
+					if err := rp.store.AddComment(ctx, issue.ID, "quality-gates", comment); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: failed to add partial results comment: %v\n", err)
+					}
+
+					// Also log events for each completed gate (vc-140)
+					for _, gateResult := range gateResults {
+						severity := events.SeverityInfo
+						if !gateResult.Passed {
+							severity = events.SeverityWarning
+						}
+						rp.logEvent(ctx, events.EventTypeQualityGatesProgress, severity, issue.ID,
+							fmt.Sprintf("Quality gate %s: %s (canceled)", gateResult.Gate,
+								map[bool]string{true: "PASS", false: "FAIL"}[gateResult.Passed]),
+							map[string]interface{}{
+								"gate":     string(gateResult.Gate),
+								"passed":   gateResult.Passed,
+								"canceled": true,
+							})
+					}
+				}
+
 				// Don't handle gate results - let the executor release the issue
 			} else {
 				result.GatesPassed = allPassed
