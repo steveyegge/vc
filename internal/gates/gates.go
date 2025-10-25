@@ -464,9 +464,34 @@ func (r *Runner) executeFixInPlace(ctx context.Context, originalIssue *types.Iss
 }
 
 // executeAcceptableFailure closes the issue despite gate failures
+// vc-155: Creates blocker issues for pre-existing problems discovered during gate failures
 func (r *Runner) executeAcceptableFailure(ctx context.Context, originalIssue *types.Issue, strategy *ai.RecoveryStrategy) error {
+	// vc-155: Create blocker issues for pre-existing problems
+	// When AI identifies gate failures as pre-existing (not caused by current work),
+	// it creates blocker issues to ensure the pre-existing work gets fixed
+	var createdBlockers []string
+	if len(strategy.CreateIssues) > 0 {
+		// Use supervisor's CreateDiscoveredIssues to handle blocker creation
+		if r.supervisor != nil {
+			discoveredIDs, err := r.supervisor.CreateDiscoveredIssues(ctx, originalIssue, strategy.CreateIssues)
+			if err != nil {
+				return fmt.Errorf("failed to create blocker issues for pre-existing failures: %w", err)
+			}
+			createdBlockers = discoveredIDs
+			fmt.Printf("✓ Created %d blocker issue(s) for pre-existing failures: %v\n", len(createdBlockers), createdBlockers)
+		} else {
+			fmt.Printf("warning: Cannot create blocker issues without AI supervisor\n")
+		}
+	}
+
 	// Add warning comment about acceptable failure
-	warningComment := fmt.Sprintf("⚠️ **Quality gates failed but closing anyway (AI decision)**\n\n%s", strategy.AddComment)
+	var warningComment string
+	if len(createdBlockers) > 0 {
+		warningComment = fmt.Sprintf("⚠️ **Quality gates failed but closing anyway (AI decision)**\n\n%s\n\nCreated blocker issues for pre-existing problems: %s",
+			strategy.AddComment, strings.Join(createdBlockers, ", "))
+	} else {
+		warningComment = fmt.Sprintf("⚠️ **Quality gates failed but closing anyway (AI decision)**\n\n%s", strategy.AddComment)
+	}
 	if err := r.store.AddComment(ctx, originalIssue.ID, "ai-supervisor", warningComment); err != nil {
 		fmt.Printf("warning: failed to add acceptable failure comment: %v\n", err)
 	}
@@ -477,7 +502,11 @@ func (r *Runner) executeAcceptableFailure(ctx context.Context, originalIssue *ty
 		if err := r.store.CloseIssue(ctx, originalIssue.ID, reason, "ai-supervisor"); err != nil {
 			return fmt.Errorf("failed to close issue: %w", err)
 		}
-		fmt.Printf("✓ AI recovery (acceptable_failure): closed %s despite gate failures\n", originalIssue.ID)
+		if len(createdBlockers) > 0 {
+			fmt.Printf("✓ AI recovery (acceptable_failure): closed %s despite gate failures, created %d blocker(s)\n", originalIssue.ID, len(createdBlockers))
+		} else {
+			fmt.Printf("✓ AI recovery (acceptable_failure): closed %s despite gate failures\n", originalIssue.ID)
+		}
 	} else if strategy.RequiresApproval {
 		// Add approval request label
 		if err := r.store.AddLabel(ctx, originalIssue.ID, "needs-approval", "ai-supervisor"); err != nil {

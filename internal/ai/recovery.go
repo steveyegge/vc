@@ -126,7 +126,7 @@ FAILED GATES (%d total):
 
 AVAILABLE RECOVERY ACTIONS:
 1. "fix_in_place" - Mark as blocked, create focused fix issues
-2. "acceptable_failure" - Close anyway if failures are non-critical (requires approval)
+2. "acceptable_failure" - Close anyway if failures are non-critical or pre-existing
 3. "split_work" - Create separate issues for fixes, close original
 4. "escalate" - Flag for human review and decision
 5. "retry" - Suggest retry (for flaky tests/transient failures)
@@ -135,14 +135,23 @@ DECISION CRITERIA:
 - Issue priority and type
 - Severity of failures
 - Whether failures are in the core work or incidental
+- Whether failures are pre-existing (not caused by current work)
 - Cost/benefit of fixing vs accepting
 
 Examples:
 - Flaky test failures → retry or acceptable_failure
 - Critical bug in P0 issue → fix_in_place
-- Lint warnings in chore task → acceptable_failure
+- Lint warnings in chore task → acceptable_failure (with blocker issue for pre-existing lint errors)
 - Build failures → fix_in_place
 - Test failures for new features → fix_in_place
+- Pre-existing test failures unrelated to current work → acceptable_failure (with blocker issue to fix them)
+
+IMPORTANT for "acceptable_failure":
+When failures are PRE-EXISTING (not caused by the current work), you should:
+1. Set action to "acceptable_failure"
+2. Include the pre-existing issues in "create_issues" array
+3. Set discovery_type to "blocker" for these issues
+4. These blocker issues will be created to fix the pre-existing problems
 
 Provide your strategy as a JSON object:
 {
@@ -151,10 +160,11 @@ Provide your strategy as a JSON object:
   "confidence": 0.85,
   "create_issues": [
     {
-      "title": "Fix test X",
+      "title": "Fix pre-existing lint errors",
       "description": "Details of what needs to be fixed",
       "type": "bug|task",
-      "priority": "P0|P1|P2|P3"
+      "priority": "P0|P1|P2|P3",
+      "discovery_type": "blocker|related|background"
     }
   ],
   "mark_as_blocked": true/false,
