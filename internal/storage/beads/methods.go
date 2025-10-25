@@ -565,6 +565,7 @@ func (s *VCStorage) GetStatistics(ctx context.Context) (*types.Statistics, error
 		InProgressIssues: beadsStats.InProgressIssues,
 		ClosedIssues:     beadsStats.ClosedIssues,
 		BlockedIssues:    beadsStats.BlockedIssues,
+		ReadyIssues:      beadsStats.ReadyIssues, // vc-166: Include ready issues count
 	}, nil
 }
 
