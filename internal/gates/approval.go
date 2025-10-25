@@ -163,10 +163,7 @@ func (g *ApprovalGate) buildSummary(ctx context.Context) (string, error) {
 	}
 
 	// Commits
-	commits, err := g.getCommits(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get commits: %w", err)
-	}
+	commits := g.getCommits(ctx)
 
 	if len(commits) > 0 {
 		sb.WriteString(fmt.Sprintf("Commits (%d):\n", len(commits)))
@@ -215,7 +212,7 @@ func (g *ApprovalGate) getChangedFiles(ctx context.Context) ([]string, string, e
 }
 
 // getCommits returns the list of commits on the mission branch
-func (g *ApprovalGate) getCommits(ctx context.Context) ([]string, error) {
+func (g *ApprovalGate) getCommits(ctx context.Context) []string {
 	// Get commits that are on mission branch but not on main
 	cmd := exec.CommandContext(ctx, "git", "log", "--oneline", "main..HEAD")
 	cmd.Dir = g.sandbox.Path
@@ -223,7 +220,7 @@ func (g *ApprovalGate) getCommits(ctx context.Context) ([]string, error) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// If there are no commits, this might error
-		return []string{}, nil
+		return []string{}
 	}
 
 	commits := []string{}
@@ -235,7 +232,7 @@ func (g *ApprovalGate) getCommits(ctx context.Context) ([]string, error) {
 		}
 	}
 
-	return commits, nil
+	return commits
 }
 
 // showDiff displays the full git diff

@@ -306,7 +306,7 @@ func (m *manager) Cleanup(ctx context.Context, sandbox *Sandbox) error {
 	// This must happen AFTER merging database results but BEFORE deleting the branch
 	if sandbox.ApprovalStatus == "approved" {
 		fmt.Printf("Merging approved code changes from %s to main...\n", sandbox.GitBranch)
-		if err := mergeBranchToMain(ctx, sandbox.ParentRepo, sandbox.GitBranch, "main"); err != nil {
+		if err := mergeBranchToMain(ctx, sandbox.ParentRepo, sandbox.GitBranch); err != nil {
 			return fmt.Errorf("failed to merge code changes: %w", err)
 		}
 		fmt.Printf("✓ Code changes merged to main\n")

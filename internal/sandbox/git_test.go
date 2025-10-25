@@ -754,7 +754,7 @@ func TestMergeBranchToMain(t *testing.T) {
 	}
 
 	// Merge the feature branch
-	if err := mergeBranchToMain(ctx, repo, "feature/test-merge", "main"); err != nil {
+	if err := mergeBranchToMain(ctx, repo, "feature/test-merge"); err != nil {
 		t.Fatalf("mergeBranchToMain failed: %v", err)
 	}
 
@@ -862,7 +862,7 @@ func TestMergeBranchToMainWithConflicts(t *testing.T) {
 	}
 
 	// Attempt to merge - should fail with conflict error
-	err := mergeBranchToMain(ctx, repo, "feature/conflict-test", "main")
+	err := mergeBranchToMain(ctx, repo, "feature/conflict-test")
 	if err == nil {
 		t.Fatal("mergeBranchToMain should fail with merge conflicts")
 	}
@@ -903,7 +903,7 @@ func TestMergeBranchToMainNonExistent(t *testing.T) {
 	ctx := context.Background()
 
 	// Attempt to merge non-existent branch
-	err := mergeBranchToMain(ctx, repo, "nonexistent-branch", "main")
+	err := mergeBranchToMain(ctx, repo, "nonexistent-branch")
 	if err == nil {
 		t.Fatal("mergeBranchToMain should fail with non-existent branch")
 	}

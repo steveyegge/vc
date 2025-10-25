@@ -286,7 +286,8 @@ func validateGitRefName(name string) error {
 //
 // Returns an error if the merge fails or if there are conflicts.
 // The caller should handle merge conflicts appropriately.
-func mergeBranchToMain(ctx context.Context, repoPath, branchName, mainBranch string) error {
+func mergeBranchToMain(ctx context.Context, repoPath, branchName string) error {
+	mainBranch := "main"
 	// Validate repo is a git repository
 	if err := validateGitRepo(repoPath); err != nil {
 		return fmt.Errorf("repo validation failed: %w", err)
