@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // DiscoverDatabase looks for .beads/*.db in the current directory only.
@@ -210,11 +211,35 @@ func ValidateDatabaseFreshness(dbPath string) error {
 	}
 
 	// Compare modification times
+	// vc-178: For SQLite WAL mode, use the newest timestamp among .db, .db-shm, and .db-wal
+	// The main .db file may not be updated while WAL is active
 	dbMtime := dbInfo.ModTime()
+
+	// Check for WAL files and use the newest timestamp
+	walPath := dbPath + "-wal"
+	if walInfo, err := os.Stat(walPath); err == nil {
+		if walInfo.ModTime().After(dbMtime) {
+			dbMtime = walInfo.ModTime()
+		}
+	}
+
+	shmPath := dbPath + "-shm"
+	if shmInfo, err := os.Stat(shmPath); err == nil {
+		if shmInfo.ModTime().After(dbMtime) {
+			dbMtime = shmInfo.ModTime()
+		}
+	}
+
 	jsonlMtime := jsonlInfo.ModTime()
 
-	// If JSONL is newer than database, the database is stale
-	if jsonlMtime.After(dbMtime) {
+	// vc-178: Add tolerance for filesystem timestamp precision
+	// Filesystem timestamps can vary by platform (FAT32: 2s, ext4: 1ns, etc.)
+	// Allow up to 1 second difference to avoid false positives
+	const stalenessTolerance = 1 * time.Second
+	staleness := jsonlMtime.Sub(dbMtime)
+
+	// If JSONL is newer than database by more than tolerance, database is stale
+	if staleness > stalenessTolerance {
 		return fmt.Errorf(
 			"database is out of sync with issues.jsonl:\n"+
 				"  database: %s (modified: %s)\n"+
@@ -229,7 +254,7 @@ func ValidateDatabaseFreshness(dbPath string) error {
 				"Then run vc again.",
 			dbPath, dbMtime.Format("2006-01-02 15:04:05"),
 			jsonlPath, jsonlMtime.Format("2006-01-02 15:04:05"),
-			jsonlMtime.Sub(dbMtime))
+			staleness)
 	}
 
 	return nil
