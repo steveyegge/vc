@@ -375,12 +375,23 @@ func (s *VCStorage) ClaimIssue(ctx context.Context, issueID, executorInstanceID 
 	}
 
 	// Update issue status to in_progress in Beads (through transaction)
-	_, err = tx.ExecContext(ctx, `
-		UPDATE issues SET status = ?, updated_at = ? WHERE id = ?
+	// Only update if current status is 'open' - refuse to claim closed issues (vc-173)
+	result, err := tx.ExecContext(ctx, `
+		UPDATE issues SET status = ?, updated_at = ?
+		WHERE id = ? AND status = 'open'
 	`, "in_progress", time.Now(), issueID)
 
 	if err != nil {
 		return fmt.Errorf("failed to update issue status: %w", err)
+	}
+
+	// Check if any rows were affected - if not, issue was not open
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("cannot claim issue %s: issue is not open (may be closed or in_progress)", issueID)
 	}
 
 	// Commit transaction
