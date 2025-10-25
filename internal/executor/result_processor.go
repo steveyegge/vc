@@ -90,8 +90,17 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 		reportHandler := NewAgentReportHandler(rp.store, rp.actor)
 		completed, err := reportHandler.HandleReport(ctx, issue, agentReport)
 		if err != nil {
+			// vc-141: Log error explicitly with event emission
 			fmt.Fprintf(os.Stderr, "warning: failed to handle agent report: %v (falling back to AI analysis)\n", err)
+			rp.logEvent(ctx, events.EventTypeError, events.SeverityWarning, issue.ID,
+				fmt.Sprintf("Structured report handling failed: %v", err),
+				map[string]interface{}{
+					"report_status":  agentReport.Status,
+					"report_summary": agentReport.Summary,
+					"error":          err.Error(),
+				})
 			// Don't fail - fall through to AI analysis
+			// reportHandled stays false, ensuring AI analysis will run
 			reportHandled = false
 		} else {
 			// Structured report was handled successfully
