@@ -28,9 +28,18 @@ func createWorktree(ctx context.Context, cfg SandboxConfig, _ string) (string, e
 		return "", fmt.Errorf("failed to create sandbox root directory: %w", err)
 	}
 
-	// Check if worktree path already exists
+	// Check if worktree path already exists on disk
 	if _, err := os.Stat(worktreePath); err == nil {
-		return "", fmt.Errorf("worktree path already exists: %s", worktreePath)
+		// Path exists on disk - try to clean it up first (vc-170)
+		// This handles cases where previous cleanup was interrupted
+		fmt.Fprintf(os.Stderr, "Warning: worktree path %s already exists, attempting cleanup...\n", worktreePath)
+		if err := removeWorktree(ctx, cfg.ParentRepo, worktreePath); err != nil {
+			return "", fmt.Errorf("worktree path already exists and cleanup failed: %s (error: %w)", worktreePath, err)
+		}
+		// Verify cleanup succeeded
+		if _, err := os.Stat(worktreePath); err == nil {
+			return "", fmt.Errorf("worktree path still exists after cleanup attempt: %s", worktreePath)
+		}
 	}
 
 	// Create worktree in detached HEAD state
@@ -63,38 +72,39 @@ func createWorktree(ctx context.Context, cfg SandboxConfig, _ string) (string, e
 // The parentRepo parameter is optional - if empty, commands will run without explicit directory context.
 func removeWorktree(ctx context.Context, parentRepo, worktreePath string) error {
 	// Check if path exists
+	pathExists := true
 	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
-		// Path doesn't exist, nothing to remove
-		return nil
+		pathExists = false
 	}
 
-	// First, try to remove the worktree using git command
-	// Run from parent repo if provided for more reliable operation
-	cmd := exec.CommandContext(ctx, "git", "worktree", "remove", worktreePath, "--force")
-	if parentRepo != "" {
-		cmd.Dir = parentRepo
-	}
-
-	_, err := cmd.CombinedOutput()
-	if err != nil {
-		// If git command fails, fall back to manual removal
-		// This can happen if the worktree is already broken
-		if err := os.RemoveAll(worktreePath); err != nil {
-			return fmt.Errorf("failed to remove worktree directory: %w", err)
-		}
-
-		// Try to prune the worktree list
-		// This may fail if we can't find the parent repo, but that's okay
-		pruneCmd := exec.CommandContext(ctx, "git", "worktree", "prune")
+	// Always try to remove via git first (even if path doesn't exist)
+	// The worktree might be registered in git but the path deleted (vc-170)
+	if pathExists {
+		// First, try to remove the worktree using git command
+		// Run from parent repo if provided for more reliable operation
+		cmd := exec.CommandContext(ctx, "git", "worktree", "remove", worktreePath, "--force")
 		if parentRepo != "" {
-			pruneCmd.Dir = parentRepo
+			cmd.Dir = parentRepo
 		}
-		_ = pruneCmd.Run() // Ignore errors from prune
 
-		return nil
+		_, err := cmd.CombinedOutput()
+		if err != nil {
+			// If git command fails, fall back to manual removal
+			// This can happen if the worktree is already broken
+			if err := os.RemoveAll(worktreePath); err != nil {
+				return fmt.Errorf("failed to remove worktree directory: %w", err)
+			}
+		}
 	}
 
-	// Successfully removed via git command
+	// Always prune the worktree list after removal (vc-170)
+	// This ensures git's worktree registry stays in sync with disk state
+	pruneCmd := exec.CommandContext(ctx, "git", "worktree", "prune")
+	if parentRepo != "" {
+		pruneCmd.Dir = parentRepo
+	}
+	_ = pruneCmd.Run() // Ignore errors from prune - it's best-effort
+
 	return nil
 }
 

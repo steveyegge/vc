@@ -140,10 +140,18 @@ func TestCreateWorktree(t *testing.T) {
 		t.Errorf("README.md not found in worktree: %v", err)
 	}
 
-	// Test creating duplicate worktree (should fail)
-	_, err = createWorktree(ctx, cfg, "mission-test-123")
-	if err == nil {
-		t.Error("createWorktree should fail when path already exists")
+	// Test creating duplicate worktree (should auto-recover via cleanup - vc-170)
+	worktreePath2, err := createWorktree(ctx, cfg, "mission-test-123")
+	if err != nil {
+		t.Errorf("createWorktree should auto-recover when path exists: %v", err)
+	}
+	// Verify it's the same path (cleanup removed old one and created fresh)
+	if worktreePath2 != worktreePath {
+		t.Errorf("Auto-recovered worktree should have same path: got %s, want %s", worktreePath2, worktreePath)
+	}
+	// Verify it still exists and is valid
+	if err := validateGitRepo(worktreePath2); err != nil {
+		t.Errorf("Auto-recovered worktree is not a valid git repo: %v", err)
 	}
 
 	// Clean up worktree
