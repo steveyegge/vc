@@ -55,8 +55,25 @@ The executor will:
 			os.Exit(1)
 		}
 
+		// vc-195: Acquire exclusive lock to prevent bd daemon interference
+		// This implements the VC Daemon Exclusion Protocol
+		// bd daemon will check for .beads/.exclusive-lock and skip this database
+		lockPath, err := storage.AcquireExclusiveLock(dbPath, version)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		// Ensure lock is released on exit
+		defer func() {
+			if err := storage.ReleaseExclusiveLock(lockPath); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to release exclusive lock: %v\n", err)
+			}
+		}()
+		green := color.New(color.FgGreen).SprintFunc()
+		fmt.Fprintf(os.Stderr, "%s Acquired exclusive lock (bd daemon will skip this database)\n", green("✓"))
+
 		// vc-173: Validate database is in sync with issues.jsonl
-		// This prevents claiming closed issues when database is stale after git pull
+		// vc-195: Now that we control sync via exclusive lock, this check works reliably
 		if err := storage.ValidateDatabaseFreshness(dbPath); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -112,7 +129,6 @@ The executor will:
 			os.Exit(1)
 		}
 
-		green := color.New(color.FgGreen).SprintFunc()
 		cyan := color.New(color.FgCyan).SprintFunc()
 		fmt.Printf("%s Executor started (version %s)\n", green("✓"), cyan(version))
 		fmt.Printf("  Polling for ready work every %v\n", cfg.PollInterval)

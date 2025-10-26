@@ -42,6 +42,14 @@ This ensures you're always using the latest stable version from the homebrew tap
   export VC_DEBUG_EVENTS=1  # Enable debug logging for agent progress events
   ```
 
+**Daemon Coexistence (vc-195):**
+- **VC uses an exclusive lock protocol** to prevent bd daemon from interfering with execution
+- When VC executor starts, it creates `.beads/.exclusive-lock`
+- bd daemon (v0.17.3+) checks for this lock and skips locked databases
+- **You can safely run bd daemon alongside VC** - they coexist peacefully
+- VC manages its database exclusively, daemon manages other databases
+- Lock is automatically removed on executor shutdown
+
 When starting a new session:
 
 ```bash
@@ -539,6 +547,7 @@ Early issues (vc-5 through vc-9) had inverted dependencies, fixed in vc-90. All 
 - **Don't use markdown TODOs** - Everything goes in beads
 - **Don't create one-off scripts** - Use `bd` commands
 - **Always export before committing** - Keep JSONL in sync with database changes
+- **bd daemon can coexist with VC** - VC uses exclusive lock protocol (vc-195, requires Beads v0.17.3+)
 - **Beads path is `.beads/vc.db`** - Not `.vc/vc.db` (README is outdated)
 - **Bootstrap first** - Don't jump ahead to advanced features
 - **Set `ANTHROPIC_API_KEY`** - Required for AI supervision features (assessment, analysis, discovered issues)
