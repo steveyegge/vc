@@ -251,7 +251,7 @@ func ValidateDatabaseFreshness(dbPath string) error {
 				"To fix this, sync your database with the canonical JSONL:\n"+
 				"  bd import .beads/issues.jsonl\n"+
 				"\n"+
-				"Then run vc again.",
+				"Then run vc again",
 			dbPath, dbMtime.Format("2006-01-02 15:04:05"),
 			jsonlPath, jsonlMtime.Format("2006-01-02 15:04:05"),
 			staleness)
