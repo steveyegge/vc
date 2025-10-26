@@ -275,7 +275,50 @@ func (d *CruftDetector) evaluateCruft(ctx context.Context, files []cruftFile) (*
 		return nil, fmt.Errorf("parsing AI response: %s", parseResult.Error)
 	}
 
+	// Validate the AI response
+	if err := d.validateEvaluation(&parseResult.Data, filesToEvaluate); err != nil {
+		return nil, fmt.Errorf("invalid AI response: %w", err)
+	}
+
 	return &parseResult.Data, nil
+}
+
+// validateEvaluation validates the AI's response for correctness.
+// It checks that glob patterns are valid and that referenced files exist in the input.
+func (d *CruftDetector) validateEvaluation(eval *cruftEvaluation, files []cruftFile) error {
+	// Validate glob patterns are valid
+	for _, pattern := range eval.PatternsToIgnore {
+		// Empty pattern is invalid
+		if pattern == "" {
+			return fmt.Errorf("empty glob pattern in patterns_to_ignore")
+		}
+		// Test pattern validity by matching against a test string
+		if _, err := filepath.Match(pattern, "test"); err != nil {
+			return fmt.Errorf("invalid glob pattern %q: %w", pattern, err)
+		}
+	}
+
+	// Build set of valid file paths from input
+	fileSet := make(map[string]bool)
+	for _, f := range files {
+		fileSet[f.Path] = true
+	}
+
+	// Validate that cruft_to_delete references only files we sent
+	for _, action := range eval.CruftToDelete {
+		if !fileSet[action.File] {
+			return fmt.Errorf("AI referenced unknown file %q (not in input list)", action.File)
+		}
+	}
+
+	// Validate that legitimate_files references only files we sent
+	for _, legit := range eval.LegitimateFiles {
+		if !fileSet[legit.File] {
+			return fmt.Errorf("AI referenced unknown file %q (not in input list)", legit.File)
+		}
+	}
+
+	return nil
 }
 
 // buildPrompt creates the AI evaluation prompt.

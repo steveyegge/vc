@@ -861,3 +861,159 @@ func TestCruftDetector_Check_PromptTooLarge(t *testing.T) {
 	assert.Contains(t, err.Error(), "prompt too large")
 	assert.Contains(t, err.Error(), "max 15000")
 }
+
+func TestCruftDetector_Check_InvalidGlobPattern(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cruft-invalid-glob-test-*")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Create cruft files above threshold
+	for i := 0; i < 5; i++ {
+		filename := filepath.Join(tmpDir, fmt.Sprintf("file%d.bak", i))
+		err = os.WriteFile(filename, []byte("test\n"), 0644)
+		require.NoError(t, err)
+	}
+
+	// Mock AI that returns invalid glob pattern
+	mockAI := &mockSupervisor{
+		response: `{
+			"cruft_to_delete": [
+				{
+					"file": "file0.bak",
+					"reason": "Backup file",
+					"pattern": "*.bak"
+				}
+			],
+			"patterns_to_ignore": ["[invalid"],
+			"legitimate_files": [],
+			"reasoning": "Found backup files"
+		}`,
+	}
+
+	detector, err := NewCruftDetector(tmpDir, mockAI)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	result, err := detector.Check(ctx, CodebaseContext{})
+
+	// Should get error about invalid glob pattern
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "invalid glob pattern")
+	assert.Contains(t, err.Error(), "[invalid")
+}
+
+func TestCruftDetector_Check_EmptyGlobPattern(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cruft-empty-glob-test-*")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Create cruft files above threshold
+	for i := 0; i < 5; i++ {
+		filename := filepath.Join(tmpDir, fmt.Sprintf("file%d.bak", i))
+		err = os.WriteFile(filename, []byte("test\n"), 0644)
+		require.NoError(t, err)
+	}
+
+	// Mock AI that returns empty glob pattern
+	mockAI := &mockSupervisor{
+		response: `{
+			"cruft_to_delete": [],
+			"patterns_to_ignore": [""],
+			"legitimate_files": [],
+			"reasoning": "test"
+		}`,
+	}
+
+	detector, err := NewCruftDetector(tmpDir, mockAI)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	result, err := detector.Check(ctx, CodebaseContext{})
+
+	// Should get error about empty pattern
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "empty glob pattern")
+}
+
+func TestCruftDetector_Check_AIHallucinatesFile(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cruft-hallucinate-test-*")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Create cruft files above threshold
+	for i := 0; i < 5; i++ {
+		filename := filepath.Join(tmpDir, fmt.Sprintf("file%d.bak", i))
+		err = os.WriteFile(filename, []byte("test\n"), 0644)
+		require.NoError(t, err)
+	}
+
+	// Mock AI that references a file we didn't send
+	mockAI := &mockSupervisor{
+		response: `{
+			"cruft_to_delete": [
+				{
+					"file": "nonexistent.bak",
+					"reason": "Hallucinated file",
+					"pattern": "*.bak"
+				}
+			],
+			"patterns_to_ignore": [],
+			"legitimate_files": [],
+			"reasoning": "Found backup files"
+		}`,
+	}
+
+	detector, err := NewCruftDetector(tmpDir, mockAI)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	result, err := detector.Check(ctx, CodebaseContext{})
+
+	// Should get error about unknown file
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "unknown file")
+	assert.Contains(t, err.Error(), "nonexistent.bak")
+}
+
+func TestCruftDetector_Check_AIHallucinatesLegitimateFile(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cruft-hallucinate-legit-test-*")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Create cruft files above threshold
+	for i := 0; i < 5; i++ {
+		filename := filepath.Join(tmpDir, fmt.Sprintf("file%d.bak", i))
+		err = os.WriteFile(filename, []byte("test\n"), 0644)
+		require.NoError(t, err)
+	}
+
+	// Mock AI that references a file we didn't send in legitimate_files
+	mockAI := &mockSupervisor{
+		response: `{
+			"cruft_to_delete": [],
+			"patterns_to_ignore": [],
+			"legitimate_files": [
+				{
+					"file": "hallucinated.go",
+					"justification": "This file doesn't exist in input"
+				}
+			],
+			"reasoning": "test"
+		}`,
+	}
+
+	detector, err := NewCruftDetector(tmpDir, mockAI)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	result, err := detector.Check(ctx, CodebaseContext{})
+
+	// Should get error about unknown file
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "unknown file")
+	assert.Contains(t, err.Error(), "hallucinated.go")
+}
