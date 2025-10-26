@@ -39,14 +39,21 @@ func NewVCStorage(ctx context.Context, dbPath string) (*VCStorage, error) {
 		return nil, fmt.Errorf("failed to open Beads storage: %w", err)
 	}
 
-	// 2. Get underlying DB connection for VC extension tables
+	// 2. Get underlying DB connection pool for regular queries (cached)
 	db := beadsStore.UnderlyingDB()
 	if db == nil {
 		return nil, fmt.Errorf("beads storage did not provide underlying DB")
 	}
 
-	// 3. Create VC extension tables
-	if err := createVCExtensionTables(ctx, db); err != nil {
+	// 3. Create VC extension tables using scoped connection for DDL
+	// Use UnderlyingConn(ctx) for DDL operations as recommended by Beads
+	conn, err := beadsStore.UnderlyingConn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get connection for DDL: %w", err)
+	}
+	defer conn.Close()
+
+	if err := createVCExtensionTables(ctx, conn); err != nil {
 		return nil, fmt.Errorf("failed to create VC extension tables: %w", err)
 	}
 
@@ -68,21 +75,22 @@ func (s *VCStorage) Close() error {
 
 // createVCExtensionTables creates VC-specific tables in the Beads database
 // These tables extend Beads with mission workflow metadata
-func createVCExtensionTables(ctx context.Context, db *sql.DB) error {
+// Uses a scoped connection (*sql.Conn) for DDL operations as recommended by Beads
+func createVCExtensionTables(ctx context.Context, conn *sql.Conn) error {
 	// Step 1: Create tables (without indexes that depend on columns that might not exist)
-	_, err := db.ExecContext(ctx, vcExtensionTableSchema)
+	_, err := conn.ExecContext(ctx, vcExtensionTableSchema)
 	if err != nil {
 		return fmt.Errorf("failed to create VC extension tables: %w", err)
 	}
 
 	// Step 2: Run migrations to add missing columns to existing tables
 	// This must run BEFORE creating indexes that depend on those columns
-	if err := migrateAgentEventsTable(ctx, db); err != nil {
+	if err := migrateAgentEventsTable(ctx, conn); err != nil {
 		return fmt.Errorf("failed to migrate agent_events table: %w", err)
 	}
 
 	// Step 3: Create indexes (now that all columns exist)
-	_, err = db.ExecContext(ctx, vcExtensionIndexSchema)
+	_, err = conn.ExecContext(ctx, vcExtensionIndexSchema)
 	if err != nil {
 		return fmt.Errorf("failed to create VC extension indexes: %w", err)
 	}
@@ -91,10 +99,11 @@ func createVCExtensionTables(ctx context.Context, db *sql.DB) error {
 }
 
 // migrateAgentEventsTable adds missing columns to existing vc_agent_events tables
-func migrateAgentEventsTable(ctx context.Context, db *sql.DB) error {
+// Uses a scoped connection (*sql.Conn) for DDL operations as recommended by Beads
+func migrateAgentEventsTable(ctx context.Context, conn *sql.Conn) error {
 	// Check if executor_id column exists
 	var hasExecutorID bool
-	err := db.QueryRowContext(ctx, `
+	err := conn.QueryRowContext(ctx, `
 		SELECT COUNT(*) > 0
 		FROM pragma_table_info('vc_agent_events')
 		WHERE name = 'executor_id'
@@ -105,7 +114,7 @@ func migrateAgentEventsTable(ctx context.Context, db *sql.DB) error {
 
 	if !hasExecutorID {
 		// Add executor_id column
-		_, err = db.ExecContext(ctx, `
+		_, err = conn.ExecContext(ctx, `
 			ALTER TABLE vc_agent_events ADD COLUMN executor_id TEXT
 		`)
 		if err != nil {
@@ -113,7 +122,7 @@ func migrateAgentEventsTable(ctx context.Context, db *sql.DB) error {
 		}
 
 		// Create index
-		_, err = db.ExecContext(ctx, `
+		_, err = conn.ExecContext(ctx, `
 			CREATE INDEX IF NOT EXISTS idx_vc_agent_events_executor ON vc_agent_events(executor_id)
 		`)
 		if err != nil {
@@ -123,7 +132,7 @@ func migrateAgentEventsTable(ctx context.Context, db *sql.DB) error {
 
 	// Check if agent_id column exists
 	var hasAgentID bool
-	err = db.QueryRowContext(ctx, `
+	err = conn.QueryRowContext(ctx, `
 		SELECT COUNT(*) > 0
 		FROM pragma_table_info('vc_agent_events')
 		WHERE name = 'agent_id'
@@ -134,7 +143,7 @@ func migrateAgentEventsTable(ctx context.Context, db *sql.DB) error {
 
 	if !hasAgentID {
 		// Add agent_id column
-		_, err = db.ExecContext(ctx, `
+		_, err = conn.ExecContext(ctx, `
 			ALTER TABLE vc_agent_events ADD COLUMN agent_id TEXT
 		`)
 		if err != nil {
@@ -144,7 +153,7 @@ func migrateAgentEventsTable(ctx context.Context, db *sql.DB) error {
 
 	// Check if source_line column exists
 	var hasSourceLine bool
-	err = db.QueryRowContext(ctx, `
+	err = conn.QueryRowContext(ctx, `
 		SELECT COUNT(*) > 0
 		FROM pragma_table_info('vc_agent_events')
 		WHERE name = 'source_line'
@@ -155,7 +164,7 @@ func migrateAgentEventsTable(ctx context.Context, db *sql.DB) error {
 
 	if !hasSourceLine {
 		// Add source_line column
-		_, err = db.ExecContext(ctx, `
+		_, err = conn.ExecContext(ctx, `
 			ALTER TABLE vc_agent_events ADD COLUMN source_line INTEGER DEFAULT 0
 		`)
 		if err != nil {
