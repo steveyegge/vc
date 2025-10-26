@@ -131,8 +131,9 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 	// Priority 2: Fall back to regular ready work
 	if issue == nil {
 		filter := types.WorkFilter{
-			Status: types.StatusOpen,
-			Limit:  1,
+			Status:     types.StatusOpen,
+			Limit:      1,
+			SortPolicy: types.SortPolicyPriority, // vc-190: Always use priority-first sorting
 		}
 
 		issues, err := e.store.GetReadyWork(ctx, filter)

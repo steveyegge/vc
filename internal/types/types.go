@@ -221,11 +221,28 @@ type IssueFilter struct {
 }
 
 // WorkFilter is used to filter ready work queries
+// SortPolicy determines how ready work is ordered (from Beads)
+type SortPolicy string
+
+// Sort policy constants (must match Beads library)
+const (
+	// SortPolicyHybrid prioritizes recent issues by priority, older by age (default)
+	SortPolicyHybrid SortPolicy = "hybrid"
+
+	// SortPolicyPriority always sorts by priority first, then creation date
+	// Use for autonomous execution - VC's default
+	SortPolicyPriority SortPolicy = "priority"
+
+	// SortPolicyOldest always sorts by creation date (oldest first)
+	SortPolicyOldest SortPolicy = "oldest"
+)
+
 type WorkFilter struct {
-	Status   Status
-	Priority *int
-	Assignee *string
-	Limit    int
+	Status     Status
+	Priority   *int
+	Assignee   *string
+	Limit      int
+	SortPolicy SortPolicy
 }
 
 // ExecutorStatus represents the state of an executor instance

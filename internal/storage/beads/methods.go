@@ -398,9 +398,10 @@ func (s *VCStorage) GetIssuesByLabel(ctx context.Context, label string) ([]*type
 // GetReadyWork retrieves ready work from Beads
 func (s *VCStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) ([]*types.Issue, error) {
 	beadsFilter := beads.WorkFilter{
-		Status:   beads.Status(filter.Status),
-		Priority: filter.Priority,
-		Limit:    filter.Limit,
+		Status:     beads.Status(filter.Status),
+		Priority:   filter.Priority,
+		Limit:      filter.Limit,
+		SortPolicy: beads.SortPolicy(filter.SortPolicy), // Pass through sort policy (vc-190)
 	}
 
 	beadsIssues, err := s.Storage.GetReadyWork(ctx, beadsFilter)
