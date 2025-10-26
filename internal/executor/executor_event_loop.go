@@ -1,0 +1,160 @@
+package executor
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/steveyegge/vc/internal/events"
+	"github.com/steveyegge/vc/internal/types"
+)
+
+// eventLoop is the main event loop that processes issues
+func (e *Executor) eventLoop(ctx context.Context) {
+	defer close(e.doneCh)
+
+	ticker := time.NewTicker(e.pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-e.stopCh:
+			return
+		case <-ticker.C:
+			// Update heartbeat
+			if err := e.store.UpdateHeartbeat(ctx, e.instanceID); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to update heartbeat: %v\n", err)
+			}
+
+			// Process one issue
+			if err := e.processNextIssue(ctx); err != nil {
+				// Log error but continue
+				fmt.Fprintf(os.Stderr, "error processing issue: %v\n", err)
+			}
+
+			// Check health monitors after completing an issue (if enabled)
+			if e.enableHealthMonitoring && e.healthRegistry != nil {
+				if err := e.checkHealthMonitors(ctx); err != nil {
+					// Log error but continue
+					fmt.Fprintf(os.Stderr, "error running health monitors: %v\n", err)
+				}
+			}
+		}
+	}
+}
+
+// checkMissionConvergence checks if completing this issue causes a mission to converge.
+// If the issue is a discovered:blocker and its parent mission has now converged, logs the event.
+func (e *Executor) checkMissionConvergence(ctx context.Context, issue *types.Issue) error {
+	// Check if this issue has the discovered:blocker label
+	labels, err := e.store.GetLabels(ctx, issue.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get labels for %s: %w", issue.ID, err)
+	}
+
+	hasBlockerLabel := false
+	for _, label := range labels {
+		if label == "discovered:blocker" {
+			hasBlockerLabel = true
+			break
+		}
+	}
+
+	if !hasBlockerLabel {
+		// Not a blocker, no need to check convergence
+		return nil
+	}
+
+	// Find the mission root
+	missionRoot, err := GetMissionRoot(ctx, e.store, issue.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get mission root: %w", err)
+	}
+
+	// Check if mission has converged
+	converged, err := HasMissionConverged(ctx, e.store, missionRoot.ID)
+	if err != nil {
+		return fmt.Errorf("failed to check mission convergence: %w", err)
+	}
+
+	if converged {
+		fmt.Printf("\n✓ Mission %s (%s) has converged - all discovered work complete!\n",
+			missionRoot.ID, missionRoot.Title)
+
+		// Log convergence event
+		e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, missionRoot.ID,
+			fmt.Sprintf("Mission %s converged after completing blocker %s", missionRoot.ID, issue.ID),
+			map[string]interface{}{
+				"event_subtype":     "mission_converged",
+				"mission_id":        missionRoot.ID,
+				"mission_title":     missionRoot.Title,
+				"completed_blocker": issue.ID,
+			})
+	}
+
+	return nil
+}
+
+// getNextReadyBlocker finds the highest priority discovered:blocker issue that is ready to execute.
+// Returns nil if no ready blockers are found.
+// vc-156: Optimized to use single SQL query instead of N+1 queries
+func (e *Executor) getNextReadyBlocker(ctx context.Context) (*types.Issue, error) {
+	// Use optimized storage method that does filtering in SQL (vc-156)
+	// This replaces the old approach of fetching all blockers then checking dependencies one by one
+	// Performance: O(1) query instead of O(N) queries where N = number of blockers
+	blockers, err := e.store.GetReadyBlockers(ctx, 1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ready blockers: %w", err)
+	}
+
+	if len(blockers) == 0 {
+		return nil, nil
+	}
+
+	return blockers[0], nil
+}
+
+// processNextIssue claims and processes the next ready issue with priority order:
+// 1. Discovered blockers (label=discovered:blocker, status=open, no blocking dependencies)
+// 2. Regular ready work (no dependencies)
+// 3. Discovered related work (label=discovered:related, status=open, no blocking dependencies)
+func (e *Executor) processNextIssue(ctx context.Context) error {
+	// Priority 1: Try to get a ready blocker
+	issue, err := e.getNextReadyBlocker(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get ready blockers: %w", err)
+	}
+
+	// Priority 2: Fall back to regular ready work
+	if issue == nil {
+		filter := types.WorkFilter{
+			Status: types.StatusOpen,
+			Limit:  1,
+		}
+
+		issues, err := e.store.GetReadyWork(ctx, filter)
+		if err != nil {
+			return fmt.Errorf("failed to get ready work: %w", err)
+		}
+
+		if len(issues) == 0 {
+			// No work available
+			return nil
+		}
+
+		issue = issues[0]
+	}
+
+	// Attempt to claim the issue
+	if err := e.store.ClaimIssue(ctx, issue.ID, e.instanceID); err != nil {
+		// Issue may have been claimed by another executor
+		// This is expected in multi-executor scenarios
+		return nil
+	}
+
+	// Successfully claimed - now execute it
+	return e.executeIssue(ctx, issue)
+}
