@@ -150,15 +150,16 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 	}
 
 	// Step 2: AI Analysis (vc-138: skip if structured report was successfully handled)
+	// vc-191: Always transition to analyzing state to maintain state machine integrity
+	// even when AI supervision is disabled or structured report was handled
+	if err := rp.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateAnalyzing); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
+	}
+
 	var analysis *ai.Analysis
 	if reportHandled {
 		fmt.Printf("Using structured agent report - skipping AI analysis\n")
 	} else if rp.supervisor != nil {
-		// Update execution state to analyzing
-		if err := rp.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateAnalyzing); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
-		}
-
 		// Log analysis started
 		rp.logEvent(ctx, events.EventTypeAnalysisStarted, events.SeverityInfo, issue.ID,
 			fmt.Sprintf("Starting AI analysis for issue %s", issue.ID),
@@ -220,6 +221,9 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 					"quality_issues":   len(analysis.QualityIssues),
 				})
 		}
+	} else {
+		// AI supervision disabled - log synthetic analysis state
+		fmt.Printf("AI supervision disabled - skipping analysis (state transition maintained)\n")
 	}
 
 	// Step 3: Quality Gates (if enabled and agent succeeded)
