@@ -817,3 +817,47 @@ func TestCruftDetector_Check_LargeNumberOfFiles(t *testing.T) {
 	// Verify the prompt mentions "Found 50 files" (not 100)
 	assert.Contains(t, prompt, "Found 50 files matching cruft patterns")
 }
+
+func TestCruftDetector_Check_PromptTooLarge(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cruft-large-prompt-test-*")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Create files with extremely long paths to trigger prompt size limit
+	// Each file path needs to be long enough that 50 files exceed maxPromptSize (15000 chars)
+	// Target: ~350 chars per file × 50 files = ~17500 chars (exceeds 15000)
+	longDirPath := filepath.Join(tmpDir, strings.Repeat("very_long_directory_name_", 10))
+	err = os.MkdirAll(longDirPath, 0755)
+	require.NoError(t, err)
+
+	// Create files with very long names
+	for i := 0; i < 50; i++ {
+		// Create a filename that's ~200 chars long
+		longFileName := fmt.Sprintf("%s_%d.bak", strings.Repeat("extremely_long_filename_component_", 5), i)
+		fullPath := filepath.Join(longDirPath, longFileName)
+		err = os.WriteFile(fullPath, []byte("test\n"), 0644)
+		require.NoError(t, err)
+	}
+
+	// Mock AI that would succeed if called
+	mockAI := &mockSupervisor{
+		response: `{
+			"cruft_to_delete": [],
+			"patterns_to_ignore": [],
+			"legitimate_files": [],
+			"reasoning": "test"
+		}`,
+	}
+
+	detector, err := NewCruftDetector(tmpDir, mockAI)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	result, err := detector.Check(ctx, CodebaseContext{})
+
+	// Should get error about prompt being too large
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "prompt too large")
+	assert.Contains(t, err.Error(), "max 15000")
+}

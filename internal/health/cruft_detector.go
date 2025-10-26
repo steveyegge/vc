@@ -16,6 +16,11 @@ const (
 	// to prevent token limit errors and excessive API costs.
 	// This matches FileSizeMonitor's limit for consistency.
 	maxFilesForAI = 50
+
+	// maxPromptSize limits the total prompt size sent to AI.
+	// This is approximately 4K tokens × 4 chars/token with a safety margin.
+	// Even with maxFilesForAI=50, very long file paths could create oversized prompts.
+	maxPromptSize = 15000
 )
 
 // CruftDetector identifies backup files, temp files, and other development
@@ -247,6 +252,13 @@ func (d *CruftDetector) evaluateCruft(ctx context.Context, files []cruftFile) (*
 	}
 
 	prompt := d.buildPrompt(filesToEvaluate)
+
+	// Check prompt size to prevent token limit errors
+	if len(prompt) > maxPromptSize {
+		return nil, fmt.Errorf(
+			"prompt too large (%d chars, max %d): reduce number of files or use shorter paths",
+			len(prompt), maxPromptSize)
+	}
 
 	// Call AI supervisor
 	response, err := d.Supervisor.CallAI(ctx, prompt, "cruft_evaluation", "", 4096)
