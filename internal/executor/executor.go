@@ -487,6 +487,11 @@ func (e *Executor) Stop(ctx context.Context) error {
 		}
 	}
 
+	// Update internal state first (vc-192: set running=false before DB update)
+	e.mu.Lock()
+	e.running = false
+	e.mu.Unlock()
+
 	// Mark instance as stopped (vc-102: Use UPDATE instead of INSERT)
 	if err := e.store.MarkInstanceStopped(ctx, e.instanceID); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to mark instance as stopped: %v\n", err)
@@ -503,10 +508,6 @@ func (e *Executor) Stop(ctx context.Context) error {
 		fmt.Printf("Cleanup: Deleted %d old stopped executor instance(s)\n", deleted)
 	}
 
-	e.mu.Lock()
-	e.running = false
-	e.mu.Unlock()
-
 	return nil
 }
 
@@ -515,4 +516,28 @@ func (e *Executor) IsRunning() bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.running
+}
+
+// MarkInstanceStoppedOnExit marks this executor instance as stopped.
+// This is called via defer to ensure instance is marked stopped even on abnormal exit.
+// It's idempotent - safe to call multiple times.
+func (e *Executor) MarkInstanceStoppedOnExit(ctx context.Context) error {
+	// Update internal state first (under lock)
+	e.mu.Lock()
+	wasRunning := e.running
+	e.running = false
+	e.mu.Unlock()
+
+	// Only call MarkInstanceStopped if we were running
+	// This avoids redundant DB calls when Stop() already marked it stopped
+	if !wasRunning {
+		return nil
+	}
+
+	// Mark as stopped in database
+	if err := e.store.MarkInstanceStopped(ctx, e.instanceID); err != nil {
+		return fmt.Errorf("failed to mark instance as stopped: %w", err)
+	}
+
+	return nil
 }

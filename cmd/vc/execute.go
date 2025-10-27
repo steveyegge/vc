@@ -115,6 +115,16 @@ The executor will:
 			os.Exit(1)
 		}
 
+		// Ensure instance is marked as stopped on exit (vc-192)
+		// This handles abnormal exits (panics, os.Exit, etc.) in addition to graceful shutdown
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := exec.MarkInstanceStoppedOnExit(shutdownCtx); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to mark instance as stopped: %v\n", err)
+			}
+		}()
+
 		// Set up context with cancellation
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()

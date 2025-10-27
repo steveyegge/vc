@@ -1,8 +1,8 @@
 module github.com/steveyegge/vc
 
-go 1.24.0
+go 1.25.0
 
-toolchain go1.24.2
+toolchain go1.25.3
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.14.0
