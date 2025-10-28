@@ -211,7 +211,7 @@ func TestCreateBlockingIssue(t *testing.T) {
 
 	// Create the original issue
 	originalIssue := &types.Issue{
-		ID:          "test-1",
+		ID:          "vc-test-1",
 		Title:       "Test Issue",
 		Description: "Test description",
 		Status:      types.StatusInProgress,
@@ -242,7 +242,7 @@ func TestCreateBlockingIssue(t *testing.T) {
 		t.Fatalf("Failed to create blocking issue: %v", err)
 	}
 
-	expectedID := "test-1-gate-test"
+	expectedID := "vc-test-1-gate-test"
 	if blockingID != expectedID {
 		t.Errorf("Expected blocking ID %s, got %s", expectedID, blockingID)
 	}
@@ -313,7 +313,7 @@ func TestHandleGateResults_AllPassed(t *testing.T) {
 
 	// Create the original issue
 	originalIssue := &types.Issue{
-		ID:          "test-2",
+		ID:          "vc-test-2",
 		Title:       "Test Issue 2",
 		Description: "Test description",
 		Status:      types.StatusInProgress,
@@ -379,7 +379,7 @@ func TestHandleGateResults_SomeFailed(t *testing.T) {
 
 	// Create the original issue
 	originalIssue := &types.Issue{
-		ID:          "test-3",
+		ID:          "vc-test-3",
 		Title:       "Test Issue 3",
 		Description: "Test description",
 		Status:      types.StatusInProgress,
@@ -419,7 +419,7 @@ func TestHandleGateResults_SomeFailed(t *testing.T) {
 	}
 
 	// Verify blocking issues were created (2 failures)
-	testGateIssue, err := store.GetIssue(ctx, "test-3-gate-test")
+	testGateIssue, err := store.GetIssue(ctx, "vc-test-3-gate-test")
 	if err != nil {
 		t.Fatalf("Failed to get test gate blocking issue: %v", err)
 	}
@@ -427,7 +427,7 @@ func TestHandleGateResults_SomeFailed(t *testing.T) {
 		t.Errorf("Expected blocking issue to be open")
 	}
 
-	buildGateIssue, err := store.GetIssue(ctx, "test-3-gate-build")
+	buildGateIssue, err := store.GetIssue(ctx, "vc-test-3-gate-build")
 	if err != nil {
 		t.Fatalf("Failed to get build gate blocking issue: %v", err)
 	}
@@ -536,7 +536,7 @@ func TestHandleGateResults_WithAI(t *testing.T) {
 
 	// Create the original issue (P3 chore with minor lint failures)
 	originalIssue := &types.Issue{
-		ID:          "test-ai-1",
+		ID:          "vc-test-ai-1",
 		Title:       "Refactor code structure",
 		Description: "Clean up code organization",
 		Status:      types.StatusInProgress,
@@ -622,7 +622,7 @@ func TestHandleGateResults_WithAI_CriticalFailures(t *testing.T) {
 
 	// Create high-priority issue with critical test failures
 	originalIssue := &types.Issue{
-		ID:          "test-ai-2",
+		ID:          "vc-test-ai-2",
 		Title:       "Fix authentication bug",
 		Description: "Critical security issue in auth flow",
 		Status:      types.StatusInProgress,
@@ -692,7 +692,7 @@ func TestHandleGateResults_NoAI_Fallback(t *testing.T) {
 
 	// Create test issue
 	originalIssue := &types.Issue{
-		ID:          "test-fallback-1",
+		ID:          "vc-test-fallback-1",
 		Title:       "Test fallback behavior",
 		Description: "Testing fallback when AI is unavailable",
 		Status:      types.StatusInProgress,
@@ -733,7 +733,7 @@ func TestHandleGateResults_NoAI_Fallback(t *testing.T) {
 	}
 
 	// Verify blocking issues were created
-	testGateIssue, err := store.GetIssue(ctx, "test-fallback-1-gate-test")
+	testGateIssue, err := store.GetIssue(ctx, "vc-test-fallback-1-gate-test")
 	if err != nil {
 		t.Fatalf("Fallback should create blocking issues: %v", err)
 	}

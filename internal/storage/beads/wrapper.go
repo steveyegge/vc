@@ -39,6 +39,15 @@ func NewVCStorage(ctx context.Context, dbPath string) (*VCStorage, error) {
 		return nil, fmt.Errorf("failed to open Beads storage: %w", err)
 	}
 
+	// 1.5. Initialize issue_prefix config if not already set (required by Beads for ID generation)
+	if prefix, err := beadsStore.GetConfig(ctx, "issue_prefix"); err != nil || prefix == "" {
+		// Set default prefix "vc" for VC project
+		if err := beadsStore.SetConfig(ctx, "issue_prefix", "vc"); err != nil {
+			beadsStore.Close()
+			return nil, fmt.Errorf("failed to set issue_prefix config: %w", err)
+		}
+	}
+
 	// 2. Get underlying DB connection pool for regular queries (cached)
 	db := beadsStore.UnderlyingDB()
 	if db == nil {

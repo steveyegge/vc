@@ -336,7 +336,7 @@ func (s *VCStorage) GetDependencyRecords(ctx context.Context, issueID string) ([
 
 // GetDependencyTree retrieves dependency tree from Beads
 func (s *VCStorage) GetDependencyTree(ctx context.Context, issueID string, maxDepth int) ([]*types.TreeNode, error) {
-	beadsNodes, err := s.Storage.GetDependencyTree(ctx, issueID, maxDepth, false)
+	beadsNodes, err := s.Storage.GetDependencyTree(ctx, issueID, maxDepth, false, false)
 	if err != nil {
 		return nil, err
 	}
