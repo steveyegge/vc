@@ -35,3 +35,4 @@ Thumbs.db
 logs/
 .beads/daemon.pid
 .beads/daemon.lock
+.beads/.exclusive-lock
