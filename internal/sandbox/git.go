@@ -371,6 +371,28 @@ func mergeBranchToMain(ctx context.Context, repoPath, branchName string) error {
 	return fmt.Errorf("git merge failed: %w (output: %s)", mergeErr, string(mergeOutput))
 }
 
+// PruneWorktrees removes stale worktree administrative files.
+// This should be called on executor startup to clean up orphaned worktrees
+// from previous crashes (vc-194).
+// The parentRepo parameter specifies the repository to prune worktrees for.
+func PruneWorktrees(ctx context.Context, parentRepo string) error {
+	// Validate parent repo is a git repository
+	if err := validateGitRepo(parentRepo); err != nil {
+		return fmt.Errorf("parent repo validation failed: %w", err)
+	}
+
+	// Run git worktree prune
+	pruneCmd := exec.CommandContext(ctx, "git", "worktree", "prune")
+	pruneCmd.Dir = parentRepo
+
+	output, err := pruneCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git worktree prune failed: %w (output: %s)", err, string(output))
+	}
+
+	return nil
+}
+
 // validateGitRepo checks if a directory is a git repository.
 // Returns an error if the path doesn't exist or is not a git repo.
 func validateGitRepo(path string) error {

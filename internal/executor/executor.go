@@ -272,6 +272,14 @@ func New(cfg *Config) (*Executor, error) {
 			e.enableSandboxes = false
 		} else {
 			e.sandboxMgr = sandboxMgr
+
+			// Prune orphaned worktrees on startup (vc-194)
+			// This cleans up worktrees left behind by previous crashes
+			ctx := context.Background()
+			if err := sandbox.PruneWorktrees(ctx, parentRepo); err != nil {
+				// Log warning but don't fail - prune is best-effort
+				fmt.Fprintf(os.Stderr, "Warning: failed to prune worktrees on startup: %v\n", err)
+			}
 		}
 	}
 
@@ -491,6 +499,14 @@ func (e *Executor) Stop(ctx context.Context) error {
 	e.mu.Lock()
 	e.running = false
 	e.mu.Unlock()
+
+	// Prune worktrees on shutdown (vc-194)
+	// This is best-effort cleanup - don't fail shutdown if it doesn't work
+	if e.enableSandboxes && e.config.ParentRepo != "" {
+		if err := sandbox.PruneWorktrees(ctx, e.config.ParentRepo); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to prune worktrees on shutdown: %v\n", err)
+		}
+	}
 
 	// Mark instance as stopped (vc-102: Use UPDATE instead of INSERT)
 	if err := e.store.MarkInstanceStopped(ctx, e.instanceID); err != nil {
