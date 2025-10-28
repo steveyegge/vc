@@ -51,10 +51,16 @@ Preflight gates make responsibility **crystal clear**:
 ✓ Baseline passes → Agent claims work → Baseline still passes = SUCCESS
 ✓ Baseline passes → Agent claims work → Baseline fails = AGENT'S RESPONSIBILITY
 
-❌ Baseline fails → Agent CANNOT claim work (degraded mode)
+⚠️ Baseline fails → Explicit blocking issues created (vc-baseline-*)
+   → Executor works on FIXING baseline issues (self-healing)
+   → Other work is blocked until baseline fixed
 ```
 
-The agent can never disclaim responsibility because work is **only claimed when the baseline is clean**.
+The system ensures:
+- **Baseline failures are explicit issues** - Not ignored or worked around
+- **Clear ownership** - Whoever works on baseline issues owns the fix
+- **Self-healing** - Executor can fix its own baseline (when vc-208 is fixed)
+- **Other work blocked** - Regular issues wait for baseline to be clean
 
 ### Real-World Example
 
@@ -68,17 +74,21 @@ Agent: "I don't have access to the state before my changes."
 Result: Ambiguity, wasted time, unclear responsibility
 ```
 
-**With preflight:**
+**With preflight (intended self-healing behavior):**
 ```
 Executor checks: Baseline has 3 failing tests
 Executor: "⚠️ DEGRADED MODE: Baseline quality gates failed"
-Executor: "Not claiming work until baseline is fixed"
-Executor: "Created blocking issues: vc-baseline-test"
-Human fixes the 3 tests
-Executor detects: Baseline now passes
-Executor resumes: Claims and executes work
-Result: Clear, no ambiguity, no excuses
+Executor: "Created blocking issue: vc-baseline-test (P1)"
+Executor: "Continuing work-claiming process"
+Executor claims: vc-baseline-test
+AI agent: Analyzes test failures, fixes the 3 tests
+Agent commits: "Fix baseline: resolve test failures"
+Executor checks: Baseline now passes (new commit)
+Executor resumes: Claims and executes regular work
+Result: Self-healing, clear ownership, no ambiguity
 ```
+
+**Note**: Current implementation (vc-208 bug) waits for human to fix baseline instead of claiming the baseline issue. This will be fixed to enable self-healing.
 
 ## How It Works
 
@@ -103,31 +113,39 @@ Result: Clear, no ambiguity, no excuses
                      ↙       ↘
               YES ↙           ↘ NO
                  ↓               ↓
-    ┌──────────────────┐  ┌──────────────────────┐
-    │ 3a. CLAIM WORK   │  │ 3b. DEGRADED MODE    │
-    │ Continue normal  │  │ Don't claim work     │
-    │ execution        │  │ Create blocking      │
-    │                  │  │ issues for failures  │
-    │                  │  │ Keep polling         │
-    └──────────────────┘  └──────────────────────┘
-                                    ↓
-                          ┌─────────────────────┐
-                          │ Human fixes baseline│
-                          │ Commits to main     │
-                          └─────────────────────┘
-                                    ↓
-                          ┌─────────────────────┐
-                          │ Executor detects:   │
-                          │ New commit hash     │
-                          │ Runs gates (cache   │
-                          │ miss)               │
-                          │ Baseline now passes │
-                          └─────────────────────┘
-                                    ↓
-                          ┌─────────────────────┐
-                          │ RESUME: Claim work  │
-                          └─────────────────────┘
+    ┌──────────────────┐  ┌────────────────────────────────┐
+    │ 3a. NORMAL MODE  │  │ 3b. DEGRADED MODE              │
+    │ Continue to      │  │ Create P1 blocking issues:     │
+    │ work claiming    │  │ - vc-baseline-test             │
+    │                  │  │ - vc-baseline-lint             │
+    └──────────────────┘  │ Continue to work claiming ✓    │
+                          └────────────────────────────────┘
+                 ↓                        ↓
+                 └────────────────────────┘
+                          ↓
+              ┌──────────────────────────┐
+              │ 4. CLAIM READY WORK      │
+              │ Priority:                │
+              │ 1. Discovered blockers   │
+              │ 2. Regular work (P1-P3)  │
+              │ 3. Baseline issues (P1)  │
+              └──────────────────────────┘
+                          ↓
+              ┌──────────────────────────┐
+              │ 5. EXECUTE WORK          │
+              │ Agent fixes issue        │
+              │ Commits changes          │
+              └──────────────────────────┘
+                          ↓
+              ┌──────────────────────────┐
+              │ Next preflight check     │
+              │ New commit → cache miss  │
+              │ If baseline now passes:  │
+              │ Return to normal mode    │
+              └──────────────────────────┘
 ```
+
+**Note**: Current implementation (vc-208) incorrectly stops at step 3b and doesn't proceed to step 4 when in degraded mode. This will be fixed.
 
 ### Code Path
 
@@ -215,10 +233,13 @@ Total time saved: 60 * 30s = 30 minutes
 ### What is Degraded Mode?
 
 When preflight gates fail, the executor enters **degraded mode**:
-- ❌ Does NOT claim work
-- ✅ Continues polling every 5 seconds
-- ✅ Creates blocking issues for each failure
-- ✅ Auto-recovers when baseline is fixed
+- ✅ Creates high-priority blocking issues for each failure
+- ✅ Continues normal work-claiming process
+- ✅ **Can claim and work on the blocking issues** (self-healing)
+- ✅ Other work is blocked by these issues via priority/dependencies
+- ✅ Auto-recovers when baseline issues are fixed
+
+⚠️ **KNOWN ISSUE (vc-208)**: Current implementation incorrectly stops ALL work claiming. The executor should be able to work on baseline issues, not just wait for human intervention. This will be fixed to enable self-healing.
 
 ### Blocking Issues Created
 
@@ -241,24 +262,36 @@ For each failing gate, a system-level blocking issue is created:
 ⚠️  DEGRADED MODE: Baseline quality gates failed
    Commit: 8e6cefe1234567890abcdef
    Failing gates: [test, lint]
-   Executor will not claim work until baseline is fixed
 
-   Created baseline blocking issue: vc-baseline-test
-   Created baseline blocking issue: vc-baseline-lint
+   Created baseline blocking issue: vc-baseline-test (P1)
+   Created baseline blocking issue: vc-baseline-lint (P1)
 
-   Fix the failing gates and they will be auto-detected
+✓ Continuing work-claiming process
+✓ Executor can work on baseline issues (self-healing)
 ```
 
-### Auto-Recovery
+### Self-Healing Workflow
 
-The executor automatically recovers when:
-1. Human fixes baseline failures
-2. Commits and pushes to main
-3. Executor's next poll detects new commit hash
-4. Preflight runs gates on new commit (cache miss)
-5. Gates pass → executor resumes claiming work
+The executor can automatically fix baseline failures:
 
-No manual intervention required beyond fixing the failures.
+**Intended behavior** (when vc-208 is fixed):
+1. Baseline fails → Create `vc-baseline-test`, `vc-baseline-lint` issues
+2. Executor continues through normal work-claiming logic
+3. Executor claims `vc-baseline-test` (P1, no dependencies)
+4. AI agent works on fixing test failures
+5. Agent commits fix
+6. Next preflight check: baseline passes
+7. Executor resumes claiming regular work
+
+**Current behavior** (vc-208 bug):
+1. Baseline fails → Create blocking issues
+2. Executor stops claiming ALL work (`return nil`)
+3. Waits for human to fix baseline manually
+4. Human fixes and commits
+5. Executor detects new commit, baseline passes
+6. Executor resumes work
+
+The bug will be fixed to enable the self-healing workflow.
 
 ## Configuration
 
@@ -519,9 +552,9 @@ The preflight system makes it **impossible** for agents to disclaim responsibili
 
 ### What if the baseline is always broken?
 
-**Answer**: Fix the baseline before running the executor. If your baseline is chronically broken, you have a bigger problem than the executor.
+**Answer**: The executor will create `vc-baseline-*` issues and work on fixing them (self-healing). If baseline issues can't be fixed automatically, they'll remain as P1 blocking issues that need human intervention.
 
-The executor is designed to work on **quality codebases**, not to be a workaround for broken tests.
+The key difference: Baseline failures become **explicit tracked work**, not silent pre-existing problems that agents disclaim.
 
 ### Can I disable the "no pre-existing excuse" rule?
 
@@ -539,7 +572,7 @@ export VC_PREFLIGHT_FAILURE_MODE=ignore
 
 ### How does this affect development velocity?
 
-**Answer**: Slightly slower initially (enforces baseline quality), **much faster** long-term (no ambiguous failures).
+**Answer**: Neutral to positive. Baseline issues are treated as explicit P1 work, not blockers that stop everything.
 
 **Without preflight**:
 - Agent works on broken baseline
@@ -548,14 +581,14 @@ export VC_PREFLIGHT_FAILURE_MODE=ignore
 - Wastes hours disambiguating
 - Quality degrades over time
 
-**With preflight**:
-- Executor blocks if baseline broken
-- Human fixes baseline first (~10 minutes)
-- Executor works on clean baseline
-- All failures are clearly agent's responsibility
+**With preflight (self-healing)**:
+- Baseline fails → Create `vc-baseline-*` issues (P1)
+- Executor works on fixing baseline issues
+- If agent can't fix, human intervenes on explicit issue
+- Regular work continues after baseline clean
 - Quality maintained over time
 
-**Net effect**: Trade 10 minutes upfront for hours saved in debugging ambiguity.
+**Net effect**: Baseline problems become explicit tracked work with clear ownership, preventing ambiguous failures and responsibility disclaimers.
 
 ### What if gates are flaky?
 
