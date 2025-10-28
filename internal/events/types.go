@@ -81,6 +81,18 @@ const (
 	EventTypeAgentHeartbeat EventType = "agent_heartbeat"
 	// EventTypeAgentStateChange indicates agent state change (thinking, planning, executing)
 	EventTypeAgentStateChange EventType = "agent_state_change"
+
+	// Preflight quality gates events (vc-196, vc-201)
+	// EventTypePreFlightCheckStarted indicates preflight baseline check started
+	EventTypePreFlightCheckStarted EventType = "pre_flight_check_started"
+	// EventTypePreFlightCheckCompleted indicates preflight baseline check completed
+	EventTypePreFlightCheckCompleted EventType = "pre_flight_check_completed"
+	// EventTypeBaselineCacheHit indicates baseline was retrieved from cache
+	EventTypeBaselineCacheHit EventType = "baseline_cache_hit"
+	// EventTypeBaselineCacheMiss indicates baseline was not in cache (will run gates)
+	EventTypeBaselineCacheMiss EventType = "baseline_cache_miss"
+	// EventTypeExecutorDegradedMode indicates executor entered degraded mode (baseline failed)
+	EventTypeExecutorDegradedMode EventType = "executor_degraded_mode"
 )
 
 // EventSeverity represents the severity level of an event.

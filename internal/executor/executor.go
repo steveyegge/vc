@@ -13,32 +13,35 @@ import (
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/config"
 	"github.com/steveyegge/vc/internal/deduplication"
+	"github.com/steveyegge/vc/internal/gates"
 	"github.com/steveyegge/vc/internal/git"
 	"github.com/steveyegge/vc/internal/health"
 	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/storage"
+	"github.com/steveyegge/vc/internal/storage/beads"
 	"github.com/steveyegge/vc/internal/types"
 	"github.com/steveyegge/vc/internal/watchdog"
 )
 
 // Executor manages the issue processing event loop
 type Executor struct {
-	store          storage.Storage
-	supervisor     *ai.Supervisor
-	monitor        *watchdog.Monitor
-	analyzer       *watchdog.Analyzer
-	intervention   *watchdog.InterventionController
-	watchdogConfig *watchdog.WatchdogConfig
-	sandboxMgr     sandbox.Manager
-	healthRegistry *health.MonitorRegistry
-	deduplicator   deduplication.Deduplicator // Shared deduplicator for sandbox manager and results processor (vc-137)
-	gitOps         git.GitOperations          // Git operations for auto-commit (vc-136)
-	messageGen     *git.MessageGenerator      // Commit message generator (vc-136)
-	config         *Config
-	instanceID     string
-	hostname       string
-	pid            int
-	version        string
+	store           storage.Storage
+	supervisor      *ai.Supervisor
+	monitor         *watchdog.Monitor
+	analyzer        *watchdog.Analyzer
+	intervention    *watchdog.InterventionController
+	watchdogConfig  *watchdog.WatchdogConfig
+	sandboxMgr      sandbox.Manager
+	healthRegistry  *health.MonitorRegistry
+	preFlightChecker *PreFlightChecker              // Preflight quality gates checker (vc-196)
+	deduplicator    deduplication.Deduplicator     // Shared deduplicator for sandbox manager and results processor (vc-137)
+	gitOps          git.GitOperations              // Git operations for auto-commit (vc-136)
+	messageGen      *git.MessageGenerator          // Commit message generator (vc-136)
+	config          *Config
+	instanceID      string
+	hostname        string
+	pid             int
+	version         string
 
 	// Control channels
 	stopCh             chan struct{}
@@ -371,6 +374,45 @@ func New(cfg *Config) (*Executor, error) {
 			} else {
 				fmt.Fprintf(os.Stderr, "Warning: health monitoring requires AI supervision (health monitoring disabled)\n")
 				e.enableHealthMonitoring = false
+			}
+		}
+	}
+
+	// Initialize preflight quality gates checker (vc-196)
+	if cfg.EnableQualityGates {
+		// Load preflight configuration from environment
+		preFlightConfig, err := PreFlightConfigFromEnv()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: invalid preflight configuration: %v (using defaults)\n", err)
+			preFlightConfig = DefaultPreFlightConfig()
+		}
+		preFlightConfig.WorkingDir = workingDir
+
+		// Get VCStorage from storage interface
+		vcStorage, ok := cfg.Store.(*beads.VCStorage)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "Warning: storage is not VCStorage (preflight disabled)\n")
+		} else {
+			// Create gates runner for preflight checker
+			gatesRunner, err := gates.NewRunner(&gates.Config{
+				Store:      cfg.Store,
+				Supervisor: e.supervisor, // Optional: for AI-driven recovery
+				WorkingDir: workingDir,
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to create gates runner: %v (preflight disabled)\n", err)
+			} else {
+				// Create preflight checker
+				preFlightChecker, err := NewPreFlightChecker(vcStorage, gatesRunner, preFlightConfig)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to create preflight checker: %v (preflight disabled)\n", err)
+				} else {
+					e.preFlightChecker = preFlightChecker
+					if preFlightConfig.Enabled {
+						fmt.Printf("✓ Preflight quality gates enabled (TTL: %v, mode: %s)\n",
+							preFlightConfig.CacheTTL, preFlightConfig.FailureMode)
+					}
+				}
 			}
 		}
 	}

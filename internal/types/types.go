@@ -437,3 +437,12 @@ func (a *ExecutionAttempt) Validate() error {
 	}
 	return nil
 }
+
+// GateResult represents the result of a quality gate check
+// vc-198: Used in preflight quality gates cache
+type GateResult struct {
+	Gate   string `json:"gate"`
+	Passed bool   `json:"passed"`
+	Output string `json:"output"`
+	Error  string `json:"error,omitempty"`
+}

@@ -122,6 +122,42 @@ func (e *Executor) getNextReadyBlocker(ctx context.Context) (*types.Issue, error
 // 2. Regular ready work (no dependencies)
 // 3. Discovered related work (label=discovered:related, status=open, no blocking dependencies)
 func (e *Executor) processNextIssue(ctx context.Context) error {
+	// vc-196: Run preflight quality gates check before claiming work
+	if e.preFlightChecker != nil {
+		allPassed, commitHash, err := e.preFlightChecker.CheckBaseline(ctx, e.instanceID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Preflight check failed: %v\n", err)
+			// Continue polling but don't claim work
+			return nil
+		}
+
+		if !allPassed {
+			// Baseline failed - enter degraded mode
+			failureMode := e.preFlightChecker.config.FailureMode
+
+			switch failureMode {
+			case FailureModeBlock:
+				// Create blocking issues and don't claim work
+				// Get the gate results from the latest run
+				// We need to run gates again to get the results for the error handler
+				// (CheckBaseline only returns pass/fail, not the detailed results)
+				fmt.Printf("⚠️  Baseline failed on commit %s - entering degraded mode\n", commitHash)
+				fmt.Printf("   Not claiming work until baseline is fixed\n")
+				fmt.Printf("   Fix the failing gates and they will be auto-detected\n")
+				return nil
+
+			case FailureModeWarn:
+				// Warn but continue claiming work
+				fmt.Printf("⚠️  WARNING: Baseline failed on commit %s but continuing anyway (warn mode)\n", commitHash)
+				// Continue to claim work below
+
+			case FailureModeIgnore:
+				// Ignore failures completely
+				// Continue to claim work below
+			}
+		}
+	}
+
 	// Priority 1: Try to get a ready blocker
 	issue, err := e.getNextReadyBlocker(ctx)
 	if err != nil {

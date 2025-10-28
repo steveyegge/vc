@@ -269,6 +269,17 @@ CREATE TABLE IF NOT EXISTS vc_execution_history (
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
     FOREIGN KEY (executor_instance_id) REFERENCES vc_executor_instances(id) ON DELETE SET NULL
 );
+
+-- Gate baselines (cache of preflight gate results by commit hash)
+-- vc-198: Pre-flight quality gates to prevent work on broken baseline
+CREATE TABLE IF NOT EXISTS vc_gate_baselines (
+    commit_hash TEXT PRIMARY KEY,
+    branch_name TEXT NOT NULL,
+    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    all_passed BOOLEAN NOT NULL,
+    results_json TEXT NOT NULL,  -- JSON map of gate results: {"test": {"passed": true, "output": "..."}, ...}
+    sandbox_path TEXT            -- Optional: for future Phase 3 sandbox reuse
+);
 `
 
 // VC-specific extension schema - INDEX DEFINITIONS
@@ -297,6 +308,10 @@ CREATE INDEX IF NOT EXISTS idx_vc_execution_executor ON vc_issue_execution_state
 -- Execution history indexes
 CREATE INDEX IF NOT EXISTS idx_vc_history_issue ON vc_execution_history(issue_id);
 CREATE INDEX IF NOT EXISTS idx_vc_history_started ON vc_execution_history(started_at);
+
+-- Gate baselines indexes
+CREATE INDEX IF NOT EXISTS idx_vc_gate_baselines_timestamp ON vc_gate_baselines(timestamp);
+CREATE INDEX IF NOT EXISTS idx_vc_gate_baselines_branch ON vc_gate_baselines(branch_name);
 `
 
 // ======================================================================
@@ -579,4 +594,111 @@ func vcIssueToBeads(vi *types.Issue) *beadsLib.Issue {
 		UpdatedAt:        vi.UpdatedAt,
 		ClosedAt:         vi.ClosedAt,
 	}
+}
+
+// ======================================================================
+// GATE BASELINE METHODS (vc-198: Preflight quality gates cache)
+// ======================================================================
+
+// GateBaseline represents a cached baseline of gate results for a specific commit
+type GateBaseline struct {
+	CommitHash  string
+	BranchName  string
+	Timestamp   string
+	AllPassed   bool
+	Results     map[string]*types.GateResult // Map of gate name -> result
+	SandboxPath string                       // Optional: for Phase 3 sandbox reuse
+}
+
+// GetGateBaseline retrieves a cached baseline for the given commit hash
+// Returns nil if no baseline exists for this commit
+func (s *VCStorage) GetGateBaseline(ctx context.Context, commitHash string) (*GateBaseline, error) {
+	var baseline GateBaseline
+	var resultsJSON string
+	var sandboxPath sql.NullString
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT commit_hash, branch_name, timestamp, all_passed, results_json, sandbox_path
+		FROM vc_gate_baselines
+		WHERE commit_hash = ?
+	`, commitHash).Scan(
+		&baseline.CommitHash,
+		&baseline.BranchName,
+		&baseline.Timestamp,
+		&baseline.AllPassed,
+		&resultsJSON,
+		&sandboxPath,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil // No baseline found (not an error)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query gate baseline: %w", err)
+	}
+
+	// Parse results JSON
+	if err := json.Unmarshal([]byte(resultsJSON), &baseline.Results); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal gate results: %w", err)
+	}
+
+	if sandboxPath.Valid {
+		baseline.SandboxPath = sandboxPath.String
+	}
+
+	return &baseline, nil
+}
+
+// SetGateBaseline stores a baseline in the cache (replaces existing if present)
+func (s *VCStorage) SetGateBaseline(ctx context.Context, baseline *GateBaseline) error {
+	// Marshal results to JSON
+	resultsJSON, err := json.Marshal(baseline.Results)
+	if err != nil {
+		return fmt.Errorf("failed to marshal gate results: %w", err)
+	}
+
+	// Use REPLACE to upsert (insert or update)
+	_, err = s.db.ExecContext(ctx, `
+		REPLACE INTO vc_gate_baselines (commit_hash, branch_name, timestamp, all_passed, results_json, sandbox_path)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, baseline.CommitHash, baseline.BranchName, baseline.Timestamp, baseline.AllPassed, string(resultsJSON), baseline.SandboxPath)
+
+	if err != nil {
+		return fmt.Errorf("failed to store gate baseline: %w", err)
+	}
+
+	return nil
+}
+
+// InvalidateGateBaseline removes a baseline from the cache
+func (s *VCStorage) InvalidateGateBaseline(ctx context.Context, commitHash string) error {
+	_, err := s.db.ExecContext(ctx, `
+		DELETE FROM vc_gate_baselines WHERE commit_hash = ?
+	`, commitHash)
+
+	if err != nil {
+		return fmt.Errorf("failed to invalidate gate baseline: %w", err)
+	}
+
+	return nil
+}
+
+// CleanupOldBaselines removes baselines older than the given age
+// Used for cache cleanup to prevent unbounded growth
+func (s *VCStorage) CleanupOldBaselines(ctx context.Context, maxAge string) (int, error) {
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM vc_gate_baselines
+		WHERE timestamp < datetime('now', ?)
+	`, maxAge)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to cleanup old baselines: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return int(rowsAffected), nil
 }
