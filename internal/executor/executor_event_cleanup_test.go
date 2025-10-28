@@ -12,8 +12,7 @@ import (
 )
 
 // createSystemIssue creates a pseudo-issue for system-level events
-// Returns the auto-generated issue ID (with vc- prefix)
-func createSystemIssue(ctx context.Context, t *testing.T, store storage.Storage) string {
+func createSystemIssue(ctx context.Context, t *testing.T, store storage.Storage) {
 	t.Helper()
 	systemIssue := &types.Issue{
 		Title:       "System-level events",
@@ -27,7 +26,6 @@ func createSystemIssue(ctx context.Context, t *testing.T, store storage.Storage)
 	if err := store.CreateIssue(ctx, systemIssue, "test"); err != nil {
 		t.Fatalf("failed to create SYSTEM issue: %v", err)
 	}
-	return systemIssue.ID
 }
 
 // TestEventCleanupMetricsLogging verifies that event cleanup metrics are logged as structured events (vc-196)
