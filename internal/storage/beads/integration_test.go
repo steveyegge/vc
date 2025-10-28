@@ -1758,3 +1758,136 @@ func TestGetReadyBlockersFiltersDependencyTypes(t *testing.T) {
 		t.Logf("✓ Blocker with parent-child dependency correctly identified as ready")
 	})
 }
+
+// TestEpicsExcludedFromReadyWork validates that epics are never claimed as executable work (vc-203)
+func TestEpicsExcludedFromReadyWork(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create an epic issue (should be excluded from ready work)
+	epic := &types.Issue{
+		Title:       "Test Epic",
+		Description: "A tracking epic that should not be executed",
+		Status:      types.StatusOpen,
+		Priority:    1, // High priority to ensure it would be selected if not filtered
+		IssueType:   types.TypeEpic,
+	}
+	err = store.CreateIssue(ctx, epic, "test")
+	if err != nil {
+		t.Fatalf("Failed to create epic: %v", err)
+	}
+
+	// Create a regular task (should be included in ready work)
+	task := &types.Issue{
+		Title:       "Test Task",
+		Description: "A regular task that can be executed",
+		Status:      types.StatusOpen,
+		Priority:    2, // Lower priority than epic
+		IssueType:   types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, task, "test")
+	if err != nil {
+		t.Fatalf("Failed to create task: %v", err)
+	}
+
+	t.Run("GetReadyWork excludes epics", func(t *testing.T) {
+		filter := types.WorkFilter{
+			Status: types.StatusOpen,
+			Limit:  10,
+		}
+
+		readyWork, err := store.GetReadyWork(ctx, filter)
+		if err != nil {
+			t.Fatalf("GetReadyWork failed: %v", err)
+		}
+
+		// Should only return the task, not the epic
+		if len(readyWork) != 1 {
+			t.Fatalf("Expected 1 ready issue (task only), got %d", len(readyWork))
+		}
+
+		if readyWork[0].ID != task.ID {
+			t.Errorf("Expected task %s, got %s", task.ID, readyWork[0].ID)
+		}
+
+		// Verify epic was NOT included
+		for _, issue := range readyWork {
+			if issue.IssueType == types.TypeEpic {
+				t.Errorf("Epic %s was incorrectly included in ready work", issue.ID)
+			}
+		}
+
+		t.Logf("✓ GetReadyWork correctly excluded epic %s", epic.ID)
+	})
+
+	t.Run("GetReadyBlockers excludes epics", func(t *testing.T) {
+		// Create an epic blocker with discovered:blocker label
+		epicBlocker := &types.Issue{
+			Title:       "Epic Blocker",
+			Description: "An epic marked as blocker (should still be excluded)",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeEpic,
+		}
+		err = store.CreateIssue(ctx, epicBlocker, "test")
+		if err != nil {
+			t.Fatalf("Failed to create epic blocker: %v", err)
+		}
+
+		// Add discovered:blocker label to epic
+		err = store.AddLabel(ctx, epicBlocker.ID, "discovered:blocker", "test")
+		if err != nil {
+			t.Fatalf("Failed to add blocker label to epic: %v", err)
+		}
+
+		// Create a regular blocker issue
+		blocker := &types.Issue{
+			Title:       "Regular Blocker",
+			Description: "A regular blocker that can be executed",
+			Status:      types.StatusOpen,
+			Priority:    2,
+			IssueType:   types.TypeBug,
+		}
+		err = store.CreateIssue(ctx, blocker, "test")
+		if err != nil {
+			t.Fatalf("Failed to create blocker: %v", err)
+		}
+
+		// Add discovered:blocker label
+		err = store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test")
+		if err != nil {
+			t.Fatalf("Failed to add blocker label: %v", err)
+		}
+
+		// Get ready blockers
+		blockers, err := store.GetReadyBlockers(ctx, 10)
+		if err != nil {
+			t.Fatalf("GetReadyBlockers failed: %v", err)
+		}
+
+		// Should only return the regular blocker, not the epic blocker
+		if len(blockers) != 1 {
+			t.Fatalf("Expected 1 ready blocker (regular blocker only), got %d", len(blockers))
+		}
+
+		if blockers[0].ID != blocker.ID {
+			t.Errorf("Expected blocker %s, got %s", blocker.ID, blockers[0].ID)
+		}
+
+		// Verify epic blocker was NOT included
+		for _, issue := range blockers {
+			if issue.IssueType == types.TypeEpic {
+				t.Errorf("Epic blocker %s was incorrectly included in ready blockers", issue.ID)
+			}
+		}
+
+		t.Logf("✓ GetReadyBlockers correctly excluded epic blocker %s", epicBlocker.ID)
+	})
+}

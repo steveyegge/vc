@@ -409,9 +409,13 @@ func (s *VCStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) (
 		return nil, err
 	}
 
-	vcIssues := make([]*types.Issue, len(beadsIssues))
-	for i, bi := range beadsIssues {
-		vcIssues[i] = beadsIssueToVC(bi)
+	// vc-203: Filter out epics - they are tracking/meta issues, not executable work
+	vcIssues := make([]*types.Issue, 0, len(beadsIssues))
+	for _, bi := range beadsIssues {
+		if bi.IssueType == beads.TypeEpic {
+			continue // Skip epics
+		}
+		vcIssues = append(vcIssues, beadsIssueToVC(bi))
 	}
 	return vcIssues, nil
 }
@@ -441,9 +445,10 @@ func (s *VCStorage) GetReadyBlockers(ctx context.Context, limit int) ([]*types.I
 	// Optimized single SQL query that:
 	// 1. Filters for issues with discovered:blocker label
 	// 2. Filters for status='open'
-	// 3. LEFT JOINs to check for open blocking dependencies
-	// 4. Returns only issues with NO open blockers (ready to execute)
-	// 5. Orders by priority (lower = higher priority)
+	// 3. Filters out epics (vc-203)
+	// 4. LEFT JOINs to check for open blocking dependencies
+	// 5. Returns only issues with NO open blockers (ready to execute)
+	// 6. Orders by priority (lower = higher priority)
 	query := `
 		SELECT DISTINCT i.id, i.title, i.description, i.design, i.acceptance_criteria,
 		       i.notes, i.status, i.priority, i.issue_type, i.assignee,
@@ -452,6 +457,7 @@ func (s *VCStorage) GetReadyBlockers(ctx context.Context, limit int) ([]*types.I
 		INNER JOIN labels l ON i.id = l.issue_id
 		WHERE l.label = 'discovered:blocker'
 		  AND i.status = 'open'
+		  AND i.issue_type != 'epic'
 		  AND NOT EXISTS (
 		    -- Check if this issue has any open blocking dependencies (vc-157)
 		    -- Only check type='blocks', not related/parent-child/discovered-from
