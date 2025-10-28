@@ -137,14 +137,28 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 
 			switch failureMode {
 			case FailureModeBlock:
-				// Create blocking issues and don't claim work
-				// Get the gate results from the latest run
-				// We need to run gates again to get the results for the error handler
-				// (CheckBaseline only returns pass/fail, not the detailed results)
-				fmt.Printf("⚠️  Baseline failed on commit %s - entering degraded mode\n", commitHash)
-				fmt.Printf("   Not claiming work until baseline is fixed\n")
-				fmt.Printf("   Fix the failing gates and they will be auto-detected\n")
-				return nil
+				// Get cached gate results from CheckBaseline call above
+				results, err := e.preFlightChecker.GetCachedResults(ctx, commitHash)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to get cached gate results: %v\n", err)
+					// Continue anyway - we'll try again next poll
+					return nil
+				}
+				if results == nil {
+					fmt.Fprintf(os.Stderr, "No cached gate results available for commit %s\n", commitHash)
+					// Continue anyway - we'll try again next poll
+					return nil
+				}
+
+				// Create baseline blocking issues for failing gates
+				if err := e.preFlightChecker.HandleBaselineFailure(ctx, e.instanceID, commitHash, results); err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to handle baseline failure: %v\n", err)
+					// Continue anyway - we'll try again next poll
+				}
+
+				// Continue to claim work - baseline issues are now ready to claim
+				// They will be picked up as regular P1 work through the normal claiming flow
+				// Continue to claim work below (including baseline issues)
 
 			case FailureModeWarn:
 				// Warn but continue claiming work

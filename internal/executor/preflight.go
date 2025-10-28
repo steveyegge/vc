@@ -100,6 +100,8 @@ func NewPreFlightChecker(storage *beads.VCStorage, gatesRunner gates.GateProvide
 // 3. If cache miss, check database cache
 // 4. If still miss, run gates and cache result
 // 5. Emit events for monitoring
+//
+// Note: Detailed gate results are cached and can be retrieved via GetCachedResults()
 func (p *PreFlightChecker) CheckBaseline(ctx context.Context, executorID string) (bool, string, error) {
 	if !p.config.Enabled {
 		return true, "", nil // Preflight disabled, always pass
@@ -296,6 +298,51 @@ func (p *PreFlightChecker) invalidateCachedBaseline(commitHash string) {
 	defer p.mu.Unlock()
 
 	delete(p.cache, commitHash)
+}
+
+// GetCachedResults retrieves gate results from the cached baseline for a commit hash
+// Returns nil if no cached baseline exists or if the baseline has expired
+func (p *PreFlightChecker) GetCachedResults(ctx context.Context, commitHash string) ([]*gates.Result, error) {
+	// Try in-memory cache first
+	if baseline := p.getCachedBaseline(commitHash); baseline != nil {
+		return convertBaselineToResults(baseline), nil
+	}
+
+	// Try database cache
+	baseline, err := p.storage.GetGateBaseline(ctx, commitHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query baseline cache: %w", err)
+	}
+
+	if baseline == nil {
+		return nil, nil // No cached baseline
+	}
+
+	// Check if baseline is still fresh (within TTL)
+	baselineTime := mustParseTime(baseline.Timestamp)
+	if time.Since(baselineTime) >= p.config.CacheTTL {
+		return nil, nil // Baseline is stale
+	}
+
+	return convertBaselineToResults(baseline), nil
+}
+
+// convertBaselineToResults converts a cached baseline to gate results
+func convertBaselineToResults(baseline *beads.GateBaseline) []*gates.Result {
+	var results []*gates.Result
+	for gateName, gateResult := range baseline.Results {
+		var err error
+		if gateResult.Error != "" {
+			err = fmt.Errorf("%s", gateResult.Error)
+		}
+		results = append(results, &gates.Result{
+			Gate:   gates.GateType(gateName),
+			Passed: gateResult.Passed,
+			Output: gateResult.Output,
+			Error:  err,
+		})
+	}
+	return results
 }
 
 // getFailingGates returns a list of gate names that failed

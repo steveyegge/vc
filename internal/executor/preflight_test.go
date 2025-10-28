@@ -272,3 +272,123 @@ func (m *mockGateRunner) RunAll(ctx context.Context) ([]*gates.Result, bool) {
 	}
 	return results, m.passAll
 }
+
+// TestHandleBaselineFailure tests that baseline issues are created when gates fail
+func TestHandleBaselineFailure(t *testing.T) {
+	ctx := context.Background()
+
+	// Create in-memory storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = ":memory:"
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	defer store.Close()
+
+	vcStorage, ok := store.(*beads.VCStorage)
+	if !ok {
+		t.Fatal("storage is not VCStorage")
+	}
+
+	// Create mock gates runner with failing gates
+	mockRunner := &mockGateRunner{
+		passAll: false, // Gates will fail
+	}
+
+	// Create preflight checker
+	config := &PreFlightConfig{
+		Enabled:      true,
+		CacheTTL:     5 * time.Minute,
+		FailureMode:  FailureModeBlock,
+		WorkingDir:   ".",
+		GatesTimeout: 30 * time.Second,
+	}
+
+	checker, err := NewPreFlightChecker(vcStorage, mockRunner, config)
+	if err != nil {
+		t.Fatalf("failed to create preflight checker: %v", err)
+	}
+
+	// Get gate results (all failing)
+	results, allPassed := mockRunner.RunAll(ctx)
+	if allPassed {
+		t.Fatal("Expected gates to fail for this test")
+	}
+
+	// Call HandleBaselineFailure
+	err = checker.HandleBaselineFailure(ctx, "test-executor", "abc123", results)
+	if err != nil {
+		t.Fatalf("HandleBaselineFailure failed: %v", err)
+	}
+
+	// Verify baseline issues were created
+	expectedIssues := []string{
+		"vc-baseline-test",
+		"vc-baseline-lint",
+		"vc-baseline-build",
+	}
+
+	for _, issueID := range expectedIssues {
+		issue, err := vcStorage.GetIssue(ctx, issueID)
+		if err != nil {
+			t.Fatalf("failed to get issue %s: %v", issueID, err)
+		}
+		if issue == nil {
+			t.Errorf("Expected issue %s to be created", issueID)
+			continue
+		}
+
+		// Verify issue properties
+		if issue.Status != types.StatusOpen {
+			t.Errorf("Issue %s status = %v, want %v", issueID, issue.Status, types.StatusOpen)
+		}
+		if issue.Priority != 1 {
+			t.Errorf("Issue %s priority = %d, want 1", issueID, issue.Priority)
+		}
+		if issue.IssueType != types.TypeBug {
+			t.Errorf("Issue %s type = %v, want %v", issueID, issue.IssueType, types.TypeBug)
+		}
+
+		// Verify labels
+		labels, err := vcStorage.GetLabels(ctx, issueID)
+		if err != nil {
+			t.Fatalf("failed to get labels for %s: %v", issueID, err)
+		}
+
+		hasBaselineLabel := false
+		hasSystemLabel := false
+		for _, label := range labels {
+			if label == "baseline-failure" {
+				hasBaselineLabel = true
+			}
+			if label == "system" {
+				hasSystemLabel = true
+			}
+		}
+
+		if !hasBaselineLabel {
+			t.Errorf("Issue %s missing baseline-failure label", issueID)
+		}
+		if !hasSystemLabel {
+			t.Errorf("Issue %s missing system label", issueID)
+		}
+	}
+
+	// Verify that calling HandleBaselineFailure again doesn't create duplicates
+	err = checker.HandleBaselineFailure(ctx, "test-executor", "abc123", results)
+	if err != nil {
+		t.Fatalf("HandleBaselineFailure failed on second call: %v", err)
+	}
+
+	// Issues should still exist (no duplicates)
+	for _, issueID := range expectedIssues {
+		issue, err := vcStorage.GetIssue(ctx, issueID)
+		if err != nil {
+			t.Fatalf("failed to get issue %s: %v", issueID, err)
+		}
+		if issue == nil {
+			t.Errorf("Expected issue %s to still exist after second call", issueID)
+		}
+	}
+}
