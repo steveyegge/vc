@@ -968,30 +968,75 @@ func (s *VCStorage) GetEventCounts(ctx context.Context) (*types.EventCounts, err
 // 1. All child issues (via parent-child dependencies) are in terminal states (closed)
 // 2. There are no open blocking dependencies
 func (s *VCStorage) IsEpicComplete(ctx context.Context, epicID string) (bool, error) {
-	// 1. Get all children via parent-child dependencies
-	// GetDependents returns issues that depend ON epicID (i.e., children)
-	children, err := s.GetDependents(ctx, epicID)
+	// 1. Query database for all dependencies involving this epic
+	// We need two queries:
+	// - Children: WHERE depends_on_id = epicID AND type = 'parent-child'
+	// - Blockers: WHERE issue_id = epicID AND type = 'blocks'
+
+	// Query for children (issues that depend ON the epic with parent-child type)
+	childRows, err := s.db.QueryContext(ctx, `
+		SELECT issue_id
+		FROM dependencies
+		WHERE depends_on_id = ? AND type = ?
+	`, epicID, types.DepParentChild)
 	if err != nil {
-		return false, fmt.Errorf("failed to get children for epic %s: %w", epicID, err)
+		return false, fmt.Errorf("failed to query children for epic %s: %w", epicID, err)
+	}
+	defer func() { _ = childRows.Close() }()
+
+	var childIDs []string
+	for childRows.Next() {
+		var childID string
+		if err := childRows.Scan(&childID); err != nil {
+			return false, fmt.Errorf("failed to scan child ID: %w", err)
+		}
+		childIDs = append(childIDs, childID)
+	}
+	if err := childRows.Err(); err != nil {
+		return false, fmt.Errorf("error iterating child rows: %w", err)
+	}
+
+	// Query for blockers (issues that the epic depends ON with blocks type)
+	blockerRows, err := s.db.QueryContext(ctx, `
+		SELECT depends_on_id
+		FROM dependencies
+		WHERE issue_id = ? AND type = ?
+	`, epicID, types.DepBlocks)
+	if err != nil {
+		return false, fmt.Errorf("failed to query blockers for epic %s: %w", epicID, err)
+	}
+	defer func() { _ = blockerRows.Close() }()
+
+	var blockerIDs []string
+	for blockerRows.Next() {
+		var blockerID string
+		if err := blockerRows.Scan(&blockerID); err != nil {
+			return false, fmt.Errorf("failed to scan blocker ID: %w", err)
+		}
+		blockerIDs = append(blockerIDs, blockerID)
+	}
+	if err := blockerRows.Err(); err != nil {
+		return false, fmt.Errorf("error iterating blocker rows: %w", err)
 	}
 
 	// 2. Check if all children are in terminal states
-	for _, child := range children {
+	for _, childID := range childIDs {
+		child, err := s.GetIssue(ctx, childID)
+		if err != nil {
+			return false, fmt.Errorf("failed to get child issue %s: %w", childID, err)
+		}
 		if child.Status != types.StatusClosed {
 			// Child is not in terminal state (open, in_progress, or blocked)
 			return false, nil
 		}
 	}
 
-	// 3. Check for open blocking dependencies
-	// GetDependencies returns issues that epicID depends ON (i.e., blockers)
-	blockers, err := s.GetDependencies(ctx, epicID)
-	if err != nil {
-		return false, fmt.Errorf("failed to get dependencies for epic %s: %w", epicID, err)
-	}
-
-	// Check if any blockers are not closed
-	for _, blocker := range blockers {
+	// 3. Check if all blockers are closed
+	for _, blockerID := range blockerIDs {
+		blocker, err := s.GetIssue(ctx, blockerID)
+		if err != nil {
+			return false, fmt.Errorf("failed to get blocker issue %s: %w", blockerID, err)
+		}
 		if blocker.Status != types.StatusClosed {
 			// Has open blocking dependency
 			return false, nil

@@ -2227,4 +2227,72 @@ func TestIsEpicComplete(t *testing.T) {
 		}
 		t.Logf("✓ Epic %s correctly detected as complete (closed blocker and children)", epic.ID)
 	})
+
+	t.Run("epic ignores non-parent-child dependencies", func(t *testing.T) {
+		// Create epic
+		epic := &types.Issue{
+			Title:       "Epic with Related Issues",
+			Description: "Should only check parent-child, not related",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeEpic,
+		}
+		if err := store.CreateIssue(ctx, epic, "test"); err != nil {
+			t.Fatalf("Failed to create epic: %v", err)
+		}
+
+		// Create a related issue (open) - should NOT affect completion
+		relatedIssue := &types.Issue{
+			Title:     "Related Issue (Open)",
+			Status:    types.StatusOpen,
+			Priority:  2,
+			IssueType: types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, relatedIssue, "test"); err != nil {
+			t.Fatalf("Failed to create related issue: %v", err)
+		}
+
+		// Create a discovered-from issue (open) - should NOT affect completion
+		discoveredIssue := &types.Issue{
+			Title:     "Discovered Issue (Open)",
+			Status:    types.StatusOpen,
+			Priority:  2,
+			IssueType: types.TypeBug,
+		}
+		if err := store.CreateIssue(ctx, discoveredIssue, "test"); err != nil {
+			t.Fatalf("Failed to create discovered issue: %v", err)
+		}
+
+		// Add related dependency (not parent-child)
+		relatedDep := &types.Dependency{
+			IssueID:     relatedIssue.ID,
+			DependsOnID: epic.ID,
+			Type:        types.DepRelated,
+		}
+		if err := store.AddDependency(ctx, relatedDep, "test"); err != nil {
+			t.Fatalf("Failed to add related dependency: %v", err)
+		}
+
+		// Add discovered-from dependency (not parent-child)
+		discoveredDep := &types.Dependency{
+			IssueID:     discoveredIssue.ID,
+			DependsOnID: epic.ID,
+			Type:        types.DepDiscoveredFrom,
+		}
+		if err := store.AddDependency(ctx, discoveredDep, "test"); err != nil {
+			t.Fatalf("Failed to add discovered-from dependency: %v", err)
+		}
+
+		// Epic should be complete - no parent-child children, no blockers
+		complete, err := store.IsEpicComplete(ctx, epic.ID)
+		if err != nil {
+			t.Fatalf("IsEpicComplete failed: %v", err)
+		}
+
+		if !complete {
+			t.Error("Expected epic to be complete (related/discovered issues should not affect completion)")
+		}
+		t.Logf("✓ Epic %s correctly ignores non-parent-child dependencies (related: %s, discovered: %s)",
+			epic.ID, relatedIssue.ID, discoveredIssue.ID)
+	})
 }
