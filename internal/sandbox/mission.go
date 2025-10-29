@@ -3,11 +3,76 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strings"
 
 	"github.com/steveyegge/vc/internal/storage"
+	"github.com/steveyegge/vc/internal/types"
 )
+
+// slugifyRegex is compiled once at package initialization for performance (vc-249)
+var slugifyRegex = regexp.MustCompile(`[^a-z0-9]+`)
+
+// gitBranchExists checks if a git branch exists in the repository
+func gitBranchExists(ctx context.Context, repoPath, branchName string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "show-ref", "--verify", "--quiet", fmt.Sprintf("refs/heads/%s", branchName))
+	err := cmd.Run()
+	if err == nil {
+		return true, nil // Branch exists
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		if exitErr.ExitCode() == 1 {
+			return false, nil // Branch doesn't exist (expected)
+		}
+	}
+	return false, fmt.Errorf("failed to check if branch exists: %w", err)
+}
+
+// reconstructSandbox attempts to reconstruct a Sandbox object from stored metadata
+// after executor restart. Returns nil, nil if the git branch no longer exists (stale metadata).
+// This handles the vc-247 scenario where metadata exists but sandbox not in manager's active list.
+func reconstructSandbox(ctx context.Context, m Manager, mission *types.Mission) (*Sandbox, error) {
+	// Get manager as concrete type to access config
+	mgr, ok := m.(*manager)
+	if !ok {
+		return nil, fmt.Errorf("manager is not a concrete *manager type")
+	}
+
+	// Verify git branch still exists
+	exists, err := gitBranchExists(ctx, mgr.config.ParentRepo, mission.BranchName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check if branch exists: %w", err)
+	}
+	if !exists {
+		// Branch doesn't exist - metadata is stale
+		return nil, nil
+	}
+
+	// Reconstruct sandbox object from metadata
+	sandboxID := fmt.Sprintf("mission-%s", mission.ID)
+	beadsDBPath := fmt.Sprintf("%s/.beads/vc.db", mission.SandboxPath)
+
+	sandbox := &Sandbox{
+		ID:          sandboxID,
+		MissionID:   mission.ID,
+		Path:        mission.SandboxPath,
+		GitBranch:   mission.BranchName,
+		GitWorktree: mission.SandboxPath,
+		BeadsDB:     beadsDBPath,
+		ParentRepo:  mgr.config.ParentRepo,
+		Created:     mission.CreatedAt,     // Use mission creation time as proxy
+		LastUsed:    mission.UpdatedAt,     // Use mission update time as proxy
+		Status:      SandboxStatusActive,
+	}
+
+	// Re-add to manager's active list
+	mgr.mu.Lock()
+	mgr.activeSandboxes[sandboxID] = sandbox
+	mgr.mu.Unlock()
+
+	return sandbox, nil
+}
 
 // CreateMissionSandbox creates a shared sandbox for a mission epic.
 // This creates a stable, mission-level sandbox with predictable paths:
@@ -43,8 +108,22 @@ func CreateMissionSandbox(ctx context.Context, manager Manager, store storage.St
 		}
 
 		// Sandbox metadata exists but sandbox not in manager's active list
-		// This can happen if executor restarted - treat as new sandbox creation
-		// and update the metadata
+		// This can happen after executor restart (vc-247)
+		// Try to reconstruct the sandbox if git branch still exists
+		sandbox, err := reconstructSandbox(ctx, manager, mission)
+		if err != nil {
+			// Reconstruction failed - clear stale metadata and create fresh
+			fmt.Printf("Warning: failed to reconstruct sandbox for %s, creating fresh: %v\n", missionID, err)
+			updates := map[string]interface{}{
+				"sandbox_path": nil,
+				"branch_name":  nil,
+			}
+			_ = store.UpdateMission(ctx, missionID, updates, "system") // Best-effort cleanup
+		} else if sandbox != nil {
+			// Successfully reconstructed - return it
+			return sandbox, nil
+		}
+		// If sandbox is nil but no error, metadata was stale - continue to create fresh
 	}
 
 	// 3. Create sandbox using Manager with stable paths
@@ -87,9 +166,8 @@ func slugify(s string) string {
 	// Convert to lowercase
 	s = strings.ToLower(s)
 
-	// Replace non-alphanumeric characters with hyphens
-	reg := regexp.MustCompile(`[^a-z0-9]+`)
-	s = reg.ReplaceAllString(s, "-")
+	// Replace non-alphanumeric characters with hyphens (using pre-compiled regex)
+	s = slugifyRegex.ReplaceAllString(s, "-")
 
 	// Remove leading/trailing hyphens
 	s = strings.Trim(s, "-")
@@ -153,7 +231,12 @@ func CleanupMissionSandbox(ctx context.Context, manager Manager, store storage.S
 }
 
 // GetMissionSandbox retrieves the sandbox for a mission, if it exists.
-// Returns nil if the mission has no sandbox.
+// Returns (nil, nil) if the mission has no sandbox or if metadata exists but git branch doesn't.
+// Returns error only for actual failures (database error, git error, etc.).
+//
+// This function handles the executor restart scenario (vc-247, vc-250):
+// If metadata exists but sandbox not in manager's active list, it attempts to
+// reconstruct the sandbox from metadata + git state.
 func GetMissionSandbox(ctx context.Context, manager Manager, store storage.Storage, missionID string) (*Sandbox, error) {
 	// 1. Get mission metadata
 	mission, err := store.GetMission(ctx, missionID)
@@ -178,7 +261,18 @@ func GetMissionSandbox(ctx context.Context, manager Manager, store storage.Stora
 		}
 	}
 
-	// Mission has metadata but sandbox not found in active list
-	// This can happen after executor restart
-	return nil, fmt.Errorf("mission %s has sandbox metadata but sandbox not found (may need to recreate)", missionID)
+	// 4. Sandbox metadata exists but not in manager's active list
+	// This can happen after executor restart - try to reconstruct
+	sandbox, err := reconstructSandbox(ctx, manager, mission)
+	if err != nil {
+		// Failed to reconstruct - return error
+		return nil, fmt.Errorf("failed to reconstruct sandbox for %s: %w", missionID, err)
+	}
+	if sandbox == nil {
+		// Git branch doesn't exist - metadata is stale
+		// Return (nil, nil) to indicate "no sandbox" rather than error
+		return nil, nil
+	}
+
+	return sandbox, nil
 }

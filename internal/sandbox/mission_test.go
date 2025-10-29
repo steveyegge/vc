@@ -195,6 +195,56 @@ func TestCreateMissionSandbox(t *testing.T) {
 			t.Error("Expected error for non-existent mission, got nil")
 		}
 	})
+
+	t.Run("reconstructs on restart when sandbox exists (vc-247)", func(t *testing.T) {
+		// Create a new mission
+		mission2 := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission for create restart test",
+				Description:  "Test create reconstruction",
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+				Status:       types.StatusOpen,
+				Priority:     1,
+			},
+		}
+
+		if err := mainDB.CreateMission(ctx, mission2, "test"); err != nil {
+			t.Fatalf("Failed to create mission2: %v", err)
+		}
+
+		// Create sandbox
+		originalSandbox, err := CreateMissionSandbox(ctx, manager, mainDB, mission2.ID)
+		if err != nil {
+			t.Fatalf("Failed to create sandbox: %v", err)
+		}
+
+		// Simulate executor restart by creating a NEW manager instance
+		cfg2 := Config{
+			SandboxRoot: sandboxRoot,
+			ParentRepo:  repoPath,
+			MainDB:      mainDB,
+		}
+
+		manager2, err := NewManager(cfg2)
+		if err != nil {
+			t.Fatalf("Failed to create second manager: %v", err)
+		}
+
+		// Call CreateMissionSandbox again - should reconstruct, not create duplicate
+		reconstructed, err := CreateMissionSandbox(ctx, manager2, mainDB, mission2.ID)
+		if err != nil {
+			t.Fatalf("CreateMissionSandbox() after restart failed: %v", err)
+		}
+
+		// Should have same branch and path as original
+		if reconstructed.GitBranch != originalSandbox.GitBranch {
+			t.Errorf("Expected branch %s, got %s", originalSandbox.GitBranch, reconstructed.GitBranch)
+		}
+		if reconstructed.Path != originalSandbox.Path {
+			t.Errorf("Expected path %s, got %s", originalSandbox.Path, reconstructed.Path)
+		}
+	})
 }
 
 func TestGetMissionSandbox(t *testing.T) {
@@ -287,6 +337,118 @@ func TestGetMissionSandbox(t *testing.T) {
 		_, err := GetMissionSandbox(ctx, manager, mainDB, "vc-nonexistent")
 		if err == nil {
 			t.Error("Expected error for non-existent mission, got nil")
+		}
+	})
+
+	t.Run("reconstructs sandbox after simulated restart (vc-247)", func(t *testing.T) {
+		// Create a new mission
+		mission3 := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission for restart test",
+				Description:  "Test restart reconstruction",
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+				Status:       types.StatusOpen,
+				Priority:     1,
+			},
+		}
+
+		if err := mainDB.CreateMission(ctx, mission3, "test"); err != nil {
+			t.Fatalf("Failed to create mission3: %v", err)
+		}
+
+		// Create sandbox
+		originalSandbox, err := CreateMissionSandbox(ctx, manager, mainDB, mission3.ID)
+		if err != nil {
+			t.Fatalf("Failed to create sandbox: %v", err)
+		}
+
+		// Simulate executor restart by creating a NEW manager instance
+		// (which starts with empty activeSandboxes map)
+		cfg2 := Config{
+			SandboxRoot: sandboxRoot,
+			ParentRepo:  repoPath,
+			MainDB:      mainDB,
+		}
+
+		manager2, err := NewManager(cfg2)
+		if err != nil {
+			t.Fatalf("Failed to create second manager: %v", err)
+		}
+
+		// Try to get sandbox with the new manager - should reconstruct from metadata
+		reconstructed, err := GetMissionSandbox(ctx, manager2, mainDB, mission3.ID)
+		if err != nil {
+			t.Fatalf("GetMissionSandbox() after restart failed: %v", err)
+		}
+
+		if reconstructed == nil {
+			t.Fatal("Expected reconstructed sandbox, got nil")
+		}
+
+		// Verify reconstructed sandbox has correct fields
+		if reconstructed.MissionID != mission3.ID {
+			t.Errorf("Expected MissionID %s, got %s", mission3.ID, reconstructed.MissionID)
+		}
+		if reconstructed.GitBranch != originalSandbox.GitBranch {
+			t.Errorf("Expected branch %s, got %s", originalSandbox.GitBranch, reconstructed.GitBranch)
+		}
+		if reconstructed.Path != originalSandbox.Path {
+			t.Errorf("Expected path %s, got %s", originalSandbox.Path, reconstructed.Path)
+		}
+
+		// Verify sandbox was added to manager2's active list
+		retrieved, err := manager2.Get(ctx, reconstructed.ID)
+		if err != nil {
+			t.Fatalf("Failed to get reconstructed sandbox from manager: %v", err)
+		}
+		if retrieved == nil {
+			t.Error("Expected sandbox in manager's active list after reconstruction")
+		}
+
+		// Calling GetMissionSandbox again should return the same instance (now in active list)
+		retrieved2, err := GetMissionSandbox(ctx, manager2, mainDB, mission3.ID)
+		if err != nil {
+			t.Fatalf("Second GetMissionSandbox() failed: %v", err)
+		}
+		if retrieved2.ID != reconstructed.ID {
+			t.Errorf("Expected same sandbox ID %s, got %s", reconstructed.ID, retrieved2.ID)
+		}
+	})
+
+	t.Run("returns nil for stale metadata (branch deleted) (vc-247)", func(t *testing.T) {
+		// Create a mission with fake metadata (simulating a branch that was deleted)
+		mission4 := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission with stale metadata",
+				Description:  "Branch was deleted",
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+				Status:       types.StatusOpen,
+				Priority:     1,
+			},
+		}
+
+		if err := mainDB.CreateMission(ctx, mission4, "test"); err != nil {
+			t.Fatalf("Failed to create mission4: %v", err)
+		}
+
+		// Manually set stale metadata (branch that doesn't exist)
+		updates := map[string]interface{}{
+			"sandbox_path": filepath.Join(sandboxRoot, "mission-"+mission4.ID),
+			"branch_name":  "mission/" + mission4.ID + "-nonexistent-branch",
+		}
+		if err := mainDB.UpdateMission(ctx, mission4.ID, updates, "test"); err != nil {
+			t.Fatalf("Failed to set stale metadata: %v", err)
+		}
+
+		// GetMissionSandbox should return (nil, nil) - not an error
+		sandbox, err := GetMissionSandbox(ctx, manager, mainDB, mission4.ID)
+		if err != nil {
+			t.Errorf("Expected no error for stale metadata, got: %v", err)
+		}
+		if sandbox != nil {
+			t.Errorf("Expected nil sandbox for stale metadata, got: %v", sandbox)
 		}
 	})
 }
