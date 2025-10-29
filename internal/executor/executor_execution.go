@@ -376,6 +376,14 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		}
 	}
 
+	// vc-235: Check epic completion if this task completed successfully
+	if procResult.Completed && result.Success {
+		if err := e.checkEpicCompletion(ctx, issue); err != nil {
+			// Log error but don't fail execution
+			fmt.Fprintf(os.Stderr, "warning: failed to check epic completion: %v\n", err)
+		}
+	}
+
 	// End telemetry collection
 	e.monitor.EndExecution(procResult.Completed && result.Success, procResult.GatesPassed)
 

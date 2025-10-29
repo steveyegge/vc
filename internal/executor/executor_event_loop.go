@@ -98,6 +98,70 @@ func (e *Executor) checkMissionConvergence(ctx context.Context, issue *types.Iss
 	return nil
 }
 
+// checkEpicCompletion checks if completing this task causes its parent epic to complete.
+// If the epic is now complete (all children are closed/deferred), adds the 'needs-quality-gates' label.
+// Handles nested epic hierarchies by checking all parent epics up to the mission root.
+// vc-235: Epic-centric workflow integration after task completion
+func (e *Executor) checkEpicCompletion(ctx context.Context, issue *types.Issue) error {
+	// Get the mission context for this task to find its parent epic(s)
+	missionCtx, err := e.store.GetMissionForTask(ctx, issue.ID)
+	if err != nil {
+		// No parent mission - this is fine, not all tasks belong to epics
+		return nil
+	}
+
+	// Walk up the parent-child dependency chain to check all parent epics
+	parentEpics, err := e.store.GetDependencies(ctx, issue.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get parent dependencies for %s: %w", issue.ID, err)
+	}
+
+	// Check each parent epic for completion
+	for _, parentEpic := range parentEpics {
+		// Only check epic types (not regular tasks)
+		if parentEpic.IssueType != types.TypeEpic {
+			continue
+		}
+
+		// Check if this epic is now complete
+		isComplete, err := e.store.IsEpicComplete(ctx, parentEpic.ID)
+		if err != nil {
+			return fmt.Errorf("failed to check if epic %s is complete: %w", parentEpic.ID, err)
+		}
+
+		if isComplete {
+			fmt.Printf("\n✓ Epic %s (%s) is now complete - all tasks finished!\n",
+				parentEpic.ID, parentEpic.Title)
+
+			// Add 'needs-quality-gates' label to trigger next workflow phase
+			if err := e.store.AddLabel(ctx, parentEpic.ID, "needs-quality-gates", "executor"); err != nil {
+				return fmt.Errorf("failed to add needs-quality-gates label to epic %s: %w", parentEpic.ID, err)
+			}
+
+			// Log epic completion event
+			e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, parentEpic.ID,
+				fmt.Sprintf("Epic %s completed after finishing task %s", parentEpic.ID, issue.ID),
+				map[string]interface{}{
+					"event_subtype":    "epic_completed",
+					"epic_id":          parentEpic.ID,
+					"epic_title":       parentEpic.Title,
+					"completed_task":   issue.ID,
+					"mission_id":       missionCtx.MissionID,
+					"label_added":      "needs-quality-gates",
+				})
+
+			// Recursively check if the parent epic completing causes its parent to complete
+			// This handles nested epic hierarchies (e.g., phase → mission)
+			if err := e.checkEpicCompletion(ctx, parentEpic); err != nil {
+				// Log but don't fail - we've already marked this epic as complete
+				fmt.Fprintf(os.Stderr, "warning: failed to check parent epic completion: %v\n", err)
+			}
+		}
+	}
+
+	return nil
+}
+
 // getNextReadyBlocker finds the highest priority discovered:blocker issue that is ready to execute.
 // Returns nil if no ready blockers are found.
 // vc-156: Optimized to use single SQL query instead of N+1 queries
