@@ -137,9 +137,22 @@ func (m *manager) Create(ctx context.Context, cfg SandboxConfig) (*Sandbox, erro
 		cfg.BaseBranch = "main" // Default to main branch
 	}
 
-	// Generate unique sandbox ID
-	sandboxID := fmt.Sprintf("sandbox-%s-%d", cfg.MissionID, time.Now().Unix())
-	branchName := fmt.Sprintf("mission/%s/%d", cfg.MissionID, time.Now().Unix())
+	// Generate sandbox ID and branch name
+	var sandboxID string
+	var branchName string
+	if cfg.StablePaths {
+		// Mission-level sandbox: use stable, predictable paths
+		sandboxID = fmt.Sprintf("mission-%s", cfg.MissionID)
+		if cfg.TitleSlug != "" {
+			branchName = fmt.Sprintf("mission/%s-%s", cfg.MissionID, cfg.TitleSlug)
+		} else {
+			branchName = fmt.Sprintf("mission/%s", cfg.MissionID)
+		}
+	} else {
+		// Per-execution sandbox: use timestamped paths (legacy behavior)
+		sandboxID = fmt.Sprintf("sandbox-%s-%d", cfg.MissionID, time.Now().Unix())
+		branchName = fmt.Sprintf("mission/%s/%d", cfg.MissionID, time.Now().Unix())
+	}
 
 	// Create git worktree
 	worktreePath, err := createWorktree(ctx, cfg, branchName)

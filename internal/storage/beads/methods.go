@@ -49,6 +49,9 @@ func (s *VCStorage) GetMission(ctx context.Context, id string) (*types.Mission, 
 	if err != nil {
 		return nil, err
 	}
+	if issue == nil {
+		return nil, fmt.Errorf("issue %s not found", id)
+	}
 
 	// Query mission metadata from extension table
 	var mission types.Mission

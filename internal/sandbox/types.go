@@ -74,6 +74,14 @@ type SandboxConfig struct {
 
 	// PreserveOnFailure determines if failed sandboxes should be kept for debugging
 	PreserveOnFailure bool
+
+	// StablePaths indicates whether to use stable, predictable paths for mission-level sandboxes
+	// If true: sandbox-{missionID} and mission/{missionID}-{slug}
+	// If false: sandbox-{missionID}-{timestamp} and mission/{missionID}/{timestamp}
+	StablePaths bool
+
+	// TitleSlug is used when StablePaths=true to generate branch names like mission/vc-123-user-auth
+	TitleSlug string
 }
 
 // SandboxContext provides comprehensive context about a sandbox's current state.
