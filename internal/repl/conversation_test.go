@@ -43,6 +43,9 @@ func (m *mockStorage) GetBlockedIssues(ctx context.Context) ([]*types.BlockedIss
 func (m *mockStorage) GetReadyBlockers(ctx context.Context, limit int) ([]*types.Issue, error) {
 	return nil, nil
 }
+func (m *mockStorage) IsEpicComplete(ctx context.Context, epicID string) (bool, error) {
+	return false, nil
+}
 
 func (m *mockStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*events.AgentEvent, error) {
 	if m.agentEventsError != nil {

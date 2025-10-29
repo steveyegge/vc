@@ -62,6 +62,9 @@ type Storage interface {
 	GetBlockedIssues(ctx context.Context) ([]*types.BlockedIssue, error)
 	GetReadyBlockers(ctx context.Context, limit int) ([]*types.Issue, error)
 
+	// Epic Completion (vc-232)
+	IsEpicComplete(ctx context.Context, epicID string) (bool, error)
+
 	// Events
 	AddComment(ctx context.Context, issueID, actor, comment string) error
 	GetEvents(ctx context.Context, issueID string, limit int) ([]*types.Event, error)

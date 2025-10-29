@@ -1891,3 +1891,340 @@ func TestEpicsExcludedFromReadyWork(t *testing.T) {
 		t.Logf("✓ GetReadyBlockers correctly excluded epic blocker %s", epicBlocker.ID)
 	})
 }
+
+// TestIsEpicComplete tests the epic completion detection logic (vc-232)
+func TestIsEpicComplete(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	t.Run("epic with all children closed is complete", func(t *testing.T) {
+		// Create epic
+		epic := &types.Issue{
+			Title:       "Test Epic",
+			Description: "Epic for completion testing",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeEpic,
+		}
+		if err := store.CreateIssue(ctx, epic, "test"); err != nil {
+			t.Fatalf("Failed to create epic: %v", err)
+		}
+
+		// Create child tasks (all closed)
+		now := time.Now()
+		child1 := &types.Issue{
+			Title:     "Child 1",
+			Status:    types.StatusClosed,
+			Priority:  2,
+			IssueType: types.TypeTask,
+			ClosedAt:  &now,
+		}
+		if err := store.CreateIssue(ctx, child1, "test"); err != nil {
+			t.Fatalf("Failed to create child1: %v", err)
+		}
+
+		child2 := &types.Issue{
+			Title:     "Child 2",
+			Status:    types.StatusClosed,
+			Priority:  2,
+			IssueType: types.TypeTask,
+			ClosedAt:  &now,
+		}
+		if err := store.CreateIssue(ctx, child2, "test"); err != nil {
+			t.Fatalf("Failed to create child2: %v", err)
+		}
+
+		// Add parent-child dependencies
+		dep1 := &types.Dependency{
+			IssueID:     child1.ID,
+			DependsOnID: epic.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, dep1, "test"); err != nil {
+			t.Fatalf("Failed to add dependency for child1: %v", err)
+		}
+
+		dep2 := &types.Dependency{
+			IssueID:     child2.ID,
+			DependsOnID: epic.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, dep2, "test"); err != nil {
+			t.Fatalf("Failed to add dependency for child2: %v", err)
+		}
+
+		// Check completion
+		complete, err := store.IsEpicComplete(ctx, epic.ID)
+		if err != nil {
+			t.Fatalf("IsEpicComplete failed: %v", err)
+		}
+
+		if !complete {
+			t.Error("Expected epic to be complete (all children closed)")
+		}
+		t.Logf("✓ Epic %s correctly detected as complete", epic.ID)
+	})
+
+	t.Run("epic with open child is not complete", func(t *testing.T) {
+		// Create epic
+		epic := &types.Issue{
+			Title:       "Epic with Open Child",
+			Description: "Should not be complete",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeEpic,
+		}
+		if err := store.CreateIssue(ctx, epic, "test"); err != nil {
+			t.Fatalf("Failed to create epic: %v", err)
+		}
+
+		// Create one closed child and one open child
+		now := time.Now()
+		closedChild := &types.Issue{
+			Title:     "Closed Child",
+			Status:    types.StatusClosed,
+			Priority:  2,
+			IssueType: types.TypeTask,
+			ClosedAt:  &now,
+		}
+		if err := store.CreateIssue(ctx, closedChild, "test"); err != nil {
+			t.Fatalf("Failed to create closed child: %v", err)
+		}
+
+		openChild := &types.Issue{
+			Title:     "Open Child",
+			Status:    types.StatusOpen,
+			Priority:  2,
+			IssueType: types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, openChild, "test"); err != nil {
+			t.Fatalf("Failed to create open child: %v", err)
+		}
+
+		// Add parent-child dependencies
+		dep1 := &types.Dependency{
+			IssueID:     closedChild.ID,
+			DependsOnID: epic.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, dep1, "test"); err != nil {
+			t.Fatalf("Failed to add dependency for closed child: %v", err)
+		}
+
+		dep2 := &types.Dependency{
+			IssueID:     openChild.ID,
+			DependsOnID: epic.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, dep2, "test"); err != nil {
+			t.Fatalf("Failed to add dependency for open child: %v", err)
+		}
+
+		// Check completion
+		complete, err := store.IsEpicComplete(ctx, epic.ID)
+		if err != nil {
+			t.Fatalf("IsEpicComplete failed: %v", err)
+		}
+
+		if complete {
+			t.Error("Expected epic to be incomplete (has open child)")
+		}
+		t.Logf("✓ Epic %s correctly detected as incomplete (open child: %s)", epic.ID, openChild.ID)
+	})
+
+	t.Run("epic with in_progress child is not complete", func(t *testing.T) {
+		// Create epic
+		epic := &types.Issue{
+			Title:       "Epic with In Progress Child",
+			Description: "Should not be complete",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeEpic,
+		}
+		if err := store.CreateIssue(ctx, epic, "test"); err != nil {
+			t.Fatalf("Failed to create epic: %v", err)
+		}
+
+		// Create in_progress child
+		inProgressChild := &types.Issue{
+			Title:     "In Progress Child",
+			Status:    types.StatusInProgress,
+			Priority:  2,
+			IssueType: types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, inProgressChild, "test"); err != nil {
+			t.Fatalf("Failed to create in_progress child: %v", err)
+		}
+
+		// Add parent-child dependency
+		dep := &types.Dependency{
+			IssueID:     inProgressChild.ID,
+			DependsOnID: epic.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, dep, "test"); err != nil {
+			t.Fatalf("Failed to add dependency: %v", err)
+		}
+
+		// Check completion
+		complete, err := store.IsEpicComplete(ctx, epic.ID)
+		if err != nil {
+			t.Fatalf("IsEpicComplete failed: %v", err)
+		}
+
+		if complete {
+			t.Error("Expected epic to be incomplete (has in_progress child)")
+		}
+		t.Logf("✓ Epic %s correctly detected as incomplete (in_progress child)", epic.ID)
+	})
+
+	t.Run("epic with no children is complete", func(t *testing.T) {
+		// Create epic with no children
+		epic := &types.Issue{
+			Title:       "Childless Epic",
+			Description: "Epic with no child tasks",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeEpic,
+		}
+		if err := store.CreateIssue(ctx, epic, "test"); err != nil {
+			t.Fatalf("Failed to create epic: %v", err)
+		}
+
+		// Check completion (should be true - no children to wait for)
+		complete, err := store.IsEpicComplete(ctx, epic.ID)
+		if err != nil {
+			t.Fatalf("IsEpicComplete failed: %v", err)
+		}
+
+		if !complete {
+			t.Error("Expected childless epic to be complete")
+		}
+		t.Logf("✓ Childless epic %s correctly detected as complete", epic.ID)
+	})
+
+	t.Run("epic with open blocking dependency is not complete", func(t *testing.T) {
+		// Create epic
+		epic := &types.Issue{
+			Title:       "Epic with Blocker",
+			Description: "Blocked by another issue",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeEpic,
+		}
+		if err := store.CreateIssue(ctx, epic, "test"); err != nil {
+			t.Fatalf("Failed to create epic: %v", err)
+		}
+
+		// Create blocker issue (open)
+		blocker := &types.Issue{
+			Title:     "Blocker Issue",
+			Status:    types.StatusOpen,
+			Priority:  1,
+			IssueType: types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
+			t.Fatalf("Failed to create blocker: %v", err)
+		}
+
+		// Add blocking dependency (epic depends on blocker)
+		dep := &types.Dependency{
+			IssueID:     epic.ID,
+			DependsOnID: blocker.ID,
+			Type:        types.DepBlocks,
+		}
+		if err := store.AddDependency(ctx, dep, "test"); err != nil {
+			t.Fatalf("Failed to add blocking dependency: %v", err)
+		}
+
+		// Check completion (should be false - has open blocker)
+		complete, err := store.IsEpicComplete(ctx, epic.ID)
+		if err != nil {
+			t.Fatalf("IsEpicComplete failed: %v", err)
+		}
+
+		if complete {
+			t.Error("Expected epic to be incomplete (has open blocker)")
+		}
+		t.Logf("✓ Epic %s correctly detected as incomplete (open blocker: %s)", epic.ID, blocker.ID)
+	})
+
+	t.Run("epic with closed blocker and closed children is complete", func(t *testing.T) {
+		// Create epic
+		epic := &types.Issue{
+			Title:       "Epic with Closed Blocker",
+			Description: "All deps satisfied",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeEpic,
+		}
+		if err := store.CreateIssue(ctx, epic, "test"); err != nil {
+			t.Fatalf("Failed to create epic: %v", err)
+		}
+
+		// Create closed child
+		now := time.Now()
+		child := &types.Issue{
+			Title:     "Child Task",
+			Status:    types.StatusClosed,
+			Priority:  2,
+			IssueType: types.TypeTask,
+			ClosedAt:  &now,
+		}
+		if err := store.CreateIssue(ctx, child, "test"); err != nil {
+			t.Fatalf("Failed to create child: %v", err)
+		}
+
+		// Create closed blocker
+		blocker := &types.Issue{
+			Title:     "Closed Blocker",
+			Status:    types.StatusClosed,
+			Priority:  1,
+			IssueType: types.TypeTask,
+			ClosedAt:  &now,
+		}
+		if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
+			t.Fatalf("Failed to create blocker: %v", err)
+		}
+
+		// Add parent-child dependency
+		childDep := &types.Dependency{
+			IssueID:     child.ID,
+			DependsOnID: epic.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, childDep, "test"); err != nil {
+			t.Fatalf("Failed to add child dependency: %v", err)
+		}
+
+		// Add blocking dependency
+		blockerDep := &types.Dependency{
+			IssueID:     epic.ID,
+			DependsOnID: blocker.ID,
+			Type:        types.DepBlocks,
+		}
+		if err := store.AddDependency(ctx, blockerDep, "test"); err != nil {
+			t.Fatalf("Failed to add blocker dependency: %v", err)
+		}
+
+		// Check completion (should be true - all children and blockers closed)
+		complete, err := store.IsEpicComplete(ctx, epic.ID)
+		if err != nil {
+			t.Fatalf("IsEpicComplete failed: %v", err)
+		}
+
+		if !complete {
+			t.Error("Expected epic to be complete (children and blockers all closed)")
+		}
+		t.Logf("✓ Epic %s correctly detected as complete (closed blocker and children)", epic.ID)
+	})
+}

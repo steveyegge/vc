@@ -959,6 +959,49 @@ func (s *VCStorage) GetEventCounts(ctx context.Context) (*types.EventCounts, err
 	return counts, nil
 }
 
+// ======================================================================
+// EPIC COMPLETION (vc-232)
+// ======================================================================
+
+// IsEpicComplete checks if an epic is complete
+// An epic is complete when:
+// 1. All child issues (via parent-child dependencies) are in terminal states (closed)
+// 2. There are no open blocking dependencies
+func (s *VCStorage) IsEpicComplete(ctx context.Context, epicID string) (bool, error) {
+	// 1. Get all children via parent-child dependencies
+	// GetDependents returns issues that depend ON epicID (i.e., children)
+	children, err := s.GetDependents(ctx, epicID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get children for epic %s: %w", epicID, err)
+	}
+
+	// 2. Check if all children are in terminal states
+	for _, child := range children {
+		if child.Status != types.StatusClosed {
+			// Child is not in terminal state (open, in_progress, or blocked)
+			return false, nil
+		}
+	}
+
+	// 3. Check for open blocking dependencies
+	// GetDependencies returns issues that epicID depends ON (i.e., blockers)
+	blockers, err := s.GetDependencies(ctx, epicID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get dependencies for epic %s: %w", epicID, err)
+	}
+
+	// Check if any blockers are not closed
+	for _, blocker := range blockers {
+		if blocker.Status != types.StatusClosed {
+			// Has open blocking dependency
+			return false, nil
+		}
+	}
+
+	// All children closed and no open blockers - epic is complete
+	return true, nil
+}
+
 // VacuumDatabase runs VACUUM on the database
 func (s *VCStorage) VacuumDatabase(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, "VACUUM")
