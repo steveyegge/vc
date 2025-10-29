@@ -172,10 +172,12 @@ func (s *VCStorage) CreateMission(ctx context.Context, mission *types.Mission, a
 func (s *VCStorage) UpdateMission(ctx context.Context, id string, updates map[string]interface{}, actor string) error {
 	// Separate updates into base issue fields and mission-specific fields
 	missionFields := map[string]interface{}{
-		"approved_at": nil,
-		"approved_by": nil,
-		"goal":        nil,
-		"context":     nil,
+		"approved_at":  nil,
+		"approved_by":  nil,
+		"goal":         nil,
+		"context":      nil,
+		"sandbox_path": nil,
+		"branch_name":  nil,
 	}
 
 	baseUpdates := make(map[string]interface{})

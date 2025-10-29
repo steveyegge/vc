@@ -3036,3 +3036,207 @@ func TestGetReadyWorkWithMissionContext(t *testing.T) {
 		t.Logf("✓ GetReadyWork efficiently handled 3 tasks from mission %s", sharedMission.ID)
 	})
 }
+
+// TestMissionSandboxMetadataPersistence tests that sandbox_path and branch_name are properly
+// persisted across CreateMission, GetMission, and UpdateMission operations (vc-241)
+func TestMissionSandboxMetadataPersistence(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	t.Run("CreateMission persists sandbox metadata", func(t *testing.T) {
+		// Create mission with sandbox metadata
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission with Sandbox",
+				Description:  "Testing sandbox metadata persistence",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal:        "Test sandbox persistence",
+			SandboxPath: ".sandboxes/mission-300/",
+			BranchName:  "mission/vc-300-test",
+		}
+
+		if err := store.CreateMission(ctx, mission, "test"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Retrieve and verify sandbox metadata was persisted
+		retrieved, err := store.GetMission(ctx, mission.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve mission: %v", err)
+		}
+
+		if retrieved.SandboxPath != mission.SandboxPath {
+			t.Errorf("Expected sandbox_path '%s', got '%s'", mission.SandboxPath, retrieved.SandboxPath)
+		}
+		if retrieved.BranchName != mission.BranchName {
+			t.Errorf("Expected branch_name '%s', got '%s'", mission.BranchName, retrieved.BranchName)
+		}
+
+		t.Logf("✓ CreateMission correctly persisted sandbox_path='%s' and branch_name='%s'",
+			retrieved.SandboxPath, retrieved.BranchName)
+	})
+
+	t.Run("UpdateMission updates sandbox metadata", func(t *testing.T) {
+		// Create initial mission without sandbox metadata
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission to Update",
+				Description:  "Testing UpdateMission with sandbox metadata",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal: "Test UpdateMission",
+		}
+
+		if err := store.CreateMission(ctx, mission, "test"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Verify initial state (no sandbox metadata)
+		retrieved, err := store.GetMission(ctx, mission.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve mission: %v", err)
+		}
+		if retrieved.SandboxPath != "" {
+			t.Errorf("Expected empty sandbox_path initially, got '%s'", retrieved.SandboxPath)
+		}
+		if retrieved.BranchName != "" {
+			t.Errorf("Expected empty branch_name initially, got '%s'", retrieved.BranchName)
+		}
+
+		// Update mission with sandbox metadata
+		updates := map[string]interface{}{
+			"sandbox_path": ".sandboxes/mission-400/",
+			"branch_name":  "mission/vc-400-updated",
+		}
+		if err := store.UpdateMission(ctx, mission.ID, updates, "test"); err != nil {
+			t.Fatalf("Failed to update mission: %v", err)
+		}
+
+		// Verify sandbox metadata was updated
+		updated, err := store.GetMission(ctx, mission.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve updated mission: %v", err)
+		}
+
+		expectedSandbox := ".sandboxes/mission-400/"
+		expectedBranch := "mission/vc-400-updated"
+		if updated.SandboxPath != expectedSandbox {
+			t.Errorf("Expected sandbox_path '%s', got '%s'", expectedSandbox, updated.SandboxPath)
+		}
+		if updated.BranchName != expectedBranch {
+			t.Errorf("Expected branch_name '%s', got '%s'", expectedBranch, updated.BranchName)
+		}
+
+		t.Logf("✓ UpdateMission correctly updated sandbox_path='%s' and branch_name='%s'",
+			updated.SandboxPath, updated.BranchName)
+	})
+
+	t.Run("UpdateMission modifies existing sandbox metadata", func(t *testing.T) {
+		// Create mission with initial sandbox metadata
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission to Modify",
+				Description:  "Testing modification of existing sandbox metadata",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal:        "Test modification",
+			SandboxPath: ".sandboxes/mission-500-old/",
+			BranchName:  "mission/vc-500-old",
+		}
+
+		if err := store.CreateMission(ctx, mission, "test"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Update to new sandbox metadata
+		updates := map[string]interface{}{
+			"sandbox_path": ".sandboxes/mission-500-new/",
+			"branch_name":  "mission/vc-500-new",
+		}
+		if err := store.UpdateMission(ctx, mission.ID, updates, "test"); err != nil {
+			t.Fatalf("Failed to update mission: %v", err)
+		}
+
+		// Verify new metadata replaced old metadata
+		updated, err := store.GetMission(ctx, mission.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve updated mission: %v", err)
+		}
+
+		expectedSandbox := ".sandboxes/mission-500-new/"
+		expectedBranch := "mission/vc-500-new"
+		if updated.SandboxPath != expectedSandbox {
+			t.Errorf("Expected sandbox_path '%s', got '%s'", expectedSandbox, updated.SandboxPath)
+		}
+		if updated.BranchName != expectedBranch {
+			t.Errorf("Expected branch_name '%s', got '%s'", expectedBranch, updated.BranchName)
+		}
+
+		t.Logf("✓ UpdateMission correctly modified sandbox_path and branch_name")
+	})
+
+	t.Run("UpdateMission handles partial updates", func(t *testing.T) {
+		// Create mission with sandbox metadata
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission for Partial Update",
+				Description:  "Testing partial updates to sandbox metadata",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal:        "Test partial updates",
+			SandboxPath: ".sandboxes/mission-600/",
+			BranchName:  "mission/vc-600",
+		}
+
+		if err := store.CreateMission(ctx, mission, "test"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Update only sandbox_path (leave branch_name unchanged)
+		updates := map[string]interface{}{
+			"sandbox_path": ".sandboxes/mission-600-updated/",
+		}
+		if err := store.UpdateMission(ctx, mission.ID, updates, "test"); err != nil {
+			t.Fatalf("Failed to update mission: %v", err)
+		}
+
+		// Verify sandbox_path changed but branch_name remained the same
+		updated, err := store.GetMission(ctx, mission.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve updated mission: %v", err)
+		}
+
+		expectedSandbox := ".sandboxes/mission-600-updated/"
+		expectedBranch := "mission/vc-600" // Should be unchanged
+		if updated.SandboxPath != expectedSandbox {
+			t.Errorf("Expected sandbox_path '%s', got '%s'", expectedSandbox, updated.SandboxPath)
+		}
+		if updated.BranchName != expectedBranch {
+			t.Errorf("Expected branch_name '%s' (unchanged), got '%s'", expectedBranch, updated.BranchName)
+		}
+
+		t.Logf("✓ UpdateMission correctly handled partial update (sandbox_path only)")
+	})
+}
