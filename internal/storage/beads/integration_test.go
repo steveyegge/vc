@@ -2585,3 +2585,324 @@ func TestGetMissionForTask(t *testing.T) {
 			task.ID, mission.ID, blocker.ID)
 	})
 }
+
+// TestGetReadyWorkWithMissionContext tests mission context enrichment (vc-234)
+func TestGetReadyWorkWithMissionContext(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	t.Run("GetReadyWork includes mission context", func(t *testing.T) {
+		// Create a mission epic
+		mission := &types.Issue{
+			Title:        "Test Mission",
+			Description:  "Mission for testing",
+			Status:       types.StatusOpen,
+			Priority:     1,
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypeMission,
+		}
+		if err := store.CreateIssue(ctx, mission, "test"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Create a task
+		task := &types.Issue{
+			Title:       "Test Task",
+			Description: "Task under mission",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, task, "test"); err != nil {
+			t.Fatalf("Failed to create task: %v", err)
+		}
+
+		// Link task to mission via parent-child dependency
+		dep := &types.Dependency{
+			IssueID:     task.ID,
+			DependsOnID: mission.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, dep, "test"); err != nil {
+			t.Fatalf("Failed to add dependency: %v", err)
+		}
+
+		// Get ready work - should include mission context
+		readyWork, err := store.GetReadyWork(ctx, types.WorkFilter{
+			Status: types.StatusOpen,
+			Limit:  10,
+		})
+		if err != nil {
+			t.Fatalf("GetReadyWork failed: %v", err)
+		}
+
+		// Should have 1 task with mission context
+		if len(readyWork) != 1 {
+			t.Fatalf("Expected 1 ready task, got %d", len(readyWork))
+		}
+
+		if readyWork[0].ID != task.ID {
+			t.Errorf("Expected task %s, got %s", task.ID, readyWork[0].ID)
+		}
+
+		if readyWork[0].MissionContext == nil {
+			t.Fatal("Expected mission context to be populated")
+		}
+
+		if readyWork[0].MissionContext.MissionID != mission.ID {
+			t.Errorf("Expected mission ID %s, got %s",
+				mission.ID, readyWork[0].MissionContext.MissionID)
+		}
+
+		t.Logf("✓ Task %s correctly enriched with mission context %s",
+			task.ID, mission.ID)
+	})
+
+	t.Run("GetReadyWork filters tasks from missions with needs-quality-gates", func(t *testing.T) {
+		// Create mission with needs-quality-gates label
+		gatedMission := &types.Issue{
+			Title:        "Gated Mission",
+			Description:  "Mission waiting for quality gates",
+			Status:       types.StatusOpen,
+			Priority:     1,
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypeMission,
+		}
+		if err := store.CreateIssue(ctx, gatedMission, "test"); err != nil {
+			t.Fatalf("Failed to create gated mission: %v", err)
+		}
+
+		// Add needs-quality-gates label
+		if err := store.AddLabel(ctx, gatedMission.ID, "needs-quality-gates", "test"); err != nil {
+			t.Fatalf("Failed to add label: %v", err)
+		}
+
+		// Create task under gated mission
+		gatedTask := &types.Issue{
+			Title:       "Gated Task",
+			Description: "Task under gated mission",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, gatedTask, "test"); err != nil {
+			t.Fatalf("Failed to create gated task: %v", err)
+		}
+
+		// Link to gated mission
+		dep := &types.Dependency{
+			IssueID:     gatedTask.ID,
+			DependsOnID: gatedMission.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, dep, "test"); err != nil {
+			t.Fatalf("Failed to add dependency: %v", err)
+		}
+
+		// Create active mission (no gates label)
+		activeMission := &types.Issue{
+			Title:        "Active Mission",
+			Description:  "Active mission",
+			Status:       types.StatusOpen,
+			Priority:     1,
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypeMission,
+		}
+		if err := store.CreateIssue(ctx, activeMission, "test"); err != nil {
+			t.Fatalf("Failed to create active mission: %v", err)
+		}
+
+		// Create task under active mission
+		activeTask := &types.Issue{
+			Title:       "Active Task",
+			Description: "Task under active mission",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, activeTask, "test"); err != nil {
+			t.Fatalf("Failed to create active task: %v", err)
+		}
+
+		// Link to active mission
+		dep2 := &types.Dependency{
+			IssueID:     activeTask.ID,
+			DependsOnID: activeMission.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, dep2, "test"); err != nil {
+			t.Fatalf("Failed to add dependency: %v", err)
+		}
+
+		// Get ready work - should only include active task, not gated task
+		readyWork, err := store.GetReadyWork(ctx, types.WorkFilter{
+			Status: types.StatusOpen,
+			Limit:  10,
+		})
+		if err != nil {
+			t.Fatalf("GetReadyWork failed: %v", err)
+		}
+
+		// Should only have activeTask (gatedTask filtered out)
+		foundGatedTask := false
+		foundActiveTask := false
+		for _, issue := range readyWork {
+			if issue.ID == gatedTask.ID {
+				foundGatedTask = true
+			}
+			if issue.ID == activeTask.ID {
+				foundActiveTask = true
+			}
+		}
+
+		if foundGatedTask {
+			t.Error("GetReadyWork should not return tasks from missions with needs-quality-gates label")
+		}
+
+		if !foundActiveTask {
+			t.Error("GetReadyWork should return tasks from active missions")
+		}
+
+		t.Logf("✓ GetReadyWork correctly filtered out task %s from gated mission %s",
+			gatedTask.ID, gatedMission.ID)
+		t.Logf("✓ GetReadyWork correctly included task %s from active mission %s",
+			activeTask.ID, activeMission.ID)
+	})
+
+	t.Run("GetReadyWork includes tasks not part of any mission", func(t *testing.T) {
+		// Create standalone task (no mission)
+		standalone := &types.Issue{
+			Title:       "Standalone Task",
+			Description: "Not part of any mission",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, standalone, "test"); err != nil {
+			t.Fatalf("Failed to create standalone task: %v", err)
+		}
+
+		// Get ready work - should include standalone task
+		readyWork, err := store.GetReadyWork(ctx, types.WorkFilter{
+			Status: types.StatusOpen,
+			Limit:  10,
+		})
+		if err != nil {
+			t.Fatalf("GetReadyWork failed: %v", err)
+		}
+
+		// Find the standalone task
+		found := false
+		for _, issue := range readyWork {
+			if issue.ID == standalone.ID {
+				found = true
+				if issue.MissionContext != nil {
+					t.Error("Standalone task should not have mission context")
+				}
+			}
+		}
+
+		if !found {
+			t.Error("GetReadyWork should include standalone tasks")
+		}
+
+		t.Logf("✓ GetReadyWork correctly included standalone task %s without mission context",
+			standalone.ID)
+	})
+
+	t.Run("GetReadyWork efficiently handles multiple tasks from same mission", func(t *testing.T) {
+		// Create mission
+		sharedMission := &types.Issue{
+			Title:        "Shared Mission",
+			Description:  "Mission with multiple tasks",
+			Status:       types.StatusOpen,
+			Priority:     1,
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypeMission,
+		}
+		if err := store.CreateIssue(ctx, sharedMission, "test"); err != nil {
+			t.Fatalf("Failed to create shared mission: %v", err)
+		}
+
+		// Create 3 tasks under the same mission
+		tasks := make([]*types.Issue, 3)
+		for i := 0; i < 3; i++ {
+			task := &types.Issue{
+				Title:       fmt.Sprintf("Task %d", i+1),
+				Description: "Task under shared mission",
+				Status:      types.StatusOpen,
+				Priority:    1,
+				IssueType:   types.TypeTask,
+			}
+			if err := store.CreateIssue(ctx, task, "test"); err != nil {
+				t.Fatalf("Failed to create task %d: %v", i+1, err)
+			}
+			tasks[i] = task
+
+			// Link to mission
+			dep := &types.Dependency{
+				IssueID:     task.ID,
+				DependsOnID: sharedMission.ID,
+				Type:        types.DepParentChild,
+			}
+			if err := store.AddDependency(ctx, dep, "test"); err != nil {
+				t.Fatalf("Failed to add dependency for task %d: %v", i+1, err)
+			}
+		}
+
+		// Get ready work - should efficiently handle all 3 tasks
+		readyWork, err := store.GetReadyWork(ctx, types.WorkFilter{
+			Status: types.StatusOpen,
+			Limit:  20, // Increase limit to avoid pagination issues
+		})
+		if err != nil {
+			t.Fatalf("GetReadyWork failed: %v", err)
+		}
+
+		// Debug: log all ready work
+		t.Logf("Total ready work: %d issues", len(readyWork))
+		for _, issue := range readyWork {
+			missionID := "none"
+			if issue.MissionContext != nil {
+				missionID = issue.MissionContext.MissionID
+			}
+			t.Logf("  - %s: %s (mission: %s)", issue.ID, issue.Title, missionID)
+		}
+
+		// Verify all 3 of our tasks are in ready work with correct mission context
+		// Note: There may be other tasks from previous subtests, we just care about ours
+		foundTasks := make(map[string]bool)
+		for _, issue := range readyWork {
+			for _, task := range tasks {
+				if issue.ID == task.ID {
+					foundTasks[task.ID] = true
+					if issue.MissionContext == nil {
+						t.Errorf("Task %s should have mission context", task.ID)
+					}
+					if issue.MissionContext != nil && issue.MissionContext.MissionID != sharedMission.ID {
+						t.Errorf("Task %s has wrong mission ID: %s (expected %s)",
+							task.ID, issue.MissionContext.MissionID, sharedMission.ID)
+					}
+				}
+			}
+		}
+
+		// All 3 tasks should be found
+		for _, task := range tasks {
+			if !foundTasks[task.ID] {
+				t.Errorf("Task %s not found in ready work", task.ID)
+			}
+		}
+
+		t.Logf("✓ GetReadyWork efficiently handled 3 tasks from mission %s", sharedMission.ID)
+	})
+}

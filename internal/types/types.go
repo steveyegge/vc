@@ -8,21 +8,22 @@ import (
 
 // Issue represents a trackable work item
 type Issue struct {
-	ID                 string        `json:"id"`
-	Title              string        `json:"title"`
-	Description        string        `json:"description"`
-	Design             string        `json:"design,omitempty"`
-	AcceptanceCriteria string        `json:"acceptance_criteria,omitempty"`
-	Notes              string        `json:"notes,omitempty"`
-	Status             Status        `json:"status"`
-	Priority           int           `json:"priority"`
-	IssueType          IssueType     `json:"issue_type"`
-	IssueSubtype       IssueSubtype  `json:"issue_subtype,omitempty"` // mission, phase, or empty for normal issues
-	Assignee           string        `json:"assignee,omitempty"`
-	EstimatedMinutes   *int          `json:"estimated_minutes,omitempty"`
-	CreatedAt          time.Time     `json:"created_at"`
-	UpdatedAt          time.Time     `json:"updated_at"`
-	ClosedAt           *time.Time    `json:"closed_at,omitempty"`
+	ID                 string           `json:"id"`
+	Title              string           `json:"title"`
+	Description        string           `json:"description"`
+	Design             string           `json:"design,omitempty"`
+	AcceptanceCriteria string           `json:"acceptance_criteria,omitempty"`
+	Notes              string           `json:"notes,omitempty"`
+	Status             Status           `json:"status"`
+	Priority           int              `json:"priority"`
+	IssueType          IssueType        `json:"issue_type"`
+	IssueSubtype       IssueSubtype     `json:"issue_subtype,omitempty"` // mission, phase, or empty for normal issues
+	Assignee           string           `json:"assignee,omitempty"`
+	EstimatedMinutes   *int             `json:"estimated_minutes,omitempty"`
+	CreatedAt          time.Time        `json:"created_at"`
+	UpdatedAt          time.Time        `json:"updated_at"`
+	ClosedAt           *time.Time       `json:"closed_at,omitempty"`
+	MissionContext     *MissionContext  `json:"mission_context,omitempty"` // vc-234: Populated by GetReadyWork
 }
 
 // Validate checks if the issue has valid field values

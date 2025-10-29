@@ -2,6 +2,7 @@ package repl
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -48,6 +49,14 @@ func (m *mockStorageIntegration) GetReadyWork(ctx context.Context, filter types.
 		return result, nil
 	}
 	return nil, nil
+}
+
+func (m *mockStorageIntegration) IsEpicComplete(ctx context.Context, epicID string) (bool, error) {
+	return false, nil
+}
+
+func (m *mockStorageIntegration) GetMissionForTask(ctx context.Context, taskID string) (*types.MissionContext, error) {
+	return nil, fmt.Errorf("not implemented in mock")
 }
 
 func (m *mockStorageIntegration) ClaimIssue(ctx context.Context, issueID, executorInstanceID string) error {

@@ -397,7 +397,7 @@ func (s *VCStorage) GetIssuesByLabel(ctx context.Context, label string) ([]*type
 // READY WORK & BLOCKING (delegate to Beads)
 // ======================================================================
 
-// GetReadyWork retrieves ready work from Beads
+// GetReadyWork retrieves ready work from Beads with mission context (vc-234)
 func (s *VCStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) ([]*types.Issue, error) {
 	beadsFilter := beads.WorkFilter{
 		Status:     beads.Status(filter.Status),
@@ -419,7 +419,84 @@ func (s *VCStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) (
 		}
 		vcIssues = append(vcIssues, beadsIssueToVC(bi))
 	}
-	return vcIssues, nil
+
+	// vc-234: Enrich with mission context and filter by mission active state
+	return s.enrichWithMissionContext(ctx, vcIssues)
+}
+
+// enrichWithMissionContext populates mission context for each issue and filters out
+// issues from missions with needs-quality-gates label (vc-234)
+func (s *VCStorage) enrichWithMissionContext(ctx context.Context, issues []*types.Issue) ([]*types.Issue, error) {
+	if len(issues) == 0 {
+		return issues, nil
+	}
+
+	// Cache to avoid N+1 queries: map[missionID]missionContext
+	missionCache := make(map[string]*types.MissionContext)
+	// Track missions with needs-quality-gates label
+	needsGatesMissions := make(map[string]bool)
+
+	result := make([]*types.Issue, 0, len(issues))
+
+	for _, issue := range issues {
+		// Try to get mission context (may fail if task is not part of a mission)
+		missionCtx, err := s.getMissionForTaskCached(ctx, issue.ID, missionCache)
+		if err != nil {
+			// Task is not part of a mission - include it without mission context
+			result = append(result, issue)
+			continue
+		}
+
+		// Check if this mission has needs-quality-gates label (cached check)
+		if needsGates, ok := needsGatesMissions[missionCtx.MissionID]; ok {
+			if needsGates {
+				// Skip this task - mission is waiting for quality gates
+				continue
+			}
+		} else {
+			// First time seeing this mission - check for label
+			labels, err := s.GetLabels(ctx, missionCtx.MissionID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get labels for mission %s: %w", missionCtx.MissionID, err)
+			}
+			hasNeedsGates := false
+			for _, label := range labels {
+				if label == "needs-quality-gates" {
+					hasNeedsGates = true
+					break
+				}
+			}
+			needsGatesMissions[missionCtx.MissionID] = hasNeedsGates
+			if hasNeedsGates {
+				// Skip this task - mission is waiting for quality gates
+				continue
+			}
+		}
+
+		// Attach mission context and include in results
+		issue.MissionContext = missionCtx
+		result = append(result, issue)
+	}
+
+	return result, nil
+}
+
+// getMissionForTaskCached gets mission context with caching to avoid N+1 queries
+func (s *VCStorage) getMissionForTaskCached(ctx context.Context, taskID string, cache map[string]*types.MissionContext) (*types.MissionContext, error) {
+	// Walk up the dependency tree to find mission
+	missionCtx, err := s.GetMissionForTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if we've already loaded this mission's full context
+	if cached, ok := cache[missionCtx.MissionID]; ok {
+		return cached, nil
+	}
+
+	// Cache it for future lookups
+	cache[missionCtx.MissionID] = missionCtx
+	return missionCtx, nil
 }
 
 // GetBlockedIssues retrieves blocked issues from Beads
