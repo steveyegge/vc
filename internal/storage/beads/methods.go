@@ -430,7 +430,7 @@ func (s *VCStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) (
 }
 
 // enrichWithMissionContext populates mission context for each issue and filters out
-// issues from missions with needs-quality-gates label (vc-234)
+// issues from missions with needs-quality-gates label (vc-234, vc-239)
 func (s *VCStorage) enrichWithMissionContext(ctx context.Context, issues []*types.Issue) ([]*types.Issue, error) {
 	if len(issues) == 0 {
 		return issues, nil
@@ -438,49 +438,108 @@ func (s *VCStorage) enrichWithMissionContext(ctx context.Context, issues []*type
 
 	// Cache to avoid N+1 queries: map[missionID]missionContext
 	missionCache := make(map[string]*types.MissionContext)
-	// Track missions with needs-quality-gates label
-	needsGatesMissions := make(map[string]bool)
+	// Track unique mission IDs for batch label loading
+	uniqueMissionIDs := make(map[string]bool)
 
-	result := make([]*types.Issue, 0, len(issues))
-
+	// First pass: get mission context for all issues and collect unique mission IDs
+	issuesWithMissions := make([]*types.Issue, 0, len(issues))
 	for _, issue := range issues {
 		// Try to get mission context (may fail if task is not part of a mission)
 		missionCtx, err := s.getMissionForTaskCached(ctx, issue.ID, missionCache)
 		if err != nil {
 			// Task is not part of a mission - include it without mission context
+			issuesWithMissions = append(issuesWithMissions, issue)
+			continue
+		}
+
+		// Track this mission ID for batch loading
+		uniqueMissionIDs[missionCtx.MissionID] = true
+
+		// Attach mission context (will filter later based on labels)
+		issue.MissionContext = missionCtx
+		issuesWithMissions = append(issuesWithMissions, issue)
+	}
+
+	// Batch-load labels for all unique missions in one query (vc-239)
+	missionLabels, err := s.batchLoadLabels(ctx, uniqueMissionIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch-load mission labels: %w", err)
+	}
+
+	// Second pass: filter out issues from missions with needs-quality-gates label
+	result := make([]*types.Issue, 0, len(issuesWithMissions))
+	for _, issue := range issuesWithMissions {
+		// If issue has no mission context, include it
+		if issue.MissionContext == nil {
 			result = append(result, issue)
 			continue
 		}
 
-		// Check if this mission has needs-quality-gates label (cached check)
-		if needsGates, ok := needsGatesMissions[missionCtx.MissionID]; ok {
-			if needsGates {
-				// Skip this task - mission is waiting for quality gates
-				continue
-			}
-		} else {
-			// First time seeing this mission - check for label
-			labels, err := s.GetLabels(ctx, missionCtx.MissionID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get labels for mission %s: %w", missionCtx.MissionID, err)
-			}
-			hasNeedsGates := false
-			for _, label := range labels {
-				if label == "needs-quality-gates" {
-					hasNeedsGates = true
-					break
-				}
-			}
-			needsGatesMissions[missionCtx.MissionID] = hasNeedsGates
-			if hasNeedsGates {
-				// Skip this task - mission is waiting for quality gates
-				continue
+		// Check if mission has needs-quality-gates label
+		labels := missionLabels[issue.MissionContext.MissionID]
+		hasNeedsGates := false
+		for _, label := range labels {
+			if label == "needs-quality-gates" {
+				hasNeedsGates = true
+				break
 			}
 		}
 
-		// Attach mission context and include in results
-		issue.MissionContext = missionCtx
-		result = append(result, issue)
+		if !hasNeedsGates {
+			// Mission doesn't have needs-quality-gates - include this task
+			result = append(result, issue)
+		}
+		// Otherwise skip this task (mission is waiting for quality gates)
+	}
+
+	return result, nil
+}
+
+// batchLoadLabels loads labels for multiple issues in a single query (vc-239)
+func (s *VCStorage) batchLoadLabels(ctx context.Context, issueIDs map[string]bool) (map[string][]string, error) {
+	if len(issueIDs) == 0 {
+		return make(map[string][]string), nil
+	}
+
+	// Build IN clause for SQL query
+	ids := make([]string, 0, len(issueIDs))
+	for id := range issueIDs {
+		ids = append(ids, id)
+	}
+
+	// Build placeholders for IN clause
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	// Single query to get all labels for all missions
+	query := fmt.Sprintf(`
+		SELECT issue_id, label
+		FROM labels
+		WHERE issue_id IN (%s)
+	`, strings.Join(placeholders, ", "))
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query labels: %w", err)
+	}
+	defer rows.Close()
+
+	// Build map of issueID -> []label
+	result := make(map[string][]string)
+	for rows.Next() {
+		var issueID, label string
+		if err := rows.Scan(&issueID, &label); err != nil {
+			return nil, fmt.Errorf("failed to scan label: %w", err)
+		}
+		result[issueID] = append(result[issueID], label)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating label rows: %w", err)
 	}
 
 	return result, nil
@@ -1048,162 +1107,102 @@ func (s *VCStorage) GetEventCounts(ctx context.Context) (*types.EventCounts, err
 // ======================================================================
 
 // GetMissionForTask walks up the dependency tree to find the parent mission epic
-// Algorithm:
-// 1. Start with taskID
-// 2. Walk parent-child dependencies upward
-// 3. Check each parent's IssueSubtype field
-// 4. Return first epic with subtype='mission'
-// 5. Return mission ID, sandbox path (future), branch name (future)
+// Uses recursive CTE to find mission in single query instead of N iterations (vc-238)
+// Returns mission context with ID, sandbox path, and branch name
 func (s *VCStorage) GetMissionForTask(ctx context.Context, taskID string) (*types.MissionContext, error) {
-	// Track visited issues to prevent infinite loops
-	visited := make(map[string]bool)
-	currentID := taskID
+	// Use recursive CTE to walk parent-child dependencies upward
+	// This replaces the iterative loop with a single database query
+	query := `
+		WITH RECURSIVE parent_chain AS (
+		  -- Base case: start with the task's immediate parents
+		  SELECT d.issue_id, d.depends_on_id, 1 as depth
+		  FROM dependencies d
+		  WHERE d.issue_id = ? AND d.type = ?
 
-	// Walk up the dependency tree
-	for {
-		// Check for cycles
-		if visited[currentID] {
-			return nil, fmt.Errorf("circular dependency detected while walking up from task %s", taskID)
-		}
-		visited[currentID] = true
+		  UNION ALL
 
-		// Get the current issue to check if it's a mission
-		issue, err := s.GetIssue(ctx, currentID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get issue %s: %w", currentID, err)
-		}
+		  -- Recursive case: walk up to parent's parents
+		  SELECT d.issue_id, d.depends_on_id, p.depth + 1
+		  FROM dependencies d
+		  JOIN parent_chain p ON d.issue_id = p.depends_on_id
+		  WHERE d.type = ? AND p.depth < 10  -- Prevent infinite loops
+		)
+		-- Find the first mission epic in the parent chain
+		SELECT i.id, i.issue_type, COALESCE(m.subtype, '') as subtype,
+		       COALESCE(m.sandbox_path, '') as sandbox_path,
+		       COALESCE(m.branch_name, '') as branch_name
+		FROM issues i
+		JOIN parent_chain p ON i.id = p.depends_on_id
+		LEFT JOIN vc_mission_state m ON i.id = m.issue_id
+		WHERE i.issue_type = ?
+		  AND m.subtype = ?
+		ORDER BY p.depth ASC  -- Closest parent first
+		LIMIT 1
+	`
 
-		// Check if this is a mission epic
-		if issue.IssueType == types.TypeEpic && issue.IssueSubtype == types.SubtypeMission {
-			// Found the mission! Now get mission metadata
-			mission, err := s.GetMission(ctx, currentID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get mission %s: %w", currentID, err)
-			}
+	var missionID, issueType, subtype, sandboxPath, branchName string
+	err := s.db.QueryRowContext(ctx, query,
+		taskID, types.DepParentChild, // Base case parameters
+		types.DepParentChild, // Recursive case parameter
+		types.TypeEpic, types.SubtypeMission, // WHERE clause parameters
+	).Scan(&missionID, &issueType, &subtype, &sandboxPath, &branchName)
 
-			return &types.MissionContext{
-				MissionID:   mission.ID,
-				SandboxPath: mission.SandboxPath, // Will be empty until vc-217
-				BranchName:  mission.BranchName,  // Will be empty until vc-217
-			}, nil
-		}
-
-		// Find parent via parent-child dependency
-		// Query: SELECT depends_on_id FROM dependencies WHERE issue_id = ? AND type = 'parent-child'
-		rows, err := s.db.QueryContext(ctx, `
-			SELECT depends_on_id
-			FROM dependencies
-			WHERE issue_id = ? AND type = ?
-		`, currentID, types.DepParentChild)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query parents for %s: %w", currentID, err)
-		}
-
-		// Get all parents (should typically be 0 or 1)
-		var parentIDs []string
-		for rows.Next() {
-			var parentID string
-			if err := rows.Scan(&parentID); err != nil {
-				rows.Close()
-				return nil, fmt.Errorf("failed to scan parent ID: %w", err)
-			}
-			parentIDs = append(parentIDs, parentID)
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("error iterating parent rows: %w", err)
-		}
-		rows.Close() // Close immediately after use (not defer in loop)
-
-		// No parent found - task is not part of a mission
-		if len(parentIDs) == 0 {
-			return nil, fmt.Errorf("task %s is not part of a mission (no parent-child dependency to mission epic)", taskID)
-		}
-
-		// Multiple parents is unusual but walk up the first one
-		// (In practice, tasks should have at most one parent epic)
-		currentID = parentIDs[0]
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("task %s is not part of a mission (no parent-child dependency to mission epic)", taskID)
 	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query mission for task %s: %w", taskID, err)
+	}
+
+	return &types.MissionContext{
+		MissionID:   missionID,
+		SandboxPath: sandboxPath,
+		BranchName:  branchName,
+	}, nil
 }
 
 // IsEpicComplete checks if an epic is complete
 // An epic is complete when:
-// 1. All child issues (via parent-child dependencies) are in terminal states (closed)
+// 1. All child issues (via parent-child dependencies) are closed
 // 2. There are no open blocking dependencies
+// Optimized to use single JOIN queries instead of N+1 loops (vc-237)
 func (s *VCStorage) IsEpicComplete(ctx context.Context, epicID string) (bool, error) {
-	// 1. Query database for all dependencies involving this epic
-	// We need two queries:
-	// - Children: WHERE depends_on_id = epicID AND type = 'parent-child'
-	// - Blockers: WHERE issue_id = epicID AND type = 'blocks'
-
-	// Query for children (issues that depend ON the epic with parent-child type)
-	childRows, err := s.db.QueryContext(ctx, `
-		SELECT issue_id
-		FROM dependencies
-		WHERE depends_on_id = ? AND type = ?
-	`, epicID, types.DepParentChild)
+	// Check 1: Count children that are NOT closed
+	var openChildrenCount int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) as open_children
+		FROM dependencies d
+		JOIN issues i ON d.issue_id = i.id
+		WHERE d.depends_on_id = ?
+		  AND d.type = ?
+		  AND i.status != ?
+	`, epicID, types.DepParentChild, types.StatusClosed).Scan(&openChildrenCount)
 	if err != nil {
-		return false, fmt.Errorf("failed to query children for epic %s: %w", epicID, err)
-	}
-	defer func() { _ = childRows.Close() }()
-
-	var childIDs []string
-	for childRows.Next() {
-		var childID string
-		if err := childRows.Scan(&childID); err != nil {
-			return false, fmt.Errorf("failed to scan child ID: %w", err)
-		}
-		childIDs = append(childIDs, childID)
-	}
-	if err := childRows.Err(); err != nil {
-		return false, fmt.Errorf("error iterating child rows: %w", err)
+		return false, fmt.Errorf("failed to count open children for epic %s: %w", epicID, err)
 	}
 
-	// Query for blockers (issues that the epic depends ON with blocks type)
-	blockerRows, err := s.db.QueryContext(ctx, `
-		SELECT depends_on_id
-		FROM dependencies
-		WHERE issue_id = ? AND type = ?
-	`, epicID, types.DepBlocks)
+	// If any children are not closed, epic is not complete
+	if openChildrenCount > 0 {
+		return false, nil
+	}
+
+	// Check 2: Count blockers that are NOT closed
+	var openBlockersCount int
+	err = s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) as open_blockers
+		FROM dependencies d
+		JOIN issues i ON d.depends_on_id = i.id
+		WHERE d.issue_id = ?
+		  AND d.type = ?
+		  AND i.status != ?
+	`, epicID, types.DepBlocks, types.StatusClosed).Scan(&openBlockersCount)
 	if err != nil {
-		return false, fmt.Errorf("failed to query blockers for epic %s: %w", epicID, err)
-	}
-	defer func() { _ = blockerRows.Close() }()
-
-	var blockerIDs []string
-	for blockerRows.Next() {
-		var blockerID string
-		if err := blockerRows.Scan(&blockerID); err != nil {
-			return false, fmt.Errorf("failed to scan blocker ID: %w", err)
-		}
-		blockerIDs = append(blockerIDs, blockerID)
-	}
-	if err := blockerRows.Err(); err != nil {
-		return false, fmt.Errorf("error iterating blocker rows: %w", err)
+		return false, fmt.Errorf("failed to count open blockers for epic %s: %w", epicID, err)
 	}
 
-	// 2. Check if all children are in terminal states
-	for _, childID := range childIDs {
-		child, err := s.GetIssue(ctx, childID)
-		if err != nil {
-			return false, fmt.Errorf("failed to get child issue %s: %w", childID, err)
-		}
-		if child.Status != types.StatusClosed {
-			// Child is not in terminal state (open, in_progress, or blocked)
-			return false, nil
-		}
-	}
-
-	// 3. Check if all blockers are closed
-	for _, blockerID := range blockerIDs {
-		blocker, err := s.GetIssue(ctx, blockerID)
-		if err != nil {
-			return false, fmt.Errorf("failed to get blocker issue %s: %w", blockerID, err)
-		}
-		if blocker.Status != types.StatusClosed {
-			// Has open blocking dependency
-			return false, nil
-		}
+	// If any blockers are open, epic is not complete
+	if openBlockersCount > 0 {
+		return false, nil
 	}
 
 	// All children closed and no open blockers - epic is complete
