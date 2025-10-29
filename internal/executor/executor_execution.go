@@ -358,7 +358,8 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		EnableAutoCommit:   e.config.EnableAutoCommit, // Auto-commit configuration (vc-142)
 		WorkingDir:         workingDir,                // Use sandbox path if sandboxing is enabled (vc-117)
 		Actor:              e.instanceID,
-		Sandbox:            sb, // Pass sandbox for status tracking (vc-134)
+		Sandbox:            sb,            // Pass sandbox for status tracking (vc-134)
+		SandboxManager:     e.sandboxMgr,  // Pass manager for auto-cleanup (vc-245)
 	})
 	if err != nil {
 		// Log results processing failure BEFORE releasing issue

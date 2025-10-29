@@ -27,20 +27,22 @@ type ResultsProcessor struct {
 	workingDir         string
 	actor              string             // The actor performing the update (e.g., "repl", "executor-instance-id")
 	sandbox            *sandbox.Sandbox   // The sandbox being used (can be nil if sandboxing is disabled)
+	sandboxManager     sandbox.Manager    // Sandbox manager for cleanup operations (can be nil if sandboxing is disabled)
 }
 
 // ResultsProcessorConfig holds configuration for the results processor
 type ResultsProcessorConfig struct {
 	Store              storage.Storage
-	Supervisor         *ai.Supervisor            // Can be nil to disable AI analysis
+	Supervisor         *ai.Supervisor             // Can be nil to disable AI analysis
 	Deduplicator       deduplication.Deduplicator // Can be nil to disable deduplication
-	GitOps             git.GitOperations         // Can be nil to disable auto-commit
-	MessageGen         *git.MessageGenerator     // Can be nil to disable auto-commit
+	GitOps             git.GitOperations          // Can be nil to disable auto-commit
+	MessageGen         *git.MessageGenerator      // Can be nil to disable auto-commit
 	EnableQualityGates bool
 	EnableAutoCommit   bool
 	WorkingDir         string
 	Actor              string           // Actor ID for tracking who made the changes
 	Sandbox            *sandbox.Sandbox // The sandbox being used (can be nil if sandboxing is disabled)
+	SandboxManager     sandbox.Manager  // Sandbox manager for cleanup operations (can be nil if sandboxing is disabled)
 }
 
 // ProcessingResult contains the outcome of processing agent results
