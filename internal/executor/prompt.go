@@ -174,6 +174,67 @@ This task has been attempted {{len .PreviousAttempts}} time(s) before:
 {{.Issue.Notes}}
 
 {{end}}
+{{if .IsBaselineIssue -}}
+# BASELINE TEST FAILURE SELF-HEALING DIRECTIVE
+
+**CRITICAL**: This is a baseline test failure. Your job is to FIX the failing test(s) to restore the baseline to a healthy state.
+
+## Test Failure Analysis Framework
+
+1. **Classify the Failure Type**:
+   - **Flaky Test**: Passes sometimes, fails sometimes (race condition, timing, non-deterministic behavior)
+   - **Real Failure**: Consistently fails due to actual bug in code
+   - **Environmental**: External dependency issue (missing file, network, etc.)
+
+2. **For Flaky Tests**:
+   - Investigate race conditions (shared state, goroutines, channels)
+   - Check for timing dependencies (hardcoded sleeps, timeouts)
+   - Look for non-deterministic inputs (randomness, time-based logic, map iteration)
+   - Fix by: adding synchronization, increasing timeouts, removing non-determinism
+   - Verify: Run test 10+ times to ensure stability
+
+3. **For Real Failures**:
+   - Trace through the code to understand root cause
+   - Identify what changed to break the test
+   - Apply minimal fix to restore functionality
+   - Verify: Ensure test passes and other tests still pass
+
+4. **For Environmental Failures**:
+   - Check for missing dependencies, files, or configuration
+   - Verify external services are available
+   - Fix by: adding setup steps, mocking external dependencies
+   - Document any environment requirements
+
+## Fix Verification Protocol
+
+After applying a fix:
+1. **Run the specific failing test(s)** to verify they pass
+2. **Run the full test suite** to ensure no regressions
+3. **For flaky tests**: Run the test 10+ times to verify stability
+4. **Document your fix** with clear reasoning in commit message
+
+## Commit Message Format
+
+Use this format for test fix commits:
+
+` + "```" + `
+Fix: [test-name] - [brief-description]
+
+Failure Type: [Flaky|Real|Environmental]
+Root Cause: [explanation]
+Fix Applied: [what you changed]
+Verification: [how you verified it works]
+` + "```" + `
+
+## Rules for Baseline Test Fixes
+
+1. **Minimize changes** - Only fix what's broken, don't refactor
+2. **Preserve test intent** - Don't change what the test is testing
+3. **Add comments** - Explain non-obvious fixes (especially for flaky tests)
+4. **Verify thoroughly** - Don't commit until tests are stable
+5. **Report blockers** - If test failure indicates a real bug in code, report it
+
+{{end}}
 ---
 
 # EXECUTION DIRECTIVE
@@ -368,12 +429,18 @@ func (pb *PromptBuilder) BuildPrompt(ctx *PromptContext) (string, error) {
 		ModifiedFiles []string
 	}
 
+	// Detect baseline issues (vc-210: Self-healing for baseline test failures)
+	// Baseline issues have IDs like: vc-baseline-test, vc-baseline-lint, vc-baseline-build
+	isBaselineIssue := len(ctx.Issue.ID) >= 12 && ctx.Issue.ID[:12] == "vc-baseline-"
+
 	// Create a wrapper struct that exposes sandbox fields if available
 	templateData := struct {
 		*PromptContext
-		Sandbox *sandboxData
+		Sandbox         *sandboxData
+		IsBaselineIssue bool
 	}{
-		PromptContext: ctx,
+		PromptContext:   ctx,
+		IsBaselineIssue: isBaselineIssue,
 	}
 
 	// Extract sandbox data if available

@@ -93,6 +93,14 @@ const (
 	EventTypeBaselineCacheMiss EventType = "baseline_cache_miss"
 	// EventTypeExecutorDegradedMode indicates executor entered degraded mode (baseline failed)
 	EventTypeExecutorDegradedMode EventType = "executor_degraded_mode"
+
+	// Self-healing events (vc-210)
+	// EventTypeBaselineTestFixStarted indicates self-healing started for a baseline test failure
+	EventTypeBaselineTestFixStarted EventType = "baseline_test_fix_started"
+	// EventTypeBaselineTestFixCompleted indicates self-healing completed for a baseline test failure
+	EventTypeBaselineTestFixCompleted EventType = "baseline_test_fix_completed"
+	// EventTypeTestFailureDiagnosis indicates AI diagnosed a test failure
+	EventTypeTestFailureDiagnosis EventType = "test_failure_diagnosis"
 )
 
 // EventSeverity represents the severity level of an event.
@@ -262,6 +270,50 @@ type AgentStateChangeData struct {
 	ToState string `json:"to_state"`
 	// Description is additional context about the state change
 	Description string `json:"description,omitempty"`
+}
+
+// BaselineTestFixStartedData contains structured data for baseline test fix start events (vc-210).
+type BaselineTestFixStartedData struct {
+	// BaselineIssueID is the ID of the baseline issue being fixed (e.g., vc-baseline-test)
+	BaselineIssueID string `json:"baseline_issue_id"`
+	// GateType is the type of gate that failed (test, lint, build)
+	GateType string `json:"gate_type"`
+	// FailingTests is the list of failing test names
+	FailingTests []string `json:"failing_tests,omitempty"`
+}
+
+// BaselineTestFixCompletedData contains structured data for baseline test fix completion events (vc-210).
+type BaselineTestFixCompletedData struct {
+	// BaselineIssueID is the ID of the baseline issue that was fixed
+	BaselineIssueID string `json:"baseline_issue_id"`
+	// GateType is the type of gate that was fixed
+	GateType string `json:"gate_type"`
+	// Success indicates whether the fix was successful
+	Success bool `json:"success"`
+	// FixType is the type of fix applied (flaky, real, environmental)
+	FixType string `json:"fix_type,omitempty"`
+	// TestsFixed is the number of tests that were fixed
+	TestsFixed int `json:"tests_fixed"`
+	// CommitHash is the git commit hash of the fix
+	CommitHash string `json:"commit_hash,omitempty"`
+	// ProcessingTimeMs is the time taken to fix in milliseconds
+	ProcessingTimeMs int64 `json:"processing_time_ms"`
+	// Error contains the error message if fix failed
+	Error string `json:"error,omitempty"`
+}
+
+// TestFailureDiagnosisData contains structured data for test failure diagnosis events (vc-210).
+type TestFailureDiagnosisData struct {
+	// FailureType is the classified type of failure (flaky, real, environmental, unknown)
+	FailureType string `json:"failure_type"`
+	// RootCause is the AI's diagnosis of why the test is failing
+	RootCause string `json:"root_cause"`
+	// ProposedFix is the AI's recommended fix
+	ProposedFix string `json:"proposed_fix"`
+	// Confidence is the AI's confidence in the diagnosis (0.0 to 1.0)
+	Confidence float64 `json:"confidence"`
+	// TestNames is the list of failing tests
+	TestNames []string `json:"test_names"`
 }
 
 // EventStore defines the interface for storing and retrieving agent events.

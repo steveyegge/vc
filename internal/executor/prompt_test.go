@@ -562,3 +562,134 @@ func TestTruncate(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildPrompt_BaselineTestIssue tests self-healing prompt for baseline test failures (vc-210)
+func TestBuildPrompt_BaselineTestIssue(t *testing.T) {
+	pb, err := NewPromptBuilder()
+	if err != nil {
+		t.Fatalf("NewPromptBuilder() failed: %v", err)
+	}
+
+	ctx := &PromptContext{
+		Issue: &types.Issue{
+			ID:    "vc-baseline-test",
+			Title: "Baseline quality gate failure: test",
+			Description: "The test quality gate is failing on the baseline (main branch).\n\n" +
+				"This blocks the executor from claiming work until fixed.\n\n" +
+				"Error: TestPromptBuilder_Comprehensive failed\n\n" +
+				"Output:\n```\n--- FAIL: TestPromptBuilder_Comprehensive (0.01s)\n" +
+				"    prompt_test.go:105: expected comprehensive prompt to include baseline section\n" +
+				"FAIL\n```",
+			AcceptanceCriteria: "- test gate passes on main branch\n" +
+				"- Preflight check succeeds\n" +
+				"- Executor can resume claiming work",
+			Priority: 1,
+		},
+	}
+
+	prompt, err := pb.BuildPrompt(ctx)
+	if err != nil {
+		t.Fatalf("BuildPrompt() failed: %v", err)
+	}
+
+	// Verify baseline test failure section is present
+	if !strings.Contains(prompt, "# BASELINE TEST FAILURE SELF-HEALING DIRECTIVE") {
+		t.Error("Prompt missing 'BASELINE TEST FAILURE SELF-HEALING DIRECTIVE' section")
+	}
+
+	// Verify test failure analysis framework
+	if !strings.Contains(prompt, "## Test Failure Analysis Framework") {
+		t.Error("Prompt missing 'Test Failure Analysis Framework' section")
+	}
+	if !strings.Contains(prompt, "Flaky Test") {
+		t.Error("Prompt missing flaky test guidance")
+	}
+	if !strings.Contains(prompt, "Real Failure") {
+		t.Error("Prompt missing real failure guidance")
+	}
+	if !strings.Contains(prompt, "Environmental") {
+		t.Error("Prompt missing environmental failure guidance")
+	}
+
+	// Verify fix verification protocol
+	if !strings.Contains(prompt, "## Fix Verification Protocol") {
+		t.Error("Prompt missing 'Fix Verification Protocol' section")
+	}
+	if !strings.Contains(prompt, "Run the specific failing test(s)") {
+		t.Error("Prompt missing test verification guidance")
+	}
+
+	// Verify commit message format
+	if !strings.Contains(prompt, "## Commit Message Format") {
+		t.Error("Prompt missing 'Commit Message Format' section")
+	}
+	if !strings.Contains(prompt, "Failure Type:") {
+		t.Error("Prompt missing commit message template")
+	}
+
+	// Verify self-healing rules
+	if !strings.Contains(prompt, "## Rules for Baseline Test Fixes") {
+		t.Error("Prompt missing 'Rules for Baseline Test Fixes' section")
+	}
+	if !strings.Contains(prompt, "Minimize changes") {
+		t.Error("Prompt missing minimization rule")
+	}
+}
+
+// TestBuildPrompt_BaselineLintIssue tests self-healing prompt for baseline lint failures (vc-210)
+func TestBuildPrompt_BaselineLintIssue(t *testing.T) {
+	pb, err := NewPromptBuilder()
+	if err != nil {
+		t.Fatalf("NewPromptBuilder() failed: %v", err)
+	}
+
+	ctx := &PromptContext{
+		Issue: &types.Issue{
+			ID:    "vc-baseline-lint",
+			Title: "Baseline quality gate failure: lint",
+			Description: "The lint quality gate is failing on the baseline (main branch).\n\n" +
+				"Error: golangci-lint found issues\n\n" +
+				"Output:\n```\ninternal/executor/prompt.go:432: unused variable 'isBaselineIssue'\n```",
+		},
+	}
+
+	prompt, err := pb.BuildPrompt(ctx)
+	if err != nil {
+		t.Fatalf("BuildPrompt() failed: %v", err)
+	}
+
+	// Verify baseline section is present for any vc-baseline-* issue
+	if !strings.Contains(prompt, "# BASELINE TEST FAILURE SELF-HEALING DIRECTIVE") {
+		t.Error("Prompt missing baseline self-healing section for lint issue")
+	}
+}
+
+// TestBuildPrompt_RegularIssue_NoBaseline tests that regular issues don't get baseline section
+func TestBuildPrompt_RegularIssue_NoBaseline(t *testing.T) {
+	pb, err := NewPromptBuilder()
+	if err != nil {
+		t.Fatalf("NewPromptBuilder() failed: %v", err)
+	}
+
+	ctx := &PromptContext{
+		Issue: &types.Issue{
+			ID:                 "vc-210",
+			Title:              "Self-healing: AI agent can fix baseline test failures",
+			Description:        "Add AI-powered test failure diagnosis and fix",
+			AcceptanceCriteria: "- AI supervisor has test failure analysis prompts\n- Can diagnose flaky vs real test failures",
+		},
+	}
+
+	prompt, err := pb.BuildPrompt(ctx)
+	if err != nil {
+		t.Fatalf("BuildPrompt() failed: %v", err)
+	}
+
+	// Verify baseline section is NOT present for regular issues
+	if strings.Contains(prompt, "# BASELINE TEST FAILURE SELF-HEALING DIRECTIVE") {
+		t.Error("Prompt should not have baseline section for regular issues")
+	}
+	if strings.Contains(prompt, "## Test Failure Analysis Framework") {
+		t.Error("Prompt should not have test failure analysis framework for regular issues")
+	}
+}
