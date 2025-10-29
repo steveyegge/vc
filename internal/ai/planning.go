@@ -274,7 +274,8 @@ func (s *Supervisor) ValidatePhaseStructure(ctx context.Context, phases []types.
 		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
-		return fmt.Errorf("failed to parse phase validation response: %s (response: %s)", parseResult.Error, responseText)
+		// vc-227: Truncate AI response to prevent log spam
+		return fmt.Errorf("failed to parse phase validation response: %s (response: %s)", parseResult.Error, truncateString(responseText, 200))
 	}
 	result := parseResult.Data
 

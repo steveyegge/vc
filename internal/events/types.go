@@ -305,6 +305,8 @@ type BaselineTestFixCompletedData struct {
 // TestFailureDiagnosisData contains structured data for test failure diagnosis events (vc-210).
 type TestFailureDiagnosisData struct {
 	// FailureType is the classified type of failure (flaky, real, environmental, unknown)
+	// vc-228: Kept as string for JSON flexibility; use IsValidFailureType() for validation
+	// Valid values: "flaky", "real", "environmental", "unknown"
 	FailureType string `json:"failure_type"`
 	// RootCause is the AI's diagnosis of why the test is failing
 	RootCause string `json:"root_cause"`
@@ -345,6 +347,18 @@ type EventFilter struct {
 	BeforeTime time.Time
 	// Limit limits the number of events returned
 	Limit int
+}
+
+// IsValidFailureType validates if a failure type string is valid (vc-228)
+// Valid values match the FailureType constants in internal/ai/test_failure.go
+func IsValidFailureType(ft string) bool {
+	validTypes := map[string]bool{
+		"flaky":         true, // Intermittent failure (race condition, timing)
+		"real":          true, // Actual bug in code
+		"environmental": true, // External dependency issue
+		"unknown":       true, // Cannot determine
+	}
+	return validTypes[ft]
 }
 
 // Helper methods for type-safe data access

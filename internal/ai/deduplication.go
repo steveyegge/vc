@@ -74,7 +74,8 @@ func (s *Supervisor) CheckIssueDuplicate(ctx context.Context, candidate, existin
 		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
-		return nil, fmt.Errorf("failed to parse duplicate check response: %s (response: %s)", parseResult.Error, responseText)
+		// vc-227: Truncate AI response to prevent log spam
+		return nil, fmt.Errorf("failed to parse duplicate check response: %s (response: %s)", parseResult.Error, truncateString(responseText, 200))
 	}
 	response := parseResult.Data
 
@@ -159,7 +160,8 @@ func (s *Supervisor) CheckIssueDuplicateBatch(ctx context.Context, candidate *ty
 		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
-		return nil, fmt.Errorf("failed to parse batch duplicate check response: %s (response: %s)", parseResult.Error, responseText)
+		// vc-227: Truncate AI response to prevent log spam
+		return nil, fmt.Errorf("failed to parse batch duplicate check response: %s (response: %s)", parseResult.Error, truncateString(responseText, 200))
 	}
 	response := parseResult.Data
 

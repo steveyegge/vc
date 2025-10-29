@@ -86,7 +86,8 @@ func (s *Supervisor) AnalyzeCodeReviewNeed(ctx context.Context, issue *types.Iss
 		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
-		return nil, fmt.Errorf("failed to parse code review decision response: %s (response: %s)", parseResult.Error, responseText)
+		// vc-227: Truncate AI response to prevent log spam
+		return nil, fmt.Errorf("failed to parse code review decision response: %s (response: %s)", parseResult.Error, truncateString(responseText, 200))
 	}
 	decision := parseResult.Data
 
@@ -154,7 +155,8 @@ func (s *Supervisor) AnalyzeTestCoverage(ctx context.Context, issue *types.Issue
 		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
-		return nil, fmt.Errorf("failed to parse test coverage analysis response: %s (response: %s)", parseResult.Error, responseText)
+		// vc-227: Truncate AI response to prevent log spam
+		return nil, fmt.Errorf("failed to parse test coverage analysis response: %s (response: %s)", parseResult.Error, truncateString(responseText, 200))
 	}
 	analysis := parseResult.Data
 
@@ -223,7 +225,8 @@ func (s *Supervisor) AnalyzeCodeQuality(ctx context.Context, issue *types.Issue,
 		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
-		return nil, fmt.Errorf("failed to parse code quality analysis response: %s (response: %s)", parseResult.Error, responseText)
+		// vc-227: Truncate AI response to prevent log spam
+		return nil, fmt.Errorf("failed to parse code quality analysis response: %s (response: %s)", parseResult.Error, truncateString(responseText, 200))
 	}
 	analysis := parseResult.Data
 

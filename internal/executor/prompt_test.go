@@ -693,3 +693,94 @@ func TestBuildPrompt_RegularIssue_NoBaseline(t *testing.T) {
 		t.Error("Prompt should not have test failure analysis framework for regular issues")
 	}
 }
+
+// TestBuildPrompt_BaselineEdgeCases tests edge cases for baseline issue detection (vc-229)
+func TestBuildPrompt_BaselineEdgeCases(t *testing.T) {
+	pb, err := NewPromptBuilder()
+	if err != nil {
+		t.Fatalf("NewPromptBuilder() failed: %v", err)
+	}
+
+	tests := []struct {
+		name              string
+		issueID           string
+		shouldHaveBaseline bool
+		description       string
+	}{
+		{
+			name:              "exact prefix without gate type",
+			issueID:           "vc-baseline",
+			shouldHaveBaseline: false,
+			description:       "Issue ID 'vc-baseline' without gate type should NOT be baseline",
+		},
+		{
+			name:              "invalid gate type",
+			issueID:           "vc-baseline-invalid",
+			shouldHaveBaseline: false,
+			description:       "Invalid gate type should NOT be baseline",
+		},
+		{
+			name:              "empty gate type",
+			issueID:           "vc-baseline-",
+			shouldHaveBaseline: false,
+			description:       "Empty gate type should NOT be baseline",
+		},
+		{
+			name:              "empty issue ID",
+			issueID:           "",
+			shouldHaveBaseline: false,
+			description:       "Empty issue ID should NOT be baseline",
+		},
+		{
+			name:              "valid test gate",
+			issueID:           "vc-baseline-test",
+			shouldHaveBaseline: true,
+			description:       "Valid test gate should be baseline",
+		},
+		{
+			name:              "valid lint gate",
+			issueID:           "vc-baseline-lint",
+			shouldHaveBaseline: true,
+			description:       "Valid lint gate should be baseline",
+		},
+		{
+			name:              "valid build gate",
+			issueID:           "vc-baseline-build",
+			shouldHaveBaseline: true,
+			description:       "Valid build gate should be baseline",
+		},
+		{
+			name:              "similar but not baseline",
+			issueID:           "vc-baseline-tests",
+			shouldHaveBaseline: false,
+			description:       "Similar ID with extra 's' should NOT be baseline",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &PromptContext{
+				Issue: &types.Issue{
+					ID:          tt.issueID,
+					Title:       "Test issue",
+					Description: "Test description",
+				},
+			}
+
+			prompt, err := pb.BuildPrompt(ctx)
+			if err != nil {
+				t.Fatalf("BuildPrompt() failed: %v", err)
+			}
+
+			hasBaseline := strings.Contains(prompt, "# BASELINE TEST FAILURE SELF-HEALING DIRECTIVE")
+
+			if hasBaseline != tt.shouldHaveBaseline {
+				if tt.shouldHaveBaseline {
+					t.Errorf("%s: expected baseline section to be present, but it was not", tt.description)
+				} else {
+					t.Errorf("%s: expected baseline section to be absent, but it was present", tt.description)
+				}
+			}
+		})
+	}
+}

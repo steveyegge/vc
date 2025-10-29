@@ -70,7 +70,8 @@ func (s *Supervisor) AssessIssueState(ctx context.Context, issue *types.Issue) (
 		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
-		return nil, fmt.Errorf("failed to parse assessment response: %s (response: %s)", parseResult.Error, responseText)
+		// vc-227: Truncate AI response to prevent log spam
+		return nil, fmt.Errorf("failed to parse assessment response: %s (response: %s)", parseResult.Error, truncateString(responseText, 200))
 	}
 	assessment := parseResult.Data
 
@@ -137,7 +138,8 @@ func (s *Supervisor) AssessCompletion(ctx context.Context, issue *types.Issue, c
 		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
-		return nil, fmt.Errorf("failed to parse completion assessment response: %s (response: %s)", parseResult.Error, responseText)
+		// vc-227: Truncate AI response to prevent log spam
+		return nil, fmt.Errorf("failed to parse completion assessment response: %s (response: %s)", parseResult.Error, truncateString(responseText, 200))
 	}
 	assessment := parseResult.Data
 

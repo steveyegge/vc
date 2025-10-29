@@ -81,7 +81,8 @@ func (s *Supervisor) GenerateRecoveryStrategy(ctx context.Context, issue *types.
 		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
-		return nil, fmt.Errorf("failed to parse recovery strategy response: %s (response: %s)", parseResult.Error, responseText)
+		// vc-227: Truncate AI response to prevent log spam
+		return nil, fmt.Errorf("failed to parse recovery strategy response: %s (response: %s)", parseResult.Error, truncateString(responseText, 200))
 	}
 	strategy := parseResult.Data
 

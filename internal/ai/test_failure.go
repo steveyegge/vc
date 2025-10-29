@@ -35,6 +35,18 @@ const (
 // DiagnoseTestFailure analyzes test failure output and provides a structured diagnosis
 // This helps the agent understand what type of failure it is and how to fix it
 func (s *Supervisor) DiagnoseTestFailure(ctx context.Context, issue *types.Issue, testOutput string) (*TestFailureDiagnosis, error) {
+	// Input validation (vc-225)
+	if issue == nil {
+		return nil, fmt.Errorf("issue cannot be nil")
+	}
+	if testOutput == "" {
+		return nil, fmt.Errorf("test output cannot be empty")
+	}
+	// Truncate very large outputs to avoid excessive AI API costs
+	if len(testOutput) > 100000 {
+		testOutput = testOutput[:100000] + "\n... (truncated)"
+	}
+
 	startTime := time.Now()
 
 	// Build the diagnosis prompt
@@ -75,7 +87,8 @@ func (s *Supervisor) DiagnoseTestFailure(ctx context.Context, issue *types.Issue
 		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
-		return nil, fmt.Errorf("failed to parse test failure diagnosis: %s (response: %s)", parseResult.Error, responseText)
+		// vc-227: Truncate AI response to prevent log spam
+		return nil, fmt.Errorf("failed to parse test failure diagnosis: %s (response: %s)", parseResult.Error, truncateString(responseText, 200))
 	}
 	diagnosis := parseResult.Data
 
