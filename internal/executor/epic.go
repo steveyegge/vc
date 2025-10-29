@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/steveyegge/vc/internal/ai"
+	"github.com/steveyegge/vc/internal/labels"
 	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
@@ -121,6 +122,17 @@ func checkAndCloseEpicIfComplete(ctx context.Context, store storage.Storage, sup
 			}
 
 			fmt.Printf("✓ Closed epic %s: %s\n", epicID, epic.Title)
+
+			// vc-218: If this is a mission epic, transition to needs-quality-gates state
+			if epic.IssueSubtype == types.SubtypeMission {
+				if err := labels.TransitionState(ctx, store, epicID, "", labels.LabelNeedsQualityGates, labels.TriggerEpicCompleted, "ai-supervisor"); err != nil {
+					// Log warning but don't fail - state transition is best-effort
+					fmt.Printf("Warning: failed to transition mission %s to needs-quality-gates: %v\n", epicID, err)
+				} else {
+					fmt.Printf("✓ Mission %s transitioned to needs-quality-gates state\n", epicID)
+				}
+			}
+
 			return true, nil // Successfully closed
 		} else {
 			fmt.Printf("AI recommends keeping epic %s open: %s\n", epicID, assessment.Reasoning)
@@ -152,6 +164,17 @@ func checkAndCloseEpicIfComplete(ctx context.Context, store storage.Storage, sup
 		}
 
 		fmt.Printf("✓ Closed epic %s: %s\n", epicID, epic.Title)
+
+		// vc-218: If this is a mission epic, transition to needs-quality-gates state
+		if epic.IssueSubtype == types.SubtypeMission {
+			if err := labels.TransitionState(ctx, store, epicID, "", labels.LabelNeedsQualityGates, labels.TriggerEpicCompleted, "executor"); err != nil {
+				// Log warning but don't fail - state transition is best-effort
+				fmt.Printf("Warning: failed to transition mission %s to needs-quality-gates: %v\n", epicID, err)
+			} else {
+				fmt.Printf("✓ Mission %s transitioned to needs-quality-gates state\n", epicID)
+			}
+		}
+
 		return true, nil // Successfully closed
 	}
 

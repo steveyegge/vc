@@ -101,6 +101,10 @@ const (
 	EventTypeBaselineTestFixCompleted EventType = "baseline_test_fix_completed"
 	// EventTypeTestFailureDiagnosis indicates AI diagnosed a test failure
 	EventTypeTestFailureDiagnosis EventType = "test_failure_diagnosis"
+
+	// Label-driven state machine events (vc-218)
+	// EventTypeLabelStateTransition indicates a label-driven state transition occurred
+	EventTypeLabelStateTransition EventType = "label_state_transition"
 )
 
 // EventSeverity represents the severity level of an event.
@@ -316,6 +320,20 @@ type TestFailureDiagnosisData struct {
 	Confidence float64 `json:"confidence"`
 	// TestNames is the list of failing tests
 	TestNames []string `json:"test_names"`
+}
+
+// LabelStateTransitionData contains structured data for label state transition events (vc-218).
+type LabelStateTransitionData struct {
+	// FromLabel is the previous state label (empty if initial state)
+	FromLabel string `json:"from_label,omitempty"`
+	// ToLabel is the new state label
+	ToLabel string `json:"to_label"`
+	// Trigger is what triggered the transition (e.g., "task_completed", "gates_passed", "human_approval")
+	Trigger string `json:"trigger"`
+	// Actor is who/what initiated the transition (executor ID, user, etc.)
+	Actor string `json:"actor,omitempty"`
+	// MissionID is the mission this transition applies to (if applicable)
+	MissionID string `json:"mission_id,omitempty"`
 }
 
 // EventStore defines the interface for storing and retrieving agent events.

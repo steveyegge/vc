@@ -11,6 +11,7 @@ import (
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/gates"
+	"github.com/steveyegge/vc/internal/labels"
 	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -408,6 +409,21 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 					rp.sandbox.Status = sandbox.SandboxStatusCompleted
 				} else {
 					rp.sandbox.Status = sandbox.SandboxStatusFailed
+				}
+			}
+
+			// vc-218: If this is a mission with needs-quality-gates label and gates passed,
+			// transition to needs-review state (for future QA workers)
+			if allPassed && !canceled && !timedOut && issue.IssueSubtype == types.SubtypeMission {
+				hasLabel, err := labels.HasLabel(ctx, rp.store, issue.ID, labels.LabelNeedsQualityGates)
+				if err != nil {
+					fmt.Printf("Warning: failed to check for needs-quality-gates label: %v\n", err)
+				} else if hasLabel {
+					if err := labels.TransitionState(ctx, rp.store, issue.ID, labels.LabelNeedsQualityGates, labels.LabelNeedsReview, labels.TriggerGatesPassed, rp.actor); err != nil {
+						fmt.Printf("Warning: failed to transition mission to needs-review: %v\n", err)
+					} else {
+						fmt.Printf("✓ Mission %s transitioned to needs-review state\n", issue.ID)
+					}
 				}
 			}
 
