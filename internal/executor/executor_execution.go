@@ -104,49 +104,84 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		fmt.Printf("Skipping AI assessment (supervision disabled)\n")
 	}
 
-	// Phase 2: Create sandbox if enabled
+	// Phase 2: Get or create mission sandbox if enabled
 	var sb *sandbox.Sandbox
 	workingDir := e.workingDir
 	if e.enableSandboxes && e.sandboxMgr != nil {
-		fmt.Printf("Creating sandbox for issue %s...\n", issue.ID)
-
-		// Get parent repo from config (will be set by manager if not specified)
-		parentRepo := "."
-		if e.config != nil && e.config.ParentRepo != "" {
-			parentRepo = e.config.ParentRepo
-		}
-
-		// Get base branch from config
-		baseBranch := "main"
-		if e.config != nil && e.config.DefaultBranch != "" {
-			baseBranch = e.config.DefaultBranch
-		}
-
-		sandboxCfg := sandbox.SandboxConfig{
-			MissionID:  issue.ID,
-			ParentRepo: parentRepo,
-			BaseBranch: baseBranch,
-		}
-
-		var err error
-		sb, err = e.sandboxMgr.Create(ctx, sandboxCfg)
+		// Look up the mission for this task (vc-244)
+		missionCtx, err := e.store.GetMissionForTask(ctx, issue.ID)
 		if err != nil {
 			// Don't fail execution - just log and continue without sandbox
-			fmt.Fprintf(os.Stderr, "Warning: failed to create sandbox: %v (continuing in main workspace)\n", err)
-		} else {
-			// Set working directory to sandbox path
-			workingDir = sb.Path
-			fmt.Printf("Sandbox created: %s (branch: %s)\n", sb.Path, sb.GitBranch)
+			fmt.Fprintf(os.Stderr, "Warning: failed to get mission for task %s: %v (continuing in main workspace)\n", issue.ID, err)
+		} else if missionCtx != nil {
+			// Task is part of a mission - use mission sandbox
+			fmt.Printf("Task %s is part of mission %s\n", issue.ID, missionCtx.MissionID)
 
-			// Ensure cleanup happens
-			defer func() {
-				if sb != nil {
-					fmt.Printf("Cleaning up sandbox %s...\n", sb.ID)
-					if err := e.sandboxMgr.Cleanup(ctx, sb); err != nil {
-						fmt.Fprintf(os.Stderr, "warning: failed to cleanup sandbox: %v\n", err)
-					}
+			// Get or create mission sandbox
+			sb, err = sandbox.GetMissionSandbox(ctx, e.sandboxMgr, e.store, missionCtx.MissionID)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to get mission sandbox: %v (continuing in main workspace)\n", err)
+			} else if sb == nil {
+				// No sandbox exists yet - create it (auto-create on first task)
+				fmt.Printf("Creating mission sandbox for %s...\n", missionCtx.MissionID)
+				sb, err = sandbox.CreateMissionSandbox(ctx, e.sandboxMgr, e.store, missionCtx.MissionID)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to create mission sandbox: %v (continuing in main workspace)\n", err)
+					sb = nil // Clear to continue without sandbox
+				} else {
+					fmt.Printf("Mission sandbox created: %s (branch: %s)\n", sb.Path, sb.GitBranch)
 				}
-			}()
+			} else {
+				fmt.Printf("Using existing mission sandbox: %s (branch: %s)\n", sb.Path, sb.GitBranch)
+			}
+
+			// If we have a sandbox, set working directory
+			if sb != nil {
+				workingDir = sb.Path
+				// NOTE: Do NOT cleanup mission sandbox here - it's shared across all tasks in the mission
+				// Cleanup happens when the mission is closed (vc-245)
+			}
+		} else {
+			// Task is not part of a mission - create per-execution sandbox (legacy behavior)
+			fmt.Printf("Task %s is not part of a mission, creating per-execution sandbox...\n", issue.ID)
+
+			// Get parent repo from config (will be set by manager if not specified)
+			parentRepo := "."
+			if e.config != nil && e.config.ParentRepo != "" {
+				parentRepo = e.config.ParentRepo
+			}
+
+			// Get base branch from config
+			baseBranch := "main"
+			if e.config != nil && e.config.DefaultBranch != "" {
+				baseBranch = e.config.DefaultBranch
+			}
+
+			sandboxCfg := sandbox.SandboxConfig{
+				MissionID:  issue.ID,
+				ParentRepo: parentRepo,
+				BaseBranch: baseBranch,
+			}
+
+			sb, err = e.sandboxMgr.Create(ctx, sandboxCfg)
+			if err != nil {
+				// Don't fail execution - just log and continue without sandbox
+				fmt.Fprintf(os.Stderr, "Warning: failed to create per-execution sandbox: %v (continuing in main workspace)\n", err)
+			} else {
+				// Set working directory to sandbox path
+				workingDir = sb.Path
+				fmt.Printf("Per-execution sandbox created: %s (branch: %s)\n", sb.Path, sb.GitBranch)
+
+				// Ensure cleanup happens for per-execution sandboxes
+				defer func() {
+					if sb != nil {
+						fmt.Printf("Cleaning up per-execution sandbox %s...\n", sb.ID)
+						if err := e.sandboxMgr.Cleanup(ctx, sb); err != nil {
+							fmt.Fprintf(os.Stderr, "warning: failed to cleanup sandbox: %v\n", err)
+						}
+					}
+				}()
+			}
 		}
 	}
 

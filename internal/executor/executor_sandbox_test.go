@@ -513,6 +513,387 @@ func TestExecutorPassesSandboxDirToResultsProcessor(t *testing.T) {
 	t.Logf("  Sandboxes enabled: %v", executor.enableSandboxes)
 }
 
+// TestMissionSandboxIntegration tests the full mission sandbox workflow (vc-244)
+func TestMissionSandboxIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+
+	// Create a temporary parent repo
+	parentRepo := t.TempDir()
+	if err := setupGitRepo(t, parentRepo); err != nil {
+		t.Fatalf("Failed to setup parent git repo: %v", err)
+	}
+
+	// Create storage
+	dbPath := filepath.Join(parentRepo, ".beads", "test.db")
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		t.Fatalf("Failed to create .beads dir: %v", err)
+	}
+
+	cfg := storage.DefaultConfig()
+	cfg.Path = dbPath
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a mission epic
+	mission := &types.Mission{
+		Issue: types.Issue{
+			ID:                 "vc-test-244-mission",
+			Title:              "Test Mission for Sandbox Integration",
+			Description:        "Mission epic to test sandbox sharing",
+			IssueType:          types.TypeEpic,
+			IssueSubtype:       types.SubtypeMission,
+			Status:             types.StatusOpen,
+			Priority:           1,
+			AcceptanceCriteria: "All tasks complete",
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
+		},
+		Goal: "Test mission sandbox workflow",
+	}
+	if err := store.CreateMission(ctx, mission, "test"); err != nil {
+		t.Fatalf("Failed to create mission: %v", err)
+	}
+
+	// Create two tasks under the mission
+	task1 := &types.Issue{
+		ID:                 "vc-test-244-task1",
+		Title:              "First task in mission",
+		Description:        "First task",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		AcceptanceCriteria: "Task 1 complete",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+	if err := store.CreateIssue(ctx, task1, "test"); err != nil {
+		t.Fatalf("Failed to create task1: %v", err)
+	}
+
+	task2 := &types.Issue{
+		ID:                 "vc-test-244-task2",
+		Title:              "Second task in mission",
+		Description:        "Second task",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		AcceptanceCriteria: "Task 2 complete",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+	if err := store.CreateIssue(ctx, task2, "test"); err != nil {
+		t.Fatalf("Failed to create task2: %v", err)
+	}
+
+	// Link tasks to mission
+	dep1 := &types.Dependency{
+		IssueID:     task1.ID,
+		DependsOnID: mission.ID,
+		Type:        types.DepParentChild,
+	}
+	if err := store.AddDependency(ctx, dep1, "test"); err != nil {
+		t.Fatalf("Failed to link task1 to mission: %v", err)
+	}
+	dep2 := &types.Dependency{
+		IssueID:     task2.ID,
+		DependsOnID: mission.ID,
+		Type:        types.DepParentChild,
+	}
+	if err := store.AddDependency(ctx, dep2, "test"); err != nil {
+		t.Fatalf("Failed to link task2 to mission: %v", err)
+	}
+
+	// Create sandbox manager
+	sandboxRoot := filepath.Join(parentRepo, ".sandboxes")
+	sandboxMgr, err := sandbox.NewManager(sandbox.Config{
+		SandboxRoot: sandboxRoot,
+		ParentRepo:  parentRepo,
+		MainDB:      store,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create sandbox manager: %v", err)
+	}
+
+	// Test 1: First task should create mission sandbox
+	missionCtx1, err := store.GetMissionForTask(ctx, task1.ID)
+	if err != nil {
+		t.Fatalf("Failed to get mission for task1: %v", err)
+	}
+	if missionCtx1 == nil {
+		t.Fatal("Expected mission context for task1, got nil")
+	}
+	if missionCtx1.MissionID != mission.ID {
+		t.Errorf("Expected mission ID %s, got %s", mission.ID, missionCtx1.MissionID)
+	}
+
+	// Before first task execution, sandbox should not exist
+	sb1, err := sandbox.GetMissionSandbox(ctx, sandboxMgr, store, mission.ID)
+	if err != nil {
+		t.Fatalf("Failed to get mission sandbox (expected nil): %v", err)
+	}
+	if sb1 != nil {
+		t.Error("Expected no sandbox before first task execution")
+	}
+
+	// Create sandbox for first task (auto-create behavior)
+	sb1, err = sandbox.CreateMissionSandbox(ctx, sandboxMgr, store, mission.ID)
+	if err != nil {
+		t.Fatalf("Failed to create mission sandbox: %v", err)
+	}
+	if sb1 == nil {
+		t.Fatal("Expected sandbox to be created, got nil")
+	}
+	defer func() {
+		if err := sandboxMgr.Cleanup(ctx, sb1); err != nil {
+			t.Errorf("Failed to cleanup sandbox: %v", err)
+		}
+	}()
+
+	// Verify sandbox metadata stored
+	missionAfterCreate, err := store.GetMission(ctx, mission.ID)
+	if err != nil {
+		t.Fatalf("Failed to get mission after sandbox creation: %v", err)
+	}
+	if missionAfterCreate.SandboxPath == "" {
+		t.Error("Expected sandbox path to be stored in mission metadata")
+	}
+	if missionAfterCreate.BranchName == "" {
+		t.Error("Expected branch name to be stored in mission metadata")
+	}
+
+	// Create a marker file in sandbox from "task 1"
+	task1Marker := filepath.Join(sb1.Path, "task1_marker.txt")
+	if err := os.WriteFile(task1Marker, []byte("task1 was here"), 0644); err != nil {
+		t.Fatalf("Failed to create task1 marker: %v", err)
+	}
+
+	// Test 2: Second task should reuse the same sandbox
+	missionCtx2, err := store.GetMissionForTask(ctx, task2.ID)
+	if err != nil {
+		t.Fatalf("Failed to get mission for task2: %v", err)
+	}
+	if missionCtx2 == nil {
+		t.Fatal("Expected mission context for task2, got nil")
+	}
+	if missionCtx2.MissionID != mission.ID {
+		t.Errorf("Expected mission ID %s, got %s", mission.ID, missionCtx2.MissionID)
+	}
+
+	// Get sandbox for second task (should return existing)
+	sb2, err := sandbox.GetMissionSandbox(ctx, sandboxMgr, store, mission.ID)
+	if err != nil {
+		t.Fatalf("Failed to get mission sandbox for task2: %v", err)
+	}
+	if sb2 == nil {
+		t.Fatal("Expected existing sandbox for task2, got nil")
+	}
+
+	// Verify it's the same sandbox
+	if sb2.ID != sb1.ID {
+		t.Errorf("Expected same sandbox ID %s, got %s", sb1.ID, sb2.ID)
+	}
+	if sb2.Path != sb1.Path {
+		t.Errorf("Expected same sandbox path %s, got %s", sb1.Path, sb2.Path)
+	}
+	if sb2.GitBranch != sb1.GitBranch {
+		t.Errorf("Expected same git branch %s, got %s", sb1.GitBranch, sb2.GitBranch)
+	}
+
+	// Verify task2 can see task1's marker file (shared context)
+	if _, err := os.Stat(task1Marker); os.IsNotExist(err) {
+		t.Error("Task2 should see task1's marker file in shared sandbox")
+	}
+
+	// Create a marker file from "task 2"
+	task2Marker := filepath.Join(sb2.Path, "task2_marker.txt")
+	if err := os.WriteFile(task2Marker, []byte("task2 was here"), 0644); err != nil {
+		t.Fatalf("Failed to create task2 marker: %v", err)
+	}
+
+	// Verify both markers exist in the shared sandbox
+	if _, err := os.Stat(task1Marker); os.IsNotExist(err) {
+		t.Error("Task1 marker should still exist after task2")
+	}
+	if _, err := os.Stat(task2Marker); os.IsNotExist(err) {
+		t.Error("Task2 marker should exist")
+	}
+
+	t.Logf("✓ Mission sandbox integration test passed")
+	t.Logf("  Mission ID: %s", mission.ID)
+	t.Logf("  Sandbox ID: %s", sb1.ID)
+	t.Logf("  Sandbox path: %s", sb1.Path)
+	t.Logf("  Git branch: %s", sb1.GitBranch)
+	t.Logf("  Task1 saw sandbox: %v", sb1 != nil)
+	t.Logf("  Task2 reused sandbox: %v", sb2.ID == sb1.ID)
+	t.Logf("  Shared context verified: both markers exist")
+}
+
+// TestExecutorMissionSandboxWorkflow tests the executor's mission sandbox handling (vc-244)
+func TestExecutorMissionSandboxWorkflow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+
+	// Create a temporary parent repo
+	parentRepo := t.TempDir()
+	if err := setupGitRepo(t, parentRepo); err != nil {
+		t.Fatalf("Failed to setup parent git repo: %v", err)
+	}
+
+	// Create storage
+	dbPath := filepath.Join(parentRepo, ".beads", "test.db")
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		t.Fatalf("Failed to create .beads dir: %v", err)
+	}
+
+	cfg := storage.DefaultConfig()
+	cfg.Path = dbPath
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a mission with a task
+	mission := &types.Mission{
+		Issue: types.Issue{
+			ID:                 "vc-test-244-exec",
+			Title:              "Test Executor Mission",
+			Description:        "Mission for executor test",
+			IssueType:          types.TypeEpic,
+			IssueSubtype:       types.SubtypeMission,
+			Status:             types.StatusOpen,
+			Priority:           1,
+			AcceptanceCriteria: "Executor uses mission sandbox",
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
+		},
+		Goal: "Test executor mission sandbox",
+	}
+	if err := store.CreateMission(ctx, mission, "test"); err != nil {
+		t.Fatalf("Failed to create mission: %v", err)
+	}
+
+	task := &types.Issue{
+		ID:                 "vc-test-244-exec-task",
+		Title:              "Task under executor mission",
+		Description:        "Task to test executor workflow",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		AcceptanceCriteria: "Executor creates/uses sandbox",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+	if err := store.CreateIssue(ctx, task, "test"); err != nil {
+		t.Fatalf("Failed to create task: %v", err)
+	}
+
+	// Link task to mission
+	dep := &types.Dependency{
+		IssueID:     task.ID,
+		DependsOnID: mission.ID,
+		Type:        types.DepParentChild,
+	}
+	if err := store.AddDependency(ctx, dep, "test"); err != nil {
+		t.Fatalf("Failed to link task to mission: %v", err)
+	}
+
+	// Create executor with sandboxes enabled
+	sandboxRoot := filepath.Join(parentRepo, ".sandboxes")
+	execCfg := DefaultConfig()
+	execCfg.Store = store
+	execCfg.EnableSandboxes = true
+	execCfg.SandboxRoot = sandboxRoot
+	execCfg.ParentRepo = parentRepo
+	execCfg.WorkingDir = parentRepo
+	execCfg.EnableAISupervision = false
+	execCfg.EnableQualityGates = false
+
+	executor, err := New(execCfg)
+	if err != nil {
+		t.Fatalf("Failed to create executor: %v", err)
+	}
+
+	// Verify executor is properly configured
+	if !executor.enableSandboxes {
+		t.Error("Executor should have sandboxes enabled")
+	}
+	if executor.sandboxMgr == nil {
+		t.Fatal("Executor should have sandbox manager initialized")
+	}
+
+	// Verify GetMissionForTask works
+	missionCtx, err := store.GetMissionForTask(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("Failed to get mission for task: %v", err)
+	}
+	if missionCtx == nil {
+		t.Fatal("Expected mission context, got nil")
+	}
+	if missionCtx.MissionID != mission.ID {
+		t.Errorf("Expected mission ID %s, got %s", mission.ID, missionCtx.MissionID)
+	}
+
+	// Test the executor would properly handle this:
+	// 1. GetMissionForTask returns mission context ✓
+	// 2. GetMissionSandbox returns nil (no sandbox yet)
+	// 3. CreateMissionSandbox creates new sandbox
+	// 4. Agent executes in sandbox.Path
+
+	// Verify no sandbox exists yet
+	sb, err := sandbox.GetMissionSandbox(ctx, executor.sandboxMgr, store, mission.ID)
+	if err != nil {
+		t.Fatalf("Failed to check for existing sandbox: %v", err)
+	}
+	if sb != nil {
+		t.Error("Expected no sandbox before execution")
+	}
+
+	// Simulate what executor does: create mission sandbox
+	sb, err = sandbox.CreateMissionSandbox(ctx, executor.sandboxMgr, store, mission.ID)
+	if err != nil {
+		t.Fatalf("Failed to create mission sandbox: %v", err)
+	}
+	if sb == nil {
+		t.Fatal("Expected sandbox to be created")
+	}
+	defer func() {
+		if err := executor.sandboxMgr.Cleanup(ctx, sb); err != nil {
+			t.Errorf("Failed to cleanup sandbox: %v", err)
+		}
+	}()
+
+	// Verify sandbox path would be passed to agent
+	if sb.Path == "" {
+		t.Error("Sandbox path should not be empty")
+	}
+	if !strings.Contains(sb.Path, sandboxRoot) {
+		t.Errorf("Sandbox path %s should be under sandbox root %s", sb.Path, sandboxRoot)
+	}
+
+	// Verify sandbox branch
+	expectedBranch := "mission/" + mission.ID + "-test-executor-mission"
+	if sb.GitBranch != expectedBranch {
+		t.Errorf("Expected branch %s, got %s", expectedBranch, sb.GitBranch)
+	}
+
+	t.Logf("✓ Executor mission sandbox workflow test passed")
+	t.Logf("  Executor has sandboxes enabled: %v", executor.enableSandboxes)
+	t.Logf("  Mission found for task: %v", missionCtx != nil)
+	t.Logf("  Sandbox created with path: %s", sb.Path)
+	t.Logf("  Sandbox branch: %s", sb.GitBranch)
+}
+
 // Helper function to add and commit files
 func gitAddAndCommit(t *testing.T, repoPath, message string) error {
 	t.Helper()
