@@ -214,6 +214,14 @@ func (c *PlanningContext) Validate() error {
 	return nil
 }
 
+// MissionContext provides mission metadata for a task
+// Returned by GetMissionForTask() when walking dependency tree upward
+type MissionContext struct {
+	MissionID   string `json:"mission_id"`    // ID of the parent mission epic
+	SandboxPath string `json:"sandbox_path"`  // Path to sandbox directory (future - vc-217)
+	BranchName  string `json:"branch_name"`   // Git branch for this mission (future - vc-217)
+}
+
 // MissionPlanner is the interface for AI-driven mission planning
 // Implementations use AI to break down high-level goals into phased implementation plans
 type MissionPlanner interface {

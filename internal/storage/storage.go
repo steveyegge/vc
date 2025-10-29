@@ -65,6 +65,9 @@ type Storage interface {
 	// Epic Completion (vc-232)
 	IsEpicComplete(ctx context.Context, epicID string) (bool, error)
 
+	// Mission Context (vc-233)
+	GetMissionForTask(ctx context.Context, taskID string) (*types.MissionContext, error)
+
 	// Events
 	AddComment(ctx context.Context, issueID, actor, comment string) error
 	GetEvents(ctx context.Context, issueID string, limit int) ([]*types.Event, error)

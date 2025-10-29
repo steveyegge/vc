@@ -153,10 +153,12 @@ func (s *VCStorage) CreateMission(ctx context.Context, mission *types.Mission, a
 		UPDATE vc_mission_state
 		SET goal = ?, context = ?, phase_count = ?, current_phase = ?,
 		    approval_required = ?, approved_at = ?, approved_by = ?,
+		    sandbox_path = ?, branch_name = ?,
 		    updated_at = ?
 		WHERE issue_id = ?
 	`, mission.Goal, mission.Context, mission.PhaseCount, mission.CurrentPhase,
 		mission.ApprovalRequired, mission.ApprovedAt, mission.ApprovedBy,
+		mission.SandboxPath, mission.BranchName,
 		time.Now(), mission.ID)
 
 	if err != nil {
@@ -960,8 +962,87 @@ func (s *VCStorage) GetEventCounts(ctx context.Context) (*types.EventCounts, err
 }
 
 // ======================================================================
-// EPIC COMPLETION (vc-232)
+// EPIC COMPLETION (vc-232, vc-233)
 // ======================================================================
+
+// GetMissionForTask walks up the dependency tree to find the parent mission epic
+// Algorithm:
+// 1. Start with taskID
+// 2. Walk parent-child dependencies upward
+// 3. Check each parent's IssueSubtype field
+// 4. Return first epic with subtype='mission'
+// 5. Return mission ID, sandbox path (future), branch name (future)
+func (s *VCStorage) GetMissionForTask(ctx context.Context, taskID string) (*types.MissionContext, error) {
+	// Track visited issues to prevent infinite loops
+	visited := make(map[string]bool)
+	currentID := taskID
+
+	// Walk up the dependency tree
+	for {
+		// Check for cycles
+		if visited[currentID] {
+			return nil, fmt.Errorf("circular dependency detected while walking up from task %s", taskID)
+		}
+		visited[currentID] = true
+
+		// Get the current issue to check if it's a mission
+		issue, err := s.GetIssue(ctx, currentID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get issue %s: %w", currentID, err)
+		}
+
+		// Check if this is a mission epic
+		if issue.IssueType == types.TypeEpic && issue.IssueSubtype == types.SubtypeMission {
+			// Found the mission! Now get mission metadata
+			mission, err := s.GetMission(ctx, currentID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get mission %s: %w", currentID, err)
+			}
+
+			return &types.MissionContext{
+				MissionID:   mission.ID,
+				SandboxPath: mission.SandboxPath, // Will be empty until vc-217
+				BranchName:  mission.BranchName,  // Will be empty until vc-217
+			}, nil
+		}
+
+		// Find parent via parent-child dependency
+		// Query: SELECT depends_on_id FROM dependencies WHERE issue_id = ? AND type = 'parent-child'
+		rows, err := s.db.QueryContext(ctx, `
+			SELECT depends_on_id
+			FROM dependencies
+			WHERE issue_id = ? AND type = ?
+		`, currentID, types.DepParentChild)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query parents for %s: %w", currentID, err)
+		}
+
+		// Get all parents (should typically be 0 or 1)
+		var parentIDs []string
+		for rows.Next() {
+			var parentID string
+			if err := rows.Scan(&parentID); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("failed to scan parent ID: %w", err)
+			}
+			parentIDs = append(parentIDs, parentID)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("error iterating parent rows: %w", err)
+		}
+		rows.Close() // Close immediately after use (not defer in loop)
+
+		// No parent found - task is not part of a mission
+		if len(parentIDs) == 0 {
+			return nil, fmt.Errorf("task %s is not part of a mission (no parent-child dependency to mission epic)", taskID)
+		}
+
+		// Multiple parents is unusual but walk up the first one
+		// (In practice, tasks should have at most one parent epic)
+		currentID = parentIDs[0]
+	}
+}
 
 // IsEpicComplete checks if an epic is complete
 // An epic is complete when:

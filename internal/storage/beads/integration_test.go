@@ -2296,3 +2296,292 @@ func TestIsEpicComplete(t *testing.T) {
 			epic.ID, relatedIssue.ID, discoveredIssue.ID)
 	})
 }
+
+// TestGetMissionForTask tests walking the dependency tree to find parent missions (vc-233)
+func TestGetMissionForTask(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	t.Run("task directly under mission", func(t *testing.T) {
+		// Create mission epic with subtype='mission'
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Test Mission",
+				Description:  "Top-level mission",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal:         "Complete the mission",
+			SandboxPath:  "/sandbox/mission-123",
+			BranchName:   "mission-123",
+		}
+		if err := store.CreateMission(ctx, mission, "test"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Create task as direct child
+		task := &types.Issue{
+			Title:     "Task 1",
+			Status:    types.StatusOpen,
+			Priority:  2,
+			IssueType: types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, task, "test"); err != nil {
+			t.Fatalf("Failed to create task: %v", err)
+		}
+
+		// Add parent-child dependency (task depends on mission)
+		dep := &types.Dependency{
+			IssueID:     task.ID,
+			DependsOnID: mission.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, dep, "test"); err != nil {
+			t.Fatalf("Failed to add dependency: %v", err)
+		}
+
+		// Get mission context
+		missionCtx, err := store.GetMissionForTask(ctx, task.ID)
+		if err != nil {
+			t.Fatalf("GetMissionForTask failed: %v", err)
+		}
+
+		if missionCtx.MissionID != mission.ID {
+			t.Errorf("Expected mission ID %s, got %s", mission.ID, missionCtx.MissionID)
+		}
+		if missionCtx.SandboxPath != mission.SandboxPath {
+			t.Errorf("Expected sandbox path %s, got %s", mission.SandboxPath, missionCtx.SandboxPath)
+		}
+		if missionCtx.BranchName != mission.BranchName {
+			t.Errorf("Expected branch name %s, got %s", mission.BranchName, missionCtx.BranchName)
+		}
+		t.Logf("✓ Task %s correctly found mission %s", task.ID, mission.ID)
+	})
+
+	t.Run("task under phase under mission (nested epics)", func(t *testing.T) {
+		// Create mission epic
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission with Phases",
+				Description:  "Multi-phase mission",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal:         "Complete phased work",
+			SandboxPath:  "/sandbox/mission-456",
+			BranchName:   "mission-456",
+		}
+		if err := store.CreateMission(ctx, mission, "test"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Create phase epic (child of mission)
+		phase := &types.Issue{
+			Title:        "Phase 1",
+			Description:  "First phase",
+			Status:       types.StatusOpen,
+			Priority:     1,
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypePhase,
+		}
+		if err := store.CreateIssue(ctx, phase, "test"); err != nil {
+			t.Fatalf("Failed to create phase: %v", err)
+		}
+
+		// Add phase -> mission dependency
+		phaseDep := &types.Dependency{
+			IssueID:     phase.ID,
+			DependsOnID: mission.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, phaseDep, "test"); err != nil {
+			t.Fatalf("Failed to add phase dependency: %v", err)
+		}
+
+		// Create task (child of phase)
+		task := &types.Issue{
+			Title:     "Task in Phase",
+			Status:    types.StatusOpen,
+			Priority:  2,
+			IssueType: types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, task, "test"); err != nil {
+			t.Fatalf("Failed to create task: %v", err)
+		}
+
+		// Add task -> phase dependency
+		taskDep := &types.Dependency{
+			IssueID:     task.ID,
+			DependsOnID: phase.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, taskDep, "test"); err != nil {
+			t.Fatalf("Failed to add task dependency: %v", err)
+		}
+
+		// Get mission context (should walk up through phase to mission)
+		missionCtx, err := store.GetMissionForTask(ctx, task.ID)
+		if err != nil {
+			t.Fatalf("GetMissionForTask failed: %v", err)
+		}
+
+		if missionCtx.MissionID != mission.ID {
+			t.Errorf("Expected mission ID %s, got %s", mission.ID, missionCtx.MissionID)
+		}
+		if missionCtx.SandboxPath != mission.SandboxPath {
+			t.Errorf("Expected sandbox path %s, got %s", mission.SandboxPath, missionCtx.SandboxPath)
+		}
+		t.Logf("✓ Task %s correctly walked up through phase %s to mission %s",
+			task.ID, phase.ID, mission.ID)
+	})
+
+	t.Run("task with no mission parent returns error", func(t *testing.T) {
+		// Create standalone task (no parent)
+		task := &types.Issue{
+			Title:     "Standalone Task",
+			Status:    types.StatusOpen,
+			Priority:  2,
+			IssueType: types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, task, "test"); err != nil {
+			t.Fatalf("Failed to create task: %v", err)
+		}
+
+		// Try to get mission context (should fail)
+		_, err := store.GetMissionForTask(ctx, task.ID)
+		if err == nil {
+			t.Error("Expected error for task with no mission parent")
+		} else {
+			t.Logf("✓ Correctly returned error for standalone task: %v", err)
+		}
+	})
+
+	t.Run("task under normal epic (not mission) returns error", func(t *testing.T) {
+		// Create normal epic (not a mission)
+		epic := &types.Issue{
+			Title:        "Normal Epic",
+			Description:  "Not a mission",
+			Status:       types.StatusOpen,
+			Priority:     1,
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypeNormal,
+		}
+		if err := store.CreateIssue(ctx, epic, "test"); err != nil {
+			t.Fatalf("Failed to create epic: %v", err)
+		}
+
+		// Create task under normal epic
+		task := &types.Issue{
+			Title:     "Task Under Normal Epic",
+			Status:    types.StatusOpen,
+			Priority:  2,
+			IssueType: types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, task, "test"); err != nil {
+			t.Fatalf("Failed to create task: %v", err)
+		}
+
+		// Add parent-child dependency
+		dep := &types.Dependency{
+			IssueID:     task.ID,
+			DependsOnID: epic.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, dep, "test"); err != nil {
+			t.Fatalf("Failed to add dependency: %v", err)
+		}
+
+		// Try to get mission context (should fail)
+		_, err := store.GetMissionForTask(ctx, task.ID)
+		if err == nil {
+			t.Error("Expected error for task under normal epic (not mission)")
+		} else {
+			t.Logf("✓ Correctly returned error for task under normal epic: %v", err)
+		}
+	})
+
+	t.Run("non-parent-child dependencies ignored", func(t *testing.T) {
+		// Create mission
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission for Dep Test",
+				Description:  "Testing dependency types",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal: "Test dependencies",
+		}
+		if err := store.CreateMission(ctx, mission, "test"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Create task with parent-child to mission
+		task := &types.Issue{
+			Title:     "Task with Multiple Deps",
+			Status:    types.StatusOpen,
+			Priority:  2,
+			IssueType: types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, task, "test"); err != nil {
+			t.Fatalf("Failed to create task: %v", err)
+		}
+
+		// Add parent-child dependency
+		parentChildDep := &types.Dependency{
+			IssueID:     task.ID,
+			DependsOnID: mission.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, parentChildDep, "test"); err != nil {
+			t.Fatalf("Failed to add parent-child dependency: %v", err)
+		}
+
+		// Create blocker issue
+		blocker := &types.Issue{
+			Title:     "Blocker",
+			Status:    types.StatusOpen,
+			Priority:  2,
+			IssueType: types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
+			t.Fatalf("Failed to create blocker: %v", err)
+		}
+
+		// Add blocks dependency (should be ignored)
+		blocksDep := &types.Dependency{
+			IssueID:     task.ID,
+			DependsOnID: blocker.ID,
+			Type:        types.DepBlocks,
+		}
+		if err := store.AddDependency(ctx, blocksDep, "test"); err != nil {
+			t.Fatalf("Failed to add blocks dependency: %v", err)
+		}
+
+		// Get mission context (should find mission, ignoring blocks dependency)
+		missionCtx, err := store.GetMissionForTask(ctx, task.ID)
+		if err != nil {
+			t.Fatalf("GetMissionForTask failed: %v", err)
+		}
+
+		if missionCtx.MissionID != mission.ID {
+			t.Errorf("Expected mission ID %s, got %s", mission.ID, missionCtx.MissionID)
+		}
+		t.Logf("✓ Task %s correctly found mission %s, ignoring blocks dependency to %s",
+			task.ID, mission.ID, blocker.ID)
+	})
+}

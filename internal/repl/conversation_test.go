@@ -3,6 +3,7 @@ package repl
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -45,6 +46,9 @@ func (m *mockStorage) GetReadyBlockers(ctx context.Context, limit int) ([]*types
 }
 func (m *mockStorage) IsEpicComplete(ctx context.Context, epicID string) (bool, error) {
 	return false, nil
+}
+func (m *mockStorage) GetMissionForTask(ctx context.Context, taskID string) (*types.MissionContext, error) {
+	return nil, fmt.Errorf("not implemented in mock")
 }
 
 func (m *mockStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*events.AgentEvent, error) {

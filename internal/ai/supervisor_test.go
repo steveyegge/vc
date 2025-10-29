@@ -139,6 +139,9 @@ func (m *mockStorage) GetReadyBlockers(ctx context.Context, limit int) ([]*types
 func (m *mockStorage) IsEpicComplete(ctx context.Context, epicID string) (bool, error) {
 	return false, nil
 }
+func (m *mockStorage) GetMissionForTask(ctx context.Context, taskID string) (*types.MissionContext, error) {
+	return nil, errors.New("not implemented in mock")
+}
 func (m *mockStorage) GetEvents(ctx context.Context, issueID string, limit int) ([]*types.Event, error) {
 	return nil, nil
 }
