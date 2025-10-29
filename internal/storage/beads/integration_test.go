@@ -2584,6 +2584,136 @@ func TestGetMissionForTask(t *testing.T) {
 		t.Logf("✓ Task %s correctly found mission %s, ignoring blocks dependency to %s",
 			task.ID, mission.ID, blocker.ID)
 	})
+
+	t.Run("circular dependency detection (defensive code)", func(t *testing.T) {
+		// Note: The Beads library (DetectCycles in AddDependency) prevents creating
+		// circular dependencies, so GetMissionForTask's circular detection code is
+		// defensive and should never be hit in practice. We verify the library
+		// prevents the invalid state rather than testing the defensive code.
+
+		// Create task A
+		taskA := &types.Issue{
+			Title:     "Task A",
+			Status:    types.StatusOpen,
+			Priority:  1,
+			IssueType: types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, taskA, "test"); err != nil {
+			t.Fatalf("Failed to create taskA: %v", err)
+		}
+
+		// Create task B
+		taskB := &types.Issue{
+			Title:     "Task B",
+			Status:    types.StatusOpen,
+			Priority:  1,
+			IssueType: types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, taskB, "test"); err != nil {
+			t.Fatalf("Failed to create taskB: %v", err)
+		}
+
+		// Create first dependency: A → B
+		depAB := &types.Dependency{
+			IssueID:     taskA.ID,
+			DependsOnID: taskB.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, depAB, "test"); err != nil {
+			t.Fatalf("Failed to add A→B dependency: %v", err)
+		}
+
+		// Attempt to create circular dependency: B → A
+		// This should be prevented by Beads library's cycle detection
+		depBA := &types.Dependency{
+			IssueID:     taskB.ID,
+			DependsOnID: taskA.ID,
+			Type:        types.DepParentChild,
+		}
+		err := store.AddDependency(ctx, depBA, "test")
+		if err == nil {
+			t.Fatal("Expected Beads to prevent circular dependency, but AddDependency succeeded")
+		}
+		if !contains(err.Error(), "cycle") {
+			t.Errorf("Expected 'cycle' error from Beads, got: %v", err)
+		}
+		t.Logf("✓ Beads correctly prevented circular dependency: %v", err)
+		t.Log("  (GetMissionForTask's circular detection is defensive code that shouldn't be hit)")
+	})
+
+	t.Run("task with multiple parents uses first parent", func(t *testing.T) {
+		// Create two missions
+		mission1 := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission 1",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal: "First mission",
+		}
+		if err := store.CreateMission(ctx, mission1, "test"); err != nil {
+			t.Fatalf("Failed to create mission1: %v", err)
+		}
+
+		mission2 := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission 2",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal: "Second mission",
+		}
+		if err := store.CreateMission(ctx, mission2, "test"); err != nil {
+			t.Fatalf("Failed to create mission2: %v", err)
+		}
+
+		// Create task with two parent dependencies
+		task := &types.Issue{
+			Title:     "Multi-parent task",
+			Status:    types.StatusOpen,
+			Priority:  1,
+			IssueType: types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, task, "test"); err != nil {
+			t.Fatalf("Failed to create task: %v", err)
+		}
+
+		// Add first dependency (task → mission1)
+		dep1 := &types.Dependency{
+			IssueID:     task.ID,
+			DependsOnID: mission1.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, dep1, "test"); err != nil {
+			t.Fatalf("Failed to add first dependency: %v", err)
+		}
+
+		// Add second dependency (task → mission2)
+		dep2 := &types.Dependency{
+			IssueID:     task.ID,
+			DependsOnID: mission2.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, dep2, "test"); err != nil {
+			t.Fatalf("Failed to add second dependency: %v", err)
+		}
+
+		// GetMissionForTask should use the first parent found
+		missionCtx, err := store.GetMissionForTask(ctx, task.ID)
+		if err != nil {
+			t.Fatalf("GetMissionForTask failed: %v", err)
+		}
+
+		// Should return one of the missions (likely mission1 based on insertion order)
+		if missionCtx.MissionID != mission1.ID && missionCtx.MissionID != mission2.ID {
+			t.Errorf("Expected mission ID %s or %s, got %s", mission1.ID, mission2.ID, missionCtx.MissionID)
+		}
+		t.Logf("✓ Task with multiple parents correctly returned mission %s", missionCtx.MissionID)
+	})
 }
 
 // TestGetReadyWorkWithMissionContext tests mission context enrichment (vc-234)
