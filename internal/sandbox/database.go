@@ -301,7 +301,7 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 		return fmt.Errorf("mission %s not found in main database", missionID)
 	}
 
-	// Update status if it changed
+	// Update status if it changed (vc-263: only update from sandbox if advancing state)
 	if sandboxMission.Status != mainMission.Status {
 		// Use CloseIssue if the sandbox mission was closed
 		if sandboxMission.Status == types.StatusClosed {
@@ -309,7 +309,10 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 			if err := mainDB.CloseIssue(ctx, missionID, closeReason, "sandbox-merge"); err != nil {
 				return fmt.Errorf("failed to close mission: %w", err)
 			}
-		} else {
+		} else if mainMission.Status != types.StatusClosed {
+			// vc-263: Only update to non-closed status if main mission isn't already closed
+			// If main mission was closed (e.g., by epic completion logic), don't revert it
+			// to the sandbox's stale 'open' status
 			// For other status changes, use UpdateIssue
 			// vc-262: Pass status as string (beads expects string, not vc types.Status)
 			updates := map[string]interface{}{
@@ -319,6 +322,7 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 				return fmt.Errorf("failed to update mission status: %w", err)
 			}
 		}
+		// else: main mission is closed but sandbox isn't - don't revert the close
 	}
 
 	// Merge any new issues created in the sandbox (discovered issues, follow-up tasks, etc.)
