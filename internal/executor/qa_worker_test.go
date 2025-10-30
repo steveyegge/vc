@@ -5,10 +5,38 @@ import (
 	"testing"
 	"time"
 
+	"github.com/steveyegge/vc/internal/gates"
 	"github.com/steveyegge/vc/internal/labels"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
+
+// mockGatesProvider is a mock implementation of GateProvider for testing
+type mockGatesProvider struct {
+	allPassed bool
+	results   []*gates.Result
+}
+
+func (m *mockGatesProvider) RunAll(ctx context.Context) ([]*gates.Result, bool) {
+	return m.results, m.allPassed
+}
+
+// newMockGatesRunner creates a mock gates runner for testing
+func newMockGatesRunner(store storage.Storage, allPassed bool) *gates.Runner {
+	provider := &mockGatesProvider{
+		allPassed: allPassed,
+		results: []*gates.Result{
+			{Gate: gates.GateTest, Passed: allPassed, Output: "mock test output"},
+			{Gate: gates.GateBuild, Passed: allPassed, Output: "mock build output"},
+		},
+	}
+	runner, _ := gates.NewRunner(&gates.Config{
+		Store:      store,
+		WorkingDir: ".",
+		Provider:   provider,
+	})
+	return runner
+}
 
 // TestQAWorkerClaimReadyWork tests the basic claiming logic for QualityGateWorker
 func TestQAWorkerClaimReadyWork(t *testing.T) {
@@ -62,9 +90,10 @@ func TestQAWorkerClaimReadyWork(t *testing.T) {
 
 	// Create QA worker
 	worker, err := NewQualityGateWorker(&QualityGateWorkerConfig{
-		Store:      store,
-		InstanceID: "test-worker-1",
-		WorkingDir: ".",
+		Store:       store,
+		InstanceID:  "test-worker-1",
+		WorkingDir:  ".",
+		GatesRunner: newMockGatesRunner(store, true),
 	})
 	if err != nil {
 		t.Fatalf("Failed to create QA worker: %v", err)
@@ -154,9 +183,10 @@ func TestQAWorkerNoDoubleClaimWithGatesRunning(t *testing.T) {
 
 	// Create QA worker
 	worker, err := NewQualityGateWorker(&QualityGateWorkerConfig{
-		Store:      store,
-		InstanceID: "test-worker-2",
-		WorkingDir: ".",
+		Store:       store,
+		InstanceID:  "test-worker-2",
+		WorkingDir:  ".",
+		GatesRunner: newMockGatesRunner(store, true),
 	})
 	if err != nil {
 		t.Fatalf("Failed to create QA worker: %v", err)
@@ -203,9 +233,10 @@ func TestQAWorkerIgnoresNonMissions(t *testing.T) {
 
 	// Create QA worker
 	worker, err := NewQualityGateWorker(&QualityGateWorkerConfig{
-		Store:      store,
-		InstanceID: "test-worker-3",
-		WorkingDir: ".",
+		Store:       store,
+		InstanceID:  "test-worker-3",
+		WorkingDir:  ".",
+		GatesRunner: newMockGatesRunner(store, true),
 	})
 	if err != nil {
 		t.Fatalf("Failed to create QA worker: %v", err)
@@ -300,9 +331,10 @@ func TestQAWorkerClaimPrioritization(t *testing.T) {
 
 	// Create QA worker
 	worker, err := NewQualityGateWorker(&QualityGateWorkerConfig{
-		Store:      store,
-		InstanceID: "test-worker-4",
-		WorkingDir: ".",
+		Store:       store,
+		InstanceID:  "test-worker-4",
+		WorkingDir:  ".",
+		GatesRunner: newMockGatesRunner(store, true),
 	})
 	if err != nil {
 		t.Fatalf("Failed to create QA worker: %v", err)
@@ -318,6 +350,30 @@ func TestQAWorkerClaimPrioritization(t *testing.T) {
 	}
 	if claimed.ID != highPriorityMission.ID {
 		t.Errorf("Expected to claim high priority mission %s, got %s", highPriorityMission.ID, claimed.ID)
+	}
+}
+
+// TestQAWorkerRequiresGatesRunner tests that NewQualityGateWorker validates gatesRunner is provided (vc-258)
+func TestQAWorkerRequiresGatesRunner(t *testing.T) {
+	ctx := context.Background()
+	store := setupQATestStorage(t, ctx)
+	defer store.Close()
+
+	// Attempt to create QA worker without GatesRunner - should fail
+	_, err := NewQualityGateWorker(&QualityGateWorkerConfig{
+		Store:      store,
+		InstanceID: "test-worker-nil",
+		WorkingDir: ".",
+		// GatesRunner is intentionally nil
+	})
+
+	if err == nil {
+		t.Fatal("Expected error when creating QA worker without GatesRunner, got nil")
+	}
+
+	expectedError := "gates runner is required"
+	if err.Error() != expectedError {
+		t.Errorf("Expected error %q, got %q", expectedError, err.Error())
 	}
 }
 

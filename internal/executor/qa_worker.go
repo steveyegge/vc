@@ -34,6 +34,9 @@ func NewQualityGateWorker(cfg *QualityGateWorkerConfig) (*QualityGateWorker, err
 	if cfg.InstanceID == "" {
 		return nil, fmt.Errorf("instance ID is required")
 	}
+	if cfg.GatesRunner == nil {
+		return nil, fmt.Errorf("gates runner is required")
+	}
 	if cfg.WorkingDir == "" {
 		cfg.WorkingDir = "."
 	}
@@ -80,21 +83,9 @@ func (w *QualityGateWorker) ClaimReadyWork(ctx context.Context) (*types.Issue, e
 		return nil, nil
 	}
 
-	// Try to claim the first mission
-	// If it's already claimed (gates-running label present), try the next one
+	// Try to claim missions in order
+	// atomicClaim handles race conditions via the AddLabel operation
 	for _, mission := range missions {
-		// Check if already claimed (has gates-running label)
-		hasGatesRunning, err := labels.HasLabel(ctx, w.store, mission.ID, labels.LabelGatesRunning)
-		if err != nil {
-			// Log warning but continue to next mission
-			fmt.Printf("Warning: failed to check gates-running label for %s: %v\n", mission.ID, err)
-			continue
-		}
-		if hasGatesRunning {
-			// Already claimed by another worker
-			continue
-		}
-
 		// Try to atomically claim this mission by adding gates-running label
 		if err := w.atomicClaim(ctx, mission); err != nil {
 			// Failed to claim (possibly race condition) - try next mission
@@ -129,8 +120,9 @@ func (w *QualityGateWorker) atomicClaim(ctx context.Context, mission *types.Issu
 
 	// Step 2: Claim the issue (creates execution state and updates to in_progress)
 	if err := w.store.ClaimIssue(ctx, mission.ID, w.instanceID); err != nil {
-		// Failed to claim - remove the label to unlock
-		_ = w.store.RemoveLabel(ctx, mission.ID, labels.LabelGatesRunning, w.instanceID)
+		// Failed to claim - DO NOT remove the label, as we may not own it
+		// If another worker added the label, removing it would break their lock
+		// Orphaned labels will be cleaned up by stale instance cleanup
 		return fmt.Errorf("failed to claim issue: %w", err)
 	}
 
