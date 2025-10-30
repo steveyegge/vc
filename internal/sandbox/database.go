@@ -311,8 +311,9 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 			}
 		} else {
 			// For other status changes, use UpdateIssue
+			// vc-262: Pass status as string (beads expects string, not vc types.Status)
 			updates := map[string]interface{}{
-				"status": sandboxMission.Status,
+				"status": string(sandboxMission.Status),
 			}
 			if err := mainDB.UpdateIssue(ctx, missionID, updates, "sandbox-merge"); err != nil {
 				return fmt.Errorf("failed to update mission status: %w", err)

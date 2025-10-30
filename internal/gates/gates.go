@@ -393,8 +393,9 @@ func (r *Runner) handleGateResultsFallback(ctx context.Context, originalIssue *t
 	}
 
 	// Update original issue status to blocked
+	// vc-262: Pass status as string (beads expects string, not vc types.Status)
 	updates := map[string]interface{}{
-		"status": types.StatusBlocked,
+		"status": string(types.StatusBlocked),
 	}
 	if err := r.store.UpdateIssue(ctx, originalIssue.ID, updates, "quality-gates"); err != nil {
 		return fmt.Errorf("failed to update issue to blocked: %w", err)
@@ -467,8 +468,9 @@ func (r *Runner) executeFixInPlace(ctx context.Context, originalIssue *types.Iss
 
 	// Mark as blocked if AI recommends it
 	if strategy.MarkAsBlocked {
+		// vc-262: Pass status as string (beads expects string, not vc types.Status)
 		updates := map[string]interface{}{
-			"status": types.StatusBlocked,
+			"status": string(types.StatusBlocked),
 		}
 		if err := r.store.UpdateIssue(ctx, originalIssue.ID, updates, "ai-supervisor"); err != nil {
 			return fmt.Errorf("failed to mark issue as blocked: %w", err)
@@ -618,8 +620,9 @@ func (r *Runner) executeEscalate(ctx context.Context, originalIssue *types.Issue
 
 	// Mark as blocked if AI recommends it
 	if strategy.MarkAsBlocked {
+		// vc-262: Pass status as string (beads expects string, not vc types.Status)
 		updates := map[string]interface{}{
-			"status": types.StatusBlocked,
+			"status": string(types.StatusBlocked),
 		}
 		if err := r.store.UpdateIssue(ctx, originalIssue.ID, updates, "ai-supervisor"); err != nil {
 			return fmt.Errorf("failed to mark issue as blocked: %w", err)

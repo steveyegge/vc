@@ -498,7 +498,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 
 				// Update issue to blocked status
 				updates := map[string]interface{}{
-					"status": types.StatusBlocked,
+					"status": string(types.StatusBlocked),
 				}
 				if err := rp.store.UpdateIssue(ctx, issue.ID, updates, rp.actor); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: failed to update issue to blocked: %v\n", err)
@@ -590,7 +590,7 @@ SkipGates:
 
 				// Update to blocked status
 				updates := map[string]interface{}{
-					"status": types.StatusBlocked,
+					"status": string(types.StatusBlocked),
 				}
 				if err := rp.store.UpdateIssue(ctx, issue.ID, updates, rp.actor); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: failed to update issue to blocked: %v\n", err)

@@ -240,8 +240,9 @@ func TestQualityGateBlockingIntegration(t *testing.T) {
 	}
 
 	// Update original issue back to open (unblock it)
+	// vc-262: Pass status as string (beads expects string, not vc types.Status)
 	updates := map[string]interface{}{
-		"status": types.StatusOpen,
+		"status": string(types.StatusOpen),
 	}
 	if err := store.UpdateIssue(ctx, issue.ID, updates, "test"); err != nil {
 		t.Fatalf("Failed to update original issue to open: %v", err)

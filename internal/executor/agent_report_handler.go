@@ -118,7 +118,7 @@ func (h *AgentReportHandler) handleBlocked(ctx context.Context, issue *types.Iss
 
 	// Update original issue to blocked status
 	updates := map[string]interface{}{
-		"status": types.StatusBlocked,
+		"status": string(types.StatusBlocked),
 	}
 	if err := h.store.UpdateIssue(ctx, issue.ID, updates, h.actor); err != nil {
 		return false, fmt.Errorf("failed to update issue to blocked: %w", err)

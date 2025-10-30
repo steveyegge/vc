@@ -1220,7 +1220,7 @@ func (s *VCStorage) IsEpicComplete(ctx context.Context, epicID string) (bool, er
 // - SELECT missions (type=epic, subtype=mission)
 // - WHERE has 'needs-quality-gates' label
 // - AND does NOT have 'gates-running' label (already claimed)
-// - ORDER BY priority (highest first), created_at (oldest first)
+// - ORDER BY priority ASC (P0 before P2, i.e., most urgent first), created_at (oldest first)
 //
 // Returns empty list if no missions need gates.
 func (s *VCStorage) GetMissionsNeedingGates(ctx context.Context) ([]*types.Issue, error) {

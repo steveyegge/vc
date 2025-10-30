@@ -157,11 +157,10 @@ func TestQAWorkerNoDoubleClaimWithGatesRunning(t *testing.T) {
 			Description:   "A test mission already claimed",
 			IssueType:     types.TypeEpic,
 			IssueSubtype:  types.SubtypeMission,
-			Status:        types.StatusClosed,
+			Status:        types.StatusOpen,
 			Priority:      1,
 			CreatedAt:     now,
 			UpdatedAt:     now,
-			ClosedAt:      &now,
 		},
 		Goal:        "Test mission goal",
 		Context:     "Test context",
@@ -215,11 +214,10 @@ func TestQAWorkerIgnoresNonMissions(t *testing.T) {
 		Title:       "Regular task",
 		Description: "Not a mission",
 		IssueType:   types.TypeTask,
-		Status:      types.StatusClosed,
+		Status:      types.StatusOpen,
 		Priority:    1,
 		CreatedAt:   now,
 		UpdatedAt:   now,
-		ClosedAt:    &now,
 	}
 
 	if err := store.CreateIssue(ctx, task, "test"); err != nil {

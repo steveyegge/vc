@@ -537,7 +537,7 @@ func (e *Executor) releaseIssueWithError(ctx context.Context, issueID, errMsg st
 		}
 
 		if err := e.store.UpdateIssue(ctx, issueID, map[string]interface{}{
-			"status": types.StatusBlocked,
+			"status": string(types.StatusBlocked),
 		}, "executor"); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to mark issue %s as blocked: %v\n", issueID, err)
 		}

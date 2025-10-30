@@ -18,6 +18,32 @@ import (
 //
 // vc-252: QualityGateWorker claiming logic
 // vc-253: QA worker gate execution and transitions
+// vc-259: Error handling policy
+//
+// Error Handling Policy:
+//
+// CRITICAL operations (must succeed, return error on failure):
+//   - GetMissionsNeedingGates: Cannot proceed without missions to claim
+//   - AddLabel(gates-running): Claim lock - failure means race condition, try next mission
+//   - ClaimIssue: Creates execution state - failure means claim is incomplete
+//   - GetMission: Cannot execute without mission metadata
+//   - TransitionState: State machine transitions must succeed or mission is stuck
+//   - UpdateIssue(status): Status changes are part of state transitions, must succeed
+//   - AddLabel(gates-failed): Final state marker - failure means mission status unclear
+//
+// BEST-EFFORT operations (log warning, continue execution):
+//   - StoreAgentEvent: Observability - nice to have, but not critical for correctness
+//   - AddComment: User-facing diagnostics - helpful but not required for state consistency
+//   - ReleaseIssue: Cleanup operation - orphaned claims cleaned up by stale instance cleanup
+//   - RemoveLabel(gates-running): Cleanup operation - if this fails, mission is stuck but
+//     we emit an alert event and rely on human intervention or watchdog to recover
+//
+// ALERT-WORTHY failures (emit alert event, log warning, continue):
+//   - RemoveLabel(gates-running): If this fails after gates complete, the mission will be
+//     stuck with gates-running label even though gates are done. This prevents re-execution
+//     and requires manual intervention. We emit a high-severity alert event to notify
+//     operators, then continue (since the gates actually ran and the results are recorded).
+//
 type QualityGateWorker struct {
 	store      storage.Storage
 	supervisor *ai.Supervisor
@@ -106,9 +132,8 @@ func (w *QualityGateWorker) ClaimReadyWork(ctx context.Context) (*types.Issue, e
 //
 // Steps:
 // 1. Add 'gates-running' label (this is the claim lock)
-// 2. Update issue status to in_progress
-// 3. Create execution state record
-// 4. Log claim event
+// 2. Claim the issue (creates execution state and updates to in_progress)
+// 3. Log claim event
 //
 // Returns error if any step fails. The caller should try another mission if this fails.
 func (w *QualityGateWorker) atomicClaim(ctx context.Context, mission *types.Issue) error {
@@ -126,7 +151,7 @@ func (w *QualityGateWorker) atomicClaim(ctx context.Context, mission *types.Issu
 		return fmt.Errorf("failed to claim issue: %w", err)
 	}
 
-	// Step 4: Log claim event
+	// Step 3: Log claim event
 	event := &events.AgentEvent{
 		Type:      events.EventTypeProgress,
 		Timestamp: time.Now(),
@@ -243,14 +268,36 @@ func (w *QualityGateWorker) handleGatesPass(ctx context.Context, mission *types.
 		return fmt.Errorf("failed to transition to needs-review: %w", err)
 	}
 
-	// Remove gates-running label
+	// Remove gates-running label (best-effort with alert on failure)
+	// vc-259: If this fails, mission is stuck with gates-running label
+	// We emit an alert event for human intervention but don't fail the execution
+	// since the gates actually completed and results are recorded
 	if err := w.store.RemoveLabel(ctx, mission.ID, labels.LabelGatesRunning, w.instanceID); err != nil {
-		return fmt.Errorf("failed to remove gates-running label: %w", err)
+		fmt.Printf("ERROR: Failed to remove gates-running label from %s: %v\n", mission.ID, err)
+		fmt.Printf("       Mission is stuck with gates-running - manual intervention required\n")
+
+		// Emit high-severity alert event
+		alertEvent := &events.AgentEvent{
+			Type:      events.EventTypeError,
+			Timestamp: time.Now(),
+			IssueID:   mission.ID,
+			Severity:  events.SeverityError,
+			Message:   "Failed to remove gates-running label - mission stuck",
+			Data: map[string]interface{}{
+				"error":       err.Error(),
+				"worker_type": "quality_gate",
+				"action":      "Manual intervention required to remove gates-running label",
+			},
+		}
+		if alertErr := w.store.StoreAgentEvent(ctx, alertEvent); alertErr != nil {
+			fmt.Printf("Warning: failed to log alert event: %v\n", alertErr)
+		}
+		// Continue execution - don't return error
 	}
 
 	// Update mission status to open (ready for next stage)
 	if err := w.store.UpdateIssue(ctx, mission.ID, map[string]interface{}{
-		"status": types.StatusOpen,
+		"status": string(types.StatusOpen),
 	}, w.instanceID); err != nil {
 		return fmt.Errorf("failed to update mission status: %w", err)
 	}
@@ -310,9 +357,31 @@ func (w *QualityGateWorker) handleGatesFail(ctx context.Context, mission *types.
 		fmt.Printf("Warning: failed to add gate results comment: %v\n", err)
 	}
 
-	// Remove gates-running label
+	// Remove gates-running label (best-effort with alert on failure)
+	// vc-259: If this fails, mission is stuck with gates-running label
+	// We emit an alert event for human intervention but don't fail the execution
+	// since the gates actually completed and results are recorded
 	if err := w.store.RemoveLabel(ctx, mission.ID, labels.LabelGatesRunning, w.instanceID); err != nil {
-		return fmt.Errorf("failed to remove gates-running label: %w", err)
+		fmt.Printf("ERROR: Failed to remove gates-running label from %s: %v\n", mission.ID, err)
+		fmt.Printf("       Mission is stuck with gates-running - manual intervention required\n")
+
+		// Emit high-severity alert event
+		alertEvent := &events.AgentEvent{
+			Type:      events.EventTypeError,
+			Timestamp: time.Now(),
+			IssueID:   mission.ID,
+			Severity:  events.SeverityError,
+			Message:   "Failed to remove gates-running label - mission stuck",
+			Data: map[string]interface{}{
+				"error":       err.Error(),
+				"worker_type": "quality_gate",
+				"action":      "Manual intervention required to remove gates-running label",
+			},
+		}
+		if alertErr := w.store.StoreAgentEvent(ctx, alertEvent); alertErr != nil {
+			fmt.Printf("Warning: failed to log alert event: %v\n", alertErr)
+		}
+		// Continue execution - don't return error
 	}
 
 	// Add gates-failed label (custom label, not a state transition)
@@ -322,7 +391,7 @@ func (w *QualityGateWorker) handleGatesFail(ctx context.Context, mission *types.
 
 	// Update mission status to blocked
 	if err := w.store.UpdateIssue(ctx, mission.ID, map[string]interface{}{
-		"status": types.StatusBlocked,
+		"status": string(types.StatusBlocked),
 	}, w.instanceID); err != nil {
 		return fmt.Errorf("failed to update mission status: %w", err)
 	}
