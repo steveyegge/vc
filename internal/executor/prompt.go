@@ -430,14 +430,8 @@ func (pb *PromptBuilder) BuildPrompt(ctx *PromptContext) (string, error) {
 	}
 
 	// Detect baseline issues (vc-210: Self-healing for baseline test failures)
-	// vc-226: Use explicit allowlist instead of string prefix matching
-	// Only these specific baseline issue IDs are valid
-	validBaselineIssues := map[string]bool{
-		"vc-baseline-test":  true,
-		"vc-baseline-lint":  true,
-		"vc-baseline-build": true,
-	}
-	isBaselineIssue := validBaselineIssues[ctx.Issue.ID]
+	// vc-261: Use IsBaselineIssue() helper instead of duplicated map
+	isBaselineIssue := IsBaselineIssue(ctx.Issue.ID)
 
 	// Create a wrapper struct that exposes sandbox fields if available
 	templateData := struct {

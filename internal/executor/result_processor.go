@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -810,24 +811,16 @@ SkipGates:
 				fmt.Printf("\n✓ Issue %s marked as closed\n", issue.ID)
 
 				// vc-230: Emit baseline_test_fix_completed event if this was a baseline issue
-				validBaselineIssues := map[string]bool{
-					"vc-baseline-test":  true,
-					"vc-baseline-lint":  true,
-					"vc-baseline-build": true,
-				}
-				if validBaselineIssues[issue.ID] {
-					// Extract metrics from the execution
+				// vc-261: Use IsBaselineIssue() and get fix_type from diagnosis (not string matching)
+				if IsBaselineIssue(issue.ID) {
+					// Extract gate type
+					gateType := GetGateType(issue.ID)
+
+					// Get diagnosis to extract fix type (vc-261: No more ZFC violation!)
 					fixType := "unknown"
-					if analysis != nil && analysis.Summary != "" {
-						// Try to infer fix type from summary
-						summary := strings.ToLower(analysis.Summary)
-						if strings.Contains(summary, "race") || strings.Contains(summary, "flaky") {
-							fixType = "flaky"
-						} else if strings.Contains(summary, "environment") || strings.Contains(summary, "dependency") {
-							fixType = "environmental"
-						} else {
-							fixType = "real"
-						}
+					diagnosis := rp.getDiagnosisFromComments(ctx, issue.ID)
+					if diagnosis != nil {
+						fixType = string(diagnosis.FailureType)
 					}
 
 					// Count tests fixed from gate results
@@ -842,14 +835,17 @@ SkipGates:
 						}
 					}
 
+					// vc-261: Fix event data to match BaselineTestFixCompletedData struct
 					rp.logEvent(ctx, events.EventTypeBaselineTestFixCompleted, events.SeverityInfo, issue.ID,
 						fmt.Sprintf("Self-healing completed for baseline issue %s", issue.ID),
 						map[string]interface{}{
-							"success":      true,
-							"fix_type":     fixType,
-							"tests_fixed":  testsFixed,
-							"commit_hash":  result.CommitHash,
-							"duration_sec": agentResult.Duration.Seconds(),
+							"baseline_issue_id":  issue.ID,
+							"gate_type":          gateType,
+							"success":            true,
+							"fix_type":           fixType,
+							"tests_fixed":        testsFixed,
+							"commit_hash":        result.CommitHash,
+							"processing_time_ms": agentResult.Duration.Milliseconds(),
 						})
 
 					fmt.Printf("✓ Baseline self-healing completed successfully\n")
@@ -934,12 +930,11 @@ SkipGates:
 		}
 
 		// vc-230: Emit baseline_test_fix_completed event with success=false if this was a baseline issue
-		validBaselineIssues := map[string]bool{
-			"vc-baseline-test":  true,
-			"vc-baseline-lint":  true,
-			"vc-baseline-build": true,
-		}
-		if validBaselineIssues[issue.ID] {
+		// vc-261: Use IsBaselineIssue() helper and match event data to struct
+		if IsBaselineIssue(issue.ID) {
+			// Extract gate type
+			gateType := GetGateType(issue.ID)
+
 			// Extract failure reason
 			failureReason := "unknown"
 			if !agentResult.Success {
@@ -948,13 +943,15 @@ SkipGates:
 				failureReason = "quality_gates_failed"
 			}
 
+			// vc-261: Fix event data to match BaselineTestFixCompletedData struct
 			rp.logEvent(ctx, events.EventTypeBaselineTestFixCompleted, events.SeverityError, issue.ID,
 				fmt.Sprintf("Self-healing failed for baseline issue %s", issue.ID),
 				map[string]interface{}{
-					"success":        false,
-					"failure_reason": failureReason,
-					"exit_code":      agentResult.ExitCode,
-					"duration_sec":   agentResult.Duration.Seconds(),
+					"baseline_issue_id":  issue.ID,
+					"gate_type":          gateType,
+					"success":            false,
+					"error":              failureReason,
+					"processing_time_ms": agentResult.Duration.Milliseconds(),
 				})
 
 			fmt.Printf("✗ Baseline self-healing failed\n")
@@ -1096,6 +1093,43 @@ func (rp *ResultsProcessor) buildSummary(issue *types.Issue, agentResult *AgentR
 	}
 
 	return summary.String()
+}
+
+// getDiagnosisFromComments extracts the test failure diagnosis from issue comments (vc-261).
+// The diagnosis is stored as a JSON comment in the format: <!--VC-DIAGNOSIS:{json}-->
+// Returns nil if no diagnosis is found.
+func (rp *ResultsProcessor) getDiagnosisFromComments(ctx context.Context, issueID string) *ai.TestFailureDiagnosis {
+	// Get all events for the issue (comments are stored as events)
+	events, err := rp.store.GetEvents(ctx, issueID, 0)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to get events for diagnosis extraction: %v\n", err)
+		return nil
+	}
+
+	// Look for the diagnosis JSON comment
+	const diagnosisPrefix = "<!--VC-DIAGNOSIS:"
+	const diagnosisSuffix = "-->"
+	for _, event := range events {
+		if event.Comment != nil {
+			commentText := *event.Comment
+			if strings.HasPrefix(commentText, diagnosisPrefix) && strings.HasSuffix(commentText, diagnosisSuffix) {
+				// Extract JSON from comment
+				jsonStr := strings.TrimPrefix(commentText, diagnosisPrefix)
+				jsonStr = strings.TrimSuffix(jsonStr, diagnosisSuffix)
+
+				// Parse JSON
+				var diagnosis ai.TestFailureDiagnosis
+				if err := json.Unmarshal([]byte(jsonStr), &diagnosis); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to parse diagnosis JSON: %v\n", err)
+					return nil
+				}
+
+				return &diagnosis
+			}
+		}
+	}
+
+	return nil
 }
 
 // logEvent creates and stores an agent event for observability

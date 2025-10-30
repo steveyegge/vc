@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -187,14 +188,8 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 
 	// Phase 2.5: Diagnose baseline test failures (vc-230)
 	// If this is a baseline test issue, use AI to diagnose the failure
-	validBaselineIssues := map[string]bool{
-		"vc-baseline-test":  true,
-		"vc-baseline-lint":  true,
-		"vc-baseline-build": true,
-	}
-	isBaselineIssue := validBaselineIssues[issue.ID]
-
-	if isBaselineIssue && e.enableAISupervision && e.supervisor != nil {
+	// vc-261: Use IsBaselineIssue() helper instead of duplicated map
+	if IsBaselineIssue(issue.ID) && e.enableAISupervision && e.supervisor != nil {
 		// Extract test output from issue description
 		// The description should contain the gate output
 		testOutput := issue.Description
@@ -214,14 +209,14 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 					"error":   err.Error(),
 				})
 		} else {
-			// Emit baseline_test_fix_started event (vc-230)
+			// vc-261: Fix event data to match BaselineTestFixStartedData struct
+			gateType := GetGateType(issue.ID) // "test", "lint", or "build"
 			e.logEvent(ctx, events.EventTypeBaselineTestFixStarted, events.SeverityInfo, issue.ID,
 				fmt.Sprintf("Starting self-healing for baseline issue %s", issue.ID),
 				map[string]interface{}{
-					"failure_type": string(diagnosis.FailureType),
-					"confidence":   diagnosis.Confidence,
-					"test_names":   diagnosis.TestNames,
-					"proposed_fix": diagnosis.ProposedFix,
+					"baseline_issue_id": issue.ID,
+					"gate_type":         gateType,
+					"failing_tests":     diagnosis.TestNames,
 				})
 
 			// Add diagnosis as a comment for visibility
@@ -239,6 +234,19 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 
 			if err := e.store.AddComment(ctx, issue.ID, "ai-supervisor", diagnosisComment); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to add diagnosis comment: %v\n", err)
+			}
+
+			// vc-261: Store diagnosis as JSON for result processor to use
+			// This allows the result processor to get fix_type from diagnosis.FailureType
+			// instead of using string matching (violates ZFC)
+			diagnosisJSON, err := json.Marshal(diagnosis)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to marshal diagnosis JSON: %v\n", err)
+			} else {
+				jsonComment := fmt.Sprintf("<!--VC-DIAGNOSIS:%s-->", string(diagnosisJSON))
+				if err := e.store.AddComment(ctx, issue.ID, "ai-supervisor", jsonComment); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to add diagnosis JSON comment: %v\n", err)
+				}
 			}
 
 			fmt.Printf("Diagnosis complete: %s failure with %.0f%% confidence\n",

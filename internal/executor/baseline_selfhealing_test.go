@@ -85,14 +85,8 @@ func TestBaselineSelfHealing_Integration(t *testing.T) {
 			// 2. The event types are defined
 			// 3. The code compiles and links
 
-			// Verify baseline detection logic
-			validBaselineIssues := map[string]bool{
-				"vc-baseline-test":  true,
-				"vc-baseline-lint":  true,
-				"vc-baseline-build": true,
-			}
-
-			isBaseline := validBaselineIssues[tt.issueID]
+			// Verify baseline detection logic (vc-261: Use IsBaselineIssue() helper)
+			isBaseline := IsBaselineIssue(tt.issueID)
 			if isBaseline != tt.expectedDiagnosis {
 				t.Errorf("baseline detection mismatch: got %v, want %v", isBaseline, tt.expectedDiagnosis)
 			}
@@ -119,28 +113,48 @@ func TestBaselineSelfHealing_DiagnosisIntegration(t *testing.T) {
 	// Instead, we verify the code structure is correct.
 
 	t.Run("Baseline issue IDs are recognized", func(t *testing.T) {
-		validBaselineIssues := map[string]bool{
-			"vc-baseline-test":  true,
-			"vc-baseline-lint":  true,
-			"vc-baseline-build": true,
+		// vc-261: Use IsBaselineIssue() helper
+		testCases := []struct {
+			issueID  string
+			expected bool
+		}{
+			{"vc-baseline-test", true},
+			{"vc-baseline-lint", true},
+			{"vc-baseline-build", true},
+			{"vc-123", false},
 		}
 
 		// Verify each baseline issue ID is detected
-		for issueID, expected := range validBaselineIssues {
-			if !expected {
-				t.Errorf("Issue %s should be recognized as baseline", issueID)
-			}
-		}
-
-		// Verify non-baseline issues are not detected
-		nonBaselineIssues := []string{"vc-123", "vc-456", "test-issue"}
-		for _, issueID := range nonBaselineIssues {
-			if validBaselineIssues[issueID] {
-				t.Errorf("Issue %s should NOT be recognized as baseline", issueID)
+		for _, tc := range testCases {
+			actual := IsBaselineIssue(tc.issueID)
+			if actual != tc.expected {
+				t.Errorf("IsBaselineIssue(%s) = %v, want %v", tc.issueID, actual, tc.expected)
 			}
 		}
 
 		t.Logf("✓ Baseline issue detection works correctly")
+	})
+
+	t.Run("GetGateType extracts gate type correctly", func(t *testing.T) {
+		// vc-261: Test GetGateType() helper
+		testCases := []struct {
+			issueID      string
+			expectedType string
+		}{
+			{"vc-baseline-test", "test"},
+			{"vc-baseline-lint", "lint"},
+			{"vc-baseline-build", "build"},
+			{"vc-123", ""},
+		}
+
+		for _, tc := range testCases {
+			actual := GetGateType(tc.issueID)
+			if actual != tc.expectedType {
+				t.Errorf("GetGateType(%s) = %q, want %q", tc.issueID, actual, tc.expectedType)
+			}
+		}
+
+		t.Logf("✓ Gate type extraction works correctly")
 	})
 
 	t.Run("Event types are defined", func(t *testing.T) {
