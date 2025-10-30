@@ -142,6 +142,9 @@ func (m *mockStorage) IsEpicComplete(ctx context.Context, epicID string) (bool, 
 func (m *mockStorage) GetMissionForTask(ctx context.Context, taskID string) (*types.MissionContext, error) {
 	return nil, errors.New("not implemented in mock")
 }
+func (m *mockStorage) GetMissionsNeedingGates(ctx context.Context) ([]*types.Issue, error) {
+	return nil, nil
+}
 func (m *mockStorage) GetEvents(ctx context.Context, issueID string, limit int) ([]*types.Event, error) {
 	return nil, nil
 }

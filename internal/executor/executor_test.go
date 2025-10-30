@@ -503,6 +503,7 @@ func TestExecutorShutdownCleansOldInstances(t *testing.T) {
 	execCfg := DefaultConfig()
 	execCfg.Store = store
 	execCfg.EnableAISupervision = false
+	execCfg.EnableQualityGates = false // Disable quality gates (including preflight) to speed up test
 	execCfg.PollInterval = 100 * time.Millisecond
 	// Custom cleanup config: keep only 10 most recent, delete anything older than 1 second
 	// This ensures the old instances (48h old) will be deleted

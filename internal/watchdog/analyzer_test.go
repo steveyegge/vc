@@ -48,6 +48,7 @@ func (m *mockStorage) GetBlockedIssues(ctx context.Context) ([]*types.BlockedIss
 func (m *mockStorage) GetReadyBlockers(ctx context.Context, limit int) ([]*types.Issue, error) { return nil, nil }
 func (m *mockStorage) IsEpicComplete(ctx context.Context, epicID string) (bool, error) { return false, nil }
 func (m *mockStorage) GetMissionForTask(ctx context.Context, taskID string) (*types.MissionContext, error) { return nil, nil }
+func (m *mockStorage) GetMissionsNeedingGates(ctx context.Context) ([]*types.Issue, error) { return nil, nil }
 func (m *mockStorage) AddComment(ctx context.Context, issueID, actor, comment string) error { return nil }
 func (m *mockStorage) GetEvents(ctx context.Context, issueID string, limit int) ([]*types.Event, error) { return nil, nil }
 func (m *mockStorage) GetStatistics(ctx context.Context) (*types.Statistics, error) { return nil, nil }
