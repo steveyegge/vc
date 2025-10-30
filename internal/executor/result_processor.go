@@ -228,6 +228,41 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 		fmt.Printf("AI supervision disabled - skipping analysis (state transition maintained)\n")
 	}
 
+	// Step 2.5: Mission Gate Delegation (vc-251)
+	// For missions (epics with subtype=mission), defer quality gates to QA workers
+	// instead of running them inline (which blocks the executor)
+	if agentResult.Success && rp.enableQualityGates &&
+		issue.IssueType == types.TypeEpic && issue.IssueSubtype == types.SubtypeMission {
+		fmt.Printf("\n=== Mission Quality Gates Delegation ===\n")
+		fmt.Printf("Mission detected - deferring quality gates to QA worker\n")
+
+		// Add needs-quality-gates label to trigger QA worker
+		if err := rp.store.AddLabel(ctx, issue.ID, labels.LabelNeedsQualityGates, rp.actor); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to add needs-quality-gates label: %v\n", err)
+		} else {
+			fmt.Printf("✓ Added 'needs-quality-gates' label for QA worker\n")
+		}
+
+		// Emit deferred event for observability
+		rp.logEvent(ctx, events.EventTypeQualityGatesDeferred, events.SeverityInfo, issue.ID,
+			fmt.Sprintf("Quality gates deferred to QA worker for mission %s", issue.ID),
+			map[string]interface{}{
+				"mission_id": issue.ID,
+				"reason":     "delegated-to-qa-worker",
+			})
+
+		// Release the execution state
+		if err := rp.releaseExecutionState(ctx, issue.ID); err != nil {
+			return nil, fmt.Errorf("failed to release mission execution state: %w", err)
+		}
+
+		// Build result and return early (skip inline gates)
+		result.Completed = false // Mission stays open until all tasks complete
+		result.GatesPassed = true // Not failed, just deferred
+		result.Summary = fmt.Sprintf("Mission execution complete - quality gates deferred to QA worker")
+		return result, nil
+	}
+
 	// Step 3: Quality Gates (if enabled and agent succeeded)
 	if agentResult.Success && rp.enableQualityGates {
 		// Check if we're in the VC repo (vc-144: skip gates for non-VC repos)

@@ -55,6 +55,8 @@ const (
 	EventTypeQualityGatesCompleted EventType = "quality_gates_completed"
 	// EventTypeQualityGatesSkipped indicates quality gates evaluation was skipped
 	EventTypeQualityGatesSkipped EventType = "quality_gates_skipped"
+	// EventTypeQualityGatesDeferred indicates quality gates were deferred to QA worker (vc-251)
+	EventTypeQualityGatesDeferred EventType = "quality_gates_deferred"
 
 	// Deduplication events (vc-151)
 	// EventTypeDeduplicationBatchStarted indicates batch deduplication processing started
