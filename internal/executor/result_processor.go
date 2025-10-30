@@ -808,6 +808,52 @@ SkipGates:
 				fmt.Fprintf(os.Stderr, "warning: failed to close issue: %v\n", err)
 			} else {
 				fmt.Printf("\n✓ Issue %s marked as closed\n", issue.ID)
+
+				// vc-230: Emit baseline_test_fix_completed event if this was a baseline issue
+				validBaselineIssues := map[string]bool{
+					"vc-baseline-test":  true,
+					"vc-baseline-lint":  true,
+					"vc-baseline-build": true,
+				}
+				if validBaselineIssues[issue.ID] {
+					// Extract metrics from the execution
+					fixType := "unknown"
+					if analysis != nil && analysis.Summary != "" {
+						// Try to infer fix type from summary
+						summary := strings.ToLower(analysis.Summary)
+						if strings.Contains(summary, "race") || strings.Contains(summary, "flaky") {
+							fixType = "flaky"
+						} else if strings.Contains(summary, "environment") || strings.Contains(summary, "dependency") {
+							fixType = "environmental"
+						} else {
+							fixType = "real"
+						}
+					}
+
+					// Count tests fixed from gate results
+					testsFixed := 0
+					if len(gateResults) > 0 {
+						// Count how many tests passed
+						for _, gateResult := range gateResults {
+							if gateResult.Passed && gateResult.Gate == gates.GateTest {
+								testsFixed = 1 // At least one test passed
+								break
+							}
+						}
+					}
+
+					rp.logEvent(ctx, events.EventTypeBaselineTestFixCompleted, events.SeverityInfo, issue.ID,
+						fmt.Sprintf("Self-healing completed for baseline issue %s", issue.ID),
+						map[string]interface{}{
+							"success":      true,
+							"fix_type":     fixType,
+							"tests_fixed":  testsFixed,
+							"commit_hash":  result.CommitHash,
+							"duration_sec": agentResult.Duration.Seconds(),
+						})
+
+					fmt.Printf("✓ Baseline self-healing completed successfully\n")
+				}
 			}
 		}
 
@@ -885,6 +931,33 @@ SkipGates:
 		// Add error comment
 		if err := rp.store.AddComment(ctx, issue.ID, rp.actor, errMsg); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to add error comment: %v\n", err)
+		}
+
+		// vc-230: Emit baseline_test_fix_completed event with success=false if this was a baseline issue
+		validBaselineIssues := map[string]bool{
+			"vc-baseline-test":  true,
+			"vc-baseline-lint":  true,
+			"vc-baseline-build": true,
+		}
+		if validBaselineIssues[issue.ID] {
+			// Extract failure reason
+			failureReason := "unknown"
+			if !agentResult.Success {
+				failureReason = "agent_execution_failed"
+			} else if !result.GatesPassed {
+				failureReason = "quality_gates_failed"
+			}
+
+			rp.logEvent(ctx, events.EventTypeBaselineTestFixCompleted, events.SeverityError, issue.ID,
+				fmt.Sprintf("Self-healing failed for baseline issue %s", issue.ID),
+				map[string]interface{}{
+					"success":        false,
+					"failure_reason": failureReason,
+					"exit_code":      agentResult.ExitCode,
+					"duration_sec":   agentResult.Duration.Seconds(),
+				})
+
+			fmt.Printf("✗ Baseline self-healing failed\n")
 		}
 
 		// Leave issue in in_progress state but release execution lock

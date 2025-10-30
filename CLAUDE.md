@@ -525,6 +525,134 @@ if ctx.Err() == context.DeadlineExceeded {
 
 ---
 
+## 🔧 Self-Healing Baseline Failures (vc-210)
+
+When preflight detects baseline test failures, VC can automatically fix them:
+
+### How it works:
+
+1. **Preflight fails** → Creates `vc-baseline-test` issue (P1)
+2. **Executor claims** baseline issue (vc-208 fix)
+3. **Agent receives** specialized self-healing prompt
+4. **AI diagnoses** failure type (flaky/real/environmental)
+5. **Agent applies** minimal fix with verification
+6. **Tests pass** → Baseline restored → Work resumes
+
+### Failure Types:
+
+- **Flaky**: Race conditions, timing issues → Add sync, remove non-determinism
+- **Real**: Actual bugs → Minimal fix to restore functionality
+- **Environmental**: Missing deps → Mock externals, add setup
+
+### Querying Self-Healing Metrics:
+
+**Self-healing success rate:**
+```sql
+SELECT
+  COUNT(*) as total_attempts,
+  SUM(CASE WHEN json_extract(data, '$.success') = 1 THEN 1 ELSE 0 END) as successful,
+  ROUND(100.0 * SUM(CASE WHEN json_extract(data, '$.success') = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) as success_rate_pct
+FROM agent_events
+WHERE type = 'baseline_test_fix_completed';
+```
+
+**Recent self-healing attempts:**
+```sql
+SELECT
+  timestamp,
+  message,
+  json_extract(data, '$.success') as success,
+  json_extract(data, '$.failure_type') as failure_type,
+  json_extract(data, '$.fix_approach') as fix_approach
+FROM agent_events
+WHERE type = 'baseline_test_fix_completed'
+ORDER BY timestamp DESC
+LIMIT 10;
+```
+
+**Failure type distribution:**
+```sql
+SELECT
+  json_extract(data, '$.failure_type') as failure_type,
+  COUNT(*) as count,
+  SUM(CASE WHEN json_extract(data, '$.success') = 1 THEN 1 ELSE 0 END) as fixed
+FROM agent_events
+WHERE type = 'baseline_test_fix_started'
+GROUP BY failure_type
+ORDER BY count DESC;
+```
+
+### Code References:
+
+- **Prompts**: `internal/executor/prompt.go:177-237` (self-healing baseline prompt)
+- **AI Diagnosis**: `internal/ai/test_failure.go` (DiagnoseTestFailure function)
+- **Events**: `internal/events/types.go` (baseline_test_fix_* event types)
+- **Detection**: Preflight quality gate detects baseline failures
+
+### Why This Matters:
+
+Before vc-210, baseline test failures blocked all work until a human intervened. With self-healing, VC can:
+- Diagnose the root cause using AI
+- Apply minimal, targeted fixes
+- Verify the fix works
+- Resume normal operation automatically
+
+This dramatically reduces downtime and keeps work flowing.
+
+### Querying Self-Healing Metrics (vc-230):
+
+**Self-healing success rate:**
+```sql
+SELECT
+  COUNT(*) as total_attempts,
+  SUM(CASE WHEN json_extract(data, '$.success') = 1 THEN 1 ELSE 0 END) as successful,
+  ROUND(100.0 * SUM(CASE WHEN json_extract(data, '$.success') = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) as success_rate_pct
+FROM agent_events
+WHERE type = 'baseline_test_fix_completed';
+```
+
+**Recent self-healing attempts:**
+```sql
+SELECT
+  timestamp,
+  issue_id,
+  message,
+  json_extract(data, '$.success') as success,
+  json_extract(data, '$.fix_type') as fix_type,
+  json_extract(data, '$.duration_sec') as duration_sec
+FROM agent_events
+WHERE type = 'baseline_test_fix_completed'
+ORDER BY timestamp DESC
+LIMIT 10;
+```
+
+**Diagnosis quality (confidence scores):**
+```sql
+SELECT
+  issue_id,
+  json_extract(data, '$.failure_type') as failure_type,
+  json_extract(data, '$.confidence') as confidence,
+  json_extract(data, '$.test_names') as test_names
+FROM agent_events
+WHERE type = 'baseline_test_fix_started'
+ORDER BY timestamp DESC
+LIMIT 10;
+```
+
+**Fix type distribution:**
+```sql
+SELECT
+  json_extract(data, '$.fix_type') as fix_type,
+  COUNT(*) as count,
+  SUM(CASE WHEN json_extract(data, '$.success') = 1 THEN 1 ELSE 0 END) as successful
+FROM agent_events
+WHERE type = 'baseline_test_fix_completed'
+GROUP BY fix_type
+ORDER BY count DESC;
+```
+
+---
+
 ## 📐 Dependency Direction Convention
 
 **CRITICAL**: Always use `(child, parent)` direction for parent-child dependencies.

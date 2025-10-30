@@ -185,6 +185,67 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		}
 	}
 
+	// Phase 2.5: Diagnose baseline test failures (vc-230)
+	// If this is a baseline test issue, use AI to diagnose the failure
+	validBaselineIssues := map[string]bool{
+		"vc-baseline-test":  true,
+		"vc-baseline-lint":  true,
+		"vc-baseline-build": true,
+	}
+	isBaselineIssue := validBaselineIssues[issue.ID]
+
+	if isBaselineIssue && e.enableAISupervision && e.supervisor != nil {
+		// Extract test output from issue description
+		// The description should contain the gate output
+		testOutput := issue.Description
+
+		fmt.Printf("Diagnosing baseline test failure for %s...\n", issue.ID)
+
+		diagnosis, err := e.supervisor.DiagnoseTestFailure(ctx, issue, testOutput)
+		if err != nil {
+			// Log warning but continue - diagnosis is optional
+			fmt.Fprintf(os.Stderr, "Warning: failed to diagnose test failure: %v (continuing without diagnosis)\n", err)
+
+			// Emit diagnosis failure event
+			e.logEvent(ctx, events.EventTypeTestFailureDiagnosis, events.SeverityWarning, issue.ID,
+				fmt.Sprintf("Test failure diagnosis failed: %v", err),
+				map[string]interface{}{
+					"success": false,
+					"error":   err.Error(),
+				})
+		} else {
+			// Emit baseline_test_fix_started event (vc-230)
+			e.logEvent(ctx, events.EventTypeBaselineTestFixStarted, events.SeverityInfo, issue.ID,
+				fmt.Sprintf("Starting self-healing for baseline issue %s", issue.ID),
+				map[string]interface{}{
+					"failure_type": string(diagnosis.FailureType),
+					"confidence":   diagnosis.Confidence,
+					"test_names":   diagnosis.TestNames,
+					"proposed_fix": diagnosis.ProposedFix,
+				})
+
+			// Add diagnosis as a comment for visibility
+			diagnosisComment := fmt.Sprintf("**AI Test Failure Diagnosis**\n\n"+
+				"Failure Type: %s\n"+
+				"Confidence: %.0f%%\n\n"+
+				"Root Cause:\n%s\n\n"+
+				"Proposed Fix:\n%s\n\n"+
+				"Verification Steps:\n",
+				diagnosis.FailureType, diagnosis.Confidence*100,
+				diagnosis.RootCause, diagnosis.ProposedFix)
+			for i, step := range diagnosis.Verification {
+				diagnosisComment += fmt.Sprintf("%d. %s\n", i+1, step)
+			}
+
+			if err := e.store.AddComment(ctx, issue.ID, "ai-supervisor", diagnosisComment); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to add diagnosis comment: %v\n", err)
+			}
+
+			fmt.Printf("Diagnosis complete: %s failure with %.0f%% confidence\n",
+				diagnosis.FailureType, diagnosis.Confidence*100)
+		}
+	}
+
 	// Phase 3: Spawn the coding agent
 	// Check if context was canceled before starting execution (vc-101)
 	if ctx.Err() != nil {
