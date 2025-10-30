@@ -72,6 +72,11 @@ func NewRunner(cfg *Config) (*Runner, error) {
 	}, nil
 }
 
+// GetProvider returns the configured gate provider (for testing)
+func (r *Runner) GetProvider() GateProvider {
+	return r.provider
+}
+
 // RunAll executes all quality gates in sequence
 // Returns the results and whether all gates passed
 func (r *Runner) RunAll(ctx context.Context) ([]*Result, bool) {
