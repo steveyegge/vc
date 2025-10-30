@@ -24,6 +24,8 @@ const (
 	LabelNeedsQualityGates = "needs-quality-gates"
 	// LabelGatesRunning indicates quality gates are currently running (claim lock for QA workers)
 	LabelGatesRunning = "gates-running"
+	// LabelGatesFailed indicates quality gates failed (prevents re-claiming until fixed)
+	LabelGatesFailed = "gates-failed"
 	// LabelNeedsReview indicates a mission needs GitOps Arbiter review
 	LabelNeedsReview = "needs-review"
 	// LabelNeedsHumanApproval indicates a mission needs human approval

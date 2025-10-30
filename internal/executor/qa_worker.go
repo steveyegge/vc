@@ -194,9 +194,6 @@ func (w *QualityGateWorker) Execute(ctx context.Context, mission *types.Issue) e
 	if err != nil {
 		return fmt.Errorf("failed to get mission metadata: %w", err)
 	}
-	if missionData == nil {
-		return fmt.Errorf("mission %s has no metadata", mission.ID)
-	}
 
 	sandboxPath := missionData.SandboxPath
 	if sandboxPath == "" {
@@ -242,10 +239,11 @@ func (w *QualityGateWorker) Execute(ctx context.Context, mission *types.Issue) e
 	}
 
 	// Handle results and transition states
+	// Pass sandboxRunner to avoid recreating it in handlers
 	if allPassed {
 		return w.handleGatesPass(ctx, mission, results)
 	} else {
-		return w.handleGatesFail(ctx, mission, results)
+		return w.handleGatesFail(ctx, mission, sandboxRunner, results)
 	}
 }
 
@@ -321,7 +319,7 @@ func (w *QualityGateWorker) handleGatesPass(ctx context.Context, mission *types.
 
 // handleGatesFail handles failed gate execution
 // Creates blocking issues for failed gates and transitions mission to blocked state
-func (w *QualityGateWorker) handleGatesFail(ctx context.Context, mission *types.Issue, results []*gates.Result) error {
+func (w *QualityGateWorker) handleGatesFail(ctx context.Context, mission *types.Issue, sandboxRunner *gates.Runner, results []*gates.Result) error {
 	fmt.Printf("✗ Quality gates failed for mission %s\n", mission.ID)
 
 	// Log failure event
@@ -348,35 +346,27 @@ func (w *QualityGateWorker) handleGatesFail(ctx context.Context, mission *types.
 		fmt.Printf("Warning: failed to log fail event: %v\n", err)
 	}
 
-	// Create a sandbox-configured gate runner for CreateBlockingIssue
-	// We need to recreate it here to ensure proper configuration
-	missionData, err := w.store.GetMission(ctx, mission.ID)
-	if err != nil {
-		return fmt.Errorf("failed to get mission for blocking issues: %w", err)
-	}
-	sandboxRunner, err := gates.NewRunner(&gates.Config{
-		Store:      w.store,
-		Supervisor: w.supervisor,
-		WorkingDir: missionData.SandboxPath,
-		Provider:   w.gatesRunner.GetProvider(), // Preserve provider (for testing)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create gate runner for blocking issues: %w", err)
-	}
-
 	// Create blocking issues for each failed gate (reuses existing CreateBlockingIssue)
 	var createdIssues []string
+	var blockingIssueErrors []error
 	for _, result := range results {
 		if !result.Passed {
 			issueID, err := sandboxRunner.CreateBlockingIssue(ctx, mission, result)
 			if err != nil {
 				fmt.Printf("Warning: failed to create blocking issue for %s gate: %v\n", result.Gate, err)
+				blockingIssueErrors = append(blockingIssueErrors, err)
 				// Continue creating other blocking issues
 			} else {
 				createdIssues = append(createdIssues, issueID)
 				fmt.Printf("✓ Created blocking issue %s for failed %s gate\n", issueID, result.Gate)
 			}
 		}
+	}
+
+	// If ALL blocking issue creations failed, this is a critical error
+	if len(failedGates) > 0 && len(createdIssues) == 0 {
+		return fmt.Errorf("failed to create any blocking issues (%d gates failed, %d errors): mission cannot proceed",
+			len(failedGates), len(blockingIssueErrors))
 	}
 
 	// Add comment with gate results and blocking issues
@@ -427,8 +417,8 @@ func (w *QualityGateWorker) handleGatesFail(ctx context.Context, mission *types.
 		// Continue execution - don't return error
 	}
 
-	// Add gates-failed label (custom label, prevents re-claiming until fixed)
-	if err := w.store.AddLabel(ctx, mission.ID, "gates-failed", w.instanceID); err != nil {
+	// Add gates-failed label (prevents re-claiming until fixed)
+	if err := w.store.AddLabel(ctx, mission.ID, labels.LabelGatesFailed, w.instanceID); err != nil {
 		return fmt.Errorf("failed to add gates-failed label: %w", err)
 	}
 

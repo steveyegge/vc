@@ -592,7 +592,7 @@ func TestQAWorkerExecuteFailure(t *testing.T) {
 	}
 
 	// Verify gates-failed label was added
-	hasGatesFailed, err := labels.HasLabel(ctx, store, mission.ID, "gates-failed")
+	hasGatesFailed, err := labels.HasLabel(ctx, store, mission.ID, labels.LabelGatesFailed)
 	if err != nil {
 		t.Fatalf("Failed to check gates-failed label: %v", err)
 	}
