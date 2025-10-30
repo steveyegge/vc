@@ -22,6 +22,8 @@ const (
 	LabelTaskReady = "task-ready"
 	// LabelNeedsQualityGates indicates a mission needs quality gates to run
 	LabelNeedsQualityGates = "needs-quality-gates"
+	// LabelGatesRunning indicates quality gates are currently running (claim lock for QA workers)
+	LabelGatesRunning = "gates-running"
 	// LabelNeedsReview indicates a mission needs GitOps Arbiter review
 	LabelNeedsReview = "needs-review"
 	// LabelNeedsHumanApproval indicates a mission needs human approval

@@ -68,6 +68,9 @@ type Storage interface {
 	// Mission Context (vc-233)
 	GetMissionForTask(ctx context.Context, taskID string) (*types.MissionContext, error)
 
+	// Quality Gate Workers (vc-252)
+	GetMissionsNeedingGates(ctx context.Context) ([]*types.Issue, error)
+
 	// Events
 	AddComment(ctx context.Context, issueID, actor, comment string) error
 	GetEvents(ctx context.Context, issueID string, limit int) ([]*types.Event, error)

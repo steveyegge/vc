@@ -1209,6 +1209,76 @@ func (s *VCStorage) IsEpicComplete(ctx context.Context, epicID string) (bool, er
 	return true, nil
 }
 
+// ======================================================================
+// QUALITY GATE WORKERS (vc-252)
+// ======================================================================
+
+// GetMissionsNeedingGates queries for missions with 'needs-quality-gates' label
+// Used by QualityGateWorker to find missions ready for quality gate execution.
+//
+// Query logic:
+// - SELECT missions (type=epic, subtype=mission)
+// - WHERE has 'needs-quality-gates' label
+// - AND does NOT have 'gates-running' label (already claimed)
+// - ORDER BY priority (highest first), created_at (oldest first)
+//
+// Returns empty list if no missions need gates.
+func (s *VCStorage) GetMissionsNeedingGates(ctx context.Context) ([]*types.Issue, error) {
+	query := `
+		SELECT DISTINCT i.id, i.title, i.description, i.issue_type, i.status,
+		       i.priority, i.created_at, i.updated_at
+		FROM issues i
+		JOIN vc_mission_state m ON i.id = m.issue_id
+		WHERE i.issue_type = ?
+		  AND m.subtype = ?
+		  AND EXISTS (
+		    SELECT 1 FROM labels
+		    WHERE issue_id = i.id AND label = 'needs-quality-gates'
+		  )
+		  AND NOT EXISTS (
+		    SELECT 1 FROM labels
+		    WHERE issue_id = i.id AND label = 'gates-running'
+		  )
+		ORDER BY i.priority ASC, i.created_at ASC
+		LIMIT 10
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, types.TypeEpic, types.SubtypeMission)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query missions needing gates: %w", err)
+	}
+	defer rows.Close()
+
+	var missions []*types.Issue
+	for rows.Next() {
+		var issue types.Issue
+		err := rows.Scan(
+			&issue.ID,
+			&issue.Title,
+			&issue.Description,
+			&issue.IssueType,
+			&issue.Status,
+			&issue.Priority,
+			&issue.CreatedAt,
+			&issue.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan mission row: %w", err)
+		}
+
+		// Set subtype from join (we know it's mission from WHERE clause)
+		issue.IssueSubtype = types.SubtypeMission
+
+		missions = append(missions, &issue)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating mission rows: %w", err)
+	}
+
+	return missions, nil
+}
+
 // VacuumDatabase runs VACUUM on the database
 func (s *VCStorage) VacuumDatabase(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, "VACUUM")

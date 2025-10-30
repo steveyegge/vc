@@ -107,6 +107,12 @@ const (
 	// Label-driven state machine events (vc-218)
 	// EventTypeLabelStateTransition indicates a label-driven state transition occurred
 	EventTypeLabelStateTransition EventType = "label_state_transition"
+
+	// Quality gate worker events (vc-252, vc-253)
+	// EventTypeQualityGatePass indicates all quality gates passed for a mission
+	EventTypeQualityGatePass EventType = "quality_gate_pass"
+	// EventTypeQualityGateFail indicates one or more quality gates failed for a mission
+	EventTypeQualityGateFail EventType = "quality_gate_fail"
 )
 
 // EventSeverity represents the severity level of an event.
