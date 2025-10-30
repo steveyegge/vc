@@ -85,3 +85,52 @@ func (e *Executor) logCleanupEvent(ctx context.Context, totalDeleted, timeBasedD
 		fmt.Fprintf(os.Stderr, "warning: failed to store cleanup event: %v\n", err)
 	}
 }
+
+// logInstanceCleanupEvent creates and stores a structured event for instance cleanup metrics (vc-32)
+// This follows the same pattern as logCleanupEvent for consistency.
+func (e *Executor) logInstanceCleanupEvent(ctx context.Context, instancesDeleted, instancesRemaining int, processingTimeMs int64, cleanupAgeSeconds, maxToKeep int, success bool, errorMsg string) {
+	// Skip logging if context is canceled (e.g., during shutdown)
+	if ctx.Err() != nil {
+		return
+	}
+
+	data := map[string]interface{}{
+		"instances_deleted":   instancesDeleted,
+		"instances_remaining": instancesRemaining,
+		"processing_time_ms":  processingTimeMs,
+		"cleanup_age_seconds": cleanupAgeSeconds,
+		"max_to_keep":         maxToKeep,
+		"success":             success,
+	}
+
+	if errorMsg != "" {
+		data["error"] = errorMsg
+	}
+
+	message := fmt.Sprintf("Instance cleanup completed: deleted %d stopped instances in %dms", instancesDeleted, processingTimeMs)
+	if !success {
+		message = fmt.Sprintf("Instance cleanup failed: %s", errorMsg)
+	}
+
+	event := &events.AgentEvent{
+		ID:         uuid.New().String(),
+		Type:       events.EventTypeInstanceCleanupCompleted,
+		Timestamp:  time.Now(),
+		IssueID:    "SYSTEM", // System-level event (requires SYSTEM pseudo-issue to exist)
+		ExecutorID: e.instanceID,
+		AgentID:    "", // Not produced by a coding agent
+		Severity:   events.SeverityInfo,
+		Message:    message,
+		Data:       data,
+		SourceLine: 0, // Not applicable for executor-level events
+	}
+
+	if !success {
+		event.Severity = events.SeverityError
+	}
+
+	if err := e.store.StoreAgentEvent(ctx, event); err != nil {
+		// Log error but don't fail cleanup
+		fmt.Fprintf(os.Stderr, "warning: failed to store instance cleanup event: %v\n", err)
+	}
+}

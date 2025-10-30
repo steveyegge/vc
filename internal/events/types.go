@@ -70,6 +70,10 @@ const (
 	// EventTypeEventCleanupCompleted indicates event cleanup cycle completed
 	EventTypeEventCleanupCompleted EventType = "event_cleanup_completed"
 
+	// Instance cleanup events (vc-32)
+	// EventTypeInstanceCleanupCompleted indicates executor instance cleanup cycle completed
+	EventTypeInstanceCleanupCompleted EventType = "instance_cleanup_completed"
+
 	// Health monitoring events (vc-205)
 	// EventTypeHealthCheckCompleted indicates a health monitor completed execution
 	EventTypeHealthCheckCompleted EventType = "health_check_completed"
@@ -248,6 +252,25 @@ type EventCleanupCompletedData struct {
 	VacuumRan bool `json:"vacuum_ran"`
 	// EventsRemaining is the total number of events remaining after cleanup
 	EventsRemaining int `json:"events_remaining"`
+	// Success indicates whether cleanup succeeded
+	Success bool `json:"success"`
+	// Error contains the error message if cleanup failed
+	Error string `json:"error,omitempty"`
+}
+
+// InstanceCleanupCompletedData contains structured data for instance cleanup events (vc-32).
+// This struct follows the same pattern as EventCleanupCompletedData for consistency.
+type InstanceCleanupCompletedData struct {
+	// InstancesDeleted is the total number of stopped instances deleted
+	InstancesDeleted int `json:"instances_deleted"`
+	// InstancesRemaining is the number of stopped instances remaining after cleanup
+	InstancesRemaining int `json:"instances_remaining"`
+	// ProcessingTimeMs is the time taken for cleanup in milliseconds
+	ProcessingTimeMs int64 `json:"processing_time_ms"`
+	// CleanupAgeSeconds is the age threshold used (instances older than this were deleted)
+	CleanupAgeSeconds int `json:"cleanup_age_seconds"`
+	// MaxToKeep is the minimum number of stopped instances to keep
+	MaxToKeep int `json:"max_to_keep"`
 	// Success indicates whether cleanup succeeded
 	Success bool `json:"success"`
 	// Error contains the error message if cleanup failed

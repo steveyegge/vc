@@ -72,38 +72,104 @@ type AgentResult struct {
 }
 
 // AgentMessage represents a JSON message from the agent.
-// This matches Amp's --stream-json output format (vc-236, vc-107).
+// This matches Amp's --stream-json output format (vc-236, vc-107, vc-29, vc-30).
 //
-// Event Types:
-// - "tool_use": Agent is invoking a tool (Read, Edit, Write, Bash, Glob, Grep, Task)
-// - "system": System messages (init, shutdown, etc.)
-// - "result": Final result/completion message
+// Amp Version: Verified with Amp 0.0.1761854483-g125cd7 (2025-10-30)
+// The --stream-json flag was introduced to provide structured event streaming for tools like VC.
 //
-// Actual Amp JSON Format (from --stream-json):
+// Top-Level Event Types:
+// - "system": System events (init, shutdown, etc.) - includes "subtype" field
+// - "user": User messages being sent to the agent
+// - "assistant": Agent responses - contains "message" with nested "content" array
+// - "result": Final execution result (success/failure)
 //
-//	{"type":"tool_use","id":"toolu_xxx","name":"Read","input":{"path":"/path/to/file"}}
-//	{"type":"tool_use","id":"toolu_xxx","name":"edit_file","input":{"path":"/path/to/file","old_str":"...","new_str":"..."}}
-//	{"type":"tool_use","id":"toolu_xxx","name":"Bash","input":{"cmd":"go test","cwd":"/path"}}
-//	{"type":"tool_use","id":"toolu_xxx","name":"Grep","input":{"pattern":"TODO","path":"/path"}}
+// Actual Amp JSON Format Examples:
 //
-// Note: Tool names are capitalized (Read, Bash, Grep) or use underscores (edit_file, todo_write).
-// The "input" field contains tool-specific parameters as a map.
+// 1. System Init Event:
+//
+//	{"type":"system","subtype":"init","cwd":"/path","session_id":"T-xxx","tools":["Read","Bash",...]}
+//
+// 2. Assistant Message with Tool Use (NESTED structure):
+//
+//	{
+//	  "type": "assistant",
+//	  "message": {
+//	    "content": [
+//	      {"type": "text", "text": "I'll read the file."},
+//	      {"type": "tool_use", "id": "toolu_xxx", "name": "Read", "input": {"path": "/path/to/file"}}
+//	    ],
+//	    "stop_reason": "tool_use"
+//	  },
+//	  "session_id": "T-xxx"
+//	}
+//
+// 3. Tool Names and Input Fields:
+//   - Read: {"name": "Read", "input": {"path": "/path/to/file"}}
+//   - edit_file: {"name": "edit_file", "input": {"path": "/path", "old_str": "...", "new_str": "..."}}
+//   - create_file: {"name": "create_file", "input": {"path": "/path", "content": "..."}}
+//   - Bash: {"name": "Bash", "input": {"cmd": "go test", "cwd": "/path"}}
+//   - Grep: {"name": "Grep", "input": {"pattern": "TODO", "path": "/path"}}
+//   - glob: {"name": "glob", "input": {"pattern": "*.go", "path": "/path"}}
+//   - Task: {"name": "Task", "input": {"description": "...", "prompt": "..."}}
+//
+// Tool Name Conventions:
+// - Capitalized: Read, Bash, Grep, Task
+// - Lowercase with underscores: edit_file, create_file, todo_write
+// - MCP tools: mcp__beads__show, mcp__beads__list, mcp__playwright__browser_click, etc.
+//
+// Input Field Mappings (tool-specific parameters):
+// - Read/edit_file/create_file: Use "path" field for file path
+// - Bash: Uses "cmd" field for command, optional "cwd" for working directory
+// - Grep/glob: Use "pattern" field for search pattern, "path" for search location
+// - Task: Uses "description" and "prompt" fields
+//
+// Important: Tool use is NESTED inside assistant messages, not at the top level.
+// The AgentMessage struct represents the outer envelope. To extract tool usage,
+// you must parse the nested "message.content" array and look for items with type="tool_use".
 //
 // When StreamJSON=false, agent output is parsed via regex patterns in parser.go instead.
 type AgentMessage struct {
-	Type    string                 `json:"type"`              // Event type (e.g., "tool_use", "system", "result")
-	Subtype string                 `json:"subtype,omitempty"` // Event subtype (e.g., "init", "error_during_execution")
-	Content string                 `json:"content,omitempty"` // Human-readable message content
-	Data    map[string]interface{} `json:"data,omitempty"`    // Additional event-specific data (legacy)
+	// Top-level fields (all event types)
+	Type      string                 `json:"type"`              // Event type: "system", "user", "assistant", "result"
+	Subtype   string                 `json:"subtype,omitempty"` // Event subtype (e.g., "init" for system events)
+	SessionID string                 `json:"session_id,omitempty"` // Agent session identifier
 
-	// Tool usage fields (vc-107: actual Amp format)
-	// Only populated when Type="tool_use"
-	ID    string                 `json:"id,omitempty"`    // Tool invocation ID (e.g., "toolu_xxx")
-	Name  string                 `json:"name,omitempty"`  // Tool name (e.g., "Read", "edit_file", "Bash")
-	Input map[string]interface{} `json:"input,omitempty"` // Tool parameters (path, cmd, pattern, etc.)
+	// System event fields
+	Cwd    string   `json:"cwd,omitempty"`   // Current working directory (system init events)
+	Tools  []string `json:"tools,omitempty"` // Available tools (system init events)
 
-	// Session metadata
-	SessionID string `json:"session_id,omitempty"` // Agent session identifier
+	// Result event fields
+	DurationMs int    `json:"duration_ms,omitempty"` // Execution duration (result events)
+	IsError    bool   `json:"is_error,omitempty"`    // Whether execution failed (result events)
+	Result     string `json:"result,omitempty"`      // Final result message (result events)
+	NumTurns   int    `json:"num_turns,omitempty"`   // Number of conversation turns (result events)
+
+	// Assistant message wrapper (contains nested tool use)
+	Message *AssistantMessage `json:"message,omitempty"` // Nested message structure (assistant events)
+
+	// Legacy fields (no longer used by Amp --stream-json, kept for backward compatibility)
+	Content string                 `json:"content,omitempty"` // Human-readable message content (user events)
+	Data    map[string]interface{} `json:"data,omitempty"`    // Additional event-specific data
+}
+
+// AssistantMessage represents the nested message structure in assistant events.
+// This contains the actual content array with text and tool use.
+type AssistantMessage struct {
+	Type       string                   `json:"type"`                  // Always "message"
+	Role       string                   `json:"role"`                  // Always "assistant"
+	Content    []MessageContent         `json:"content"`               // Array of text and tool_use items
+	StopReason string                   `json:"stop_reason,omitempty"` // Why the agent stopped: "tool_use", "end_turn", etc.
+	Usage      map[string]interface{}   `json:"usage,omitempty"`       // Token usage statistics
+}
+
+// MessageContent represents an item in the assistant message content array.
+// Can be either text or tool use.
+type MessageContent struct {
+	Type  string                 `json:"type"`             // "text" or "tool_use"
+	Text  string                 `json:"text,omitempty"`   // Text content (when type="text")
+	ID    string                 `json:"id,omitempty"`     // Tool invocation ID (when type="tool_use")
+	Name  string                 `json:"name,omitempty"`   // Tool name (when type="tool_use")
+	Input map[string]interface{} `json:"input,omitempty"`  // Tool parameters (when type="tool_use")
 }
 
 // Agent represents a running coding agent process
@@ -381,124 +447,152 @@ func (a *Agent) parseAndStoreEvents(line string) {
 	}
 }
 
-// convertJSONToEvent converts an Amp JSON message to an AgentEvent (vc-107)
+// convertJSONToEvent converts an Amp JSON message to AgentEvents (vc-107, vc-29, vc-30)
 // This replaces regex-based parsing with structured event processing.
+//
+// Important: Amp --stream-json uses a NESTED structure where tool_use items are inside
+// assistant messages at message.content[]. This function extracts all tool_use items
+// from the nested content array and converts them to AgentEvents.
 //
 // Set VC_DEBUG_EVENTS=1 to enable debug logging of JSON event parsing.
 func (a *Agent) convertJSONToEvent(msg AgentMessage, rawLine string) *events.AgentEvent {
-	// Only process tool_use events for now
-	// Other event types (system, result, etc.) are informational but not progress events
-	if msg.Type != "tool_use" {
-		// Debug log non-tool_use events if debugging is enabled
+	// Only process "assistant" messages - these contain tool use in nested content array
+	if msg.Type != "assistant" {
+		// Debug log non-assistant events if debugging is enabled
 		if os.Getenv("VC_DEBUG_EVENTS") != "" {
-			fmt.Fprintf(os.Stderr, "[DEBUG] Skipping non-tool_use event: type=%s subtype=%s\n", msg.Type, msg.Subtype)
+			fmt.Fprintf(os.Stderr, "[DEBUG] Skipping non-assistant event: type=%s subtype=%s\n", msg.Type, msg.Subtype)
 		}
 		return nil
 	}
 
-	// Skip internal tools that aren't code operations (vc-107)
-	// These are agent-internal tools that don't represent actual work
-	toolName := normalizeToolName(msg.Name)
-	if shouldSkipTool(toolName) {
+	// Check if message wrapper exists
+	if msg.Message == nil {
 		if os.Getenv("VC_DEBUG_EVENTS") != "" {
-			fmt.Fprintf(os.Stderr, "[DEBUG] Skipping internal tool: name=%s\n", msg.Name)
+			fmt.Fprintf(os.Stderr, "[DEBUG] Assistant message has no nested message field\n")
 		}
 		return nil
 	}
 
-	// Circuit breaker: Track Read tool usage to detect infinite loops (vc-117)
-	if toolName == "read" {
-		// Extract file path from input
-		var filePath string
-		if msg.Input != nil {
-			if pathVal, ok := msg.Input["path"].(string); ok {
-				filePath = pathVal
+	// Extract tool use items from the content array
+	// Note: We only process the FIRST tool_use in the array for now, to maintain
+	// single-event-per-call semantics. In practice, agents typically emit one tool at a time.
+	for _, content := range msg.Message.Content {
+		if content.Type != "tool_use" {
+			continue // Skip text content
+		}
+
+		// Found a tool_use - extract it
+		toolName := normalizeToolName(content.Name)
+
+		// Skip internal tools that aren't code operations (vc-107)
+		if shouldSkipTool(toolName) {
+			if os.Getenv("VC_DEBUG_EVENTS") != "" {
+				fmt.Fprintf(os.Stderr, "[DEBUG] Skipping internal tool: name=%s\n", content.Name)
+			}
+			continue
+		}
+
+		// Circuit breaker: Track Read tool usage to detect infinite loops (vc-117)
+		if toolName == "read" {
+			// Extract file path from input
+			var filePath string
+			if content.Input != nil {
+				if pathVal, ok := content.Input["path"].(string); ok {
+					filePath = pathVal
+				}
+			}
+
+			// Check for infinite loop condition
+			if err := a.checkCircuitBreaker(filePath); err != nil {
+				// Kill the agent immediately
+				fmt.Fprintf(os.Stderr, "\n!!! CIRCUIT BREAKER TRIGGERED !!!\n%v\n", err)
+				if killErr := a.Kill(); killErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to kill agent after circuit breaker: %v\n", killErr)
+				}
+				// Don't return an event - the agent will be terminated
+				return nil
 			}
 		}
 
-		// Check for infinite loop condition
-		if err := a.checkCircuitBreaker(filePath); err != nil {
-			// Kill the agent immediately
-			fmt.Fprintf(os.Stderr, "\n!!! CIRCUIT BREAKER TRIGGERED !!!\n%v\n", err)
-			if killErr := a.Kill(); killErr != nil {
-				fmt.Fprintf(os.Stderr, "warning: failed to kill agent after circuit breaker: %v\n", killErr)
+		// Create agent_tool_use event from structured JSON
+		event := &events.AgentEvent{
+			ID:         uuid.New().String(),
+			Type:       events.EventTypeAgentToolUse,
+			Timestamp:  time.Now(),
+			IssueID:    a.config.Issue.ID,
+			ExecutorID: a.config.ExecutorID,
+			AgentID:    a.config.AgentID,
+			Severity:   events.SeverityInfo,
+			Message:    rawLine,
+			SourceLine: a.parser.LineNumber,
+		}
+
+		// Extract tool usage data from Amp's actual JSON format (vc-107)
+		toolData := events.AgentToolUseData{
+			ToolName: toolName,
+		}
+
+		// Extract parameters from the input map
+		var targetFile, command, pattern string
+		if content.Input != nil {
+			// Path field (used by Read, edit_file, Grep, etc.)
+			if pathVal, ok := content.Input["path"].(string); ok {
+				targetFile = pathVal
 			}
-			// Don't return an event - the agent will be terminated
-			return nil
+			// Cmd field (used by Bash)
+			if cmdVal, ok := content.Input["cmd"].(string); ok {
+				command = cmdVal
+			}
+			// Pattern field (used by Grep, Glob)
+			if patternVal, ok := content.Input["pattern"].(string); ok {
+				pattern = patternVal
+			}
 		}
-	}
 
-	// Create agent_tool_use event from structured JSON
-	event := &events.AgentEvent{
-		ID:         uuid.New().String(),
-		Type:       events.EventTypeAgentToolUse,
-		Timestamp:  time.Now(),
-		IssueID:    a.config.Issue.ID,
-		ExecutorID: a.config.ExecutorID,
-		AgentID:    a.config.AgentID,
-		Severity:   events.SeverityInfo,
-		Message:    rawLine,
-		SourceLine: a.parser.LineNumber,
-	}
+		toolData.TargetFile = targetFile
+		toolData.Command = command
 
-	// Extract tool usage data from Amp's actual JSON format (vc-107)
-	toolData := events.AgentToolUseData{
-		ToolName: toolName,
-	}
-
-	// Extract parameters from the input map
-	var targetFile, command, pattern string
-	if msg.Input != nil {
-		// Path field (used by Read, edit_file, Grep, etc.)
-		if pathVal, ok := msg.Input["path"].(string); ok {
-			targetFile = pathVal
+		// Build a human-readable description from the structured data
+		if targetFile != "" {
+			toolData.ToolDescription = fmt.Sprintf("%s %s", toolName, targetFile)
+		} else if command != "" {
+			toolData.ToolDescription = fmt.Sprintf("run: %s", command)
+		} else if pattern != "" {
+			toolData.ToolDescription = fmt.Sprintf("search: %s", pattern)
+		} else {
+			toolData.ToolDescription = toolName
 		}
-		// Cmd field (used by Bash)
-		if cmdVal, ok := msg.Input["cmd"].(string); ok {
-			command = cmdVal
+
+		// Set the data
+		if err := event.SetAgentToolUseData(toolData); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to set tool use data: %v\n", err)
+			continue
 		}
-		// Pattern field (used by Grep, Glob)
-		if patternVal, ok := msg.Input["pattern"].(string); ok {
-			pattern = patternVal
+
+		// Debug log successful event conversion
+		if os.Getenv("VC_DEBUG_EVENTS") != "" {
+			fmt.Fprintf(os.Stderr, "[DEBUG] Parsed tool_use event: tool=%s file=%s command=%s pattern=%s\n",
+				toolName, targetFile, command, pattern)
 		}
+
+		// Record event with watchdog monitor for anomaly detection (vc-118)
+		if a.config.Monitor != nil {
+			a.config.Monitor.RecordEvent(string(events.EventTypeAgentToolUse))
+		}
+
+		// Return the first tool_use event found
+		return event
 	}
 
-	toolData.TargetFile = targetFile
-	toolData.Command = command
-
-	// Build a human-readable description from the structured data
-	if targetFile != "" {
-		toolData.ToolDescription = fmt.Sprintf("%s %s", toolName, targetFile)
-	} else if command != "" {
-		toolData.ToolDescription = fmt.Sprintf("run: %s", command)
-	} else if pattern != "" {
-		toolData.ToolDescription = fmt.Sprintf("search: %s", pattern)
-	} else {
-		toolData.ToolDescription = toolName
-	}
-
-	// Set the data
-	if err := event.SetAgentToolUseData(toolData); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to set tool use data: %v\n", err)
-		return nil
-	}
-
-	// Debug log successful event conversion
+	// No tool_use found in content array
 	if os.Getenv("VC_DEBUG_EVENTS") != "" {
-		fmt.Fprintf(os.Stderr, "[DEBUG] Parsed tool_use event: tool=%s file=%s command=%s pattern=%s\n",
-			toolName, targetFile, command, pattern)
+		fmt.Fprintf(os.Stderr, "[DEBUG] Assistant message has no tool_use in content array\n")
 	}
-
-	// Record event with watchdog monitor for anomaly detection (vc-118)
-	if a.config.Monitor != nil {
-		a.config.Monitor.RecordEvent(string(events.EventTypeAgentToolUse))
-	}
-
-	return event
+	return nil
 }
 
 // normalizeToolName converts Amp's tool names to canonical lowercase names
-// Examples: "Read" -> "read", "edit_file" -> "edit", "Bash" -> "bash"
+// Examples: "Read" -> "read", "edit_file" -> "edit", "Bash" -> "bash", "create_file" -> "write"
 func normalizeToolName(ampToolName string) string {
 	// Convert to lowercase
 	name := strings.ToLower(ampToolName)
@@ -507,7 +601,7 @@ func normalizeToolName(ampToolName string) string {
 	switch name {
 	case "edit_file":
 		return "edit"
-	case "write_file":
+	case "create_file", "write_file":
 		return "write"
 	default:
 		return name

@@ -10,6 +10,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/vc/internal/config"
 	"github.com/steveyegge/vc/internal/deduplication"
 	"github.com/steveyegge/vc/internal/executor"
 	"github.com/steveyegge/vc/internal/storage"
@@ -92,6 +93,12 @@ func runExecutor(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid deduplication configuration: %w", err)
 	}
 
+	// Load instance cleanup configuration from environment (vc-33)
+	instanceCleanupConfig, err := config.InstanceCleanupConfigFromEnv()
+	if err != nil {
+		return fmt.Errorf("invalid instance cleanup configuration: %w", err)
+	}
+
 	// Create executor configuration
 	cfg := executor.DefaultConfig()
 	cfg.Store = store
@@ -101,6 +108,8 @@ func runExecutor(cmd *cobra.Command, args []string) error {
 	cfg.SandboxRoot = sandboxRoot
 	cfg.ParentRepo = parentRepo
 	cfg.DeduplicationConfig = &dedupConfig
+	cfg.InstanceCleanupAge = instanceCleanupConfig.CleanupAge() // vc-33: from environment
+	cfg.InstanceCleanupKeep = instanceCleanupConfig.CleanupKeep  // vc-33: from environment
 	cfg.EnableAutoCommit = enableAutoCommit // vc-142: expose auto-commit configuration
 	if pollSeconds > 0 {
 		cfg.PollInterval = time.Duration(pollSeconds) * time.Second

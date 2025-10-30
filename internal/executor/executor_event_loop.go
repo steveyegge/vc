@@ -29,10 +29,18 @@ func (e *Executor) eventLoop(ctx context.Context) {
 				fmt.Fprintf(os.Stderr, "failed to update heartbeat: %v\n", err)
 			}
 
-			// Process one issue
+			// Process one code work issue (regular tasks)
 			if err := e.processNextIssue(ctx); err != nil {
 				// Log error but continue
 				fmt.Fprintf(os.Stderr, "error processing issue: %v\n", err)
+			}
+
+			// Process one QA work issue (quality gates for missions) (vc-254)
+			if e.enableQualityGateWorker && e.qaWorker != nil {
+				if err := e.processNextQAWork(ctx); err != nil {
+					// Log error but continue
+					fmt.Fprintf(os.Stderr, "error processing QA work: %v\n", err)
+				}
 			}
 
 			// Check health monitors after completing an issue (if enabled)
@@ -44,6 +52,31 @@ func (e *Executor) eventLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// processNextQAWork attempts to claim and process one mission that needs quality gates (vc-254)
+func (e *Executor) processNextQAWork(ctx context.Context) error {
+	// Try to claim a mission needing quality gates
+	mission, err := e.qaWorker.ClaimReadyWork(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to claim QA work: %w", err)
+	}
+
+	// No QA work available
+	if mission == nil {
+		return nil
+	}
+
+	// Execute quality gates in background goroutine to enable parallelism
+	// This allows code workers to continue working while gates run
+	go func() {
+		if err := e.qaWorker.Execute(ctx, mission); err != nil {
+			// Log error - QA worker handles state transitions internally
+			fmt.Fprintf(os.Stderr, "QA worker execution failed for %s: %v\n", mission.ID, err)
+		}
+	}()
+
+	return nil
 }
 
 // checkMissionConvergence checks if completing this issue causes a mission to converge.

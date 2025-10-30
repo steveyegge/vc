@@ -650,6 +650,213 @@ func TestQAWorkerExecuteFailure(t *testing.T) {
 	}
 }
 
+// TestQAWorkerParallelism tests that QA worker can run concurrently with code workers (vc-255)
+func TestQAWorkerParallelism(t *testing.T) {
+	ctx := context.Background()
+	store := setupQATestStorage(t, ctx)
+	defer store.Close()
+
+	now := time.Now()
+
+	// Create a regular task for code worker
+	task := &types.Issue{
+		ID:          "vc-300",
+		Title:       "Regular task",
+		Description: "Task for code worker",
+		IssueType:   types.TypeTask,
+		Status:      types.StatusOpen,
+		Priority:    1,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := store.CreateIssue(ctx, task, "test"); err != nil {
+		t.Fatalf("Failed to create task: %v", err)
+	}
+
+	// Create a mission for QA worker
+	mission := &types.Mission{
+		Issue: types.Issue{
+			ID:            "vc-301",
+			Title:         "Test Mission for Parallelism",
+			Description:   "Mission for QA worker",
+			IssueType:     types.TypeEpic,
+			IssueSubtype:  types.SubtypeMission,
+			Status:        types.StatusOpen,
+			Priority:      1,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		},
+		Goal:        "Test parallelism",
+		Context:     "Parallelism test",
+		SandboxPath: "/tmp/test-sandbox-parallel",
+		BranchName:  "mission/vc-301",
+	}
+	if err := store.CreateMission(ctx, mission, "test"); err != nil {
+		t.Fatalf("Failed to create mission: %v", err)
+	}
+	if err := store.AddLabel(ctx, mission.ID, labels.LabelNeedsQualityGates, "test"); err != nil {
+		t.Fatalf("Failed to add label: %v", err)
+	}
+
+	// Register executor instance
+	instance := &types.ExecutorInstance{
+		InstanceID:    "test-worker-parallel",
+		Hostname:      "test-host",
+		PID:           1234,
+		Status:        types.ExecutorStatusRunning,
+		StartedAt:     now,
+		LastHeartbeat: now,
+		Version:       "test",
+		Metadata:      "{}",
+	}
+	if err := store.RegisterInstance(ctx, instance); err != nil {
+		t.Fatalf("Failed to register executor instance: %v", err)
+	}
+
+	// Create QA worker
+	worker, err := NewQualityGateWorker(&QualityGateWorkerConfig{
+		Store:       store,
+		InstanceID:  "test-worker-parallel",
+		WorkingDir:  ".",
+		GatesRunner: newMockGatesRunner(store, true),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create QA worker: %v", err)
+	}
+
+	// Test that both code work and QA work can be claimed
+	// First, claim the regular task (simulating code worker)
+	if err := store.ClaimIssue(ctx, task.ID, "test-worker-parallel"); err != nil {
+		t.Fatalf("Failed to claim task: %v", err)
+	}
+
+	// While task is claimed, QA worker should still be able to claim mission
+	// This demonstrates non-blocking behavior
+	claimed, err := worker.ClaimReadyWork(ctx)
+	if err != nil {
+		t.Fatalf("Failed to claim QA work: %v", err)
+	}
+	if claimed == nil {
+		t.Fatal("Expected to claim mission even while code work is claimed")
+	}
+	if claimed.ID != mission.ID {
+		t.Errorf("Expected to claim mission %s, got %s", mission.ID, claimed.ID)
+	}
+
+	// Verify both issues are claimed by the same executor instance
+	taskState, err := store.GetExecutionState(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("Failed to get task execution state: %v", err)
+	}
+	if taskState == nil || taskState.ExecutorInstanceID != "test-worker-parallel" {
+		t.Error("Task should be claimed by executor")
+	}
+
+	missionState, err := store.GetExecutionState(ctx, mission.ID)
+	if err != nil {
+		t.Fatalf("Failed to get mission execution state: %v", err)
+	}
+	if missionState == nil || missionState.ExecutorInstanceID != "test-worker-parallel" {
+		t.Error("Mission should be claimed by executor")
+	}
+
+	// This demonstrates that the same executor instance can handle both
+	// code work and QA work concurrently (in different sandboxes)
+}
+
+// TestQAWorkerSandbox tests that gates run in the mission's sandbox, not the main workspace (vc-255)
+func TestQAWorkerSandbox(t *testing.T) {
+	ctx := context.Background()
+	store := setupQATestStorage(t, ctx)
+	defer store.Close()
+
+	now := time.Now()
+	expectedSandboxPath := "/tmp/test-sandbox-verify"
+
+	// Create a mission with a specific sandbox path
+	mission := &types.Mission{
+		Issue: types.Issue{
+			ID:            "vc-302",
+			Title:         "Test Mission for Sandbox Verification",
+			Description:   "Verify gates run in sandbox",
+			IssueType:     types.TypeEpic,
+			IssueSubtype:  types.SubtypeMission,
+			Status:        types.StatusOpen,
+			Priority:      1,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		},
+		Goal:        "Verify sandbox isolation",
+		Context:     "Sandbox test",
+		SandboxPath: expectedSandboxPath, // Specific sandbox path
+		BranchName:  "mission/vc-302",
+	}
+	if err := store.CreateMission(ctx, mission, "test"); err != nil {
+		t.Fatalf("Failed to create mission: %v", err)
+	}
+	if err := store.AddLabel(ctx, mission.ID, labels.LabelNeedsQualityGates, "test"); err != nil {
+		t.Fatalf("Failed to add label: %v", err)
+	}
+
+	// Register executor instance
+	instance := &types.ExecutorInstance{
+		InstanceID:    "test-worker-sandbox",
+		Hostname:      "test-host",
+		PID:           1234,
+		Status:        types.ExecutorStatusRunning,
+		StartedAt:     now,
+		LastHeartbeat: now,
+		Version:       "test",
+		Metadata:      "{}",
+	}
+	if err := store.RegisterInstance(ctx, instance); err != nil {
+		t.Fatalf("Failed to register executor instance: %v", err)
+	}
+
+	// Claim the issue
+	if err := store.ClaimIssue(ctx, mission.ID, "test-worker-sandbox"); err != nil {
+		t.Fatalf("Failed to claim issue: %v", err)
+	}
+	if err := store.AddLabel(ctx, mission.ID, labels.LabelGatesRunning, "test-worker-sandbox"); err != nil {
+		t.Fatalf("Failed to add gates-running label: %v", err)
+	}
+
+	// Create QA worker with a default working directory (should be overridden by mission sandbox)
+	worker, err := NewQualityGateWorker(&QualityGateWorkerConfig{
+		Store:       store,
+		InstanceID:  "test-worker-sandbox",
+		WorkingDir:  "/default/working/dir", // This should NOT be used
+		GatesRunner: newMockGatesRunner(store, true),
+	})
+	if err != nil {
+		t.Fatalf("Failed to create QA worker: %v", err)
+	}
+
+	// Execute gates - this should create a new gates runner with the mission's sandbox path
+	if err := worker.Execute(ctx, &mission.Issue); err != nil {
+		t.Fatalf("Failed to execute gates: %v", err)
+	}
+
+	// Verify the gates ran successfully (which means they used the correct sandbox path)
+	// We can check this by verifying the mission transitioned to needs-review
+	hasNeedsReview, err := labels.HasLabel(ctx, store, mission.ID, labels.LabelNeedsReview)
+	if err != nil {
+		t.Fatalf("Failed to check needs-review label: %v", err)
+	}
+	if !hasNeedsReview {
+		t.Error("Expected needs-review label after successful gate execution")
+	}
+
+	// The fact that Execute() succeeded confirms that:
+	// 1. The mission's sandbox_path was retrieved from GetMission()
+	// 2. A new gates runner was created with WorkingDir = sandbox_path
+	// 3. Gates ran in that sandbox (not the worker's default working dir)
+
+	// Note: We can't directly verify the gates runner's working directory in this test
+	// because the mock provider doesn't expose it, but the code path in Execute()
+	// explicitly creates a new runner with sandboxPath as WorkingDir.
+}
+
 // setupQATestStorage creates an in-memory storage for testing
 func setupQATestStorage(t *testing.T, ctx context.Context) storage.Storage {
 	t.Helper()

@@ -37,6 +37,7 @@ type Executor struct {
 	deduplicator    deduplication.Deduplicator     // Shared deduplicator for sandbox manager and results processor (vc-137)
 	gitOps          git.GitOperations              // Git operations for auto-commit (vc-136)
 	messageGen      *git.MessageGenerator          // Commit message generator (vc-136)
+	qaWorker        *QualityGateWorker             // QA worker for quality gate execution (vc-254)
 	config          *Config
 	instanceID      string
 	hostname        string
@@ -54,16 +55,17 @@ type Executor struct {
 	eventCleanupDoneCh chan struct{} // Signals when event cleanup goroutine finished
 
 	// Configuration
-	pollInterval           time.Duration
-	cleanupInterval        time.Duration
-	staleThreshold         time.Duration
-	instanceCleanupAge     time.Duration
-	instanceCleanupKeep    int
-	enableAISupervision    bool
-	enableQualityGates     bool
-	enableSandboxes        bool
-	enableHealthMonitoring bool
-	workingDir             string
+	pollInterval            time.Duration
+	cleanupInterval         time.Duration
+	staleThreshold          time.Duration
+	instanceCleanupAge      time.Duration
+	instanceCleanupKeep     int
+	enableAISupervision     bool
+	enableQualityGates      bool
+	enableSandboxes         bool
+	enableHealthMonitoring  bool
+	enableQualityGateWorker bool
+	workingDir              string
 
 	// State
 	mu      sync.RWMutex
@@ -72,56 +74,58 @@ type Executor struct {
 
 // Config holds executor configuration
 type Config struct {
-	Store                  storage.Storage
-	Version                string
-	PollInterval           time.Duration
-	HeartbeatPeriod        time.Duration
-	CleanupInterval        time.Duration                // How often to check for stale instances (default: 5 minutes)
-	StaleThreshold         time.Duration                // How long before an instance is considered stale (default: 5 minutes)
-	EnableAISupervision    bool                         // Enable AI assessment and analysis (default: true)
-	EnableQualityGates     bool                         // Enable quality gates enforcement (default: true)
-	EnableAutoCommit       bool                         // Enable automatic git commits after successful execution (default: false, vc-142)
-	EnableSandboxes        bool                         // Enable sandbox isolation (default: true, vc-144)
-	KeepSandboxOnFailure   bool                         // Keep failed sandboxes for debugging (default: false)
-	KeepBranches           bool                         // Keep mission branches after cleanup (default: false)
-	SandboxRetentionCount  int                          // Number of failed sandboxes to keep (default: 3, 0 = keep all)
-	EnableHealthMonitoring bool                         // Enable health monitoring (default: false, opt-in)
-	HealthConfigPath       string                       // Path to health_monitors.yaml (default: ".beads/health_monitors.yaml")
-	HealthStatePath        string                       // Path to health_state.json (default: ".beads/health_state.json")
-	WorkingDir             string                       // Working directory for quality gates (default: ".")
-	SandboxRoot            string                       // Root directory for sandboxes (default: ".sandboxes")
-	ParentRepo             string                       // Parent repository path (default: ".")
-	DefaultBranch          string                       // Default git branch for sandboxes (default: "main")
-	WatchdogConfig         *watchdog.WatchdogConfig     // Watchdog configuration (default: conservative defaults)
-	DeduplicationConfig    *deduplication.Config        // Deduplication configuration (default: sensible defaults, nil = use defaults)
-	EventRetentionConfig   *config.EventRetentionConfig // Event retention and cleanup configuration (default: sensible defaults, nil = use defaults)
-	InstanceCleanupAge     time.Duration                // How old stopped instances must be before deletion (default: 24h)
-	InstanceCleanupKeep    int                          // Minimum number of stopped instances to keep (default: 10, 0 = keep none)
+	Store                   storage.Storage
+	Version                 string
+	PollInterval            time.Duration
+	HeartbeatPeriod         time.Duration
+	CleanupInterval         time.Duration                // How often to check for stale instances (default: 5 minutes)
+	StaleThreshold          time.Duration                // How long before an instance is considered stale (default: 5 minutes)
+	EnableAISupervision     bool                         // Enable AI assessment and analysis (default: true)
+	EnableQualityGates      bool                         // Enable quality gates enforcement (default: true)
+	EnableAutoCommit        bool                         // Enable automatic git commits after successful execution (default: false, vc-142)
+	EnableSandboxes         bool                         // Enable sandbox isolation (default: true, vc-144)
+	KeepSandboxOnFailure    bool                         // Keep failed sandboxes for debugging (default: false)
+	KeepBranches            bool                         // Keep mission branches after cleanup (default: false)
+	SandboxRetentionCount   int                          // Number of failed sandboxes to keep (default: 3, 0 = keep all)
+	EnableHealthMonitoring  bool                         // Enable health monitoring (default: false, opt-in)
+	EnableQualityGateWorker bool                         // Enable QA worker for quality gate execution (default: true, vc-254)
+	HealthConfigPath        string                       // Path to health_monitors.yaml (default: ".beads/health_monitors.yaml")
+	HealthStatePath         string                       // Path to health_state.json (default: ".beads/health_state.json")
+	WorkingDir              string                       // Working directory for quality gates (default: ".")
+	SandboxRoot             string                       // Root directory for sandboxes (default: ".sandboxes")
+	ParentRepo              string                       // Parent repository path (default: ".")
+	DefaultBranch           string                       // Default git branch for sandboxes (default: "main")
+	WatchdogConfig          *watchdog.WatchdogConfig     // Watchdog configuration (default: conservative defaults)
+	DeduplicationConfig     *deduplication.Config        // Deduplication configuration (default: sensible defaults, nil = use defaults)
+	EventRetentionConfig    *config.EventRetentionConfig // Event retention and cleanup configuration (default: sensible defaults, nil = use defaults)
+	InstanceCleanupAge      time.Duration                // How old stopped instances must be before deletion (default: 24h)
+	InstanceCleanupKeep     int                          // Minimum number of stopped instances to keep (default: 10, 0 = keep none)
 }
 
 // DefaultConfig returns default executor configuration
 func DefaultConfig() *Config {
 	return &Config{
-		Version:                "0.1.0",
-		PollInterval:           5 * time.Second,
-		HeartbeatPeriod:        30 * time.Second,
-		CleanupInterval:        5 * time.Minute,
-		StaleThreshold:         5 * time.Minute,
-		InstanceCleanupAge:     24 * time.Hour,
-		InstanceCleanupKeep:    10,
-		EnableAISupervision:    true,
-		EnableQualityGates:     true,
-		EnableSandboxes:        true, // Changed to true for safety (vc-144)
-		KeepSandboxOnFailure:   false,
-		KeepBranches:           false,
-		SandboxRetentionCount:  3,
-		EnableHealthMonitoring: false, // Opt-in for now
-		HealthConfigPath:       ".beads/health_monitors.yaml",
-		HealthStatePath:        ".beads/health_state.json",
-		WorkingDir:             ".",
-		SandboxRoot:            ".sandboxes",
-		ParentRepo:             ".",
-		DefaultBranch:          "main",
+		Version:                 "0.1.0",
+		PollInterval:            5 * time.Second,
+		HeartbeatPeriod:         30 * time.Second,
+		CleanupInterval:         5 * time.Minute,
+		StaleThreshold:          5 * time.Minute,
+		InstanceCleanupAge:      24 * time.Hour,
+		InstanceCleanupKeep:     10,
+		EnableAISupervision:     true,
+		EnableQualityGates:      true,
+		EnableSandboxes:         true, // Changed to true for safety (vc-144)
+		KeepSandboxOnFailure:    false,
+		KeepBranches:            false,
+		SandboxRetentionCount:   3,
+		EnableHealthMonitoring:  false, // Opt-in for now
+		EnableQualityGateWorker: true,  // Enable QA worker by default (vc-254)
+		HealthConfigPath:        ".beads/health_monitors.yaml",
+		HealthStatePath:         ".beads/health_state.json",
+		WorkingDir:              ".",
+		SandboxRoot:             ".sandboxes",
+		ParentRepo:              ".",
+		DefaultBranch:           "main",
 	}
 }
 
@@ -179,27 +183,28 @@ func New(cfg *Config) (*Executor, error) {
 	}
 
 	e := &Executor{
-		store:               cfg.Store,
-		config:              cfg,
-		instanceID:          uuid.New().String(),
-		hostname:            hostname,
-		pid:                 os.Getpid(),
-		version:             cfg.Version,
-		pollInterval:        cfg.PollInterval,
-		cleanupInterval:     cleanupInterval,
-		staleThreshold:      staleThreshold,
-		instanceCleanupAge:  instanceCleanupAge,
-		instanceCleanupKeep: instanceCleanupKeep,
-		enableAISupervision: cfg.EnableAISupervision,
-		enableQualityGates:  cfg.EnableQualityGates,
-		enableSandboxes:     cfg.EnableSandboxes,
-		workingDir:          workingDir,
-		stopCh:              make(chan struct{}),
-		doneCh:              make(chan struct{}),
-		cleanupStopCh:       make(chan struct{}),
-		cleanupDoneCh:       make(chan struct{}),
-		eventCleanupStopCh:  make(chan struct{}),
-		eventCleanupDoneCh:  make(chan struct{}),
+		store:                   cfg.Store,
+		config:                  cfg,
+		instanceID:              uuid.New().String(),
+		hostname:                hostname,
+		pid:                     os.Getpid(),
+		version:                 cfg.Version,
+		pollInterval:            cfg.PollInterval,
+		cleanupInterval:         cleanupInterval,
+		staleThreshold:          staleThreshold,
+		instanceCleanupAge:      instanceCleanupAge,
+		instanceCleanupKeep:     instanceCleanupKeep,
+		enableAISupervision:     cfg.EnableAISupervision,
+		enableQualityGates:      cfg.EnableQualityGates,
+		enableSandboxes:         cfg.EnableSandboxes,
+		enableQualityGateWorker: cfg.EnableQualityGateWorker,
+		workingDir:              workingDir,
+		stopCh:                  make(chan struct{}),
+		doneCh:                  make(chan struct{}),
+		cleanupStopCh:           make(chan struct{}),
+		cleanupDoneCh:           make(chan struct{}),
+		eventCleanupStopCh:      make(chan struct{}),
+		eventCleanupDoneCh:      make(chan struct{}),
 	}
 
 	// Initialize AI supervisor if enabled (do this before sandbox manager to provide deduplicator)
@@ -417,6 +422,35 @@ func New(cfg *Config) (*Executor, error) {
 		}
 	}
 
+	// Initialize QA worker if enabled (vc-254)
+	if cfg.EnableQualityGateWorker && cfg.EnableQualityGates {
+		// Create gates runner for QA worker (separate from preflight runner)
+		gatesRunner, err := gates.NewRunner(&gates.Config{
+			Store:      cfg.Store,
+			Supervisor: e.supervisor, // Optional: for AI-driven recovery
+			WorkingDir: workingDir,   // Default working dir (will be overridden per-mission)
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to create gates runner for QA worker: %v (QA worker disabled)\n", err)
+			e.enableQualityGateWorker = false
+		} else {
+			qaWorker, err := NewQualityGateWorker(&QualityGateWorkerConfig{
+				Store:       cfg.Store,
+				Supervisor:  e.supervisor,
+				WorkingDir:  workingDir,
+				InstanceID:  e.instanceID,
+				GatesRunner: gatesRunner,
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to create QA worker: %v (QA worker disabled)\n", err)
+				e.enableQualityGateWorker = false
+			} else {
+				e.qaWorker = qaWorker
+				fmt.Printf("✓ Quality gate worker enabled (parallel execution)\n")
+			}
+		}
+	}
+
 	return e, nil
 }
 
@@ -555,15 +589,36 @@ func (e *Executor) Stop(ctx context.Context) error {
 		fmt.Fprintf(os.Stderr, "warning: failed to mark instance as stopped: %v\n", err)
 	}
 
-	// Clean up old stopped instances (vc-133)
+	// Clean up old stopped instances (vc-133, vc-32)
 	// This prevents accumulation of historical instances that are no longer needed
+	startTime := time.Now()
 	olderThanSeconds := int(e.instanceCleanupAge.Seconds())
 	deleted, err := e.store.DeleteOldStoppedInstances(ctx, olderThanSeconds, e.instanceCleanupKeep)
+	processingTimeMs := time.Since(startTime).Milliseconds()
+
 	if err != nil {
 		// Don't fail shutdown if cleanup fails, just log warning
 		fmt.Fprintf(os.Stderr, "warning: failed to cleanup old executor instances: %v\n", err)
-	} else if deleted > 0 {
-		fmt.Printf("Cleanup: Deleted %d old stopped executor instance(s)\n", deleted)
+		// Log failure event (vc-32)
+		e.logInstanceCleanupEvent(ctx, 0, 0, processingTimeMs, olderThanSeconds, e.instanceCleanupKeep, false, err.Error())
+	} else {
+		if deleted > 0 {
+			fmt.Printf("Cleanup: Deleted %d old stopped executor instance(s)\n", deleted)
+		}
+		// Get count of remaining stopped instances for metrics (vc-32)
+		// Note: This is a best-effort query - if it fails, we still log the event with 0 remaining
+		instances, err := e.store.GetActiveInstances(ctx)
+		stoppedRemaining := 0
+		if err == nil {
+			// Count instances that are stopped
+			for _, inst := range instances {
+				if inst.Status == "stopped" {
+					stoppedRemaining++
+				}
+			}
+		}
+		// Log success event (vc-32)
+		e.logInstanceCleanupEvent(ctx, deleted, stoppedRemaining, processingTimeMs, olderThanSeconds, e.instanceCleanupKeep, true, "")
 	}
 
 	return nil
