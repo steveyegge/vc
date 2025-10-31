@@ -29,6 +29,20 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		})
 	e.monitor.RecordEvent(string(events.EventTypeIssueClaimed))
 
+	// Initialize execution state to claimed (vc-efad)
+	// This must happen before any state transitions to maintain state machine integrity
+	if err := e.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateClaimed); err != nil {
+		// Check if context was canceled (shutdown initiated)
+		if ctx.Err() != nil {
+			// Use background context for cleanup since main context is canceled
+			cleanupCtx := context.Background()
+			e.releaseIssueWithError(cleanupCtx, issue.ID, fmt.Sprintf("Execution canceled during state initialization: %v", ctx.Err()))
+			e.monitor.EndExecution(false, false)
+			return ctx.Err()
+		}
+		fmt.Fprintf(os.Stderr, "warning: failed to initialize execution state: %v\n", err)
+	}
+
 	// Phase 1: AI Assessment (if enabled)
 	// Always transition to assessing state for state machine consistency (vc-110)
 	if err := e.store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateAssessing); err != nil {
