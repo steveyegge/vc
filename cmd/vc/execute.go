@@ -29,7 +29,7 @@ The executor will:
 5. Update issue status based on agent results
 6. Continue until stopped with Ctrl+C`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := runExecutor(cmd, args); err != nil {
+		if err := runExecutor(cmd); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -39,7 +39,7 @@ The executor will:
 // runExecutor contains the main executor logic, extracted to allow proper defer cleanup.
 // This function returns errors instead of calling os.Exit(), which ensures that defer
 // statements (like lock cleanup) run properly on all error paths.
-func runExecutor(cmd *cobra.Command, _ []string) error {
+func runExecutor(cmd *cobra.Command) error {
 	version, _ := cmd.Flags().GetString("version")
 	pollSeconds, _ := cmd.Flags().GetInt("poll-interval")
 	disableSandboxes, _ := cmd.Flags().GetBool("disable-sandboxes")
