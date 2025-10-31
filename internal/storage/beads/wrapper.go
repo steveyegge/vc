@@ -82,6 +82,12 @@ func (s *VCStorage) Close() error {
 	return s.Storage.Close()
 }
 
+// GetDB returns the underlying database connection for advanced operations.
+// This is primarily used by CLI commands that need direct SQL access.
+func (s *VCStorage) GetDB() interface{} {
+	return s.db
+}
+
 // createVCExtensionTables creates VC-specific tables in the Beads database
 // These tables extend Beads with mission workflow metadata
 // Uses a scoped connection (*sql.Conn) for DDL operations as recommended by Beads
