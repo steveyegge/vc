@@ -532,11 +532,34 @@ func TestRebaseOperations(t *testing.T) {
 			t.Fatalf("Failed to resolve conflict: %v", err)
 		}
 
+		// Ensure file is flushed to disk before git reads it
+		if file, err := os.Open(conflictFile); err == nil {
+			_ = file.Sync()
+			_ = file.Close()
+		}
+
+		// Verify the rebase is still in progress
+		rebaseDir := filepath.Join(tmpDir, ".git", "rebase-merge")
+		if _, err := os.Stat(rebaseDir); os.IsNotExist(err) {
+			t.Fatal("Rebase directory does not exist - rebase may have failed unexpectedly")
+		}
+
 		// Stage the resolution
 		addCmd := exec.Command("git", "add", "conflict.txt")
 		addCmd.Dir = tmpDir
 		if err := addCmd.Run(); err != nil {
 			t.Fatalf("Failed to stage resolution: %v", err)
+		}
+
+		// Verify the file was actually staged
+		statusCmd := exec.Command("git", "status", "--porcelain")
+		statusCmd.Dir = tmpDir
+		statusOutput, err := statusCmd.Output()
+		if err != nil {
+			t.Fatalf("Failed to check git status: %v", err)
+		}
+		if !strings.Contains(string(statusOutput), "conflict.txt") {
+			t.Logf("Git status after staging: %s", statusOutput)
 		}
 
 		// Continue the rebase
