@@ -254,8 +254,7 @@ func cleanupMissionSandboxIfComplete(ctx context.Context, store storage.Storage,
 		DurationMs:  duration.Milliseconds(),
 	}
 	if cleanupErr != nil {
-		errMsg := cleanupErr.Error()
-		completeEventData.Error = errMsg
+		completeEventData.Error = cleanupErr.Error()
 	}
 
 	message := fmt.Sprintf("Completed cleanup for mission epic %s (duration: %v)", epicID, duration)
