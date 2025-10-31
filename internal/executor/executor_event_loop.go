@@ -239,7 +239,7 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 				}
 
 				// Enter degraded mode - only claim baseline issues until fixed
-				e.degradedMode = true
+				e.setDegraded(true)
 
 			case FailureModeWarn:
 				// Warn but continue claiming work
@@ -254,7 +254,7 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 	}
 
 	// If in degraded mode, determine if we can exit before claiming
-	if e.degradedMode {
+	if e.isDegraded() {
 		resolved, err := e.checkBaselineIssuesResolved(ctx)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to check baseline issues: %v\n", err)
@@ -262,12 +262,12 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 		}
 		if resolved {
 			fmt.Printf("✓ Baseline issues resolved. Exiting degraded mode.\n")
-			e.degradedMode = false
+			e.setDegraded(false)
 		}
 	}
 
 	// While degraded, only claim baseline-failure issues
-	if e.degradedMode {
+	if e.isDegraded() {
 		fmt.Printf("⚠️  Degraded mode: only claiming baseline issues\n")
 		baselineIssues, err := e.store.GetIssuesByLabel(ctx, "baseline-failure")
 		if err != nil {

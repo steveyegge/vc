@@ -73,6 +73,20 @@ type Executor struct {
 	degradedMode bool // In degraded mode, only claim baseline issues
 }
 
+// isDegraded returns whether the executor is in degraded mode (thread-safe)
+func (e *Executor) isDegraded() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.degradedMode
+}
+
+// setDegraded sets the degraded mode state (thread-safe)
+func (e *Executor) setDegraded(v bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.degradedMode = v
+}
+
 // Config holds executor configuration
 type Config struct {
 	Store                   storage.Storage
