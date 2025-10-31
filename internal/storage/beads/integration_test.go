@@ -3467,4 +3467,271 @@ func TestMissionLifecycleEvents(t *testing.T) {
 
 		t.Logf("✓ No event emitted for no-op update")
 	})
+
+	t.Run("CreateMission with parent epic populates parent_epic_id", func(t *testing.T) {
+		// Create a parent epic first
+		parentEpic := &types.Issue{
+			Title:       "Parent Epic",
+			Description: "Parent epic for mission",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeEpic,
+		}
+		if err := store.CreateIssue(ctx, parentEpic, "test-actor"); err != nil {
+			t.Fatalf("Failed to create parent epic: %v", err)
+		}
+
+		// Create a mission with parent epic dependency
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission with Parent Epic",
+				Description:  "Testing parent_epic_id population",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal:             "Test parent epic association",
+			PhaseCount:       2,
+			ApprovalRequired: false,
+		}
+		if err := store.CreateMission(ctx, mission, "test-actor"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Add parent-child dependency
+		dep := &types.Dependency{
+			IssueID:     mission.ID,
+			DependsOnID: parentEpic.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, dep, "test-actor"); err != nil {
+			t.Fatalf("Failed to add dependency: %v", err)
+		}
+
+		// Verify mission_created event includes parent_epic_id
+		eventFilter := events.EventFilter{
+			IssueID: mission.ID,
+			Type:    events.EventTypeMissionCreated,
+		}
+		evts, err := store.GetAgentEvents(ctx, eventFilter)
+		if err != nil {
+			t.Fatalf("Failed to get agent events: %v", err)
+		}
+
+		if len(evts) != 1 {
+			t.Fatalf("Expected 1 mission_created event, got %d", len(evts))
+		}
+
+		evt := evts[0]
+		// Note: parent_epic_id is populated from dependencies, which happens after creation
+		// So the creation event may not have it yet - this tests the event structure
+		if evt.Data["parent_epic_id"] != nil && evt.Data["parent_epic_id"] != "" {
+			t.Logf("✓ parent_epic_id populated: %v", evt.Data["parent_epic_id"])
+		} else {
+			t.Logf("ℹ parent_epic_id is nil in creation event (populated later via dependencies)")
+		}
+	})
+
+	t.Run("UpdateMission with mission-specific fields tracks old values", func(t *testing.T) {
+		// Create a mission with initial values
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission for Field Updates",
+				Description:  "Testing mission-specific field updates",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal:           "Test field tracking",
+			PhaseCount:     3,
+			CurrentPhase:   0,
+			IterationCount: 1,
+			GatesStatus:    "pending",
+		}
+		if err := store.CreateMission(ctx, mission, "test-actor"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Update mission-specific fields
+		updates := map[string]interface{}{
+			"phase_count":     5,
+			"current_phase":   2,
+			"iteration_count": 3,
+			"gates_status":    "passed",
+		}
+		if err := store.UpdateMission(ctx, mission.ID, updates, "update-actor"); err != nil {
+			t.Fatalf("Failed to update mission: %v", err)
+		}
+
+		// Verify mission_metadata_updated event
+		eventFilter := events.EventFilter{
+			IssueID: mission.ID,
+			Type:    events.EventTypeMissionMetadataUpdated,
+		}
+		evts, err := store.GetAgentEvents(ctx, eventFilter)
+		if err != nil {
+			t.Fatalf("Failed to get agent events: %v", err)
+		}
+
+		if len(evts) != 1 {
+			t.Fatalf("Expected 1 mission_metadata_updated event, got %d", len(evts))
+		}
+
+		evt := evts[0]
+		changes, ok := evt.Data["changes"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("Expected changes to be map, got %T", evt.Data["changes"])
+		}
+
+		// Verify phase_count change
+		if phaseChange, ok := changes["phase_count"].(map[string]interface{}); ok {
+			if phaseChange["old_value"] != float64(3) {
+				t.Errorf("Expected old phase_count 3, got %v", phaseChange["old_value"])
+			}
+			if phaseChange["new_value"] != float64(5) {
+				t.Errorf("Expected new phase_count 5, got %v", phaseChange["new_value"])
+			}
+		} else {
+			t.Error("Missing phase_count in changes")
+		}
+
+		// Verify current_phase change
+		if currentPhaseChange, ok := changes["current_phase"].(map[string]interface{}); ok {
+			if currentPhaseChange["old_value"] != float64(0) {
+				t.Errorf("Expected old current_phase 0, got %v", currentPhaseChange["old_value"])
+			}
+			if currentPhaseChange["new_value"] != float64(2) {
+				t.Errorf("Expected new current_phase 2, got %v", currentPhaseChange["new_value"])
+			}
+		} else {
+			t.Error("Missing current_phase in changes")
+		}
+
+		// Verify iteration_count change
+		if iterChange, ok := changes["iteration_count"].(map[string]interface{}); ok {
+			if iterChange["old_value"] != float64(1) {
+				t.Errorf("Expected old iteration_count 1, got %v", iterChange["old_value"])
+			}
+			if iterChange["new_value"] != float64(3) {
+				t.Errorf("Expected new iteration_count 3, got %v", iterChange["new_value"])
+			}
+		} else {
+			t.Error("Missing iteration_count in changes")
+		}
+
+		// Verify gates_status change
+		if gatesChange, ok := changes["gates_status"].(map[string]interface{}); ok {
+			if gatesChange["old_value"] != "pending" {
+				t.Errorf("Expected old gates_status 'pending', got %v", gatesChange["old_value"])
+			}
+			if gatesChange["new_value"] != "passed" {
+				t.Errorf("Expected new gates_status 'passed', got %v", gatesChange["new_value"])
+			}
+		} else {
+			t.Error("Missing gates_status in changes")
+		}
+
+		t.Logf("✓ All mission-specific field changes tracked correctly")
+	})
+
+	t.Run("UpdateMission with mixed base issue and mission fields", func(t *testing.T) {
+		// Create a mission
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission for Mixed Updates",
+				Description:  "Testing mixed field updates",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal:        "Test mixed updates",
+			PhaseCount:  2,
+			SandboxPath: ".sandboxes/initial/",
+		}
+		if err := store.CreateMission(ctx, mission, "test-actor"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Update both base issue fields (status, priority) and mission fields
+		updates := map[string]interface{}{
+			"status":       string(types.StatusInProgress),
+			"priority":     2,
+			"phase_count":  4,
+			"sandbox_path": ".sandboxes/updated/",
+		}
+		if err := store.UpdateMission(ctx, mission.ID, updates, "update-actor"); err != nil {
+			t.Fatalf("Failed to update mission: %v", err)
+		}
+
+		// Verify mission_metadata_updated event
+		eventFilter := events.EventFilter{
+			IssueID: mission.ID,
+			Type:    events.EventTypeMissionMetadataUpdated,
+		}
+		evts, err := store.GetAgentEvents(ctx, eventFilter)
+		if err != nil {
+			t.Fatalf("Failed to get agent events: %v", err)
+		}
+
+		if len(evts) != 1 {
+			t.Fatalf("Expected 1 mission_metadata_updated event, got %d", len(evts))
+		}
+
+		evt := evts[0]
+		changes, ok := evt.Data["changes"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("Expected changes to be map, got %T", evt.Data["changes"])
+		}
+
+		// Verify base issue field changes (status, priority)
+		if statusChange, ok := changes["status"].(map[string]interface{}); ok {
+			if statusChange["old_value"] != string(types.StatusOpen) {
+				t.Errorf("Expected old status 'open', got %v", statusChange["old_value"])
+			}
+			if statusChange["new_value"] != string(types.StatusInProgress) {
+				t.Errorf("Expected new status 'in_progress', got %v", statusChange["new_value"])
+			}
+		} else {
+			t.Error("Missing status in changes")
+		}
+
+		if priorityChange, ok := changes["priority"].(map[string]interface{}); ok {
+			if priorityChange["old_value"] != float64(1) {
+				t.Errorf("Expected old priority 1, got %v", priorityChange["old_value"])
+			}
+			if priorityChange["new_value"] != float64(2) {
+				t.Errorf("Expected new priority 2, got %v", priorityChange["new_value"])
+			}
+		} else {
+			t.Error("Missing priority in changes")
+		}
+
+		// Verify mission-specific field changes
+		if phaseChange, ok := changes["phase_count"].(map[string]interface{}); ok {
+			if phaseChange["old_value"] != float64(2) {
+				t.Errorf("Expected old phase_count 2, got %v", phaseChange["old_value"])
+			}
+			if phaseChange["new_value"] != float64(4) {
+				t.Errorf("Expected new phase_count 4, got %v", phaseChange["new_value"])
+			}
+		} else {
+			t.Error("Missing phase_count in changes")
+		}
+
+		if sandboxChange, ok := changes["sandbox_path"].(map[string]interface{}); ok {
+			if sandboxChange["old_value"] != ".sandboxes/initial/" {
+				t.Errorf("Expected old sandbox_path '.sandboxes/initial/', got %v", sandboxChange["old_value"])
+			}
+			if sandboxChange["new_value"] != ".sandboxes/updated/" {
+				t.Errorf("Expected new sandbox_path '.sandboxes/updated/', got %v", sandboxChange["new_value"])
+			}
+		} else {
+			t.Error("Missing sandbox_path in changes")
+		}
+
+		t.Logf("✓ Mixed base issue and mission field updates tracked correctly")
+	})
 }

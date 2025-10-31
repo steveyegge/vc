@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -154,16 +155,24 @@ func (s *VCStorage) CreateMission(ctx context.Context, mission *types.Mission, a
 	}
 
 	// Update the mission state with all mission-specific fields
+	// Handle gates_status: empty string -> NULL for database constraint
+	var gatesStatus interface{} = mission.GatesStatus
+	if mission.GatesStatus == "" {
+		gatesStatus = nil
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE vc_mission_state
 		SET goal = ?, context = ?, phase_count = ?, current_phase = ?,
 		    approval_required = ?, approved_at = ?, approved_by = ?,
 		    sandbox_path = ?, branch_name = ?,
+		    iteration_count = ?, gates_status = ?,
 		    updated_at = ?
 		WHERE issue_id = ?
 	`, mission.Goal, mission.Context, mission.PhaseCount, mission.CurrentPhase,
 		mission.ApprovalRequired, mission.ApprovedAt, mission.ApprovedBy,
 		mission.SandboxPath, mission.BranchName,
+		mission.IterationCount, gatesStatus,
 		time.Now(), mission.ID)
 
 	if err != nil {
@@ -212,7 +221,7 @@ func (s *VCStorage) CreateMission(ctx context.Context, mission *types.Mission, a
 
 	if err := s.StoreAgentEvent(ctx, event); err != nil {
 		// Log warning but don't fail mission creation
-		fmt.Printf("Warning: failed to store mission_created event: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to store mission_created event for %s: %v\n", mission.ID, err)
 	}
 
 	return nil
@@ -228,12 +237,17 @@ func (s *VCStorage) UpdateMission(ctx context.Context, id string, updates map[st
 
 	// Separate updates into base issue fields and mission-specific fields
 	missionFields := map[string]interface{}{
-		"approved_at":  nil,
-		"approved_by":  nil,
-		"goal":         nil,
-		"context":      nil,
-		"sandbox_path": nil,
-		"branch_name":  nil,
+		"approved_at":       nil,
+		"approved_by":       nil,
+		"goal":              nil,
+		"context":           nil,
+		"sandbox_path":      nil,
+		"branch_name":       nil,
+		"phase_count":       nil,
+		"current_phase":     nil,
+		"approval_required": nil,
+		"iteration_count":   nil,
+		"gates_status":      nil,
 	}
 
 	baseUpdates := make(map[string]interface{})
@@ -307,6 +321,16 @@ func (s *VCStorage) UpdateMission(ctx context.Context, id string, updates map[st
 				oldValue = oldMission.Status
 			case "priority":
 				oldValue = oldMission.Priority
+			case "phase_count":
+				oldValue = oldMission.PhaseCount
+			case "current_phase":
+				oldValue = oldMission.CurrentPhase
+			case "approval_required":
+				oldValue = oldMission.ApprovalRequired
+			case "iteration_count":
+				oldValue = oldMission.IterationCount
+			case "gates_status":
+				oldValue = oldMission.GatesStatus
 			}
 
 			changes[key] = events.FieldChange{
@@ -348,7 +372,7 @@ func (s *VCStorage) UpdateMission(ctx context.Context, id string, updates map[st
 
 		if err := s.StoreAgentEvent(ctx, event); err != nil {
 			// Log warning but don't fail mission update
-			fmt.Printf("Warning: failed to store mission_metadata_updated event: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: failed to store mission_metadata_updated event for %s: %v\n", id, err)
 		}
 	}
 
