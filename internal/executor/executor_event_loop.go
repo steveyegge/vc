@@ -239,6 +239,10 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 				}
 
 				// Enter degraded mode - only claim baseline issues until fixed
+				if !e.isDegraded() {
+					// Print banner only on state transition (entering degraded mode)
+					fmt.Printf("⚠️  Entering degraded mode: baseline failures detected\n")
+				}
 				e.setDegraded(true)
 
 			case FailureModeWarn:
@@ -261,6 +265,7 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 			return nil
 		}
 		if resolved {
+			// Print banner only on state transition (exiting degraded mode)
 			fmt.Printf("✓ Baseline issues resolved. Exiting degraded mode.\n")
 			e.setDegraded(false)
 		}
@@ -268,7 +273,11 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 
 	// While degraded, only claim baseline-failure issues
 	if e.isDegraded() {
-		fmt.Printf("⚠️  Degraded mode: only claiming baseline issues\n")
+		// Throttle log message: only print once per minute
+		if time.Since(e.degradedModeMsgLast) > time.Minute {
+			fmt.Printf("⚠️  Degraded mode: only claiming baseline issues\n")
+			e.degradedModeMsgLast = time.Now()
+		}
 		baselineIssues, err := e.store.GetIssuesByLabel(ctx, "baseline-failure")
 		if err != nil {
 			return fmt.Errorf("failed to get baseline issues: %w", err)

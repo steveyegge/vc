@@ -68,9 +68,10 @@ type Executor struct {
 	workingDir              string
 
 	// State
-	mu      sync.RWMutex
-	running bool
-	degradedMode bool // In degraded mode, only claim baseline issues
+	mu                   sync.RWMutex
+	running              bool
+	degradedMode         bool      // In degraded mode, only claim baseline issues
+	degradedModeMsgLast  time.Time // Last time we printed the degraded mode message (for throttling)
 }
 
 // isDegraded returns whether the executor is in degraded mode (thread-safe)
