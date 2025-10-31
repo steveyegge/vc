@@ -822,6 +822,138 @@ The AI understands your intent and uses these tools automatically.
 
 ---
 
+## 📊 Querying Quality Gates Progress (vc-267)
+
+Quality gates emit progress events during execution, allowing you to monitor long-running test suites and distinguish between stuck gates and slow gates.
+
+### Event Types
+
+Three event types track quality gates execution:
+
+1. **`quality_gates_started`** - When gates begin executing
+2. **`quality_gates_progress`** - Progress updates during execution (every 30s + per-gate)
+3. **`quality_gates_completed`** - When gates finish (success or failure)
+
+### Progress Event Data
+
+Progress events include:
+- **current_gate**: Which gate is running (test, lint, build)
+- **gates_completed**: Number of gates finished
+- **total_gates**: Total gates to run (usually 3: build, test, lint)
+- **elapsed_seconds**: Time since gates started
+- **start_time**: Timestamp when gates started
+
+### Quick Queries
+
+**View gate execution timeline for an issue:**
+```sql
+SELECT
+  timestamp,
+  type,
+  message,
+  json_extract(data, '$.current_gate') as gate,
+  json_extract(data, '$.gates_completed') as completed,
+  json_extract(data, '$.total_gates') as total,
+  json_extract(data, '$.elapsed_seconds') as elapsed_sec
+FROM agent_events
+WHERE issue_id = 'vc-XXX'
+  AND type IN ('quality_gates_started', 'quality_gates_progress', 'quality_gates_completed')
+ORDER BY timestamp;
+```
+
+**Find slow gate executions (>3 minutes):**
+```sql
+SELECT
+  issue_id,
+  MIN(timestamp) as start_time,
+  MAX(timestamp) as end_time,
+  (julianday(MAX(timestamp)) - julianday(MIN(timestamp))) * 86400 as duration_sec
+FROM agent_events
+WHERE type IN ('quality_gates_started', 'quality_gates_completed')
+GROUP BY issue_id
+HAVING duration_sec > 180
+ORDER BY duration_sec DESC;
+```
+
+**Gate progress during execution:**
+```sql
+SELECT
+  timestamp,
+  message,
+  json_extract(data, '$.current_gate') as current_gate,
+  json_extract(data, '$.gates_completed') as completed,
+  json_extract(data, '$.elapsed_seconds') as elapsed_sec
+FROM agent_events
+WHERE issue_id = 'vc-XXX'
+  AND type = 'quality_gates_progress'
+ORDER BY timestamp;
+```
+
+**Average gate execution time by gate type:**
+```sql
+SELECT
+  json_extract(data, '$.gate') as gate_type,
+  COUNT(*) as executions,
+  AVG(json_extract(data, '$.elapsed_seconds')) as avg_seconds
+FROM agent_events
+WHERE type = 'quality_gates_progress'
+  AND json_extract(data, '$.gate') IS NOT NULL
+  AND json_extract(data, '$.gate') != ''
+GROUP BY gate_type
+ORDER BY avg_seconds DESC;
+```
+
+**Detect stuck gates (no progress for >5 minutes):**
+```sql
+WITH latest_progress AS (
+  SELECT
+    issue_id,
+    MAX(timestamp) as last_progress,
+    (julianday('now') - julianday(MAX(timestamp))) * 86400 as seconds_since_progress
+  FROM agent_events
+  WHERE type IN ('quality_gates_started', 'quality_gates_progress')
+  GROUP BY issue_id
+)
+SELECT
+  issue_id,
+  last_progress,
+  ROUND(seconds_since_progress) as stuck_for_seconds
+FROM latest_progress
+WHERE seconds_since_progress > 300
+  AND issue_id NOT IN (
+    SELECT DISTINCT issue_id
+    FROM agent_events
+    WHERE type = 'quality_gates_completed'
+  )
+ORDER BY seconds_since_progress DESC;
+```
+
+### Why This Helps
+
+**Before vc-267:**
+- Gates started, no output for 5+ minutes
+- Activity feed showed "quality_gates_started" then silence
+- Appeared stuck, but was actually running slow tests
+- Users couldn't tell if gates were hung or just slow
+
+**After vc-267:**
+- Progress events every 30 seconds during execution
+- Per-gate progress when each gate starts
+- Activity feed shows which gate is running and elapsed time
+- Clear distinction between working vs stuck gates
+
+**Example event stream:**
+```
+10:00:00 quality_gates_started: Starting quality gates
+10:00:01 quality_gates_progress: Running build gate (0/3 completed, 1s elapsed)
+10:00:15 quality_gates_progress: Running test gate (1/3 completed, 15s elapsed)
+10:00:45 quality_gates_progress: Quality gates in progress (1/3 completed, 45s elapsed) [heartbeat]
+10:02:30 quality_gates_progress: Running lint gate (2/3 completed, 150s elapsed)
+10:02:45 quality_gates_completed: Quality gates completed (all passed)
+```
+
+---
+
 ## 📊 Querying Deduplication Metrics (vc-151)
 
 VC tracks comprehensive deduplication metrics in the `agent_events` table. All deduplication operations emit structured events that can be queried for analysis.

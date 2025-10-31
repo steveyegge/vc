@@ -529,6 +529,20 @@ type FieldChange struct {
 	NewValue interface{} `json:"new_value"`
 }
 
+// QualityGatesProgressData contains structured data for quality gates progress events (vc-267).
+type QualityGatesProgressData struct {
+	// CurrentGate is the gate currently being executed (test, lint, build)
+	CurrentGate string `json:"current_gate"`
+	// GatesCompleted is the number of gates completed so far
+	GatesCompleted int `json:"gates_completed"`
+	// TotalGates is the total number of gates to run
+	TotalGates int `json:"total_gates"`
+	// ElapsedSeconds is the time elapsed since gates started (in seconds)
+	ElapsedSeconds int64 `json:"elapsed_seconds"`
+	// Message is a human-readable progress message
+	Message string `json:"message,omitempty"`
+}
+
 // EventStore defines the interface for storing and retrieving agent events.
 type EventStore interface {
 	// StoreEvent stores a new event in the event store

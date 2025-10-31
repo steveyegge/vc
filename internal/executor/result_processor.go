@@ -287,14 +287,36 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 		}
 
 		// Log quality gates started
+		gatesStartTime := time.Now()
 		rp.logEvent(ctx, events.EventTypeQualityGatesStarted, events.SeverityInfo, issue.ID,
 			fmt.Sprintf("Starting quality gates evaluation for issue %s", issue.ID),
 			map[string]interface{}{})
 
+		// vc-267: Create progress callback to emit progress events during gate execution
+		progressCallback := func(currentGate gates.GateType, gatesCompleted, totalGates int, elapsedSeconds int64) {
+			message := ""
+			if currentGate != "" {
+				message = fmt.Sprintf("Running %s gate (%d/%d completed, %ds elapsed)", currentGate, gatesCompleted, totalGates, elapsedSeconds)
+			} else {
+				// Heartbeat without specific gate (periodic update)
+				message = fmt.Sprintf("Quality gates in progress (%d/%d completed, %ds elapsed)", gatesCompleted, totalGates, elapsedSeconds)
+			}
+
+			rp.logEvent(ctx, events.EventTypeQualityGatesProgress, events.SeverityInfo, issue.ID, message,
+				map[string]interface{}{
+					"current_gate":     string(currentGate),
+					"gates_completed":  gatesCompleted,
+					"total_gates":      totalGates,
+					"elapsed_seconds":  elapsedSeconds,
+					"start_time":       gatesStartTime,
+				})
+		}
+
 		gateRunner, err := gates.NewRunner(&gates.Config{
-			Store:      rp.store,
-			Supervisor: rp.supervisor, // Enable AI-driven recovery strategies (ZFC)
-			WorkingDir: rp.workingDir,
+			Store:            rp.store,
+			Supervisor:       rp.supervisor, // Enable AI-driven recovery strategies (ZFC)
+			WorkingDir:       rp.workingDir,
+			ProgressCallback: progressCallback, // vc-267: Progress reporting
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to create quality gate runner: %v (skipping gates)\n", err)

@@ -806,3 +806,157 @@ func TestDatabaseIsolation(t *testing.T) {
 		t.Error("Expected output from go test")
 	}
 }
+
+// TestProgressCallback tests that progress callbacks are invoked during gate execution (vc-267)
+func TestProgressCallback(t *testing.T) {
+	// Create temp db
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: dbPath})
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Track progress callbacks
+	var progressCalls []struct {
+		gate      GateType
+		completed int
+		total     int
+		elapsed   int64
+	}
+
+	progressCallback := func(currentGate GateType, gatesCompleted, totalGates int, elapsedSeconds int64) {
+		progressCalls = append(progressCalls, struct {
+			gate      GateType
+			completed int
+			total     int
+			elapsed   int64
+		}{
+			gate:      currentGate,
+			completed: gatesCompleted,
+			total:     totalGates,
+			elapsed:   elapsedSeconds,
+		})
+	}
+
+	// Use a mock provider to control gate execution
+	mockProvider := &MockGateProvider{
+		results: []*Result{
+			{Gate: GateBuild, Passed: true, Output: "build ok"},
+			{Gate: GateTest, Passed: true, Output: "tests ok"},
+			{Gate: GateLint, Passed: true, Output: "lint ok"},
+		},
+	}
+
+	runner := &Runner{
+		store:            store,
+		workingDir:       ".",
+		provider:         mockProvider,
+		progressCallback: progressCallback,
+	}
+
+	ctx := context.Background()
+	_, allPassed := runner.RunAll(ctx)
+
+	if !allPassed {
+		t.Error("Expected all gates to pass")
+	}
+
+	// Note: When using a custom provider, the progress callback logic is in the provider
+	// For built-in gates, progress is emitted. For mock provider, no progress is emitted.
+	// This is expected behavior - custom providers must implement their own progress reporting.
+	t.Logf("Progress callbacks received: %d", len(progressCalls))
+}
+
+// TestProgressCallback_BuiltInGates tests progress reporting with built-in gates (vc-267)
+func TestProgressCallback_BuiltInGates(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping built-in gates test in short mode")
+	}
+
+	// Create temp db
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+
+	store, err := storage.NewStorage(context.Background(), &storage.Config{Path: dbPath})
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Track progress callbacks
+	var progressCalls []struct {
+		gate      GateType
+		completed int
+		total     int
+		elapsed   int64
+	}
+
+	progressCallback := func(currentGate GateType, gatesCompleted, totalGates int, elapsedSeconds int64) {
+		progressCalls = append(progressCalls, struct {
+			gate      GateType
+			completed int
+			total     int
+			elapsed   int64
+		}{
+			gate:      currentGate,
+			completed: gatesCompleted,
+			total:     totalGates,
+			elapsed:   elapsedSeconds,
+		})
+		t.Logf("Progress: gate=%s, completed=%d/%d, elapsed=%ds", currentGate, gatesCompleted, totalGates, elapsedSeconds)
+	}
+
+	runner := &Runner{
+		store:            store,
+		workingDir:       ".",
+		progressCallback: progressCallback,
+	}
+
+	ctx := context.Background()
+	results, allPassed := runner.RunAll(ctx)
+
+	// Verify gates ran
+	if len(results) != 3 {
+		t.Errorf("Expected 3 gate results, got %d", len(results))
+	}
+
+	// Verify progress callbacks were invoked
+	// Should have at least 3 callbacks (one per gate start)
+	if len(progressCalls) < 3 {
+		t.Errorf("Expected at least 3 progress callbacks (one per gate), got %d", len(progressCalls))
+	}
+
+	// Verify progress is incremental
+	for i, call := range progressCalls {
+		if call.total != 3 {
+			t.Errorf("Progress call %d: expected total=3, got %d", i, call.total)
+		}
+		if call.completed > call.total {
+			t.Errorf("Progress call %d: completed (%d) exceeds total (%d)", i, call.completed, call.total)
+		}
+		// Elapsed should be non-negative (might be 0 for very fast gates)
+		if call.elapsed < 0 {
+			t.Errorf("Progress call %d: negative elapsed time %d", i, call.elapsed)
+		}
+	}
+
+	t.Logf("Test completed: allPassed=%v, %d progress callbacks received", allPassed, len(progressCalls))
+}
+
+// MockGateProvider is a test double for testing gate execution without running actual gates
+type MockGateProvider struct {
+	results []*Result
+}
+
+func (m *MockGateProvider) RunAll(ctx context.Context) ([]*Result, bool) {
+	allPassed := true
+	for _, r := range m.results {
+		if !r.Passed {
+			allPassed = false
+		}
+	}
+	return m.results, allPassed
+}

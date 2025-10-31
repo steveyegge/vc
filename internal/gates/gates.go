@@ -39,20 +39,29 @@ type GateProvider interface {
 	RunAll(ctx context.Context) ([]*Result, bool)
 }
 
+// ProgressCallback is called periodically during gate execution to report progress (vc-267)
+// currentGate: the gate currently being executed (test, lint, build)
+// gatesCompleted: number of gates completed so far
+// totalGates: total number of gates to run
+// elapsedSeconds: time elapsed since gates started
+type ProgressCallback func(currentGate GateType, gatesCompleted, totalGates int, elapsedSeconds int64)
+
 // Runner executes quality gates for an issue
 type Runner struct {
-	store      storage.Storage
-	supervisor *ai.Supervisor // Optional: for AI-driven recovery strategies
-	workingDir string
-	provider   GateProvider // Optional: pluggable gate provider (defaults to built-in)
+	store            storage.Storage
+	supervisor       *ai.Supervisor // Optional: for AI-driven recovery strategies
+	workingDir       string
+	provider         GateProvider     // Optional: pluggable gate provider (defaults to built-in)
+	progressCallback ProgressCallback // Optional: progress reporting callback (vc-267)
 }
 
 // Config holds quality gate runner configuration
 type Config struct {
-	Store      storage.Storage
-	Supervisor *ai.Supervisor // Optional: enables AI-driven recovery strategies (ZFC)
-	WorkingDir string         // Directory where gate commands are executed
-	Provider   GateProvider   // Optional: pluggable gate provider (defaults to built-in)
+	Store            storage.Storage
+	Supervisor       *ai.Supervisor   // Optional: enables AI-driven recovery strategies (ZFC)
+	WorkingDir       string           // Directory where gate commands are executed
+	Provider         GateProvider     // Optional: pluggable gate provider (defaults to built-in)
+	ProgressCallback ProgressCallback // Optional: progress reporting callback (vc-267)
 }
 
 // NewRunner creates a new quality gate runner
@@ -65,10 +74,11 @@ func NewRunner(cfg *Config) (*Runner, error) {
 	}
 
 	return &Runner{
-		store:      cfg.Store,
-		supervisor: cfg.Supervisor,
-		workingDir: cfg.WorkingDir,
-		provider:   cfg.Provider, // Can be nil (defaults to built-in implementation)
+		store:            cfg.Store,
+		supervisor:       cfg.Supervisor,
+		workingDir:       cfg.WorkingDir,
+		provider:         cfg.Provider,         // Can be nil (defaults to built-in implementation)
+		progressCallback: cfg.ProgressCallback, // Can be nil (no progress reporting)
 	}, nil
 }
 
@@ -101,17 +111,61 @@ func (r *Runner) RunAll(ctx context.Context) ([]*Result, bool) {
 		{GateLint, r.runLintGate},
 	}
 
-	for _, gate := range gates {
+	// vc-267: Track start time for progress reporting
+	startTime := time.Now()
+
+	// vc-267: Start progress heartbeat goroutine (if callback is configured)
+	// Emit progress events every 30 seconds while gates are running
+	var progressDone chan struct{}
+	var currentGate GateType
+	var gatesCompleted int
+	if r.progressCallback != nil {
+		progressDone = make(chan struct{})
+		totalGates := len(gates)
+
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ticker.C:
+					elapsed := int64(time.Since(startTime).Seconds())
+					// Report periodic heartbeat with current progress
+					r.progressCallback(currentGate, gatesCompleted, totalGates, elapsed)
+				case <-progressDone:
+					return
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+
+	for i, gate := range gates {
 		// Check if context is already canceled before starting gate (vc-119)
 		if ctx.Err() != nil {
 			// Context canceled - stop running gates and return what we have
 			fmt.Printf("Quality gates canceled: %v\n", ctx.Err())
+			if progressDone != nil {
+				close(progressDone)
+			}
 			return results, false
 		}
 
 		fmt.Printf("Running %s gate...\n", gate.gateType)
+
+		// vc-267: Report progress when starting each gate
+		if r.progressCallback != nil {
+			currentGate = gate.gateType
+			gatesCompleted = i
+			elapsed := int64(time.Since(startTime).Seconds())
+			r.progressCallback(gate.gateType, i, len(gates), elapsed)
+		}
+
 		result := gate.runFunc(ctx)
 		results = append(results, result)
+		gatesCompleted = i + 1
 
 		if !result.Passed {
 			allPassed = false
@@ -120,6 +174,11 @@ func (r *Runner) RunAll(ctx context.Context) ([]*Result, bool) {
 		}
 
 		fmt.Printf("Completed %s gate (passed=%v)\n", gate.gateType, result.Passed)
+	}
+
+	// vc-267: Stop progress heartbeat goroutine
+	if progressDone != nil {
+		close(progressDone)
 	}
 
 	return results, allPassed
