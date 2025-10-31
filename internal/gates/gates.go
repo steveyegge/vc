@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/steveyegge/vc/internal/ai"
@@ -116,12 +117,14 @@ func (r *Runner) RunAll(ctx context.Context) ([]*Result, bool) {
 
 	// vc-267: Start progress heartbeat goroutine (if callback is configured)
 	// Emit progress events every 30 seconds while gates are running
+	// Use atomic operations to avoid race conditions when reading progress state
 	var progressDone chan struct{}
-	var currentGate GateType
-	var gatesCompleted int
+	var currentGateIndex atomic.Int32 // -1 = not started, 0-2 = gate index
+	var gatesCompletedCount atomic.Int32
 	if r.progressCallback != nil {
 		progressDone = make(chan struct{})
 		totalGates := len(gates)
+		currentGateIndex.Store(-1) // Not started yet
 
 		go func() {
 			ticker := time.NewTicker(30 * time.Second)
@@ -131,8 +134,16 @@ func (r *Runner) RunAll(ctx context.Context) ([]*Result, bool) {
 				select {
 				case <-ticker.C:
 					elapsed := int64(time.Since(startTime).Seconds())
+					completed := int(gatesCompletedCount.Load())
+					gateIdx := int(currentGateIndex.Load())
+
 					// Report periodic heartbeat with current progress
-					r.progressCallback(currentGate, gatesCompleted, totalGates, elapsed)
+					// Empty gate type for heartbeat (vs per-gate progress)
+					var currentGate GateType
+					if gateIdx >= 0 && gateIdx < len(gates) {
+						currentGate = gates[gateIdx].gateType
+					}
+					r.progressCallback(currentGate, completed, totalGates, elapsed)
 				case <-progressDone:
 					return
 				case <-ctx.Done():
@@ -157,15 +168,18 @@ func (r *Runner) RunAll(ctx context.Context) ([]*Result, bool) {
 
 		// vc-267: Report progress when starting each gate
 		if r.progressCallback != nil {
-			currentGate = gate.gateType
-			gatesCompleted = i
+			currentGateIndex.Store(int32(i))
 			elapsed := int64(time.Since(startTime).Seconds())
 			r.progressCallback(gate.gateType, i, len(gates), elapsed)
 		}
 
 		result := gate.runFunc(ctx)
 		results = append(results, result)
-		gatesCompleted = i + 1
+
+		// vc-267: Update completed count atomically
+		if r.progressCallback != nil {
+			gatesCompletedCount.Store(int32(i + 1))
+		}
 
 		if !result.Passed {
 			allPassed = false
