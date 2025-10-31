@@ -3,16 +3,46 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
 
 // slugifyRegex is compiled once at package initialization for performance (vc-249)
 var slugifyRegex = regexp.MustCompile(`[^a-z0-9]+`)
+
+// logSandboxEvent creates and stores an event for sandbox lifecycle observability (vc-265)
+func logSandboxEvent(ctx context.Context, store storage.Storage, eventType events.EventType, severity events.EventSeverity, missionID, message string, data map[string]interface{}) {
+	// Skip logging if context is canceled (e.g., during shutdown)
+	if ctx.Err() != nil {
+		return
+	}
+
+	event := &events.AgentEvent{
+		ID:         uuid.New().String(),
+		Type:       eventType,
+		Timestamp:  time.Now(),
+		IssueID:    missionID,
+		ExecutorID: "", // Sandbox operations are not tied to specific executor
+		AgentID:    "", // Sandbox operations are not tied to specific agent
+		Severity:   severity,
+		Message:    message,
+		Data:       data,
+		SourceLine: 0, // Not applicable for sandbox lifecycle events
+	}
+
+	if err := store.StoreAgentEvent(ctx, event); err != nil {
+		// Log error but don't fail sandbox operations
+		fmt.Fprintf(os.Stderr, "warning: failed to store sandbox event: %v\n", err)
+	}
+}
 
 // gitBranchExists checks if a git branch exists in the repository
 func gitBranchExists(ctx context.Context, repoPath, branchName string) (bool, error) {
@@ -85,11 +115,21 @@ func reconstructSandbox(ctx context.Context, m Manager, mission *types.Mission) 
 // This function is idempotent: calling it multiple times for the same mission
 // returns the existing sandbox if one already exists.
 func CreateMissionSandbox(ctx context.Context, manager Manager, store storage.Storage, missionID string) (*Sandbox, error) {
+	startTime := time.Now()
+
 	// 1. Get mission metadata to generate stable paths
 	mission, err := store.GetMission(ctx, missionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mission %s: %w", missionID, err)
 	}
+
+	// Emit sandbox creation started event (vc-265)
+	logSandboxEvent(ctx, store, events.EventTypeSandboxCreationStarted, events.SeverityInfo, missionID,
+		fmt.Sprintf("Starting sandbox creation for mission %s", missionID),
+		map[string]interface{}{
+			"mission_id":  missionID,
+			"base_branch": "main",
+		})
 
 	// 2. Check if sandbox already exists (idempotency)
 	if mission.SandboxPath != "" && mission.BranchName != "" {
@@ -134,12 +174,42 @@ func CreateMissionSandbox(ctx context.Context, manager Manager, store storage.St
 		// ParentRepo and SandboxRoot will be filled in by manager from its config
 		StablePaths: true,      // Use stable, predictable paths for missions
 		TitleSlug:   titleSlug, // For branch name generation
+		BaseBranch:  "main",    // Default base branch
 	}
 
 	sandbox, err := manager.Create(ctx, cfg)
 	if err != nil {
+		// Emit creation failed event (vc-265)
+		duration := time.Since(startTime)
+		logSandboxEvent(ctx, store, events.EventTypeSandboxCreationCompleted, events.SeverityError, missionID,
+			fmt.Sprintf("Sandbox creation failed for mission %s: %v", missionID, err),
+			map[string]interface{}{
+				"mission_id":  missionID,
+				"success":     false,
+				"error":       err.Error(),
+				"duration_ms": duration.Milliseconds(),
+			})
 		return nil, fmt.Errorf("failed to create sandbox: %w", err)
 	}
+
+	// Emit worktree created event (vc-265)
+	logSandboxEvent(ctx, store, events.EventTypeGitWorktreeCreated, events.SeverityInfo, missionID,
+		fmt.Sprintf("Git worktree created at %s for mission %s", sandbox.Path, missionID),
+		map[string]interface{}{
+			"mission_id":    missionID,
+			"worktree_path": sandbox.Path,
+			"base_branch":   "main",
+		})
+
+	// Emit branch created event (vc-265)
+	logSandboxEvent(ctx, store, events.EventTypeGitBranchCreated, events.SeverityInfo, missionID,
+		fmt.Sprintf("Git branch %s created for mission %s", sandbox.GitBranch, missionID),
+		map[string]interface{}{
+			"mission_id":    missionID,
+			"branch_name":   sandbox.GitBranch,
+			"base_branch":   "main",
+			"worktree_path": sandbox.Path,
+		})
 
 	// 4. Store metadata in vc_mission_state
 	// sandbox.Path and sandbox.GitBranch are now set by manager with stable paths
@@ -151,8 +221,35 @@ func CreateMissionSandbox(ctx context.Context, manager Manager, store storage.St
 	if err := store.UpdateMission(ctx, missionID, updates, "system"); err != nil {
 		// Failed to store metadata - clean up the sandbox
 		_ = manager.Cleanup(ctx, sandbox) // Best-effort cleanup
+
+		// Emit creation failed event (vc-265)
+		duration := time.Since(startTime)
+		logSandboxEvent(ctx, store, events.EventTypeSandboxCreationCompleted, events.SeverityError, missionID,
+			fmt.Sprintf("Failed to store sandbox metadata for mission %s: %v", missionID, err),
+			map[string]interface{}{
+				"mission_id":   missionID,
+				"sandbox_id":   sandbox.ID,
+				"sandbox_path": sandbox.Path,
+				"branch_name":  sandbox.GitBranch,
+				"success":      false,
+				"error":        err.Error(),
+				"duration_ms":  duration.Milliseconds(),
+			})
 		return nil, fmt.Errorf("failed to store sandbox metadata: %w", err)
 	}
+
+	// Emit creation completed event (vc-265)
+	duration := time.Since(startTime)
+	logSandboxEvent(ctx, store, events.EventTypeSandboxCreationCompleted, events.SeverityInfo, missionID,
+		fmt.Sprintf("Sandbox creation completed for mission %s in %dms", missionID, duration.Milliseconds()),
+		map[string]interface{}{
+			"mission_id":   missionID,
+			"sandbox_id":   sandbox.ID,
+			"sandbox_path": sandbox.Path,
+			"branch_name":  sandbox.GitBranch,
+			"success":      true,
+			"duration_ms":  duration.Milliseconds(),
+		})
 
 	return sandbox, nil
 }
@@ -185,6 +282,8 @@ func slugify(s string) string {
 // CleanupMissionSandbox removes a mission sandbox and clears metadata.
 // This is called when a mission is closed or abandoned.
 func CleanupMissionSandbox(ctx context.Context, manager Manager, store storage.Storage, missionID string) error {
+	startTime := time.Now()
+
 	// 1. Get mission metadata to find sandbox
 	mission, err := store.GetMission(ctx, missionID)
 	if err != nil {
@@ -196,9 +295,33 @@ func CleanupMissionSandbox(ctx context.Context, manager Manager, store storage.S
 		return nil // No sandbox to clean up
 	}
 
+	// Emit cleanup started event (vc-265)
+	sandboxID := fmt.Sprintf("mission-%s", missionID)
+	logSandboxEvent(ctx, store, events.EventTypeSandboxCleanupStarted, events.SeverityInfo, missionID,
+		fmt.Sprintf("Starting sandbox cleanup for mission %s", missionID),
+		map[string]interface{}{
+			"mission_id":   missionID,
+			"sandbox_id":   sandboxID,
+			"sandbox_path": mission.SandboxPath,
+			"branch_name":  mission.BranchName,
+		})
+
 	// 3. Find sandbox in manager's active list
 	sandboxes, err := manager.List(ctx)
 	if err != nil {
+		// Emit cleanup failed event (vc-265)
+		duration := time.Since(startTime)
+		logSandboxEvent(ctx, store, events.EventTypeSandboxCleanupCompleted, events.SeverityError, missionID,
+			fmt.Sprintf("Sandbox cleanup failed for mission %s: %v", missionID, err),
+			map[string]interface{}{
+				"mission_id":   missionID,
+				"sandbox_id":   sandboxID,
+				"sandbox_path": mission.SandboxPath,
+				"branch_name":  mission.BranchName,
+				"success":      false,
+				"error":        err.Error(),
+				"duration_ms":  duration.Milliseconds(),
+			})
 		return fmt.Errorf("failed to list sandboxes: %w", err)
 	}
 
@@ -213,8 +336,39 @@ func CleanupMissionSandbox(ctx context.Context, manager Manager, store storage.S
 	// 4. Clean up sandbox if found
 	if sandbox != nil {
 		if err := manager.Cleanup(ctx, sandbox); err != nil {
+			// Emit cleanup failed event (vc-265)
+			duration := time.Since(startTime)
+			logSandboxEvent(ctx, store, events.EventTypeSandboxCleanupCompleted, events.SeverityError, missionID,
+				fmt.Sprintf("Sandbox cleanup failed for mission %s: %v", missionID, err),
+				map[string]interface{}{
+					"mission_id":   missionID,
+					"sandbox_id":   sandbox.ID,
+					"sandbox_path": sandbox.Path,
+					"branch_name":  sandbox.GitBranch,
+					"success":      false,
+					"error":        err.Error(),
+					"duration_ms":  duration.Milliseconds(),
+				})
 			return fmt.Errorf("failed to cleanup sandbox: %w", err)
 		}
+
+		// Emit worktree removed event (vc-265)
+		logSandboxEvent(ctx, store, events.EventTypeGitWorktreeRemoved, events.SeverityInfo, missionID,
+			fmt.Sprintf("Git worktree removed at %s for mission %s", sandbox.Path, missionID),
+			map[string]interface{}{
+				"mission_id":    missionID,
+				"worktree_path": sandbox.Path,
+				"success":       true,
+			})
+
+		// Emit branch deleted event (vc-265)
+		logSandboxEvent(ctx, store, events.EventTypeGitBranchDeleted, events.SeverityInfo, missionID,
+			fmt.Sprintf("Git branch %s deleted for mission %s", sandbox.GitBranch, missionID),
+			map[string]interface{}{
+				"mission_id":  missionID,
+				"branch_name": sandbox.GitBranch,
+				"success":     true,
+			})
 	}
 
 	// 5. Clear metadata from vc_mission_state (even if sandbox wasn't in manager)
@@ -224,8 +378,34 @@ func CleanupMissionSandbox(ctx context.Context, manager Manager, store storage.S
 	}
 
 	if err := store.UpdateMission(ctx, missionID, updates, "system"); err != nil {
+		// Emit cleanup failed event (vc-265)
+		duration := time.Since(startTime)
+		logSandboxEvent(ctx, store, events.EventTypeSandboxCleanupCompleted, events.SeverityError, missionID,
+			fmt.Sprintf("Failed to clear sandbox metadata for mission %s: %v", missionID, err),
+			map[string]interface{}{
+				"mission_id":   missionID,
+				"sandbox_id":   sandboxID,
+				"sandbox_path": mission.SandboxPath,
+				"branch_name":  mission.BranchName,
+				"success":      false,
+				"error":        err.Error(),
+				"duration_ms":  duration.Milliseconds(),
+			})
 		return fmt.Errorf("failed to clear sandbox metadata: %w", err)
 	}
+
+	// Emit cleanup completed event (vc-265)
+	duration := time.Since(startTime)
+	logSandboxEvent(ctx, store, events.EventTypeSandboxCleanupCompleted, events.SeverityInfo, missionID,
+		fmt.Sprintf("Sandbox cleanup completed for mission %s in %dms", missionID, duration.Milliseconds()),
+		map[string]interface{}{
+			"mission_id":   missionID,
+			"sandbox_id":   sandboxID,
+			"sandbox_path": mission.SandboxPath,
+			"branch_name":  mission.BranchName,
+			"success":      true,
+			"duration_ms":  duration.Milliseconds(),
+		})
 
 	return nil
 }

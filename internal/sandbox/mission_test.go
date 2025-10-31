@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -559,6 +560,192 @@ func TestCleanupMissionSandbox(t *testing.T) {
 		err := CleanupMissionSandbox(ctx, manager, mainDB, mission2.ID)
 		if err != nil {
 			t.Errorf("Expected no error for mission without sandbox, got %v", err)
+		}
+	})
+}
+
+// TestSandboxLifecycleEvents verifies that sandbox operations emit proper lifecycle events (vc-265)
+func TestSandboxLifecycleEvents(t *testing.T) {
+	// Setup test repository
+	repoPath, cleanupRepo := setupTestRepo(t)
+	defer cleanupRepo()
+
+	// Setup test database
+	mainDB, cleanupDB := setupTestDB(t, repoPath)
+	defer cleanupDB()
+
+	// Create sandbox manager
+	sandboxRoot := filepath.Join(repoPath, ".sandboxes")
+	cfg := Config{
+		SandboxRoot: sandboxRoot,
+		ParentRepo:  repoPath,
+		MainDB:      mainDB,
+	}
+
+	manager, err := NewManager(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create manager: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Create test mission
+	mission := &types.Mission{
+		Issue: types.Issue{
+			Title:        "Mission for event testing",
+			Description:  "Test lifecycle events",
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypeMission,
+			Status:       types.StatusOpen,
+			Priority:     1,
+		},
+	}
+
+	if err := mainDB.CreateMission(ctx, mission, "test"); err != nil {
+		t.Fatalf("Failed to create mission: %v", err)
+	}
+
+	t.Run("create sandbox emits lifecycle events", func(t *testing.T) {
+		// Create sandbox
+		sandbox, err := CreateMissionSandbox(ctx, manager, mainDB, mission.ID)
+		if err != nil {
+			t.Fatalf("CreateMissionSandbox() failed: %v", err)
+		}
+
+		// Retrieve events for this mission
+		missionEvents, err := mainDB.GetAgentEventsByIssue(ctx, mission.ID)
+		if err != nil {
+			t.Fatalf("Failed to get events: %v", err)
+		}
+
+		// Verify we have events
+		if len(missionEvents) == 0 {
+			t.Fatal("Expected events to be emitted, got none")
+		}
+
+		// Check for expected event types
+		eventTypes := make(map[events.EventType]bool)
+		for _, evt := range missionEvents {
+			eventTypes[evt.Type] = true
+		}
+
+		expectedTypes := []events.EventType{
+			events.EventTypeSandboxCreationStarted,
+			events.EventTypeGitWorktreeCreated,
+			events.EventTypeGitBranchCreated,
+			events.EventTypeSandboxCreationCompleted,
+		}
+
+		for _, expectedType := range expectedTypes {
+			if !eventTypes[expectedType] {
+				t.Errorf("Expected event type %s not found in emitted events", expectedType)
+			}
+		}
+
+		// Verify creation completed event has correct data
+		var completedEvent *events.AgentEvent
+		for _, evt := range missionEvents {
+			if evt.Type == events.EventTypeSandboxCreationCompleted {
+				completedEvent = evt
+				break
+			}
+		}
+
+		if completedEvent == nil {
+			t.Fatal("Expected SandboxCreationCompleted event, not found")
+		}
+
+		// Verify event data
+		if completedEvent.Data["mission_id"] != mission.ID {
+			t.Errorf("Expected mission_id %s, got %v", mission.ID, completedEvent.Data["mission_id"])
+		}
+		if completedEvent.Data["sandbox_id"] != sandbox.ID {
+			t.Errorf("Expected sandbox_id %s, got %v", sandbox.ID, completedEvent.Data["sandbox_id"])
+		}
+		if completedEvent.Data["success"] != true {
+			t.Errorf("Expected success=true, got %v", completedEvent.Data["success"])
+		}
+
+		// Verify branch created event has correct data
+		var branchEvent *events.AgentEvent
+		for _, evt := range missionEvents {
+			if evt.Type == events.EventTypeGitBranchCreated {
+				branchEvent = evt
+				break
+			}
+		}
+
+		if branchEvent == nil {
+			t.Fatal("Expected GitBranchCreated event, not found")
+		}
+
+		if branchEvent.Data["branch_name"] != sandbox.GitBranch {
+			t.Errorf("Expected branch_name %s, got %v", sandbox.GitBranch, branchEvent.Data["branch_name"])
+		}
+	})
+
+	t.Run("cleanup sandbox emits lifecycle events", func(t *testing.T) {
+		// Get initial event count
+		initialEvents, err := mainDB.GetAgentEventsByIssue(ctx, mission.ID)
+		if err != nil {
+			t.Fatalf("Failed to get initial events: %v", err)
+		}
+		initialCount := len(initialEvents)
+
+		// Cleanup sandbox
+		err = CleanupMissionSandbox(ctx, manager, mainDB, mission.ID)
+		if err != nil {
+			t.Fatalf("CleanupMissionSandbox() failed: %v", err)
+		}
+
+		// Retrieve events again
+		finalEvents, err := mainDB.GetAgentEventsByIssue(ctx, mission.ID)
+		if err != nil {
+			t.Fatalf("Failed to get final events: %v", err)
+		}
+
+		// Verify new events were added
+		if len(finalEvents) <= initialCount {
+			t.Errorf("Expected new events after cleanup, got %d events (was %d)", len(finalEvents), initialCount)
+		}
+
+		// Get only the new events
+		newEvents := finalEvents[initialCount:]
+
+		// Check for expected cleanup event types
+		cleanupEventTypes := make(map[events.EventType]bool)
+		for _, evt := range newEvents {
+			cleanupEventTypes[evt.Type] = true
+		}
+
+		expectedCleanupTypes := []events.EventType{
+			events.EventTypeSandboxCleanupStarted,
+			events.EventTypeGitWorktreeRemoved,
+			events.EventTypeGitBranchDeleted,
+			events.EventTypeSandboxCleanupCompleted,
+		}
+
+		for _, expectedType := range expectedCleanupTypes {
+			if !cleanupEventTypes[expectedType] {
+				t.Errorf("Expected cleanup event type %s not found in emitted events", expectedType)
+			}
+		}
+
+		// Verify cleanup completed event has correct data
+		var completedEvent *events.AgentEvent
+		for _, evt := range newEvents {
+			if evt.Type == events.EventTypeSandboxCleanupCompleted {
+				completedEvent = evt
+				break
+			}
+		}
+
+		if completedEvent == nil {
+			t.Fatal("Expected SandboxCleanupCompleted event, not found")
+		}
+
+		if completedEvent.Data["success"] != true {
+			t.Errorf("Expected success=true, got %v", completedEvent.Data["success"])
 		}
 	})
 }

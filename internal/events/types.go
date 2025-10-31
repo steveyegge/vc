@@ -117,6 +117,24 @@ const (
 	EventTypeQualityGatePass EventType = "quality_gate_pass"
 	// EventTypeQualityGateFail indicates one or more quality gates failed for a mission
 	EventTypeQualityGateFail EventType = "quality_gate_fail"
+
+	// Mission sandbox lifecycle events (vc-265)
+	// EventTypeSandboxCreationStarted indicates sandbox creation began
+	EventTypeSandboxCreationStarted EventType = "sandbox_creation_started"
+	// EventTypeGitWorktreeCreated indicates git worktree was successfully created
+	EventTypeGitWorktreeCreated EventType = "git_worktree_created"
+	// EventTypeGitBranchCreated indicates git branch was successfully created
+	EventTypeGitBranchCreated EventType = "git_branch_created"
+	// EventTypeSandboxCreationCompleted indicates sandbox creation completed
+	EventTypeSandboxCreationCompleted EventType = "sandbox_creation_completed"
+	// EventTypeSandboxCleanupStarted indicates sandbox cleanup began
+	EventTypeSandboxCleanupStarted EventType = "sandbox_cleanup_started"
+	// EventTypeGitBranchDeleted indicates git branch was deleted
+	EventTypeGitBranchDeleted EventType = "git_branch_deleted"
+	// EventTypeGitWorktreeRemoved indicates git worktree was removed
+	EventTypeGitWorktreeRemoved EventType = "git_worktree_removed"
+	// EventTypeSandboxCleanupCompleted indicates sandbox cleanup completed
+	EventTypeSandboxCleanupCompleted EventType = "sandbox_cleanup_completed"
 )
 
 // EventSeverity represents the severity level of an event.
@@ -365,6 +383,108 @@ type LabelStateTransitionData struct {
 	Actor string `json:"actor,omitempty"`
 	// MissionID is the mission this transition applies to (if applicable)
 	MissionID string `json:"mission_id,omitempty"`
+}
+
+// SandboxCreationStartedData contains structured data for sandbox creation start events (vc-265).
+type SandboxCreationStartedData struct {
+	// MissionID is the mission being worked on
+	MissionID string `json:"mission_id"`
+	// BaseBranch is the base branch for the mission branch
+	BaseBranch string `json:"base_branch,omitempty"`
+}
+
+// GitWorktreeCreatedData contains structured data for git worktree creation events (vc-265).
+type GitWorktreeCreatedData struct {
+	// MissionID is the mission being worked on
+	MissionID string `json:"mission_id"`
+	// WorktreePath is the path to the created worktree
+	WorktreePath string `json:"worktree_path"`
+	// BaseBranch is the base branch for the worktree
+	BaseBranch string `json:"base_branch,omitempty"`
+}
+
+// GitBranchCreatedData contains structured data for git branch creation events (vc-265).
+type GitBranchCreatedData struct {
+	// MissionID is the mission being worked on
+	MissionID string `json:"mission_id"`
+	// BranchName is the name of the created branch
+	BranchName string `json:"branch_name"`
+	// BaseBranch is the base branch for the new branch
+	BaseBranch string `json:"base_branch,omitempty"`
+	// WorktreePath is the path to the worktree
+	WorktreePath string `json:"worktree_path"`
+}
+
+// SandboxCreationCompletedData contains structured data for sandbox creation completion events (vc-265).
+type SandboxCreationCompletedData struct {
+	// MissionID is the mission being worked on
+	MissionID string `json:"mission_id"`
+	// SandboxID is the unique ID for this sandbox
+	SandboxID string `json:"sandbox_id"`
+	// SandboxPath is the path to the sandbox directory
+	SandboxPath string `json:"sandbox_path"`
+	// BranchName is the name of the mission branch
+	BranchName string `json:"branch_name"`
+	// DurationMs is the time taken to create the sandbox in milliseconds
+	DurationMs int64 `json:"duration_ms"`
+	// Success indicates whether creation succeeded
+	Success bool `json:"success"`
+	// Error contains the error message if creation failed
+	Error string `json:"error,omitempty"`
+}
+
+// SandboxCleanupStartedData contains structured data for sandbox cleanup start events (vc-265).
+type SandboxCleanupStartedData struct {
+	// MissionID is the mission being worked on
+	MissionID string `json:"mission_id"`
+	// SandboxID is the unique ID for this sandbox
+	SandboxID string `json:"sandbox_id"`
+	// SandboxPath is the path to the sandbox directory
+	SandboxPath string `json:"sandbox_path"`
+	// BranchName is the name of the mission branch
+	BranchName string `json:"branch_name"`
+}
+
+// GitBranchDeletedData contains structured data for git branch deletion events (vc-265).
+type GitBranchDeletedData struct {
+	// MissionID is the mission being worked on
+	MissionID string `json:"mission_id"`
+	// BranchName is the name of the deleted branch
+	BranchName string `json:"branch_name"`
+	// Success indicates whether deletion succeeded
+	Success bool `json:"success"`
+	// Error contains the error message if deletion failed
+	Error string `json:"error,omitempty"`
+}
+
+// GitWorktreeRemovedData contains structured data for git worktree removal events (vc-265).
+type GitWorktreeRemovedData struct {
+	// MissionID is the mission being worked on
+	MissionID string `json:"mission_id"`
+	// WorktreePath is the path to the removed worktree
+	WorktreePath string `json:"worktree_path"`
+	// Success indicates whether removal succeeded
+	Success bool `json:"success"`
+	// Error contains the error message if removal failed
+	Error string `json:"error,omitempty"`
+}
+
+// SandboxCleanupCompletedData contains structured data for sandbox cleanup completion events (vc-265).
+type SandboxCleanupCompletedData struct {
+	// MissionID is the mission being worked on
+	MissionID string `json:"mission_id"`
+	// SandboxID is the unique ID for this sandbox
+	SandboxID string `json:"sandbox_id"`
+	// SandboxPath is the path to the sandbox directory
+	SandboxPath string `json:"sandbox_path"`
+	// BranchName is the name of the mission branch
+	BranchName string `json:"branch_name"`
+	// DurationMs is the time taken to cleanup the sandbox in milliseconds
+	DurationMs int64 `json:"duration_ms"`
+	// Success indicates whether cleanup succeeded
+	Success bool `json:"success"`
+	// Error contains the error message if cleanup failed
+	Error string `json:"error,omitempty"`
 }
 
 // EventStore defines the interface for storing and retrieving agent events.
