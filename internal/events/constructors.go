@@ -173,3 +173,60 @@ func NewQualityGatesProgressEvent(issueID, executorID, agentID string, severity 
 	}
 	return event, nil
 }
+
+// NewEpicCompletedEvent creates a new AgentEvent for epic completion with type-safe data (vc-275).
+func NewEpicCompletedEvent(issueID, executorID, agentID string, severity EventSeverity, message string, data EpicCompletedData) (*AgentEvent, error) {
+	event := &AgentEvent{
+		ID:         uuid.New().String(),
+		Type:       EventTypeEpicCompleted,
+		Timestamp:  time.Now(),
+		IssueID:    issueID,
+		ExecutorID: executorID,
+		AgentID:    agentID,
+		Severity:   severity,
+		Message:    message,
+		SourceLine: 0,
+	}
+	if err := event.SetEpicCompletedData(data); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
+// NewEpicCleanupStartedEvent creates a new AgentEvent for epic cleanup start with type-safe data (vc-275).
+func NewEpicCleanupStartedEvent(issueID, executorID, agentID string, severity EventSeverity, message string, data EpicCleanupStartedData) (*AgentEvent, error) {
+	event := &AgentEvent{
+		ID:         uuid.New().String(),
+		Type:       EventTypeEpicCleanupStarted,
+		Timestamp:  time.Now(),
+		IssueID:    issueID,
+		ExecutorID: executorID,
+		AgentID:    agentID,
+		Severity:   severity,
+		Message:    message,
+		SourceLine: 0,
+	}
+	if err := event.SetEpicCleanupStartedData(data); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
+// NewEpicCleanupCompletedEvent creates a new AgentEvent for epic cleanup completion with type-safe data (vc-275).
+func NewEpicCleanupCompletedEvent(issueID, executorID, agentID string, severity EventSeverity, message string, data EpicCleanupCompletedData) (*AgentEvent, error) {
+	event := &AgentEvent{
+		ID:         uuid.New().String(),
+		Type:       EventTypeEpicCleanupCompleted,
+		Timestamp:  time.Now(),
+		IssueID:    issueID,
+		ExecutorID: executorID,
+		AgentID:    agentID,
+		Severity:   severity,
+		Message:    message,
+		SourceLine: 0,
+	}
+	if err := event.SetEpicCleanupCompletedData(data); err != nil {
+		return nil, err
+	}
+	return event, nil
+}

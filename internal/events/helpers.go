@@ -216,3 +216,60 @@ func (e *AgentEvent) GetQualityGatesProgressData() (*QualityGatesProgressData, e
 	}
 	return &data, nil
 }
+
+// SetEpicCompletedData sets the Data field with EpicCompletedData in a type-safe way (vc-275).
+func (e *AgentEvent) SetEpicCompletedData(data EpicCompletedData) error {
+	dataMap, err := structToMap(data)
+	if err != nil {
+		return fmt.Errorf("failed to convert EpicCompletedData: %w", err)
+	}
+	e.Data = dataMap
+	return nil
+}
+
+// GetEpicCompletedData retrieves EpicCompletedData from the Data field (vc-275).
+func (e *AgentEvent) GetEpicCompletedData() (*EpicCompletedData, error) {
+	var data EpicCompletedData
+	if err := mapToStruct(e.Data, &data); err != nil {
+		return nil, fmt.Errorf("failed to parse EpicCompletedData: %w", err)
+	}
+	return &data, nil
+}
+
+// SetEpicCleanupStartedData sets the Data field with EpicCleanupStartedData in a type-safe way (vc-275).
+func (e *AgentEvent) SetEpicCleanupStartedData(data EpicCleanupStartedData) error {
+	dataMap, err := structToMap(data)
+	if err != nil {
+		return fmt.Errorf("failed to convert EpicCleanupStartedData: %w", err)
+	}
+	e.Data = dataMap
+	return nil
+}
+
+// GetEpicCleanupStartedData retrieves EpicCleanupStartedData from the Data field (vc-275).
+func (e *AgentEvent) GetEpicCleanupStartedData() (*EpicCleanupStartedData, error) {
+	var data EpicCleanupStartedData
+	if err := mapToStruct(e.Data, &data); err != nil {
+		return nil, fmt.Errorf("failed to parse EpicCleanupStartedData: %w", err)
+	}
+	return &data, nil
+}
+
+// SetEpicCleanupCompletedData sets the Data field with EpicCleanupCompletedData in a type-safe way (vc-275).
+func (e *AgentEvent) SetEpicCleanupCompletedData(data EpicCleanupCompletedData) error {
+	dataMap, err := structToMap(data)
+	if err != nil {
+		return fmt.Errorf("failed to convert EpicCleanupCompletedData: %w", err)
+	}
+	e.Data = dataMap
+	return nil
+}
+
+// GetEpicCleanupCompletedData retrieves EpicCleanupCompletedData from the Data field (vc-275).
+func (e *AgentEvent) GetEpicCleanupCompletedData() (*EpicCleanupCompletedData, error) {
+	var data EpicCleanupCompletedData
+	if err := mapToStruct(e.Data, &data); err != nil {
+		return nil, fmt.Errorf("failed to parse EpicCleanupCompletedData: %w", err)
+	}
+	return &data, nil
+}

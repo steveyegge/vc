@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/labels"
@@ -18,7 +17,8 @@ import (
 // checkEpicCompletion checks if an issue's parent epic is now complete
 // Uses AI to assess completion based on objectives, not just counting closed children
 // If the epic is closed and is a mission, automatically cleans up the mission sandbox (vc-245)
-func checkEpicCompletion(ctx context.Context, store storage.Storage, supervisor *ai.Supervisor, sandboxMgr sandbox.Manager, issueID string) error {
+// vc-276: Added instanceID parameter to properly attribute events to the executor instance
+func checkEpicCompletion(ctx context.Context, store storage.Storage, supervisor *ai.Supervisor, sandboxMgr sandbox.Manager, instanceID string, issueID string) error {
 	// Get the issue to check its parent
 	issue, err := store.GetIssue(ctx, issueID)
 	if err != nil {
@@ -38,7 +38,7 @@ func checkEpicCompletion(ctx context.Context, store storage.Storage, supervisor 
 	for _, dep := range deps {
 		if dep.IssueType == types.TypeEpic {
 			// Check if all children of this epic are closed
-			closed, err := checkAndCloseEpicIfComplete(ctx, store, supervisor, dep.ID)
+			closed, err := checkAndCloseEpicIfComplete(ctx, store, supervisor, instanceID, dep.ID)
 			if err != nil {
 				// Log but don't fail - this is a best-effort check
 				fmt.Printf("Warning: failed to check epic completion for %s: %v\n", dep.ID, err)
@@ -47,7 +47,7 @@ func checkEpicCompletion(ctx context.Context, store storage.Storage, supervisor 
 
 			// If epic was closed, check if it's a mission and clean up sandbox (vc-245)
 			if closed && sandboxMgr != nil {
-				if err := cleanupMissionSandboxIfComplete(ctx, store, sandboxMgr, dep.ID); err != nil {
+				if err := cleanupMissionSandboxIfComplete(ctx, store, sandboxMgr, instanceID, dep.ID); err != nil {
 					// Log but don't fail - this is best-effort
 					fmt.Printf("Warning: failed to cleanup mission sandbox for %s: %v\n", dep.ID, err)
 				}
@@ -61,7 +61,8 @@ func checkEpicCompletion(ctx context.Context, store storage.Storage, supervisor 
 // checkAndCloseEpicIfComplete checks if an epic is complete and closes it if so
 // Uses AI assessment instead of hardcoded "all children closed" logic (ZFC compliance)
 // Returns (closed bool, error) indicating whether the epic was closed
-func checkAndCloseEpicIfComplete(ctx context.Context, store storage.Storage, supervisor *ai.Supervisor, epicID string) (bool, error) {
+// vc-276: Added instanceID parameter to properly attribute events to the executor instance
+func checkAndCloseEpicIfComplete(ctx context.Context, store storage.Storage, supervisor *ai.Supervisor, instanceID string, epicID string) (bool, error) {
 	// Get the epic
 	epic, err := store.GetIssue(ctx, epicID)
 	if err != nil {
@@ -126,18 +127,18 @@ func checkAndCloseEpicIfComplete(ctx context.Context, store storage.Storage, sup
 
 			fmt.Printf("✓ Closed epic %s: %s\n", epicID, epic.Title)
 
-			// vc-268: Emit epic_completed event
-			eventData := map[string]interface{}{
-				"epic_id":            epicID,
-				"epic_title":         epic.Title,
-				"children_completed": len(children),
-				"completion_method":  "ai_assessment",
-				"confidence":         assessment.Confidence,
-				"is_mission":         epic.IssueSubtype == types.SubtypeMission,
-				"actor":              "ai-supervisor",
+			// vc-268: Emit epic_completed event (vc-275: using typed constructor)
+			eventData := events.EpicCompletedData{
+				EpicID:            epicID,
+				EpicTitle:         epic.Title,
+				ChildrenCompleted: len(children),
+				CompletionMethod:  "ai_assessment",
+				Confidence:        assessment.Confidence,
+				IsMission:         epic.IssueSubtype == types.SubtypeMission,
+				Actor:             "ai-supervisor",
 			}
 			message := fmt.Sprintf("Epic %s completed: %s (AI assessment, confidence: %.2f)", epicID, epic.Title, assessment.Confidence)
-			logEpicEvent(ctx, store, events.EventTypeEpicCompleted, events.SeverityInfo, epicID, "executor", message, eventData)
+			logEpicCompletedEvent(ctx, store, epicID, instanceID, message, eventData)
 
 			// vc-218: If this is a mission epic, transition to needs-quality-gates state
 			if epic.IssueSubtype == types.SubtypeMission {
@@ -181,18 +182,18 @@ func checkAndCloseEpicIfComplete(ctx context.Context, store storage.Storage, sup
 
 		fmt.Printf("✓ Closed epic %s: %s\n", epicID, epic.Title)
 
-		// vc-268: Emit epic_completed event
-		eventData := map[string]interface{}{
-			"epic_id":            epicID,
-			"epic_title":         epic.Title,
-			"children_completed": len(children),
-			"completion_method":  "all_children_closed",
-			"confidence":         1.0, // Fallback logic is deterministic
-			"is_mission":         epic.IssueSubtype == types.SubtypeMission,
-			"actor":              "executor",
+		// vc-268: Emit epic_completed event (vc-275: using typed constructor)
+		eventData := events.EpicCompletedData{
+			EpicID:            epicID,
+			EpicTitle:         epic.Title,
+			ChildrenCompleted: len(children),
+			CompletionMethod:  "all_children_closed",
+			Confidence:        1.0, // Fallback logic is deterministic
+			IsMission:         epic.IssueSubtype == types.SubtypeMission,
+			Actor:             "executor",
 		}
 		message := fmt.Sprintf("Epic %s completed: %s (all %d children closed)", epicID, epic.Title, len(children))
-		logEpicEvent(ctx, store, events.EventTypeEpicCompleted, events.SeverityInfo, epicID, "executor", message, eventData)
+		logEpicCompletedEvent(ctx, store, epicID, instanceID, message, eventData)
 
 		// vc-218: If this is a mission epic, transition to needs-quality-gates state
 		if epic.IssueSubtype == types.SubtypeMission {
@@ -212,7 +213,8 @@ func checkAndCloseEpicIfComplete(ctx context.Context, store storage.Storage, sup
 
 // cleanupMissionSandboxIfComplete checks if a closed epic is a mission and cleans up its sandbox
 // This is called after checkAndCloseEpicIfComplete successfully closes an epic
-func cleanupMissionSandboxIfComplete(ctx context.Context, store storage.Storage, sandboxMgr sandbox.Manager, epicID string) error {
+// vc-276: Added instanceID parameter to properly attribute events to the executor instance
+func cleanupMissionSandboxIfComplete(ctx context.Context, store storage.Storage, sandboxMgr sandbox.Manager, instanceID string, epicID string) error {
 	// Check if this epic has mission metadata (is a mission epic)
 	mission, err := store.GetMission(ctx, epicID)
 	if err != nil {
@@ -230,29 +232,30 @@ func cleanupMissionSandboxIfComplete(ctx context.Context, store storage.Storage,
 	// This is a mission epic - clean up its sandbox
 	fmt.Printf("Mission %s completed - cleaning up sandbox\n", epicID)
 
-	// vc-268: Emit epic_cleanup_started event
-	startEventData := map[string]interface{}{
-		"epic_id":      epicID,
-		"is_mission":   true,
-		"sandbox_path": mission.SandboxPath,
+	// vc-268: Emit epic_cleanup_started event (vc-275: using typed constructor)
+	startEventData := events.EpicCleanupStartedData{
+		EpicID:      epicID,
+		IsMission:   true,
+		SandboxPath: mission.SandboxPath,
 	}
-	logEpicEvent(ctx, store, events.EventTypeEpicCleanupStarted, events.SeverityInfo, epicID, "executor",
+	logEpicCleanupStartedEvent(ctx, store, epicID, instanceID,
 		fmt.Sprintf("Starting cleanup for mission epic %s", epicID), startEventData)
 
 	startTime := time.Now()
 	cleanupErr := sandbox.CleanupMissionSandbox(ctx, sandboxMgr, store, epicID)
 	duration := time.Since(startTime)
 
-	// vc-268: Emit epic_cleanup_completed event
-	completeEventData := map[string]interface{}{
-		"epic_id":      epicID,
-		"is_mission":   true,
-		"sandbox_path": mission.SandboxPath,
-		"success":      cleanupErr == nil,
-		"duration_ms":  duration.Milliseconds(),
+	// vc-268: Emit epic_cleanup_completed event (vc-275: using typed constructor)
+	completeEventData := events.EpicCleanupCompletedData{
+		EpicID:      epicID,
+		IsMission:   true,
+		SandboxPath: mission.SandboxPath,
+		Success:     cleanupErr == nil,
+		DurationMs:  duration.Milliseconds(),
 	}
 	if cleanupErr != nil {
-		completeEventData["error"] = cleanupErr.Error()
+		errMsg := cleanupErr.Error()
+		completeEventData.Error = errMsg
 	}
 
 	message := fmt.Sprintf("Completed cleanup for mission epic %s (duration: %v)", epicID, duration)
@@ -266,38 +269,64 @@ func cleanupMissionSandboxIfComplete(ctx context.Context, store storage.Storage,
 		fmt.Printf("✓ Cleaned up sandbox for mission %s\n", epicID)
 	}
 
-	logEpicEvent(ctx, store, events.EventTypeEpicCleanupCompleted, severity, epicID, "executor", message, completeEventData)
+	logEpicCleanupCompletedEvent(ctx, store, epicID, instanceID, message, severity, completeEventData)
 
 	return nil // Always return nil since cleanup is best-effort
 }
 
-// logEpicEvent creates and stores an epic lifecycle event (vc-268)
-// This follows the same pattern as logEvent in executor_events.go but doesn't require an Executor instance
-func logEpicEvent(ctx context.Context, store storage.Storage, eventType events.EventType, severity events.EventSeverity, issueID, executorID, message string, data map[string]interface{}) {
+// logEpicCompletedEvent creates and stores an epic_completed event using typed constructor (vc-275)
+func logEpicCompletedEvent(ctx context.Context, store storage.Storage, issueID, executorID, message string, data events.EpicCompletedData) {
 	// Skip logging if context is canceled (e.g., during shutdown)
 	if ctx.Err() != nil {
 		return
 	}
 
-	if data == nil {
-		data = make(map[string]interface{})
-	}
-
-	event := &events.AgentEvent{
-		ID:         uuid.New().String(),
-		Type:       eventType,
-		Timestamp:  time.Now(),
-		IssueID:    issueID,
-		ExecutorID: executorID,
-		AgentID:    "", // Empty for executor-level epic events
-		Severity:   severity,
-		Message:    message,
-		Data:       data,
-		SourceLine: 0, // Not applicable for executor-level events
+	event, err := events.NewEpicCompletedEvent(issueID, executorID, "", events.SeverityInfo, message, data)
+	if err != nil {
+		fmt.Printf("Warning: failed to create epic_completed event: %v\n", err)
+		return
 	}
 
 	if err := store.StoreAgentEvent(ctx, event); err != nil {
 		// Log error but don't fail execution
-		fmt.Printf("Warning: failed to store epic event: %v\n", err)
+		fmt.Printf("Warning: failed to store epic_completed event: %v\n", err)
+	}
+}
+
+// logEpicCleanupStartedEvent creates and stores an epic_cleanup_started event using typed constructor (vc-275)
+func logEpicCleanupStartedEvent(ctx context.Context, store storage.Storage, issueID, executorID, message string, data events.EpicCleanupStartedData) {
+	// Skip logging if context is canceled (e.g., during shutdown)
+	if ctx.Err() != nil {
+		return
+	}
+
+	event, err := events.NewEpicCleanupStartedEvent(issueID, executorID, "", events.SeverityInfo, message, data)
+	if err != nil {
+		fmt.Printf("Warning: failed to create epic_cleanup_started event: %v\n", err)
+		return
+	}
+
+	if err := store.StoreAgentEvent(ctx, event); err != nil {
+		// Log error but don't fail execution
+		fmt.Printf("Warning: failed to store epic_cleanup_started event: %v\n", err)
+	}
+}
+
+// logEpicCleanupCompletedEvent creates and stores an epic_cleanup_completed event using typed constructor (vc-275)
+func logEpicCleanupCompletedEvent(ctx context.Context, store storage.Storage, issueID, executorID, message string, severity events.EventSeverity, data events.EpicCleanupCompletedData) {
+	// Skip logging if context is canceled (e.g., during shutdown)
+	if ctx.Err() != nil {
+		return
+	}
+
+	event, err := events.NewEpicCleanupCompletedEvent(issueID, executorID, "", severity, message, data)
+	if err != nil {
+		fmt.Printf("Warning: failed to create epic_cleanup_completed event: %v\n", err)
+		return
+	}
+
+	if err := store.StoreAgentEvent(ctx, event); err != nil {
+		// Log error but don't fail execution
+		fmt.Printf("Warning: failed to store epic_cleanup_completed event: %v\n", err)
 	}
 }

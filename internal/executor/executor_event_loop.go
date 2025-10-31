@@ -136,13 +136,6 @@ func (e *Executor) checkMissionConvergence(ctx context.Context, issue *types.Iss
 // Handles nested epic hierarchies by checking all parent epics up to the mission root.
 // vc-235: Epic-centric workflow integration after task completion
 func (e *Executor) checkEpicCompletion(ctx context.Context, issue *types.Issue) error {
-	// Get the mission context for this task to find its parent epic(s)
-	missionCtx, err := e.store.GetMissionForTask(ctx, issue.ID)
-	if err != nil {
-		// No parent mission - this is fine, not all tasks belong to epics
-		return nil
-	}
-
 	// Walk up the parent-child dependency chain to check all parent epics
 	parentEpics, err := e.store.GetDependencies(ctx, issue.ID)
 	if err != nil {
@@ -171,17 +164,9 @@ func (e *Executor) checkEpicCompletion(ctx context.Context, issue *types.Issue) 
 				return fmt.Errorf("failed to add needs-quality-gates label to epic %s: %w", parentEpic.ID, err)
 			}
 
-			// Log epic completion event
-			e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, parentEpic.ID,
-				fmt.Sprintf("Epic %s completed after finishing task %s", parentEpic.ID, issue.ID),
-				map[string]interface{}{
-					"event_subtype":    "epic_completed",
-					"epic_id":          parentEpic.ID,
-					"epic_title":       parentEpic.Title,
-					"completed_task":   issue.ID,
-					"mission_id":       missionCtx.MissionID,
-					"label_added":      "needs-quality-gates",
-				})
+			// Note: Epic completion event is emitted by checkAndCloseEpicIfComplete() in epic.go
+			// (called via result processor) using EventTypeEpicCompleted (vc-268, vc-274).
+			// Removed duplicate old-style progress event that was previously emitted here.
 
 			// Recursively check if the parent epic completing causes its parent to complete
 			// This handles nested epic hierarchies (e.g., phase → mission)

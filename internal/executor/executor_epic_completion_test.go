@@ -341,7 +341,9 @@ func TestCheckEpicCompletion_NestedEpics(t *testing.T) {
 	t.Log("  Note: Mission-level completion requires manual verification (known limitation)")
 }
 
-// TestCheckEpicCompletion_EventLogging tests that epic completion is logged to activity feed
+// TestCheckEpicCompletion_EventLogging tests epic completion detection and label addition
+// Note: Epic completion events are now emitted by checkAndCloseEpicIfComplete() in epic.go
+// (called via result processor), not by the executor's checkEpicCompletion() method (vc-274)
 func TestCheckEpicCompletion_EventLogging(t *testing.T) {
 	ctx, store, exec := setupExecutorTest(t)
 	defer store.Close()
@@ -396,32 +398,24 @@ func TestCheckEpicCompletion_EventLogging(t *testing.T) {
 		t.Errorf("checkEpicCompletion failed: %v", err)
 	}
 
-	// Verify event was logged
-	events, err := store.GetAgentEventsByIssue(ctx, epic.ID)
+	// Verify the executor method added the needs-quality-gates label
+	// (The actual epic closure and event emission happens later via result processor)
+	labels, err := store.GetLabels(ctx, epic.ID)
 	if err != nil {
-		t.Fatalf("Failed to get agent events: %v", err)
+		t.Fatalf("Failed to get labels: %v", err)
 	}
 
-	foundEvent := false
-	for _, event := range events {
-		if event.Type == "progress" && event.Data != nil {
-			if eventSubtype, ok := event.Data["event_subtype"].(string); ok && eventSubtype == "epic_completed" {
-				foundEvent = true
-				// Verify event data
-				if epicID, ok := event.Data["epic_id"].(string); !ok || epicID != epic.ID {
-					t.Error("Event should have correct epic_id")
-				}
-				if labelAdded, ok := event.Data["label_added"].(string); !ok || labelAdded != "needs-quality-gates" {
-					t.Error("Event should indicate needs-quality-gates label was added")
-				}
-				break
-			}
+	hasLabel := false
+	for _, label := range labels {
+		if label == "needs-quality-gates" {
+			hasLabel = true
+			break
 		}
 	}
 
-	if !foundEvent {
-		t.Error("Epic completion event should be logged to activity feed")
+	if !hasLabel {
+		t.Error("Epic should have needs-quality-gates label when complete")
 	}
 
-	t.Log("✓ Epic completion event logged correctly")
+	t.Log("✓ Epic completion detected and label added correctly")
 }

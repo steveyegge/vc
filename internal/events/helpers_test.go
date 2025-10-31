@@ -277,3 +277,231 @@ func stringContains(s, substr string) bool {
 	}
 	return false
 }
+
+// vc-275: Tests for epic lifecycle event typed constructors
+
+func TestEpicCompletedDataHelpers(t *testing.T) {
+	event := &AgentEvent{
+		ID:         "test-epic-1",
+		Type:       EventTypeEpicCompleted,
+		Timestamp:  time.Now(),
+		IssueID:    "vc-5",
+		ExecutorID: "exec-1",
+		AgentID:    "",
+		Severity:   SeverityInfo,
+		Message:    "Epic completed",
+	}
+
+	epicData := EpicCompletedData{
+		EpicID:            "vc-5",
+		EpicTitle:         "Beads Integration",
+		ChildrenCompleted: 10,
+		CompletionMethod:  "ai_assessment",
+		Confidence:        0.95,
+		IsMission:         true,
+		Actor:             "ai-supervisor",
+	}
+
+	if err := event.SetEpicCompletedData(epicData); err != nil {
+		t.Fatalf("SetEpicCompletedData failed: %v", err)
+	}
+
+	if event.Data["epic_id"] != "vc-5" {
+		t.Errorf("Data map epic_id incorrect: got %v", event.Data["epic_id"])
+	}
+
+	retrieved, err := event.GetEpicCompletedData()
+	if err != nil {
+		t.Fatalf("GetEpicCompletedData failed: %v", err)
+	}
+	if retrieved.EpicID != epicData.EpicID {
+		t.Errorf("EpicID mismatch: got %s, want %s", retrieved.EpicID, epicData.EpicID)
+	}
+	if retrieved.ChildrenCompleted != epicData.ChildrenCompleted {
+		t.Errorf("ChildrenCompleted mismatch: got %d, want %d", retrieved.ChildrenCompleted, epicData.ChildrenCompleted)
+	}
+	if retrieved.Confidence != epicData.Confidence {
+		t.Errorf("Confidence mismatch: got %f, want %f", retrieved.Confidence, epicData.Confidence)
+	}
+}
+
+func TestEpicCleanupStartedDataHelpers(t *testing.T) {
+	event := &AgentEvent{
+		ID:         "test-epic-2",
+		Type:       EventTypeEpicCleanupStarted,
+		Timestamp:  time.Now(),
+		IssueID:    "vc-5",
+		ExecutorID: "exec-1",
+		AgentID:    "",
+		Severity:   SeverityInfo,
+		Message:    "Starting epic cleanup",
+	}
+
+	cleanupData := EpicCleanupStartedData{
+		EpicID:      "vc-5",
+		IsMission:   true,
+		SandboxPath: "/tmp/vc-mission-5",
+	}
+
+	if err := event.SetEpicCleanupStartedData(cleanupData); err != nil {
+		t.Fatalf("SetEpicCleanupStartedData failed: %v", err)
+	}
+
+	retrieved, err := event.GetEpicCleanupStartedData()
+	if err != nil {
+		t.Fatalf("GetEpicCleanupStartedData failed: %v", err)
+	}
+	if retrieved.EpicID != cleanupData.EpicID {
+		t.Errorf("EpicID mismatch: got %s, want %s", retrieved.EpicID, cleanupData.EpicID)
+	}
+	if retrieved.SandboxPath != cleanupData.SandboxPath {
+		t.Errorf("SandboxPath mismatch: got %s, want %s", retrieved.SandboxPath, cleanupData.SandboxPath)
+	}
+}
+
+func TestEpicCleanupCompletedDataHelpers(t *testing.T) {
+	event := &AgentEvent{
+		ID:         "test-epic-3",
+		Type:       EventTypeEpicCleanupCompleted,
+		Timestamp:  time.Now(),
+		IssueID:    "vc-5",
+		ExecutorID: "exec-1",
+		AgentID:    "",
+		Severity:   SeverityInfo,
+		Message:    "Epic cleanup completed",
+	}
+
+	completeData := EpicCleanupCompletedData{
+		EpicID:      "vc-5",
+		IsMission:   true,
+		SandboxPath: "/tmp/vc-mission-5",
+		Success:     true,
+		DurationMs:  1500,
+	}
+
+	if err := event.SetEpicCleanupCompletedData(completeData); err != nil {
+		t.Fatalf("SetEpicCleanupCompletedData failed: %v", err)
+	}
+
+	retrieved, err := event.GetEpicCleanupCompletedData()
+	if err != nil {
+		t.Fatalf("GetEpicCleanupCompletedData failed: %v", err)
+	}
+	if retrieved.Success != completeData.Success {
+		t.Errorf("Success mismatch: got %v, want %v", retrieved.Success, completeData.Success)
+	}
+	if retrieved.DurationMs != completeData.DurationMs {
+		t.Errorf("DurationMs mismatch: got %d, want %d", retrieved.DurationMs, completeData.DurationMs)
+	}
+}
+
+func TestNewEpicCompletedEvent(t *testing.T) {
+	data := EpicCompletedData{
+		EpicID:            "vc-5",
+		EpicTitle:         "Test Epic",
+		ChildrenCompleted: 5,
+		CompletionMethod:  "ai_assessment",
+		Confidence:        0.9,
+		IsMission:         false,
+		Actor:             "ai-supervisor",
+	}
+
+	event, err := NewEpicCompletedEvent("vc-5", "exec-1", "", SeverityInfo, "Epic completed", data)
+	if err != nil {
+		t.Fatalf("NewEpicCompletedEvent failed: %v", err)
+	}
+
+	if event.Type != EventTypeEpicCompleted {
+		t.Errorf("Wrong event type: got %s, want %s", event.Type, EventTypeEpicCompleted)
+	}
+
+	retrieved, err := event.GetEpicCompletedData()
+	if err != nil {
+		t.Fatalf("GetEpicCompletedData failed: %v", err)
+	}
+	if retrieved.EpicID != data.EpicID {
+		t.Errorf("EpicID mismatch: got %s, want %s", retrieved.EpicID, data.EpicID)
+	}
+	if retrieved.CompletionMethod != data.CompletionMethod {
+		t.Errorf("CompletionMethod mismatch: got %s, want %s", retrieved.CompletionMethod, data.CompletionMethod)
+	}
+}
+
+func TestNewEpicCleanupStartedEvent(t *testing.T) {
+	data := EpicCleanupStartedData{
+		EpicID:      "vc-5",
+		IsMission:   true,
+		SandboxPath: "/tmp/sandbox",
+	}
+
+	event, err := NewEpicCleanupStartedEvent("vc-5", "exec-1", "", SeverityInfo, "Starting cleanup", data)
+	if err != nil {
+		t.Fatalf("NewEpicCleanupStartedEvent failed: %v", err)
+	}
+
+	if event.Type != EventTypeEpicCleanupStarted {
+		t.Errorf("Wrong event type: got %s, want %s", event.Type, EventTypeEpicCleanupStarted)
+	}
+
+	retrieved, err := event.GetEpicCleanupStartedData()
+	if err != nil {
+		t.Fatalf("GetEpicCleanupStartedData failed: %v", err)
+	}
+	if retrieved.SandboxPath != data.SandboxPath {
+		t.Errorf("SandboxPath mismatch: got %s, want %s", retrieved.SandboxPath, data.SandboxPath)
+	}
+}
+
+func TestNewEpicCleanupCompletedEvent(t *testing.T) {
+	data := EpicCleanupCompletedData{
+		EpicID:      "vc-5",
+		IsMission:   true,
+		SandboxPath: "/tmp/sandbox",
+		Success:     true,
+		DurationMs:  2000,
+	}
+
+	event, err := NewEpicCleanupCompletedEvent("vc-5", "exec-1", "", SeverityInfo, "Cleanup completed", data)
+	if err != nil {
+		t.Fatalf("NewEpicCleanupCompletedEvent failed: %v", err)
+	}
+
+	if event.Type != EventTypeEpicCleanupCompleted {
+		t.Errorf("Wrong event type: got %s, want %s", event.Type, EventTypeEpicCleanupCompleted)
+	}
+
+	retrieved, err := event.GetEpicCleanupCompletedData()
+	if err != nil {
+		t.Fatalf("GetEpicCleanupCompletedData failed: %v", err)
+	}
+	if retrieved.Success != data.Success {
+		t.Errorf("Success mismatch: got %v, want %v", retrieved.Success, data.Success)
+	}
+}
+
+func TestEpicCleanupCompletedEventWithError(t *testing.T) {
+	data := EpicCleanupCompletedData{
+		EpicID:      "vc-5",
+		IsMission:   true,
+		SandboxPath: "/tmp/sandbox",
+		Success:     false,
+		Error:       "failed to remove worktree",
+		DurationMs:  500,
+	}
+
+	event, err := NewEpicCleanupCompletedEvent("vc-5", "exec-1", "", SeverityWarning, "Cleanup failed", data)
+	if err != nil {
+		t.Fatalf("NewEpicCleanupCompletedEvent failed: %v", err)
+	}
+
+	retrieved, err := event.GetEpicCleanupCompletedData()
+	if err != nil {
+		t.Fatalf("GetEpicCleanupCompletedData failed: %v", err)
+	}
+	if retrieved.Error != data.Error {
+		t.Errorf("Error mismatch: got %s, want %s", retrieved.Error, data.Error)
+	}
+	if retrieved.Success {
+		t.Errorf("Success should be false for failed cleanup")
+	}
+}

@@ -109,7 +109,7 @@ func TestMissionSandboxAutoCleanup(t *testing.T) {
 
 	// Simulate what happens in result_processor.go after task completion
 	// Check epic completion should detect mission is complete and clean up sandbox
-	if err := checkEpicCompletion(ctx, store, nil, mgr, task.ID); err != nil {
+	if err := checkEpicCompletion(ctx, store, nil, mgr, "test-instance", task.ID); err != nil {
 		t.Fatalf("checkEpicCompletion failed: %v", err)
 	}
 
@@ -254,7 +254,7 @@ func TestMissionSandboxPersistsWhenIncomplete(t *testing.T) {
 	}
 
 	// Check epic completion - should NOT close mission (task2 still open)
-	if err := checkEpicCompletion(ctx, store, nil, mgr, task1.ID); err != nil {
+	if err := checkEpicCompletion(ctx, store, nil, mgr, "test-instance", task1.ID); err != nil {
 		t.Fatalf("checkEpicCompletion failed: %v", err)
 	}
 

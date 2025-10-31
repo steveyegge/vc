@@ -930,7 +930,7 @@ SkipGates:
 
 		// Step 7: Check if parent epic is now complete (and auto-cleanup mission sandbox if needed)
 		if shouldClose {
-			if err := checkEpicCompletion(ctx, rp.store, rp.supervisor, rp.sandboxManager, issue.ID); err != nil {
+			if err := checkEpicCompletion(ctx, rp.store, rp.supervisor, rp.sandboxManager, rp.actor, issue.ID); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to check epic completion: %v\n", err)
 			}
 		}
