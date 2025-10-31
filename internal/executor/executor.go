@@ -70,6 +70,7 @@ type Executor struct {
 	// State
 	mu      sync.RWMutex
 	running bool
+	degradedMode bool // In degraded mode, only claim baseline issues
 }
 
 // Config holds executor configuration

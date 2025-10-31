@@ -238,9 +238,8 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 					// Continue anyway - we'll try again next poll
 				}
 
-				// Continue to claim work - baseline issues are now ready to claim
-				// They will be picked up as regular P1 work through the normal claiming flow
-				// Continue to claim work below (including baseline issues)
+				// Enter degraded mode - only claim baseline issues until fixed
+				e.degradedMode = true
 
 			case FailureModeWarn:
 				// Warn but continue claiming work
@@ -252,6 +251,49 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 				// Continue to claim work below
 			}
 		}
+	}
+
+	// If in degraded mode, determine if we can exit before claiming
+	if e.degradedMode {
+		resolved, err := e.checkBaselineIssuesResolved(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to check baseline issues: %v\n", err)
+			return nil
+		}
+		if resolved {
+			fmt.Printf("✓ Baseline issues resolved. Exiting degraded mode.\n")
+			e.degradedMode = false
+		}
+	}
+
+	// While degraded, only claim baseline-failure issues
+	if e.degradedMode {
+		fmt.Printf("⚠️  Degraded mode: only claiming baseline issues\n")
+		baselineIssues, err := e.store.GetIssuesByLabel(ctx, "baseline-failure")
+		if err != nil {
+			return fmt.Errorf("failed to get baseline issues: %w", err)
+		}
+		var issue *types.Issue
+		for _, is := range baselineIssues {
+			if is.Status == types.StatusOpen {
+				issue = is
+				break
+			}
+		}
+		if issue == nil {
+			// No baseline work available
+			fmt.Printf("   No baseline issues ready (may have dependencies)\n")
+			return nil
+		}
+
+		// Attempt to claim the issue
+		if err := e.store.ClaimIssue(ctx, issue.ID, e.instanceID); err != nil {
+			// Issue may have been claimed by another executor
+			return nil
+		}
+
+		// Execute baseline fix issue
+		return e.executeIssue(ctx, issue)
 	}
 
 	// Priority 1: Try to get a ready blocker
@@ -290,4 +332,19 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 
 	// Successfully claimed - now execute it
 	return e.executeIssue(ctx, issue)
+}
+
+// checkBaselineIssuesResolved returns true when there are no open baseline-failure issues
+func (e *Executor) checkBaselineIssuesResolved(ctx context.Context) (bool, error) {
+	issues, err := e.store.GetIssuesByLabel(ctx, "baseline-failure")
+	if err != nil {
+		return false, err
+	}
+	// Consider resolved only if no baseline-failure issue remains open
+	for _, is := range issues {
+		if is.Status != types.StatusClosed {
+			return false, nil
+		}
+	}
+	return true, nil
 }
