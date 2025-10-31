@@ -135,6 +135,12 @@ const (
 	EventTypeGitWorktreeRemoved EventType = "git_worktree_removed"
 	// EventTypeSandboxCleanupCompleted indicates sandbox cleanup completed
 	EventTypeSandboxCleanupCompleted EventType = "sandbox_cleanup_completed"
+
+	// Mission phase transition events (vc-266)
+	// EventTypeMissionCreated indicates a new mission was created
+	EventTypeMissionCreated EventType = "mission_created"
+	// EventTypeMissionMetadataUpdated indicates mission metadata was updated
+	EventTypeMissionMetadataUpdated EventType = "mission_metadata_updated"
 )
 
 // EventSeverity represents the severity level of an event.
@@ -485,6 +491,42 @@ type SandboxCleanupCompletedData struct {
 	Success bool `json:"success"`
 	// Error contains the error message if cleanup failed
 	Error string `json:"error,omitempty"`
+}
+
+// MissionCreatedData contains structured data for mission creation events (vc-266).
+type MissionCreatedData struct {
+	// MissionID is the ID of the created mission
+	MissionID string `json:"mission_id"`
+	// ParentEpicID is the ID of the parent epic (if any)
+	ParentEpicID string `json:"parent_epic_id,omitempty"`
+	// Goal is the high-level goal for the mission
+	Goal string `json:"goal"`
+	// PhaseCount is the number of phases planned
+	PhaseCount int `json:"phase_count"`
+	// ApprovalRequired indicates if human approval is needed
+	ApprovalRequired bool `json:"approval_required"`
+	// Actor is who created the mission (user, executor ID, etc.)
+	Actor string `json:"actor"`
+}
+
+// MissionMetadataUpdatedData contains structured data for mission metadata update events (vc-266).
+type MissionMetadataUpdatedData struct {
+	// MissionID is the ID of the mission
+	MissionID string `json:"mission_id"`
+	// UpdatedFields is a list of field names that were changed
+	UpdatedFields []string `json:"updated_fields"`
+	// Changes is a map of field name to old/new values
+	Changes map[string]FieldChange `json:"changes,omitempty"`
+	// Actor is who updated the mission
+	Actor string `json:"actor"`
+}
+
+// FieldChange represents a change to a field value
+type FieldChange struct {
+	// OldValue is the previous value (may be nil for new fields)
+	OldValue interface{} `json:"old_value"`
+	// NewValue is the new value
+	NewValue interface{} `json:"new_value"`
 }
 
 // EventStore defines the interface for storing and retrieving agent events.

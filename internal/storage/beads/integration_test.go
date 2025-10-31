@@ -3240,3 +3240,231 @@ func TestMissionSandboxMetadataPersistence(t *testing.T) {
 		t.Logf("✓ UpdateMission correctly handled partial update (sandbox_path only)")
 	})
 }
+
+// TestMissionLifecycleEvents tests that mission creation and updates emit proper events (vc-266)
+func TestMissionLifecycleEvents(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	t.Run("CreateMission emits mission_created event", func(t *testing.T) {
+		// Create a mission
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Test Mission with Events",
+				Description:  "Testing event emission on mission creation",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal:             "Test mission lifecycle events",
+			PhaseCount:       3,
+			ApprovalRequired: true,
+		}
+
+		if err := store.CreateMission(ctx, mission, "test-actor"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Verify mission_created event was emitted
+		eventFilter := events.EventFilter{
+			IssueID: mission.ID,
+			Type:    events.EventTypeMissionCreated,
+		}
+		evts, err := store.GetAgentEvents(ctx, eventFilter)
+		if err != nil {
+			t.Fatalf("Failed to get agent events: %v", err)
+		}
+
+		if len(evts) != 1 {
+			t.Fatalf("Expected 1 mission_created event, got %d", len(evts))
+		}
+
+		evt := evts[0]
+		if evt.Type != events.EventTypeMissionCreated {
+			t.Errorf("Expected event type 'mission_created', got '%s'", evt.Type)
+		}
+		if evt.IssueID != mission.ID {
+			t.Errorf("Expected issue_id '%s', got '%s'", mission.ID, evt.IssueID)
+		}
+		if evt.Severity != events.SeverityInfo {
+			t.Errorf("Expected severity 'info', got '%s'", evt.Severity)
+		}
+
+		// Verify event data
+		if evt.Data["mission_id"] != mission.ID {
+			t.Errorf("Expected mission_id '%s', got '%v'", mission.ID, evt.Data["mission_id"])
+		}
+		if evt.Data["goal"] != mission.Goal {
+			t.Errorf("Expected goal '%s', got '%v'", mission.Goal, evt.Data["goal"])
+		}
+		if evt.Data["phase_count"] != float64(mission.PhaseCount) { // JSON numbers are float64
+			t.Errorf("Expected phase_count %d, got %v", mission.PhaseCount, evt.Data["phase_count"])
+		}
+		if evt.Data["approval_required"] != mission.ApprovalRequired {
+			t.Errorf("Expected approval_required %v, got %v", mission.ApprovalRequired, evt.Data["approval_required"])
+		}
+		if evt.Data["actor"] != "test-actor" {
+			t.Errorf("Expected actor 'test-actor', got '%v'", evt.Data["actor"])
+		}
+
+		t.Logf("✓ mission_created event correctly emitted for mission %s", mission.ID)
+	})
+
+	t.Run("UpdateMission emits mission_metadata_updated event", func(t *testing.T) {
+		// Create a mission
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission for Update Test",
+				Description:  "Testing event emission on mission update",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal:        "Test update events",
+			SandboxPath: ".sandboxes/old/",
+			BranchName:  "mission/old-branch",
+		}
+
+		if err := store.CreateMission(ctx, mission, "test-actor"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Update mission metadata
+		updates := map[string]interface{}{
+			"sandbox_path": ".sandboxes/new/",
+			"branch_name":  "mission/new-branch",
+		}
+		if err := store.UpdateMission(ctx, mission.ID, updates, "update-actor"); err != nil {
+			t.Fatalf("Failed to update mission: %v", err)
+		}
+
+		// Verify mission_metadata_updated event was emitted
+		eventFilter := events.EventFilter{
+			IssueID: mission.ID,
+			Type:    events.EventTypeMissionMetadataUpdated,
+		}
+		evts, err := store.GetAgentEvents(ctx, eventFilter)
+		if err != nil {
+			t.Fatalf("Failed to get agent events: %v", err)
+		}
+
+		if len(evts) != 1 {
+			t.Fatalf("Expected 1 mission_metadata_updated event, got %d", len(evts))
+		}
+
+		evt := evts[0]
+		if evt.Type != events.EventTypeMissionMetadataUpdated {
+			t.Errorf("Expected event type 'mission_metadata_updated', got '%s'", evt.Type)
+		}
+		if evt.IssueID != mission.ID {
+			t.Errorf("Expected issue_id '%s', got '%s'", mission.ID, evt.IssueID)
+		}
+
+		// Verify event data
+		if evt.Data["mission_id"] != mission.ID {
+			t.Errorf("Expected mission_id '%s', got '%v'", mission.ID, evt.Data["mission_id"])
+		}
+		if evt.Data["actor"] != "update-actor" {
+			t.Errorf("Expected actor 'update-actor', got '%v'", evt.Data["actor"])
+		}
+
+		// Verify updated_fields list
+		updatedFields, ok := evt.Data["updated_fields"].([]interface{})
+		if !ok {
+			t.Fatalf("Expected updated_fields to be array, got %T", evt.Data["updated_fields"])
+		}
+		if len(updatedFields) != 2 {
+			t.Errorf("Expected 2 updated fields, got %d", len(updatedFields))
+		}
+
+		// Verify changes map exists
+		changes, ok := evt.Data["changes"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("Expected changes to be map, got %T", evt.Data["changes"])
+		}
+
+		// Verify sandbox_path change
+		sandboxChange, ok := changes["sandbox_path"].(map[string]interface{})
+		if ok {
+			if sandboxChange["old_value"] != ".sandboxes/old/" {
+				t.Errorf("Expected old sandbox_path '.sandboxes/old/', got %v", sandboxChange["old_value"])
+			}
+			if sandboxChange["new_value"] != ".sandboxes/new/" {
+				t.Errorf("Expected new sandbox_path '.sandboxes/new/', got %v", sandboxChange["new_value"])
+			}
+		}
+
+		// Verify branch_name change
+		branchChange, ok := changes["branch_name"].(map[string]interface{})
+		if ok {
+			if branchChange["old_value"] != "mission/old-branch" {
+				t.Errorf("Expected old branch_name 'mission/old-branch', got %v", branchChange["old_value"])
+			}
+			if branchChange["new_value"] != "mission/new-branch" {
+				t.Errorf("Expected new branch_name 'mission/new-branch', got %v", branchChange["new_value"])
+			}
+		}
+
+		t.Logf("✓ mission_metadata_updated event correctly emitted for mission %s", mission.ID)
+	})
+
+	t.Run("UpdateMission with no changes does not emit event", func(t *testing.T) {
+		// Create a mission
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission for No-Op Update",
+				Description:  "Testing event emission when nothing changes",
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal: "Test no-op updates",
+		}
+
+		if err := store.CreateMission(ctx, mission, "test-actor"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Get event count before update
+		beforeFilter := events.EventFilter{
+			IssueID: mission.ID,
+			Type:    events.EventTypeMissionMetadataUpdated,
+		}
+		beforeEvents, err := store.GetAgentEvents(ctx, beforeFilter)
+		if err != nil {
+			t.Fatalf("Failed to get agent events: %v", err)
+		}
+		beforeCount := len(beforeEvents)
+
+		// Update with empty map (no changes)
+		updates := map[string]interface{}{}
+		if err := store.UpdateMission(ctx, mission.ID, updates, "test-actor"); err != nil {
+			t.Fatalf("Failed to update mission: %v", err)
+		}
+
+		// Verify no new event was emitted
+		afterEvents, err := store.GetAgentEvents(ctx, beforeFilter)
+		if err != nil {
+			t.Fatalf("Failed to get agent events: %v", err)
+		}
+		afterCount := len(afterEvents)
+
+		if afterCount != beforeCount {
+			t.Errorf("Expected no new events for empty update, got %d new events", afterCount-beforeCount)
+		}
+
+		t.Logf("✓ No event emitted for no-op update")
+	})
+}

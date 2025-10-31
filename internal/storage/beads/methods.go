@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/steveyegge/beads"
+	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -168,11 +170,62 @@ func (s *VCStorage) CreateMission(ctx context.Context, mission *types.Mission, a
 		return fmt.Errorf("failed to update mission metadata: %w", err)
 	}
 
+	// Emit mission_created event (vc-266)
+	// Find parent epic if this mission has dependencies
+	var parentEpicID string
+	deps, err := s.GetDependencies(ctx, mission.ID)
+	if err == nil && len(deps) > 0 {
+		// Find first epic parent (if any)
+		for _, dep := range deps {
+			if dep.IssueType == types.TypeEpic {
+				parentEpicID = dep.ID
+				break
+			}
+		}
+	}
+
+	eventData := events.MissionCreatedData{
+		MissionID:        mission.ID,
+		ParentEpicID:     parentEpicID,
+		Goal:             mission.Goal,
+		PhaseCount:       mission.PhaseCount,
+		ApprovalRequired: mission.ApprovalRequired,
+		Actor:            actor,
+	}
+
+	event := &events.AgentEvent{
+		ID:        uuid.New().String(),
+		Type:      events.EventTypeMissionCreated,
+		Timestamp: time.Now(),
+		IssueID:   mission.ID,
+		Severity:  events.SeverityInfo,
+		Message:   fmt.Sprintf("Mission created: %s (goal: %s, phases: %d)", mission.ID, mission.Goal, mission.PhaseCount),
+		Data: map[string]interface{}{
+			"mission_id":        eventData.MissionID,
+			"parent_epic_id":    eventData.ParentEpicID,
+			"goal":              eventData.Goal,
+			"phase_count":       eventData.PhaseCount,
+			"approval_required": eventData.ApprovalRequired,
+			"actor":             eventData.Actor,
+		},
+	}
+
+	if err := s.StoreAgentEvent(ctx, event); err != nil {
+		// Log warning but don't fail mission creation
+		fmt.Printf("Warning: failed to store mission_created event: %v\n", err)
+	}
+
 	return nil
 }
 
 // UpdateMission updates both base issue fields and mission-specific fields
 func (s *VCStorage) UpdateMission(ctx context.Context, id string, updates map[string]interface{}, actor string) error {
+	// Get old values for event tracking (vc-266)
+	oldMission, err := s.GetMission(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to get current mission state: %w", err)
+	}
+
 	// Separate updates into base issue fields and mission-specific fields
 	missionFields := map[string]interface{}{
 		"approved_at":  nil,
@@ -224,6 +277,78 @@ func (s *VCStorage) UpdateMission(ctx context.Context, id string, updates map[st
 
 		if _, err := s.db.ExecContext(ctx, query, args...); err != nil {
 			return fmt.Errorf("failed to update mission metadata: %w", err)
+		}
+	}
+
+	// Emit mission_metadata_updated event if there are changes (vc-266)
+	if len(updates) > 0 {
+		updatedFields := make([]string, 0, len(updates))
+		changes := make(map[string]events.FieldChange)
+
+		for key, newValue := range updates {
+			updatedFields = append(updatedFields, key)
+
+			// Get old value
+			var oldValue interface{}
+			switch key {
+			case "approved_at":
+				oldValue = oldMission.ApprovedAt
+			case "approved_by":
+				oldValue = oldMission.ApprovedBy
+			case "goal":
+				oldValue = oldMission.Goal
+			case "context":
+				oldValue = oldMission.Context
+			case "sandbox_path":
+				oldValue = oldMission.SandboxPath
+			case "branch_name":
+				oldValue = oldMission.BranchName
+			case "status":
+				oldValue = oldMission.Status
+			case "priority":
+				oldValue = oldMission.Priority
+			}
+
+			changes[key] = events.FieldChange{
+				OldValue: oldValue,
+				NewValue: newValue,
+			}
+		}
+
+		eventData := events.MissionMetadataUpdatedData{
+			MissionID:     id,
+			UpdatedFields: updatedFields,
+			Changes:       changes,
+			Actor:         actor,
+		}
+
+		// Convert changes to map[string]interface{} for event storage
+		changesMap := make(map[string]interface{})
+		for k, v := range changes {
+			changesMap[k] = map[string]interface{}{
+				"old_value": v.OldValue,
+				"new_value": v.NewValue,
+			}
+		}
+
+		event := &events.AgentEvent{
+			ID:        uuid.New().String(),
+			Type:      events.EventTypeMissionMetadataUpdated,
+			Timestamp: time.Now(),
+			IssueID:   id,
+			Severity:  events.SeverityInfo,
+			Message:   fmt.Sprintf("Mission metadata updated: %s (fields: %v)", id, updatedFields),
+			Data: map[string]interface{}{
+				"mission_id":      eventData.MissionID,
+				"updated_fields":  eventData.UpdatedFields,
+				"changes":         changesMap,
+				"actor":           eventData.Actor,
+			},
+		}
+
+		if err := s.StoreAgentEvent(ctx, event); err != nil {
+			// Log warning but don't fail mission update
+			fmt.Printf("Warning: failed to store mission_metadata_updated event: %v\n", err)
 		}
 	}
 
