@@ -260,7 +260,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 		// Build result and return early (skip inline gates)
 		result.Completed = false // Mission stays open until all tasks complete
 		result.GatesPassed = true // Not failed, just deferred
-		result.Summary = fmt.Sprintf("Mission execution complete - quality gates deferred to QA worker")
+		result.Summary = "Mission execution complete - quality gates deferred to QA worker"
 		return result, nil
 	}
 

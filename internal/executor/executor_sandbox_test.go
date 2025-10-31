@@ -911,7 +911,8 @@ func TestExecutorMissionSandboxWorkflow(t *testing.T) {
 // All acceptance criteria for vc-246 are met by the existing tests.
 //
 // TODO: Re-enable this test when the storage layer bug is fixed.
-func testMissionSandboxComprehensiveLifecycle(t *testing.T) {
+func TestMissionSandboxComprehensiveLifecycle(t *testing.T) {
+	t.Skip("Disabled due to storage layer bug - see comment above")
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

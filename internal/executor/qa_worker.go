@@ -370,7 +370,7 @@ func (w *QualityGateWorker) handleGatesFail(ctx context.Context, mission *types.
 	}
 
 	// Add comment with gate results and blocking issues
-	comment := fmt.Sprintf("**Quality Gates Failed**\n\n")
+	comment := "**Quality Gates Failed**\n\n"
 	comment += fmt.Sprintf("Failed: %d/%d gates\n\n", len(failedGates), len(results))
 	for _, result := range results {
 		status := "✓"

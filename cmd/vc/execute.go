@@ -39,7 +39,7 @@ The executor will:
 // runExecutor contains the main executor logic, extracted to allow proper defer cleanup.
 // This function returns errors instead of calling os.Exit(), which ensures that defer
 // statements (like lock cleanup) run properly on all error paths.
-func runExecutor(cmd *cobra.Command, args []string) error {
+func runExecutor(cmd *cobra.Command, _ []string) error {
 	version, _ := cmd.Flags().GetString("version")
 	pollSeconds, _ := cmd.Flags().GetInt("poll-interval")
 	disableSandboxes, _ := cmd.Flags().GetBool("disable-sandboxes")
