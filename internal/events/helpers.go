@@ -197,3 +197,22 @@ func (e *AgentEvent) GetAgentStateChangeData() (*AgentStateChangeData, error) {
 	}
 	return &data, nil
 }
+
+// SetQualityGatesProgressData sets the Data field with QualityGatesProgressData in a type-safe way (vc-273).
+func (e *AgentEvent) SetQualityGatesProgressData(data QualityGatesProgressData) error {
+	dataMap, err := structToMap(data)
+	if err != nil {
+		return fmt.Errorf("failed to convert QualityGatesProgressData: %w", err)
+	}
+	e.Data = dataMap
+	return nil
+}
+
+// GetQualityGatesProgressData retrieves QualityGatesProgressData from the Data field (vc-273).
+func (e *AgentEvent) GetQualityGatesProgressData() (*QualityGatesProgressData, error) {
+	var data QualityGatesProgressData
+	if err := mapToStruct(e.Data, &data); err != nil {
+		return nil, fmt.Errorf("failed to parse QualityGatesProgressData: %w", err)
+	}
+	return &data, nil
+}

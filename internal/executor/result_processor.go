@@ -302,14 +302,15 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				message = fmt.Sprintf("Quality gates in progress (%d/%d completed, %ds elapsed)", gatesCompleted, totalGates, elapsedSeconds)
 			}
 
-			rp.logEvent(ctx, events.EventTypeQualityGatesProgress, events.SeverityInfo, issue.ID, message,
-				map[string]interface{}{
-					"current_gate":     string(currentGate),
-					"gates_completed":  gatesCompleted,
-					"total_gates":      totalGates,
-					"elapsed_seconds":  elapsedSeconds,
-					"start_time":       gatesStartTime,
-				})
+			// vc-273: Use typed constructor for progress events
+			progressData := events.QualityGatesProgressData{
+				CurrentGate:    string(currentGate),
+				GatesCompleted: gatesCompleted,
+				TotalGates:     totalGates,
+				ElapsedSeconds: elapsedSeconds,
+				Message:        message,
+			}
+			rp.logProgressEvent(ctx, events.SeverityInfo, issue.ID, message, progressData)
 		}
 
 		gateRunner, err := gates.NewRunner(&gates.Config{
@@ -342,7 +343,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			gateResults, allPassed = gateRunner.RunAll(gateCtx)
 
 			// Log progress for each gate (vc-245)
-			for _, gateResult := range gateResults {
+			for i, gateResult := range gateResults {
 				status := "PASS"
 				severity := events.SeverityInfo
 				if !gateResult.Passed {
@@ -351,13 +352,16 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				}
 				fmt.Printf("  %s: %s\n", gateResult.Gate, status)
 
-				// Emit progress event for each gate
-				rp.logEvent(ctx, events.EventTypeQualityGatesProgress, severity, issue.ID,
-					fmt.Sprintf("Quality gate %s: %s", gateResult.Gate, status),
-					map[string]interface{}{
-						"gate":   string(gateResult.Gate),
-						"passed": gateResult.Passed,
-					})
+				// vc-273: Emit progress event for each gate with typed data
+				message := fmt.Sprintf("Quality gate %s: %s", gateResult.Gate, status)
+				progressData := events.QualityGatesProgressData{
+					CurrentGate:    string(gateResult.Gate),
+					GatesCompleted: i + 1,
+					TotalGates:     len(gateResults),
+					ElapsedSeconds: int64(time.Since(gatesStartTime).Seconds()),
+					Message:        message,
+				}
+				rp.logProgressEvent(ctx, severity, issue.ID, message, progressData)
 			}
 
 			// Check if we timed out or were canceled (vc-128)
@@ -390,20 +394,25 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 						fmt.Fprintf(os.Stderr, "warning: failed to add partial results comment: %v\n", err)
 					}
 
-					// Also log events for each completed gate (vc-140)
-					for _, gateResult := range gateResults {
+					// Also log events for each completed gate (vc-140, vc-273)
+					for i, gateResult := range gateResults {
 						severity := events.SeverityInfo
 						if !gateResult.Passed {
 							severity = events.SeverityWarning
 						}
-						rp.logEvent(ctx, events.EventTypeQualityGatesProgress, severity, issue.ID,
-							fmt.Sprintf("Quality gate %s: %s (canceled)", gateResult.Gate,
-								map[bool]string{true: "PASS", false: "FAIL"}[gateResult.Passed]),
-							map[string]interface{}{
-								"gate":     string(gateResult.Gate),
-								"passed":   gateResult.Passed,
-								"canceled": true,
-							})
+
+						status := map[bool]string{true: "PASS", false: "FAIL"}[gateResult.Passed]
+						message := fmt.Sprintf("Quality gate %s: %s (canceled)", gateResult.Gate, status)
+
+						// vc-273: Use typed data for canceled progress events
+						progressData := events.QualityGatesProgressData{
+							CurrentGate:    string(gateResult.Gate),
+							GatesCompleted: i + 1,
+							TotalGates:     len(gateResults),
+							ElapsedSeconds: 0, // Unknown for canceled gates
+							Message:        message,
+						}
+						rp.logProgressEvent(ctx, severity, issue.ID, message, progressData)
 					}
 				}
 
@@ -1177,5 +1186,24 @@ func (rp *ResultsProcessor) logEvent(ctx context.Context, eventType events.Event
 	if err := rp.store.StoreAgentEvent(ctx, event); err != nil {
 		// Log error but don't fail execution
 		fmt.Fprintf(os.Stderr, "warning: failed to store agent event: %v\n", err)
+	}
+}
+
+// logProgressEvent creates and stores a quality gates progress event with type-safe data (vc-273)
+func (rp *ResultsProcessor) logProgressEvent(ctx context.Context, severity events.EventSeverity, issueID, message string, data events.QualityGatesProgressData) {
+	// Skip logging if context is canceled (e.g., during shutdown)
+	if ctx.Err() != nil {
+		return
+	}
+
+	event, err := events.NewQualityGatesProgressEvent(issueID, rp.actor, "", severity, message, data)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to create quality gates progress event: %v\n", err)
+		return
+	}
+
+	if err := rp.store.StoreAgentEvent(ctx, event); err != nil {
+		// Log error but don't fail execution
+		fmt.Fprintf(os.Stderr, "warning: failed to store quality gates progress event: %v\n", err)
 	}
 }

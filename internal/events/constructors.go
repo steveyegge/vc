@@ -154,3 +154,22 @@ func NewDeduplicationDecisionEvent(issueID, executorID, agentID string, severity
 	}
 	return event, nil
 }
+
+// NewQualityGatesProgressEvent creates a new AgentEvent for quality gates progress with type-safe data (vc-273).
+func NewQualityGatesProgressEvent(issueID, executorID, agentID string, severity EventSeverity, message string, data QualityGatesProgressData) (*AgentEvent, error) {
+	event := &AgentEvent{
+		ID:         uuid.New().String(),
+		Type:       EventTypeQualityGatesProgress,
+		Timestamp:  time.Now(),
+		IssueID:    issueID,
+		ExecutorID: executorID,
+		AgentID:    agentID,
+		Severity:   severity,
+		Message:    message,
+		SourceLine: 0,
+	}
+	if err := event.SetQualityGatesProgressData(data); err != nil {
+		return nil, err
+	}
+	return event, nil
+}

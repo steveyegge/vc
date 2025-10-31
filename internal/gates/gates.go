@@ -34,6 +34,10 @@ type Result struct {
 
 // GateProvider is an interface for running quality gates
 // This allows for pluggable gate implementations (e.g., for testing or custom gates)
+//
+// Note: Custom providers do not automatically receive progress callbacks.
+// If your provider needs to report progress, it should accept a ProgressCallback
+// in its constructor and call it periodically during execution.
 type GateProvider interface {
 	// RunAll executes all quality gates in sequence
 	// Returns the results and whether all gates passed
@@ -62,7 +66,7 @@ type Config struct {
 	Supervisor       *ai.Supervisor   // Optional: enables AI-driven recovery strategies (ZFC)
 	WorkingDir       string           // Directory where gate commands are executed
 	Provider         GateProvider     // Optional: pluggable gate provider (defaults to built-in)
-	ProgressCallback ProgressCallback // Optional: progress reporting callback (vc-267)
+	ProgressCallback ProgressCallback // Optional: progress reporting callback (vc-267). Note: only works with built-in gates, not custom providers.
 }
 
 // NewRunner creates a new quality gate runner
