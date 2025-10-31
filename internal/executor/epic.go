@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/ai"
+	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/labels"
 	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/storage"
@@ -123,6 +126,19 @@ func checkAndCloseEpicIfComplete(ctx context.Context, store storage.Storage, sup
 
 			fmt.Printf("✓ Closed epic %s: %s\n", epicID, epic.Title)
 
+			// vc-268: Emit epic_completed event
+			eventData := map[string]interface{}{
+				"epic_id":            epicID,
+				"epic_title":         epic.Title,
+				"children_completed": len(children),
+				"completion_method":  "ai_assessment",
+				"confidence":         assessment.Confidence,
+				"is_mission":         epic.IssueSubtype == types.SubtypeMission,
+				"actor":              "ai-supervisor",
+			}
+			message := fmt.Sprintf("Epic %s completed: %s (AI assessment, confidence: %.2f)", epicID, epic.Title, assessment.Confidence)
+			logEpicEvent(ctx, store, events.EventTypeEpicCompleted, events.SeverityInfo, epicID, "executor", message, eventData)
+
 			// vc-218: If this is a mission epic, transition to needs-quality-gates state
 			if epic.IssueSubtype == types.SubtypeMission {
 				if err := labels.TransitionState(ctx, store, epicID, "", labels.LabelNeedsQualityGates, labels.TriggerEpicCompleted, "ai-supervisor"); err != nil {
@@ -165,6 +181,19 @@ func checkAndCloseEpicIfComplete(ctx context.Context, store storage.Storage, sup
 
 		fmt.Printf("✓ Closed epic %s: %s\n", epicID, epic.Title)
 
+		// vc-268: Emit epic_completed event
+		eventData := map[string]interface{}{
+			"epic_id":            epicID,
+			"epic_title":         epic.Title,
+			"children_completed": len(children),
+			"completion_method":  "all_children_closed",
+			"confidence":         1.0, // Fallback logic is deterministic
+			"is_mission":         epic.IssueSubtype == types.SubtypeMission,
+			"actor":              "executor",
+		}
+		message := fmt.Sprintf("Epic %s completed: %s (all %d children closed)", epicID, epic.Title, len(children))
+		logEpicEvent(ctx, store, events.EventTypeEpicCompleted, events.SeverityInfo, epicID, "executor", message, eventData)
+
 		// vc-218: If this is a mission epic, transition to needs-quality-gates state
 		if epic.IssueSubtype == types.SubtypeMission {
 			if err := labels.TransitionState(ctx, store, epicID, "", labels.LabelNeedsQualityGates, labels.TriggerEpicCompleted, "executor"); err != nil {
@@ -201,12 +230,74 @@ func cleanupMissionSandboxIfComplete(ctx context.Context, store storage.Storage,
 	// This is a mission epic - clean up its sandbox
 	fmt.Printf("Mission %s completed - cleaning up sandbox\n", epicID)
 
-	if err := sandbox.CleanupMissionSandbox(ctx, sandboxMgr, store, epicID); err != nil {
-		// Log but don't fail - sandbox cleanup is best-effort
-		fmt.Printf("Warning: failed to cleanup mission sandbox for %s: %v\n", epicID, err)
-		return nil
+	// vc-268: Emit epic_cleanup_started event
+	startEventData := map[string]interface{}{
+		"epic_id":      epicID,
+		"is_mission":   true,
+		"sandbox_path": mission.SandboxPath,
+	}
+	logEpicEvent(ctx, store, events.EventTypeEpicCleanupStarted, events.SeverityInfo, epicID, "executor",
+		fmt.Sprintf("Starting cleanup for mission epic %s", epicID), startEventData)
+
+	startTime := time.Now()
+	cleanupErr := sandbox.CleanupMissionSandbox(ctx, sandboxMgr, store, epicID)
+	duration := time.Since(startTime)
+
+	// vc-268: Emit epic_cleanup_completed event
+	completeEventData := map[string]interface{}{
+		"epic_id":      epicID,
+		"is_mission":   true,
+		"sandbox_path": mission.SandboxPath,
+		"success":      cleanupErr == nil,
+		"duration_ms":  duration.Milliseconds(),
+	}
+	if cleanupErr != nil {
+		completeEventData["error"] = cleanupErr.Error()
 	}
 
-	fmt.Printf("✓ Cleaned up sandbox for mission %s\n", epicID)
-	return nil
+	message := fmt.Sprintf("Completed cleanup for mission epic %s (duration: %v)", epicID, duration)
+	severity := events.SeverityInfo
+	if cleanupErr != nil {
+		message = fmt.Sprintf("Cleanup failed for mission epic %s: %v", epicID, cleanupErr)
+		severity = events.SeverityWarning
+		// Log but don't fail - sandbox cleanup is best-effort
+		fmt.Printf("Warning: failed to cleanup mission sandbox for %s: %v\n", epicID, cleanupErr)
+	} else {
+		fmt.Printf("✓ Cleaned up sandbox for mission %s\n", epicID)
+	}
+
+	logEpicEvent(ctx, store, events.EventTypeEpicCleanupCompleted, severity, epicID, "executor", message, completeEventData)
+
+	return nil // Always return nil since cleanup is best-effort
+}
+
+// logEpicEvent creates and stores an epic lifecycle event (vc-268)
+// This follows the same pattern as logEvent in executor_events.go but doesn't require an Executor instance
+func logEpicEvent(ctx context.Context, store storage.Storage, eventType events.EventType, severity events.EventSeverity, issueID, executorID, message string, data map[string]interface{}) {
+	// Skip logging if context is canceled (e.g., during shutdown)
+	if ctx.Err() != nil {
+		return
+	}
+
+	if data == nil {
+		data = make(map[string]interface{})
+	}
+
+	event := &events.AgentEvent{
+		ID:         uuid.New().String(),
+		Type:       eventType,
+		Timestamp:  time.Now(),
+		IssueID:    issueID,
+		ExecutorID: executorID,
+		AgentID:    "", // Empty for executor-level epic events
+		Severity:   severity,
+		Message:    message,
+		Data:       data,
+		SourceLine: 0, // Not applicable for executor-level events
+	}
+
+	if err := store.StoreAgentEvent(ctx, event); err != nil {
+		// Log error but don't fail execution
+		fmt.Printf("Warning: failed to store epic event: %v\n", err)
+	}
 }

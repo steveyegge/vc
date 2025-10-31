@@ -141,6 +141,14 @@ const (
 	EventTypeMissionCreated EventType = "mission_created"
 	// EventTypeMissionMetadataUpdated indicates mission metadata was updated
 	EventTypeMissionMetadataUpdated EventType = "mission_metadata_updated"
+
+	// Epic lifecycle events (vc-268)
+	// EventTypeEpicCompleted indicates an epic was completed (all children done)
+	EventTypeEpicCompleted EventType = "epic_completed"
+	// EventTypeEpicCleanupStarted indicates epic sandbox cleanup began
+	EventTypeEpicCleanupStarted EventType = "epic_cleanup_started"
+	// EventTypeEpicCleanupCompleted indicates epic sandbox cleanup completed
+	EventTypeEpicCleanupCompleted EventType = "epic_cleanup_completed"
 )
 
 // EventSeverity represents the severity level of an event.
@@ -541,6 +549,50 @@ type QualityGatesProgressData struct {
 	ElapsedSeconds int64 `json:"elapsed_seconds"`
 	// Message is a human-readable progress message
 	Message string `json:"message,omitempty"`
+}
+
+// EpicCompletedData contains structured data for epic completion events (vc-268).
+type EpicCompletedData struct {
+	// EpicID is the ID of the completed epic
+	EpicID string `json:"epic_id"`
+	// EpicTitle is the title of the epic
+	EpicTitle string `json:"epic_title"`
+	// ChildrenCompleted is the number of child issues that were completed
+	ChildrenCompleted int `json:"children_completed"`
+	// CompletionMethod indicates how completion was determined (ai_assessment, all_children_closed)
+	CompletionMethod string `json:"completion_method"`
+	// Confidence is the AI's confidence in the completion decision (0.0 to 1.0, or 1.0 for fallback)
+	Confidence float64 `json:"confidence"`
+	// IsMission indicates whether this epic is a mission
+	IsMission bool `json:"is_mission"`
+	// Actor is who/what closed the epic (ai-supervisor, executor, etc.)
+	Actor string `json:"actor"`
+}
+
+// EpicCleanupStartedData contains structured data for epic cleanup start events (vc-268).
+type EpicCleanupStartedData struct {
+	// EpicID is the ID of the epic being cleaned up
+	EpicID string `json:"epic_id"`
+	// IsMission indicates whether this epic is a mission (with sandbox)
+	IsMission bool `json:"is_mission"`
+	// SandboxPath is the path to the sandbox being cleaned up (if mission)
+	SandboxPath string `json:"sandbox_path,omitempty"`
+}
+
+// EpicCleanupCompletedData contains structured data for epic cleanup completion events (vc-268).
+type EpicCleanupCompletedData struct {
+	// EpicID is the ID of the epic that was cleaned up
+	EpicID string `json:"epic_id"`
+	// IsMission indicates whether this epic was a mission
+	IsMission bool `json:"is_mission"`
+	// SandboxPath is the path to the sandbox that was cleaned up (if mission)
+	SandboxPath string `json:"sandbox_path,omitempty"`
+	// Success indicates whether cleanup succeeded
+	Success bool `json:"success"`
+	// Error contains the error message if cleanup failed
+	Error string `json:"error,omitempty"`
+	// DurationMs is the time taken to cleanup in milliseconds
+	DurationMs int64 `json:"duration_ms,omitempty"`
 }
 
 // EventStore defines the interface for storing and retrieving agent events.
