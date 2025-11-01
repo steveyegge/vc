@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -1341,4 +1342,103 @@ func TestSystemPrompt(t *testing.T) {
 	if len(prompt) < 1000 {
 		t.Errorf("System prompt seems too short: %d characters", len(prompt))
 	}
+}
+
+// TestNewConversationHandler tests the constructor
+func TestNewConversationHandler(t *testing.T) {
+	t.Run("succeeds with API key", func(t *testing.T) {
+		// Save original env
+		originalKey := os.Getenv("ANTHROPIC_API_KEY")
+		defer func() {
+			if originalKey != "" {
+				os.Setenv("ANTHROPIC_API_KEY", originalKey)
+			} else {
+				os.Unsetenv("ANTHROPIC_API_KEY")
+			}
+		}()
+
+		// Set test API key
+		os.Setenv("ANTHROPIC_API_KEY", "test-key-12345")
+
+		mock := &mockStorage{}
+		handler, err := NewConversationHandler(mock, "test-actor")
+
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+
+		if handler == nil {
+			t.Fatal("Expected handler to be created")
+		}
+
+		if handler.storage != mock {
+			t.Error("Expected storage to be set")
+		}
+
+		if handler.actor != "test-actor" {
+			t.Errorf("Expected actor 'test-actor', got: %s", handler.actor)
+		}
+
+		if handler.model != "claude-sonnet-4-5-20250929" {
+			t.Errorf("Expected correct model, got: %s", handler.model)
+		}
+
+		if handler.history == nil {
+			t.Error("Expected history to be initialized")
+		}
+
+		if len(handler.history) != 0 {
+			t.Errorf("Expected empty history, got %d items", len(handler.history))
+		}
+	})
+
+	t.Run("defaults actor to 'user'", func(t *testing.T) {
+		originalKey := os.Getenv("ANTHROPIC_API_KEY")
+		defer func() {
+			if originalKey != "" {
+				os.Setenv("ANTHROPIC_API_KEY", originalKey)
+			} else {
+				os.Unsetenv("ANTHROPIC_API_KEY")
+			}
+		}()
+
+		os.Setenv("ANTHROPIC_API_KEY", "test-key-12345")
+
+		mock := &mockStorage{}
+		handler, err := NewConversationHandler(mock, "")
+
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+
+		if handler.actor != "user" {
+			t.Errorf("Expected default actor 'user', got: %s", handler.actor)
+		}
+	})
+
+	t.Run("fails without API key", func(t *testing.T) {
+		// Save and clear API key
+		originalKey := os.Getenv("ANTHROPIC_API_KEY")
+		os.Unsetenv("ANTHROPIC_API_KEY")
+		defer func() {
+			if originalKey != "" {
+				os.Setenv("ANTHROPIC_API_KEY", originalKey)
+			}
+		}()
+
+		mock := &mockStorage{}
+		handler, err := NewConversationHandler(mock, "test")
+
+		if err == nil {
+			t.Error("Expected error for missing API key, got nil")
+		}
+
+		if handler != nil {
+			t.Error("Expected nil handler when API key is missing")
+		}
+
+		if !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
+			t.Errorf("Expected error message to mention ANTHROPIC_API_KEY, got: %v", err)
+		}
+	})
 }

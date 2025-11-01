@@ -102,6 +102,13 @@ func (m *mockStorageIntegration) AddComment(ctx context.Context, issueID, actor,
 	return nil
 }
 
+func (m *mockStorageIntegration) GetDependencies(ctx context.Context, issueID string) ([]*types.Issue, error) {
+	if m.dependencies != nil {
+		return m.dependencies[issueID], nil
+	}
+	return nil, nil
+}
+
 // TestConversationalFlows tests end-to-end conversation scenarios
 func TestConversationalFlows(t *testing.T) {
 	// Note: These tests validate tool selection and parameter passing.
