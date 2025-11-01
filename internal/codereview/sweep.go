@@ -446,9 +446,7 @@ func (s *Sweeper) SelectFilesForReview(ctx context.Context, decision *types.Revi
 	if len(decision.TargetAreas) > 0 {
 		// Targeted review: specific directories
 		args := []string{"ls-files"}
-		for _, area := range decision.TargetAreas {
-			args = append(args, area)
-		}
+		args = append(args, decision.TargetAreas...)
 		cmd = exec.CommandContext(ctx, "git", args...)
 	} else {
 		// Broad review: all tracked files

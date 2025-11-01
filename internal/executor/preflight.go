@@ -452,7 +452,7 @@ func (p *PreFlightChecker) createBaselineBlockingIssue(ctx context.Context, resu
 
 		// Reopen by updating status and notes
 		if err := p.storage.UpdateIssue(ctx, issueID, map[string]interface{}{
-			"status": types.StatusOpen,
+			"status": string(types.StatusOpen),
 			"notes":  newNotes,
 		}, "preflight-degraded-mode"); err != nil {
 			return fmt.Errorf("failed to reopen baseline issue: %w", err)

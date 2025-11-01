@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -389,6 +390,132 @@ func TestHandleBaselineFailure(t *testing.T) {
 		}
 		if issue == nil {
 			t.Errorf("Expected issue %s to still exist after second call", issueID)
+		}
+	}
+}
+
+// TestBaselineIssueReopening tests that closed baseline issues are reopened when gates fail again
+func TestBaselineIssueReopening(t *testing.T) {
+	ctx := context.Background()
+
+	// Create in-memory storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = ":memory:"
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	defer store.Close()
+
+	vcStorage, ok := store.(*beads.VCStorage)
+	if !ok {
+		t.Fatal("storage is not VCStorage")
+	}
+
+	// Create mock gates runner with failing gates
+	mockRunner := &mockGateRunner{
+		passAll: false, // Gates will fail
+	}
+
+	// Create preflight checker
+	config := &PreFlightConfig{
+		Enabled:      true,
+		CacheTTL:     5 * time.Minute,
+		FailureMode:  FailureModeBlock,
+		WorkingDir:   ".",
+		GatesTimeout: 30 * time.Second,
+	}
+
+	checker, err := NewPreFlightChecker(vcStorage, mockRunner, config)
+	if err != nil {
+		t.Fatalf("failed to create preflight checker: %v", err)
+	}
+
+	// Get gate results (all failing)
+	results, allPassed := mockRunner.RunAll(ctx)
+	if allPassed {
+		t.Fatal("Expected gates to fail for this test")
+	}
+
+	// Step 1: Create initial baseline issues
+	err = checker.HandleBaselineFailure(ctx, "test-executor", "abc123", results)
+	if err != nil {
+		t.Fatalf("HandleBaselineFailure failed: %v", err)
+	}
+
+	// Verify baseline issues were created
+	expectedIssues := []string{
+		"vc-baseline-test",
+		"vc-baseline-lint",
+		"vc-baseline-build",
+	}
+
+	for _, issueID := range expectedIssues {
+		issue, err := vcStorage.GetIssue(ctx, issueID)
+		if err != nil {
+			t.Fatalf("failed to get issue %s: %v", issueID, err)
+		}
+		if issue == nil {
+			t.Fatalf("Expected issue %s to be created", issueID)
+		}
+		if issue.Status != types.StatusOpen {
+			t.Errorf("Issue %s status = %v, want %v", issueID, issue.Status, types.StatusOpen)
+		}
+	}
+
+	// Step 2: Close the baseline issues (simulating that they were fixed)
+	for _, issueID := range expectedIssues {
+		err := vcStorage.UpdateIssue(ctx, issueID, map[string]interface{}{
+			"status": string(types.StatusClosed),
+			"notes":  "Fixed the gate failure",
+		}, "test-actor")
+		if err != nil {
+			t.Fatalf("failed to close issue %s: %v", issueID, err)
+		}
+	}
+
+	// Verify issues are closed
+	for _, issueID := range expectedIssues {
+		issue, err := vcStorage.GetIssue(ctx, issueID)
+		if err != nil {
+			t.Fatalf("failed to get issue %s: %v", issueID, err)
+		}
+		if issue.Status != types.StatusClosed {
+			t.Errorf("Issue %s status = %v, want %v", issueID, issue.Status, types.StatusClosed)
+		}
+	}
+
+	// Step 3: Call HandleBaselineFailure again (gates failed again)
+	err = checker.HandleBaselineFailure(ctx, "test-executor", "def456", results)
+	if err != nil {
+		t.Fatalf("HandleBaselineFailure failed on reopening: %v", err)
+	}
+
+	// Step 4: Verify issues were reopened (status changed from closed to open)
+	for _, issueID := range expectedIssues {
+		issue, err := vcStorage.GetIssue(ctx, issueID)
+		if err != nil {
+			t.Fatalf("failed to get issue %s after reopening: %v", issueID, err)
+		}
+		if issue == nil {
+			t.Fatalf("Expected issue %s to exist after reopening", issueID)
+		}
+
+		// Verify status changed to open
+		if issue.Status != types.StatusOpen {
+			t.Errorf("Issue %s status = %v, want %v (should be reopened)", issueID, issue.Status, types.StatusOpen)
+		}
+
+		// Verify notes were updated with new failure info
+		if issue.Notes == "" {
+			t.Errorf("Issue %s notes are empty (expected updated failure info)", issueID)
+		}
+		if issue.Notes == "Fixed the gate failure" {
+			t.Errorf("Issue %s notes not updated (still has old notes)", issueID)
+		}
+		// Notes should contain "Gate failed again"
+		if len(issue.Notes) > 0 && !strings.Contains(issue.Notes, "Gate failed again") {
+			t.Errorf("Issue %s notes don't mention gate failing again: %s", issueID, issue.Notes)
 		}
 	}
 }
