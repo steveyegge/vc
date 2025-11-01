@@ -194,6 +194,19 @@ func TestBaselineSelfHealing_DiagnosisIntegration(t *testing.T) {
 			t.Fatalf("failed to create issue: %v", err)
 		}
 
+		// Initialize execution state (vc-57d7)
+		// ProcessAgentResult expects state to be "executing" before it transitions to "analyzing"
+		// We bypass ClaimIssue to avoid foreign key requirements in this unit test
+		if err := store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateClaimed); err != nil {
+			t.Fatalf("failed to set claimed state: %v", err)
+		}
+		if err := store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateAssessing); err != nil {
+			t.Fatalf("failed to set assessing state: %v", err)
+		}
+		if err := store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateExecuting); err != nil {
+			t.Fatalf("failed to set executing state: %v", err)
+		}
+
 		// Create a results processor
 		processor, err := NewResultsProcessor(&ResultsProcessorConfig{
 			Store:      store,

@@ -834,7 +834,7 @@ SkipGates:
 		if shouldClose {
 		// Note: closed_at is automatically managed by Beads when status changes to/from closed
 		updates := map[string]interface{}{
-		"status": types.StatusClosed,
+		"status": string(types.StatusClosed), // vc-57d7: Convert Status type to string for Beads
 		}
 		if err := rp.store.UpdateIssue(ctx, issue.ID, updates, rp.actor); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to close issue: %v\n", err)

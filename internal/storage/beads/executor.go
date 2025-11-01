@@ -505,6 +505,12 @@ func (s *VCStorage) UpdateExecutionState(ctx context.Context, issueID string, ne
 		}
 	}
 
+	// Allow idempotent same-state transitions (vc-57d7)
+	// This handles cases where code reinitializes state for safety
+	if currentExecState.State == newState {
+		return nil // Already in target state, no-op
+	}
+
 	// Validate state transition
 	if !currentExecState.State.CanTransitionTo(newState) {
 		return fmt.Errorf("invalid state transition: cannot transition from %s to %s (valid transitions: %v)",
