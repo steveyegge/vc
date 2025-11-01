@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
@@ -121,7 +122,10 @@ func TestAssessCompletion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			// Use a context with timeout to prevent test from hanging indefinitely
+			// 90 seconds should be enough for one full retry cycle (60s + retries)
+			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+			defer cancel()
 
 			assessment, err := supervisor.AssessCompletion(ctx, tt.issue, tt.children)
 			if err != nil {
@@ -171,7 +175,8 @@ func TestAssessCompletion_EmptyChildren(t *testing.T) {
 		AcceptanceCriteria: "Work is complete",
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
 	assessment, err := supervisor.AssessCompletion(ctx, epic, []*types.Issue{})
 	if err != nil {
 		t.Fatalf("AssessCompletion failed: %v", err)
@@ -222,7 +227,8 @@ func TestAssessCompletion_ErrorHandling(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
 	_, err = supervisor.AssessCompletion(ctx, epic, children)
 
 	// Should return an error with invalid API key
@@ -273,7 +279,8 @@ func TestAssessCompletion_ObjectivesFocus(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
 	assessment, err := supervisor.AssessCompletion(ctx, epic, children)
 	if err != nil {
 		t.Fatalf("AssessCompletion failed: %v", err)
