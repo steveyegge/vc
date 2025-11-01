@@ -27,9 +27,9 @@ func TestRunExecutorFlagParsing(t *testing.T) {
 	}
 
 	// Create test database
-	dbPath := filepath.Join(beadsDir, "vc.db")
+	testDbPath := filepath.Join(beadsDir, "vc.db")
 	ctx := context.Background()
-	testStore, err := beads.NewVCStorage(ctx, dbPath)
+	testStore, err := beads.NewVCStorage(ctx, testDbPath)
 	if err != nil {
 		t.Fatalf("Failed to create test storage: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestRunExecutorFlagParsing(t *testing.T) {
 	originalStore := store
 	originalDbPath := dbPath
 	store = testStore
-	dbPath = dbPath
+	dbPath = testDbPath
 	defer func() {
 		store = originalStore
 		dbPath = originalDbPath
