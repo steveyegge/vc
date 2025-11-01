@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +13,16 @@ import (
 	"github.com/steveyegge/vc/internal/storage/beads"
 	"github.com/steveyegge/vc/internal/types"
 )
+
+// commitSHAPattern matches valid git commit SHAs (7-40 hexadecimal characters)
+var commitSHAPattern = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
+
+// isValidCommitSHA validates that a string is a valid git commit SHA
+// Valid SHAs are 7-40 hexadecimal characters (lowercase)
+// This prevents command injection when using SHAs in git commands
+func isValidCommitSHA(sha string) bool {
+	return commitSHAPattern.MatchString(sha)
+}
 
 // Sweeper manages activity-based code review sweeps
 type Sweeper struct {
@@ -45,8 +56,18 @@ func (s *Sweeper) GetDiffMetrics(ctx context.Context) (*types.ReviewMetricsResul
 			return nil, fmt.Errorf("failed to get initial commit: %w", err)
 		}
 		lastCommitSHA = strings.TrimSpace(string(output))
+
+		// Validate initial commit SHA (vc-cfb3)
+		if !isValidCommitSHA(lastCommitSHA) {
+			return nil, fmt.Errorf("invalid initial commit SHA: %s", lastCommitSHA)
+		}
 	} else {
 		lastCommitSHA = checkpoint.CommitSHA
+
+		// Validate checkpoint commit SHA (vc-cfb3: defense-in-depth)
+		if !isValidCommitSHA(lastCommitSHA) {
+			return nil, fmt.Errorf("invalid checkpoint commit SHA: %s", lastCommitSHA)
+		}
 	}
 
 	// Get current HEAD commit (ACTUAL SHA, not symbolic ref "HEAD")
@@ -56,6 +77,11 @@ func (s *Sweeper) GetDiffMetrics(ctx context.Context) (*types.ReviewMetricsResul
 		return nil, fmt.Errorf("failed to get current commit: %w", err)
 	}
 	currentCommitSHA := strings.TrimSpace(string(output))
+
+	// Validate current commit SHA (vc-cfb3)
+	if !isValidCommitSHA(currentCommitSHA) {
+		return nil, fmt.Errorf("invalid current commit SHA: %s", currentCommitSHA)
+	}
 
 	// If no changes since last checkpoint, return zero metrics with current SHA
 	if lastCommitSHA == currentCommitSHA {
