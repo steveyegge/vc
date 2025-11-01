@@ -239,6 +239,57 @@ func TestValidateDatabaseFreshness_NoJSONL(t *testing.T) {
 	}
 }
 
+// TestValidateDatabaseFreshness_ToleranceThreshold verifies that small timestamp differences
+// within the tolerance threshold don't trigger staleness errors (vc-178)
+func TestValidateDatabaseFreshness_ToleranceThreshold(t *testing.T) {
+	tmpDir := t.TempDir()
+	beadsDir := filepath.Join(tmpDir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatalf("failed to create .beads dir: %v", err)
+	}
+
+	dbPath := filepath.Join(beadsDir, "test.db")
+	jsonlPath := filepath.Join(beadsDir, "issues.jsonl")
+
+	// Create both files
+	if err := os.WriteFile(dbPath, []byte("db content"), 0644); err != nil {
+		t.Fatalf("failed to create database: %v", err)
+	}
+	if err := os.WriteFile(jsonlPath, []byte("{}"), 0644); err != nil {
+		t.Fatalf("failed to create issues.jsonl: %v", err)
+	}
+
+	// Set database to be 500ms older than JSONL (well within 1 second tolerance)
+	now := time.Now()
+	dbTime := now.Add(-500 * time.Millisecond)
+	jsonlTime := now
+
+	if err := os.Chtimes(dbPath, dbTime, dbTime); err != nil {
+		t.Fatalf("failed to update database timestamp: %v", err)
+	}
+	if err := os.Chtimes(jsonlPath, jsonlTime, jsonlTime); err != nil {
+		t.Fatalf("failed to update jsonl timestamp: %v", err)
+	}
+
+	// Should pass - difference is within tolerance
+	err := ValidateDatabaseFreshness(dbPath)
+	if err != nil {
+		t.Errorf("Expected no error for timestamp difference within tolerance, got: %v", err)
+	}
+
+	// Now test with difference just over threshold (1.5 seconds)
+	dbTime2 := now.Add(-2 * time.Second)
+	if err := os.Chtimes(dbPath, dbTime2, dbTime2); err != nil {
+		t.Fatalf("failed to update database timestamp: %v", err)
+	}
+
+	// Should fail - difference exceeds tolerance
+	err = ValidateDatabaseFreshness(dbPath)
+	if err == nil {
+		t.Error("Expected error for timestamp difference exceeding tolerance, got nil")
+	}
+}
+
 // Helper function to check if string contains substring
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && findSubstring(s, substr)

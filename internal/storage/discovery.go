@@ -184,7 +184,9 @@ func ValidateAlignment(dbPath, workingDir string) error {
 // This prevents bugs like vc-173 where the executor claimed closed issues because the database
 // was out of sync with git after pulling updates.
 //
-// vc-173: Database staleness detection - prevents claiming closed issues when database is stale
+// To account for filesystem timestamp precision differences across platforms
+// (e.g., FAT32: 2s, ext4: 1ns), this function uses a 1-second tolerance threshold.
+// Only differences exceeding 1 second are considered stale (vc-178).
 func ValidateDatabaseFreshness(dbPath string) error {
 	// Get project root to find issues.jsonl
 	projectRoot, err := GetProjectRoot(dbPath)
