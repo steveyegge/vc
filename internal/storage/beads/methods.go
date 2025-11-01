@@ -63,7 +63,8 @@ func (s *VCStorage) GetIssues(ctx context.Context, ids []string) (map[string]*ty
 
 	// Query 1: Get all core issues from Beads in one query
 	query := fmt.Sprintf(`
-		SELECT id, title, description, status, priority, issue_type, created_at, updated_at, assignee, notes, design, acceptance_criteria
+		SELECT id, title, description, status, priority, issue_type, created_at, updated_at,
+		       closed_at, assignee, estimated_minutes, notes, design, acceptance_criteria
 		FROM issues
 		WHERE id IN (%s)
 	`, strings.Join(placeholders, ", "))
@@ -79,7 +80,9 @@ func (s *VCStorage) GetIssues(ctx context.Context, ids []string) (map[string]*ty
 	for rows.Next() {
 		var issue types.Issue
 		var createdAt, updatedAt time.Time
+		var closedAt sql.NullTime
 		var assignee, notes, design, acceptanceCriteria sql.NullString
+		var estimatedMinutes sql.NullInt64
 
 		if err := rows.Scan(
 			&issue.ID,
@@ -90,7 +93,9 @@ func (s *VCStorage) GetIssues(ctx context.Context, ids []string) (map[string]*ty
 			&issue.IssueType,
 			&createdAt,
 			&updatedAt,
+			&closedAt,
 			&assignee,
+			&estimatedMinutes,
 			&notes,
 			&design,
 			&acceptanceCriteria,
@@ -101,10 +106,17 @@ func (s *VCStorage) GetIssues(ctx context.Context, ids []string) (map[string]*ty
 		// Set timestamps
 		issue.CreatedAt = createdAt
 		issue.UpdatedAt = updatedAt
+		if closedAt.Valid {
+			issue.ClosedAt = &closedAt.Time
+		}
 
 		// Handle nullable fields
 		if assignee.Valid {
 			issue.Assignee = assignee.String
+		}
+		if estimatedMinutes.Valid {
+			mins := int(estimatedMinutes.Int64)
+			issue.EstimatedMinutes = &mins
 		}
 		if notes.Valid {
 			issue.Notes = notes.String

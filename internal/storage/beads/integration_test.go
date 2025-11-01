@@ -3895,4 +3895,26 @@ func TestGetIssues(t *testing.T) {
 			t.Errorf("Expected 0 issues for empty list, got %d", len(issues))
 		}
 	})
+
+	t.Run("Fetch closed issue with ClosedAt timestamp", func(t *testing.T) {
+		ids := []string{issue3.ID}
+		issues, err := store.GetIssues(ctx, ids)
+		if err != nil {
+			t.Fatalf("GetIssues failed: %v", err)
+		}
+
+		if len(issues) != 1 {
+			t.Errorf("Expected 1 issue, got %d", len(issues))
+		}
+
+		issue, exists := issues[issue3.ID]
+		if !exists {
+			t.Fatal("Issue3 not found")
+		}
+
+		// Verify ClosedAt is populated for closed issues
+		if issue.Status == types.StatusClosed && issue.ClosedAt == nil {
+			t.Error("Closed issue should have ClosedAt timestamp")
+		}
+	})
 }
