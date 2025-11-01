@@ -366,7 +366,7 @@ File discovered issues with detailed reasoning and suggestions.`,
 	}
 
 	// Add target area labels if specified
-	if decision.TargetAreas != nil && len(decision.TargetAreas) > 0 {
+	if len(decision.TargetAreas) > 0 {
 		for _, area := range decision.TargetAreas {
 			label := fmt.Sprintf("review-area:%s", area)
 			if err := s.store.AddLabel(ctx, issue.ID, label, actor); err != nil {
@@ -381,7 +381,7 @@ File discovered issues with detailed reasoning and suggestions.`,
 
 // formatTargetAreas formats target areas for display
 func formatTargetAreas(areas []string) string {
-	if areas == nil || len(areas) == 0 {
+	if len(areas) == 0 {
 		return "Broad sampling across entire codebase"
 	}
 	return strings.Join(areas, ", ")
@@ -443,7 +443,7 @@ func (s *Sweeper) SelectFilesForReview(ctx context.Context, decision *types.Revi
 
 	// Build git ls-files command based on target areas
 	var cmd *exec.Cmd
-	if decision.TargetAreas != nil && len(decision.TargetAreas) > 0 {
+	if len(decision.TargetAreas) > 0 {
 		// Targeted review: specific directories
 		args := []string{"ls-files"}
 		for _, area := range decision.TargetAreas {

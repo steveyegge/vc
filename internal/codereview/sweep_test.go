@@ -132,15 +132,15 @@ func TestGetTotalLOCContextCancellation(t *testing.T) {
 	loc := getTotalLOC(ctx)
 	duration := time.Since(start)
 
-	// Should fail fast (cancelled context)
+	// Should fail fast (canceled context)
 	if duration > 100*time.Millisecond {
-		t.Errorf("Cancelled getTotalLOC took too long: %v (expected < 100ms)", duration)
+		t.Errorf("Canceled getTotalLOC took too long: %v (expected < 100ms)", duration)
 	}
 
-	// Should return 0 when context is cancelled (command fails)
+	// Should return 0 when context is canceled (command fails)
 	if loc != 0 {
-		t.Logf("Note: getTotalLOC returned %d with cancelled context (may have used cache)", loc)
+		t.Logf("Note: getTotalLOC returned %d with canceled context (may have used cache)", loc)
 	}
 
-	t.Logf("Cancelled call duration: %v", duration)
+	t.Logf("Canceled call duration: %v", duration)
 }
