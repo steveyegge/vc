@@ -159,8 +159,8 @@ func checkAndCloseEpicIfComplete(ctx context.Context, store storage.Storage, sup
 	}
 
 	// Fallback: No AI supervisor available, use simple heuristic
-	// (This path should rarely be taken in production)
-	fmt.Printf("Warning: No AI supervisor available for epic %s, using fallback logic\n", epicID)
+	// This is expected when AI supervision is disabled or API key is not configured
+	// Silently use fallback logic (warning already logged during supervisor initialization if needed)
 
 	// Check if all children are closed
 	allClosed := true

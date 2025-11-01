@@ -374,8 +374,8 @@ func (o *Orchestrator) CheckMissionCompletion(ctx context.Context, missionID str
 	}
 
 	// Fallback: No AI supervisor available, use simple heuristic
-	// (This path should rarely be taken in production)
-	fmt.Printf("Warning: No AI supervisor available for mission %s, using fallback logic\n", missionID)
+	// This is expected when AI supervision is disabled or API key is not configured
+	// Silently use fallback logic (warning already logged during supervisor initialization if needed)
 
 	// Check if all phase epics are closed
 	allPhasesClosed := true
