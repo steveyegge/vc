@@ -648,6 +648,178 @@ func (s *Supervisor) DecideCodeReviewSweep(ctx context.Context, request *types.R
 	return &decision, nil
 }
 
+// ReviewSingleFile performs AI review of a single file to identify 0-3 issues
+// AC 6: Per-file review that identifies specific issues
+func (s *Supervisor) ReviewSingleFile(ctx context.Context, filePath string, fileContent string) (*types.FileReviewResult, error) {
+	startTime := time.Now()
+
+	// Build the prompt for file review
+	prompt := s.buildFileReviewPrompt(filePath, fileContent)
+
+	// Call Anthropic API with retry logic using Sonnet (thorough analysis)
+	var response *anthropic.Message
+	err := s.retryWithBackoff(ctx, "file-review", func(attemptCtx context.Context) error {
+		resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(s.model), // Use Sonnet for thorough review
+			MaxTokens: 2048,                     // Enough for 0-3 issues
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			},
+		})
+		if apiErr != nil {
+			return apiErr
+		}
+		response = resp
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("anthropic API call failed: %w", err)
+	}
+
+	// Extract the text content from the response
+	var responseText string
+	for _, block := range response.Content {
+		if block.Type == "text" {
+			responseText += block.Text
+		}
+	}
+
+	// Parse the response as JSON using resilient parser
+	parseResult := Parse[types.FileReviewResult](responseText, ParseOptions{
+		Context:   "file review response",
+		LogErrors: boolPtr(true),
+	})
+	if !parseResult.Success {
+		return nil, fmt.Errorf("failed to parse file review response: %s (response: %s)", parseResult.Error, truncateString(responseText, 200))
+	}
+	result := parseResult.Data
+
+	// Set file path
+	result.FilePath = filePath
+
+	// Log the review
+	duration := time.Since(startTime)
+	fmt.Printf("AI File Review for %s: issues=%d, duration=%v\n", filePath, len(result.Issues), duration)
+
+	// Log AI usage to events
+	if err := s.logAIUsage(ctx, "", "file-review", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
+	}
+
+	return &result, nil
+}
+
+// buildFileReviewPrompt builds the prompt for reviewing a single file
+func (s *Supervisor) buildFileReviewPrompt(filePath string, fileContent string) string {
+	// Truncate content if too large
+	contentToReview := fileContent
+	wasTruncated := false
+	const maxContentSize = 40000
+	if len(fileContent) > maxContentSize {
+		contentToReview = safeTruncateString(fileContent, maxContentSize) + "\n\n... [content truncated] ..."
+		wasTruncated = true
+	}
+
+	truncationNote := ""
+	if wasTruncated {
+		truncationNote = "\n\nNote: The file was truncated. Base your review on what's shown."
+	}
+
+	return fmt.Sprintf(`You are performing a code review sweep to find non-obvious issues that coding agents miss during focused task work.
+
+PHILOSOPHY:
+Coding agents focus on their assigned task and miss issues outside their scope.
+This review catches: inefficiencies, subtle bugs, poor patterns, missing best practices,
+and unnamed anti-patterns before they accumulate.
+
+FILE: %s
+
+CONTENT:
+%s%s
+
+REVIEW TASK:
+Analyze this file for non-obvious issues. Find 0-3 issues (be selective - only real problems).
+
+Look for:
+
+1. **Inefficiencies**
+   - Algorithmic (O(n²) where O(n) possible)
+   - Resource usage (memory leaks, unclosed files/connections)
+   - Unnecessary computations or allocations
+   - Missing caching opportunities
+
+2. **Subtle Bugs**
+   - Race conditions or concurrency issues
+   - Off-by-one errors
+   - Edge cases not handled
+   - Copy-paste bugs (similar code with subtle differences)
+   - Null/nil pointer dereferences
+
+3. **Poor Patterns**
+   - Code duplication that should be abstracted
+   - Tight coupling between components
+   - Overly complex functions (should be split)
+   - Inconsistent error handling
+
+4. **Missing Best Practices**
+   - Error handling gaps
+   - Missing input validation
+   - Hardcoded values that should be configurable
+   - Public APIs without documentation
+   - Test gaps for edge cases
+
+5. **Unnamed Anti-patterns**
+   - Things that "feel wrong" but aren't named anti-patterns
+   - Clever code that's hard to understand
+   - Design choices that will cause future pain
+
+GUIDELINES:
+- Be SELECTIVE: Only file 0-3 real issues per file
+- Be SPECIFIC: Include exact line numbers/ranges
+- Be ACTIONABLE: Clear description of what's wrong and how to fix
+- Be CONSTRUCTIVE: Focus on important issues, not nitpicks
+- Skip trivial style issues unless they cause real problems
+- Assign appropriate severity and priority
+
+SEVERITY LEVELS:
+- high: Critical bugs, security issues, major performance problems
+- medium: Important issues that should be fixed
+- low: Minor improvements, code smells
+
+PRIORITY LEVELS:
+- P0: Critical security or correctness issues
+- P1: Important bugs or significant quality issues
+- P2: Moderate improvements
+- P3: Nice-to-have refinements
+
+Provide your review as a JSON object:
+{
+  "issues": [
+    {
+      "type": "efficiency" | "bug" | "pattern" | "best_practice" | "other",
+      "severity": "low" | "medium" | "high",
+      "location": "file.go:45-67",
+      "title": "Short description of the issue",
+      "description": "Detailed explanation of what's wrong and why it matters",
+      "suggestion": "Specific suggestion on how to fix it",
+      "priority": "P0" | "P1" | "P2" | "P3"
+    }
+  ]
+}
+
+IMPORTANT NOTES:
+- Empty issues array is valid and encouraged if code looks good
+- Don't be pedantic - focus on meaningful problems
+- Consider the context and intent of the code
+- Maximum 3 issues per file (be selective)
+
+IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences. Just the JSON object.`,
+		filePath,
+		contentToReview,
+		truncationNote)
+}
+
 // buildReviewSweepPrompt builds the prompt for AI decision about code review sweep
 func (s *Supervisor) buildReviewSweepPrompt(request *types.ReviewDecisionRequest) string {
 	heavyChurnStr := "none"

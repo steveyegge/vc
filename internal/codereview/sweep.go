@@ -386,3 +386,211 @@ func formatTargetAreas(areas []string) string {
 	}
 	return strings.Join(areas, ", ")
 }
+
+// ShouldExcludeFile determines if a file should be excluded from code review
+// AC 10: Excludes generated files, vendor code, very large files, and binary/non-code files
+func ShouldExcludeFile(filePath string, maxLines int) (bool, string) {
+	// Generated files
+	if strings.HasSuffix(filePath, ".pb.go") {
+		return true, "generated protobuf file"
+	}
+	if strings.HasSuffix(filePath, ".gen.go") {
+		return true, "generated code"
+	}
+	if strings.Contains(filePath, "_generated.") {
+		return true, "generated file"
+	}
+
+	// Vendor code
+	if strings.Contains(filePath, "/vendor/") || strings.HasPrefix(filePath, "vendor/") {
+		return true, "vendor code"
+	}
+	if strings.Contains(filePath, "/third_party/") || strings.HasPrefix(filePath, "third_party/") {
+		return true, "third-party code"
+	}
+
+	// Binary and non-code files
+	binaryExts := []string{".bin", ".exe", ".dll", ".so", ".dylib", ".a", ".o", ".obj",
+		".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg",
+		".pdf", ".zip", ".tar", ".gz", ".bz2", ".xz",
+		".mp3", ".mp4", ".avi", ".mov", ".wav",
+		".ttf", ".woff", ".woff2", ".eot"}
+	for _, ext := range binaryExts {
+		if strings.HasSuffix(filePath, ext) {
+			return true, "binary/media file"
+		}
+	}
+
+	// Very large files (requires reading file to count lines)
+	if maxLines > 0 {
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			return true, fmt.Sprintf("cannot read file: %v", err)
+		}
+		lineCount := strings.Count(string(content), "\n") + 1
+		if lineCount > maxLines {
+			return true, fmt.Sprintf("too large (%d lines)", lineCount)
+		}
+	}
+
+	return false, ""
+}
+
+// SelectFilesForReview selects files for review based on decision scope and target areas
+// AC 10: Applies file exclusions
+func (s *Sweeper) SelectFilesForReview(ctx context.Context, decision *types.ReviewDecision) ([]string, error) {
+	var files []string
+
+	// Build git ls-files command based on target areas
+	var cmd *exec.Cmd
+	if decision.TargetAreas != nil && len(decision.TargetAreas) > 0 {
+		// Targeted review: specific directories
+		args := []string{"ls-files"}
+		for _, area := range decision.TargetAreas {
+			args = append(args, area)
+		}
+		cmd = exec.CommandContext(ctx, "git", args...)
+	} else {
+		// Broad review: all tracked files
+		cmd = exec.CommandContext(ctx, "git", "ls-files")
+	}
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list files: %w", err)
+	}
+
+	allFiles := strings.Split(strings.TrimSpace(string(output)), "\n")
+
+	// Filter files based on exclusion rules (AC 10)
+	const maxFileLines = 1000 // Exclude files larger than 1000 lines
+	for _, file := range allFiles {
+		if file == "" {
+			continue
+		}
+
+		// Apply exclusion rules
+		excluded, _ := ShouldExcludeFile(file, maxFileLines)
+		if excluded {
+			continue
+		}
+
+		// Only include code files
+		if isCodeFile(file) {
+			files = append(files, file)
+		}
+	}
+
+	// Randomly sample based on estimated file count
+	if len(files) > decision.EstimatedFiles {
+		files = randomSample(files, decision.EstimatedFiles)
+	}
+
+	return files, nil
+}
+
+// isCodeFile checks if a file is a code file worth reviewing
+func isCodeFile(filePath string) bool {
+	codeExts := []string{".go", ".js", ".ts", ".tsx", ".jsx", ".py", ".java", ".c", ".cpp", ".h", ".hpp", ".rs", ".rb", ".php", ".sh"}
+	for _, ext := range codeExts {
+		if strings.HasSuffix(filePath, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+// randomSample returns a random sample of n items from the input slice
+func randomSample(items []string, n int) []string {
+	if n >= len(items) {
+		return items
+	}
+
+	// Simple random sampling using current time as seed
+	result := make([]string, n)
+	indices := make(map[int]bool)
+
+	for len(indices) < n {
+		// Simple pseudo-random index using time
+		idx := (int(time.Now().UnixNano()) + len(indices)) % len(items)
+		if !indices[idx] {
+			indices[idx] = true
+		}
+	}
+
+	i := 0
+	for idx := range indices {
+		result[i] = items[idx]
+		i++
+	}
+
+	return result
+}
+
+// FileDiscoveredIssue creates an issue from a file review finding
+// AC 7: Files discovered issues with AI reasoning and suggestions
+func (s *Sweeper) FileDiscoveredIssue(ctx context.Context, reviewIssueID string, fileIssue *types.FileReviewIssue, filePath string) (string, error) {
+	// Parse priority (e.g., "P1" -> 1)
+	priority := 2 // Default P2
+	if len(fileIssue.Priority) >= 2 && fileIssue.Priority[0] == 'P' {
+		if p, err := strconv.Atoi(fileIssue.Priority[1:]); err == nil {
+			priority = p
+		}
+	}
+
+	// Determine issue type based on file issue type
+	issueType := types.TypeTask
+	if fileIssue.Type == "bug" {
+		issueType = types.TypeBug
+	}
+
+	// Build description with AI reasoning and suggestion
+	description := fmt.Sprintf(`**File:** %s
+**Location:** %s
+**Severity:** %s
+
+**Issue:**
+%s
+
+**Suggested Fix:**
+%s
+
+---
+*Discovered by AI code review sweep*
+*Type: %s*`, filePath, fileIssue.Location, fileIssue.Severity, fileIssue.Description, fileIssue.Suggestion, fileIssue.Type)
+
+	// Create the issue
+	issue := &types.Issue{
+		Title:       fileIssue.Title,
+		Description: description,
+		IssueType:   issueType,
+		Priority:    priority,
+		Status:      types.StatusOpen,
+	}
+
+	actor := "code-review-sweeper"
+	if err := s.store.CreateIssue(ctx, issue, actor); err != nil {
+		return "", fmt.Errorf("failed to create discovered issue: %w", err)
+	}
+
+	// Add 'code-review-sweep' label
+	if err := s.store.AddLabel(ctx, issue.ID, "code-review-sweep", actor); err != nil {
+		// Log warning but continue
+		fmt.Fprintf(os.Stderr, "warning: failed to add code-review-sweep label: %v\n", err)
+	}
+
+	// Add discovered-from dependency to link back to review issue
+	if reviewIssueID != "" {
+		dep := &types.Dependency{
+			IssueID:     issue.ID,
+			DependsOnID: reviewIssueID,
+			Type:        types.DepDiscoveredFrom,
+		}
+		if err := s.store.AddDependency(ctx, dep, actor); err != nil {
+			// Log warning but continue
+			fmt.Fprintf(os.Stderr, "warning: failed to add discovered-from dependency: %v\n", err)
+		}
+	}
+
+	return issue.ID, nil
+}
