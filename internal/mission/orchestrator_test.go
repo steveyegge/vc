@@ -63,6 +63,16 @@ func (m *MockStorage) GetIssue(ctx context.Context, id string) (*types.Issue, er
 	return nil, ErrNotFound
 }
 
+func (m *MockStorage) GetIssues(ctx context.Context, ids []string) (map[string]*types.Issue, error) {
+	result := make(map[string]*types.Issue)
+	for _, id := range ids {
+		if issue, exists := m.issues[id]; exists {
+			result[id] = issue
+		}
+	}
+	return result, nil
+}
+
 func (m *MockStorage) GetMission(ctx context.Context, id string) (*types.Mission, error) {
 	issue, err := m.GetIssue(ctx, id)
 	if err != nil {

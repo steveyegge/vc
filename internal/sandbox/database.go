@@ -333,21 +333,31 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 	}
 
 	// Collect all discovered issues (issues in sandbox that don't exist in main DB)
+	// vc-58: Use batch GetIssues to avoid N+1 queries
 	var candidateDiscoveredIssues []*types.Issue
+
+	// Collect sandbox issue IDs (excluding mission)
+	sandboxIssueIDs := make([]string, 0, len(sandboxIssues))
 	for _, sandboxIssue := range sandboxIssues {
-		// Skip the original mission
+		if sandboxIssue.ID != missionID {
+			sandboxIssueIDs = append(sandboxIssueIDs, sandboxIssue.ID)
+		}
+	}
+
+	// Batch-load all issues from main DB in one query
+	mainIssuesMap, err := mainDB.GetIssues(ctx, sandboxIssueIDs)
+	if err != nil {
+		return fmt.Errorf("failed to batch-check issues in main DB: %w", err)
+	}
+
+	// Identify discovered issues (exist in sandbox but not in main DB)
+	for _, sandboxIssue := range sandboxIssues {
 		if sandboxIssue.ID == missionID {
 			continue
 		}
 
-		// Check if issue exists in main DB
-		mainIssue, err := mainDB.GetIssue(ctx, sandboxIssue.ID)
-		if err != nil {
-			return fmt.Errorf("failed to check issue %s in main DB: %w", sandboxIssue.ID, err)
-		}
-
 		// If issue doesn't exist in main DB, it's a discovered issue
-		if mainIssue == nil {
+		if _, exists := mainIssuesMap[sandboxIssue.ID]; !exists {
 			candidateDiscoveredIssues = append(candidateDiscoveredIssues, sandboxIssue)
 		}
 	}
@@ -446,6 +456,7 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 	}
 
 	// Update status for existing issues that were worked on in the sandbox
+	// vc-58: Reuse mainIssuesMap from earlier batch load to avoid N+1
 	for _, sandboxIssue := range sandboxIssues {
 		// Skip the mission (already handled above)
 		if sandboxIssue.ID == missionID {
@@ -453,13 +464,11 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 		}
 
 		// Check if this is an existing issue (not a discovered one)
-		mainIssue, err := mainDB.GetIssue(ctx, sandboxIssue.ID)
-		if err != nil {
-			return fmt.Errorf("failed to check issue %s in main DB: %w", sandboxIssue.ID, err)
-		}
+		// Reuse the batch-loaded map from earlier
+		mainIssue, exists := mainIssuesMap[sandboxIssue.ID]
 
 		// If issue exists and status changed, update it
-		if mainIssue != nil && mainIssue.Status != sandboxIssue.Status {
+		if exists && mainIssue.Status != sandboxIssue.Status {
 			updates := map[string]interface{}{
 				"status": sandboxIssue.Status,
 			}
@@ -471,6 +480,10 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 
 	// Second pass: Add dependencies for discovered issues
 	// This ensures all issues exist before we try to create dependencies between them
+	// vc-58: Collect all dependency IDs first, then batch-load to avoid N+1
+	var allDepsToAdd []*types.Dependency
+	depIDsToCheck := make(map[string]bool)
+
 	for issueID := range discoveredIssues {
 		deps, err := sandboxDB.GetDependencyRecords(ctx, issueID)
 		if err != nil {
@@ -478,24 +491,34 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 		}
 
 		for _, dep := range deps {
-			// Check if both ends of the dependency exist in main DB
-			issueExists, err := mainDB.GetIssue(ctx, dep.IssueID)
-			if err != nil {
-				return fmt.Errorf("failed to check issue %s exists: %w", dep.IssueID, err)
-			}
+			allDepsToAdd = append(allDepsToAdd, dep)
+			depIDsToCheck[dep.IssueID] = true
+			depIDsToCheck[dep.DependsOnID] = true
+		}
+	}
 
-			targetExists, err := mainDB.GetIssue(ctx, dep.DependsOnID)
-			if err != nil {
-				return fmt.Errorf("failed to check dependency target %s exists: %w", dep.DependsOnID, err)
-			}
+	// Batch-load all dependency endpoints in one query
+	depIDsList := make([]string, 0, len(depIDsToCheck))
+	for id := range depIDsToCheck {
+		depIDsList = append(depIDsList, id)
+	}
 
-			// Only create dependency if both ends exist
-			if issueExists != nil && targetExists != nil {
-				if err := mainDB.AddDependency(ctx, dep, "sandbox-discovered"); err != nil {
-					// Ignore if dependency already exists (might happen if issue was pre-existing)
-					// TODO: Consider checking for specific "already exists" error
-					continue
-				}
+	depIssuesMap, err := mainDB.GetIssues(ctx, depIDsList)
+	if err != nil {
+		return fmt.Errorf("failed to batch-check dependency issues: %w", err)
+	}
+
+	// Now add dependencies if both ends exist
+	for _, dep := range allDepsToAdd {
+		// Only create dependency if both ends exist
+		_, issueExists := depIssuesMap[dep.IssueID]
+		_, targetExists := depIssuesMap[dep.DependsOnID]
+
+		if issueExists && targetExists {
+			if err := mainDB.AddDependency(ctx, dep, "sandbox-discovered"); err != nil {
+				// Ignore if dependency already exists (might happen if issue was pre-existing)
+				// TODO: Consider checking for specific "already exists" error
+				continue
 			}
 		}
 	}

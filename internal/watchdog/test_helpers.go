@@ -33,6 +33,9 @@ func (m *mockStorage) CreateMission(ctx context.Context, mission *types.Mission,
 	return nil
 }
 func (m *mockStorage) GetIssue(ctx context.Context, id string) (*types.Issue, error) { return nil, nil }
+func (m *mockStorage) GetIssues(ctx context.Context, ids []string) (map[string]*types.Issue, error) {
+	return make(map[string]*types.Issue), nil
+}
 func (m *mockStorage) GetMission(ctx context.Context, id string) (*types.Mission, error) {
 	return nil, nil
 }

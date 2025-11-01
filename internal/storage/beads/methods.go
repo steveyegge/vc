@@ -45,6 +45,117 @@ func (s *VCStorage) GetIssue(ctx context.Context, id string) (*types.Issue, erro
 	return vcIssue, nil
 }
 
+// GetIssues retrieves multiple issues by IDs in a single batch query (vc-58)
+// Returns a map of issueID -> Issue for issues that exist
+// Missing issues are omitted from the result map (not an error)
+func (s *VCStorage) GetIssues(ctx context.Context, ids []string) (map[string]*types.Issue, error) {
+	if len(ids) == 0 {
+		return make(map[string]*types.Issue), nil
+	}
+
+	// Build placeholders for IN clause
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	// Query 1: Get all core issues from Beads in one query
+	query := fmt.Sprintf(`
+		SELECT id, title, description, status, priority, issue_type, created_at, updated_at, assignee, notes, design, acceptance_criteria
+		FROM issues
+		WHERE id IN (%s)
+	`, strings.Join(placeholders, ", "))
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query issues: %w", err)
+	}
+	defer rows.Close()
+
+	// Build initial map from Beads data
+	result := make(map[string]*types.Issue)
+	for rows.Next() {
+		var issue types.Issue
+		var createdAt, updatedAt time.Time
+		var assignee, notes, design, acceptanceCriteria sql.NullString
+
+		if err := rows.Scan(
+			&issue.ID,
+			&issue.Title,
+			&issue.Description,
+			&issue.Status,
+			&issue.Priority,
+			&issue.IssueType,
+			&createdAt,
+			&updatedAt,
+			&assignee,
+			&notes,
+			&design,
+			&acceptanceCriteria,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan issue: %w", err)
+		}
+
+		// Set timestamps
+		issue.CreatedAt = createdAt
+		issue.UpdatedAt = updatedAt
+
+		// Handle nullable fields
+		if assignee.Valid {
+			issue.Assignee = assignee.String
+		}
+		if notes.Valid {
+			issue.Notes = notes.String
+		}
+		if design.Valid {
+			issue.Design = design.String
+		}
+		if acceptanceCriteria.Valid {
+			issue.AcceptanceCriteria = acceptanceCriteria.String
+		}
+
+		result[issue.ID] = &issue
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating issue rows: %w", err)
+	}
+
+	// Query 2: Batch-load subtypes from VC extension table
+	subtypeQuery := fmt.Sprintf(`
+		SELECT issue_id, subtype
+		FROM vc_mission_state
+		WHERE issue_id IN (%s)
+	`, strings.Join(placeholders, ", "))
+
+	subtypeRows, err := s.db.QueryContext(ctx, subtypeQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query subtypes: %w", err)
+	}
+	defer subtypeRows.Close()
+
+	// Enrich issues with subtypes
+	for subtypeRows.Next() {
+		var issueID string
+		var subtype string
+		if err := subtypeRows.Scan(&issueID, &subtype); err != nil {
+			return nil, fmt.Errorf("failed to scan subtype: %w", err)
+		}
+
+		if issue, exists := result[issueID]; exists {
+			issue.IssueSubtype = types.IssueSubtype(subtype)
+		}
+	}
+
+	if err := subtypeRows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating subtype rows: %w", err)
+	}
+
+	return result, nil
+}
+
 // GetMission retrieves a mission issue with full metadata
 func (s *VCStorage) GetMission(ctx context.Context, id string) (*types.Mission, error) {
 	// Get base issue

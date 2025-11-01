@@ -97,6 +97,16 @@ func (m *mockStorage) GetIssue(ctx context.Context, id string) (*types.Issue, er
 	return issue, nil
 }
 
+func (m *mockStorage) GetIssues(ctx context.Context, ids []string) (map[string]*types.Issue, error) {
+	result := make(map[string]*types.Issue)
+	for _, id := range ids {
+		if issue, exists := m.issues[id]; exists {
+			result[id] = issue
+		}
+	}
+	return result, nil
+}
+
 func (m *mockStorage) GetDependencies(ctx context.Context, issueID string) ([]*types.Issue, error) {
 	return m.dependencies[issueID], nil
 }

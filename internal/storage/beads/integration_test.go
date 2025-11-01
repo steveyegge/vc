@@ -3735,3 +3735,164 @@ func TestMissionLifecycleEvents(t *testing.T) {
 		t.Logf("✓ Mixed base issue and mission field updates tracked correctly")
 	})
 }
+
+// TestGetIssues tests batch issue retrieval (vc-58)
+func TestGetIssues(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create test issues
+	issue1 := &types.Issue{
+		Title:       "Test Issue 1",
+		Description: "First test issue",
+		Status:      types.StatusOpen,
+		Priority:    1,
+		IssueType:   types.TypeTask,
+	}
+	if err := store.CreateIssue(ctx, issue1, "test"); err != nil {
+		t.Fatalf("Failed to create issue1: %v", err)
+	}
+
+	issue2 := &types.Issue{
+		Title:        "Test Issue 2",
+		Description:  "Second test issue",
+		Status:       types.StatusOpen,
+		Priority:     2,
+		IssueType:    types.TypeEpic,
+		IssueSubtype: types.SubtypeMission,
+	}
+	if err := store.CreateIssue(ctx, issue2, "test"); err != nil {
+		t.Fatalf("Failed to create issue2: %v", err)
+	}
+
+	issue3 := &types.Issue{
+		Title:       "Test Issue 3",
+		Description: "Third test issue",
+		Status:      types.StatusOpen,
+		Priority:    3,
+		IssueType:   types.TypeBug,
+	}
+	if err := store.CreateIssue(ctx, issue3, "test"); err != nil {
+		t.Fatalf("Failed to create issue3: %v", err)
+	}
+	// Close issue3 to test closed status
+	if err := store.CloseIssue(ctx, issue3.ID, "test close", "test"); err != nil {
+		t.Fatalf("Failed to close issue3: %v", err)
+	}
+
+	t.Run("Fetch all issues", func(t *testing.T) {
+		ids := []string{issue1.ID, issue2.ID, issue3.ID}
+		issues, err := store.GetIssues(ctx, ids)
+		if err != nil {
+			t.Fatalf("GetIssues failed: %v", err)
+		}
+
+		if len(issues) != 3 {
+			t.Errorf("Expected 3 issues, got %d", len(issues))
+		}
+
+		// Verify issue1
+		if i, exists := issues[issue1.ID]; !exists {
+			t.Error("Issue1 not found in results")
+		} else {
+			if i.Title != "Test Issue 1" {
+				t.Errorf("Issue1 title = %s, want 'Test Issue 1'", i.Title)
+			}
+			if i.Priority != 1 {
+				t.Errorf("Issue1 priority = %d, want 1", i.Priority)
+			}
+		}
+
+		// Verify issue2 has subtype
+		if i, exists := issues[issue2.ID]; !exists {
+			t.Error("Issue2 not found in results")
+		} else {
+			if i.IssueSubtype != types.SubtypeMission {
+				t.Errorf("Issue2 subtype = %s, want %s", i.IssueSubtype, types.SubtypeMission)
+			}
+		}
+
+		// Verify issue3
+		if i, exists := issues[issue3.ID]; !exists {
+			t.Error("Issue3 not found in results")
+		} else {
+			if i.Status != types.StatusClosed {
+				t.Errorf("Issue3 status = %s, want %s", i.Status, types.StatusClosed)
+			}
+		}
+	})
+
+	t.Run("Fetch subset of issues", func(t *testing.T) {
+		ids := []string{issue1.ID, issue3.ID}
+		issues, err := store.GetIssues(ctx, ids)
+		if err != nil {
+			t.Fatalf("GetIssues failed: %v", err)
+		}
+
+		if len(issues) != 2 {
+			t.Errorf("Expected 2 issues, got %d", len(issues))
+		}
+
+		if _, exists := issues[issue1.ID]; !exists {
+			t.Error("Issue1 not found")
+		}
+		if _, exists := issues[issue3.ID]; !exists {
+			t.Error("Issue3 not found")
+		}
+		if _, exists := issues[issue2.ID]; exists {
+			t.Error("Issue2 should not be in results")
+		}
+	})
+
+	t.Run("Fetch non-existent issues", func(t *testing.T) {
+		ids := []string{"vc-nonexistent", "vc-fake"}
+		issues, err := store.GetIssues(ctx, ids)
+		if err != nil {
+			t.Fatalf("GetIssues failed: %v", err)
+		}
+
+		if len(issues) != 0 {
+			t.Errorf("Expected 0 issues for non-existent IDs, got %d", len(issues))
+		}
+	})
+
+	t.Run("Fetch mixed existing and non-existent", func(t *testing.T) {
+		ids := []string{issue1.ID, "vc-nonexistent", issue2.ID}
+		issues, err := store.GetIssues(ctx, ids)
+		if err != nil {
+			t.Fatalf("GetIssues failed: %v", err)
+		}
+
+		if len(issues) != 2 {
+			t.Errorf("Expected 2 issues (only existing ones), got %d", len(issues))
+		}
+
+		if _, exists := issues[issue1.ID]; !exists {
+			t.Error("Issue1 not found")
+		}
+		if _, exists := issues[issue2.ID]; !exists {
+			t.Error("Issue2 not found")
+		}
+	})
+
+	t.Run("Empty ID list", func(t *testing.T) {
+		ids := []string{}
+		issues, err := store.GetIssues(ctx, ids)
+		if err != nil {
+			t.Fatalf("GetIssues failed: %v", err)
+		}
+
+		if len(issues) != 0 {
+			t.Errorf("Expected 0 issues for empty list, got %d", len(issues))
+		}
+	})
+}
