@@ -1,5 +1,6 @@
 # Binaries
 /vc
+cmd/vc/vc
 *.exe
 *.dll
 *.so

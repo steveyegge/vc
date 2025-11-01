@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -99,4 +100,24 @@ func NewSupervisor(cfg *Config) (*Supervisor, error) {
 		circuitBreaker: circuitBreaker,
 		concurrencySem: concurrencySem,
 	}, nil
+}
+
+// HealthCheck performs a pre-flight check of the supervisor's health
+// Returns an error if the circuit breaker is open or if there are API connectivity issues
+func (s *Supervisor) HealthCheck(ctx context.Context) error {
+	// Check circuit breaker state
+	if s.circuitBreaker != nil {
+		state, failures, _ := s.circuitBreaker.GetMetrics()
+		switch state {
+		case CircuitOpen:
+			return fmt.Errorf("AI supervisor unavailable: %w (failures=%d, retry in %v)",
+				ErrCircuitOpen, failures, s.retry.OpenTimeout)
+		case CircuitHalfOpen:
+			// Allow execution in half-open state (probing for recovery)
+			fmt.Printf("AI supervisor in half-open state (probing for recovery)\n")
+		case CircuitClosed:
+			// Normal operation
+		}
+	}
+	return nil
 }

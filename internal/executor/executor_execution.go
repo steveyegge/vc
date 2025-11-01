@@ -58,6 +58,25 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	}
 	e.monitor.RecordStateTransition(types.ExecutionStateClaimed, types.ExecutionStateAssessing)
 
+	// Pre-flight health check: verify AI supervisor is healthy before proceeding (vc-182)
+	if e.enableAISupervision && e.supervisor != nil {
+		if err := e.supervisor.HealthCheck(ctx); err != nil {
+			// Circuit breaker is open or API is unhealthy - fail fast
+			fmt.Fprintf(os.Stderr, "AI supervisor health check failed: %v\n", err)
+			e.logEvent(ctx, events.EventTypeAssessmentCompleted, events.SeverityError, issue.ID,
+				fmt.Sprintf("AI supervisor health check failed: %v", err),
+				map[string]interface{}{
+					"success": false,
+					"error":   err.Error(),
+				})
+			// Use background context for cleanup since we're failing execution
+			cleanupCtx := context.Background()
+			e.releaseIssueWithError(cleanupCtx, issue.ID, fmt.Sprintf("AI supervisor unavailable: %v", err))
+			e.monitor.EndExecution(false, false)
+			return fmt.Errorf("cannot execute issue: AI supervisor health check failed: %w", err)
+		}
+	}
+
 	var assessment *ai.Assessment
 	if e.enableAISupervision && e.supervisor != nil {
 		// Log assessment started

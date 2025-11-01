@@ -463,22 +463,46 @@ func (s *VCStorage) UpdateExecutionState(ctx context.Context, issueID string, ne
 		return fmt.Errorf("failed to get current execution state: %w", err)
 	}
 	if currentExecState == nil {
-		// If no execution state exists, only allow transition to pending or claimed
+		// If no execution state exists, initialize it based on the target state
+		// This handles edge cases where state initialization may have failed silently
+		// or issues created outside the normal execution flow
+		var initialState types.ExecutionState
+		
+		// For initial states, use them directly
 		if newState == types.ExecutionStatePending || newState == types.ExecutionStateClaimed {
-			// Create new execution state record (use ON CONFLICT in case of race)
-			_, err := s.db.ExecContext(ctx, `
-				INSERT INTO vc_issue_execution_state (issue_id, state, updated_at)
-				VALUES (?, ?, ?)
-				ON CONFLICT(issue_id) DO UPDATE SET
-					state = excluded.state,
-					updated_at = excluded.updated_at
-			`, issueID, newState, time.Now())
-			if err != nil {
-				return fmt.Errorf("failed to create execution state: %w", err)
-			}
+			initialState = newState
+		} else {
+			// For later states (analyzing, executing, gates, committing, completed, failed),
+			// initialize with "claimed" first to maintain state machine integrity
+			// This allows the transition to proceed after initialization
+			initialState = types.ExecutionStateClaimed
+		}
+		
+		// Create execution state record with initial state
+		_, err := s.db.ExecContext(ctx, `
+			INSERT INTO vc_issue_execution_state (issue_id, state, updated_at)
+			VALUES (?, ?, ?)
+			ON CONFLICT(issue_id) DO UPDATE SET
+				state = excluded.state,
+				updated_at = excluded.updated_at
+		`, issueID, initialState, time.Now())
+		if err != nil {
+			return fmt.Errorf("failed to create execution state: %w", err)
+		}
+		
+		// If we initialized with the target state, we're done
+		if initialState == newState {
 			return nil
 		}
-		return fmt.Errorf("cannot transition to %s without existing execution state", newState)
+		
+		// Otherwise, retrieve the newly created state and proceed with transition
+		currentExecState, err = s.GetExecutionState(ctx, issueID)
+		if err != nil {
+			return fmt.Errorf("failed to get newly created execution state: %w", err)
+		}
+		if currentExecState == nil {
+			return fmt.Errorf("execution state was not created for issue %s", issueID)
+		}
 	}
 
 	// Validate state transition

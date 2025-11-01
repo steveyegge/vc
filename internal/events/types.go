@@ -112,6 +112,10 @@ const (
 	// EventTypeLabelStateTransition indicates a label-driven state transition occurred
 	EventTypeLabelStateTransition EventType = "label_state_transition"
 
+	// Circuit breaker events (vc-182)
+	// EventTypeCircuitBreakerStateChange indicates circuit breaker state transition
+	EventTypeCircuitBreakerStateChange EventType = "circuit_breaker_state_change"
+
 	// Quality gate worker events (vc-252, vc-253)
 	// EventTypeQualityGatePass indicates all quality gates passed for a mission
 	EventTypeQualityGatePass EventType = "quality_gate_pass"

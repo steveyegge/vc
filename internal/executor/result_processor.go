@@ -832,14 +832,14 @@ SkipGates:
 
 		// Update issue status
 		if shouldClose {
-			updates := map[string]interface{}{
-				"status":    types.StatusClosed,
-				"closed_at": time.Now(),
-			}
-			if err := rp.store.UpdateIssue(ctx, issue.ID, updates, rp.actor); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: failed to close issue: %v\n", err)
-			} else {
-				fmt.Printf("\n✓ Issue %s marked as closed\n", issue.ID)
+		// Note: closed_at is automatically managed by Beads when status changes to/from closed
+		updates := map[string]interface{}{
+		"status": types.StatusClosed,
+		}
+		if err := rp.store.UpdateIssue(ctx, issue.ID, updates, rp.actor); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to close issue: %v\n", err)
+		} else {
+		fmt.Printf("\n✓ Issue %s marked as closed\n", issue.ID)
 
 				// vc-230: Emit baseline_test_fix_completed event if this was a baseline issue
 				// vc-261: Use IsBaselineIssue() and get fix_type from diagnosis (not string matching)
