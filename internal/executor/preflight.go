@@ -429,9 +429,34 @@ func (p *PreFlightChecker) createBaselineBlockingIssue(ctx context.Context, resu
 		return fmt.Errorf("failed to check for existing issue: %w", err)
 	}
 
-	if existingIssue != nil && existingIssue.Status != types.StatusClosed {
-		// Issue already exists and is open - don't create duplicate
-		fmt.Printf("   Issue %s already exists (status: %s)\n", issueID, existingIssue.Status)
+	if existingIssue != nil {
+		// Issue already exists
+		if existingIssue.Status != types.StatusClosed {
+			// Issue is still open - don't create duplicate
+			fmt.Printf("   Issue %s already exists (status: %s)\n", issueID, existingIssue.Status)
+			return nil
+		}
+		// Issue exists but is closed - reopen it with updated information
+		fmt.Printf("   Reopening closed baseline issue: %s\n", issueID)
+
+		// Prepare new failure information
+		errMsg := ""
+		if result.Error != nil {
+			errMsg = result.Error.Error()
+		}
+		output := result.Output
+		if len(output) > 2000 {
+			output = output[:2000] + "\n... (truncated, see full output in logs)"
+		}
+		newNotes := fmt.Sprintf("Gate failed again. Error: %s\n\nOutput:\n```\n%s\n```", errMsg, output)
+
+		// Reopen by updating status and notes
+		if err := p.storage.UpdateIssue(ctx, issueID, map[string]interface{}{
+			"status": types.StatusOpen,
+			"notes":  newNotes,
+		}, "preflight-degraded-mode"); err != nil {
+			return fmt.Errorf("failed to reopen baseline issue: %w", err)
+		}
 		return nil
 	}
 
