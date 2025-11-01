@@ -1433,3 +1433,41 @@ func (s *VCStorage) VacuumDatabase(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, "VACUUM")
 	return err
 }
+
+// ======================================================================
+// CODE REVIEW CHECKPOINTS (vc-1)
+// ======================================================================
+
+// GetLastReviewCheckpoint retrieves the most recent code review checkpoint
+func (s *VCStorage) GetLastReviewCheckpoint(ctx context.Context) (*types.ReviewCheckpoint, error) {
+	var checkpoint types.ReviewCheckpoint
+	err := s.db.QueryRowContext(ctx, `
+		SELECT commit_sha, timestamp, review_scope
+		FROM vc_review_checkpoints
+		ORDER BY timestamp DESC
+		LIMIT 1
+	`).Scan(&checkpoint.CommitSHA, &checkpoint.Timestamp, &checkpoint.ReviewScope)
+
+	if err == sql.ErrNoRows {
+		return nil, nil // No checkpoint yet
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query last review checkpoint: %w", err)
+	}
+
+	return &checkpoint, nil
+}
+
+// SaveReviewCheckpoint creates a new review checkpoint record
+func (s *VCStorage) SaveReviewCheckpoint(ctx context.Context, checkpoint *types.ReviewCheckpoint, reviewIssueID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO vc_review_checkpoints (commit_sha, timestamp, review_scope, review_issue_id)
+		VALUES (?, ?, ?, ?)
+	`, checkpoint.CommitSHA, checkpoint.Timestamp, checkpoint.ReviewScope, reviewIssueID)
+
+	if err != nil {
+		return fmt.Errorf("failed to save review checkpoint: %w", err)
+	}
+
+	return nil
+}

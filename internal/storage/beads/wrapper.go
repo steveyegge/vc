@@ -286,6 +286,16 @@ CREATE TABLE IF NOT EXISTS vc_gate_baselines (
     results_json TEXT NOT NULL,  -- JSON map of gate results: {"test": {"passed": true, "output": "..."}, ...}
     sandbox_path TEXT            -- Optional: for future Phase 3 sandbox reuse
 );
+
+-- Code review checkpoints (tracks when code review sweeps were performed)
+-- vc-1: Activity-based AI code review sweep
+CREATE TABLE IF NOT EXISTS vc_review_checkpoints (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    commit_sha TEXT NOT NULL,
+    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    review_scope TEXT NOT NULL,  -- "quick" | "thorough" | "targeted:path/to/dir"
+    review_issue_id TEXT         -- Reference to the review issue that was created (if any)
+);
 `
 
 // VC-specific extension schema - INDEX DEFINITIONS
@@ -318,6 +328,10 @@ CREATE INDEX IF NOT EXISTS idx_vc_history_started ON vc_execution_history(starte
 -- Gate baselines indexes
 CREATE INDEX IF NOT EXISTS idx_vc_gate_baselines_timestamp ON vc_gate_baselines(timestamp);
 CREATE INDEX IF NOT EXISTS idx_vc_gate_baselines_branch ON vc_gate_baselines(branch_name);
+
+-- Code review checkpoints indexes
+CREATE INDEX IF NOT EXISTS idx_vc_review_checkpoints_timestamp ON vc_review_checkpoints(timestamp);
+CREATE INDEX IF NOT EXISTS idx_vc_review_checkpoints_commit ON vc_review_checkpoints(commit_sha);
 `
 
 // ======================================================================

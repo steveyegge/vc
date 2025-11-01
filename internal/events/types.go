@@ -153,6 +153,12 @@ const (
 	EventTypeEpicCleanupStarted EventType = "epic_cleanup_started"
 	// EventTypeEpicCleanupCompleted indicates epic sandbox cleanup completed
 	EventTypeEpicCleanupCompleted EventType = "epic_cleanup_completed"
+
+	// Code review sweep events (vc-1)
+	// EventTypeCodeReviewDecision indicates AI decided whether code review sweep is needed
+	EventTypeCodeReviewDecision EventType = "code_review_decision"
+	// EventTypeCodeReviewCreated indicates a code review sweep issue was created
+	EventTypeCodeReviewCreated EventType = "code_review_created"
 )
 
 // EventSeverity represents the severity level of an event.

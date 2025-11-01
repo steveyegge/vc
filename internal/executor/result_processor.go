@@ -41,6 +41,7 @@ func NewResultsProcessor(cfg *ResultsProcessorConfig) (*ResultsProcessor, error)
 		actor:              cfg.Actor,
 		sandbox:            cfg.Sandbox,
 		sandboxManager:     cfg.SandboxManager,
+		executor:           cfg.Executor,
 	}, nil
 }
 
@@ -932,6 +933,15 @@ SkipGates:
 		if shouldClose {
 			if err := checkEpicCompletion(ctx, rp.store, rp.supervisor, rp.sandboxManager, rp.actor, issue.ID); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to check epic completion: %v\n", err)
+			}
+		}
+
+		// Step 8: Check if code review sweep is needed (vc-1)
+		// This runs after successful issue completion to check accumulated changes
+		if rp.executor != nil {
+			if err := rp.executor.checkCodeReviewSweep(ctx, issue.ID); err != nil {
+				// Log warning but don't fail - review checks are non-critical
+				fmt.Fprintf(os.Stderr, "warning: failed to check code review sweep: %v\n", err)
 			}
 		}
 

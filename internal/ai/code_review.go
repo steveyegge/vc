@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -577,4 +578,156 @@ IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (`
 		issue.Description,
 		diffToAnalyze,
 		truncationNote)
+}
+
+// DecideCodeReviewSweep uses AI to decide whether a code review sweep is warranted
+// This is the implementation of vc-1 (activity-based AI code review sweep)
+//
+// The AI analyzes activity metrics (git diff stats, churn areas) to determine:
+// - Whether review is needed based on accumulated changes
+// - What scope (quick/thorough/targeted)
+// - Which areas to focus on
+// - Estimated cost
+//
+// Returns a decision with reasoning and scope recommendations.
+func (s *Supervisor) DecideCodeReviewSweep(ctx context.Context, request *types.ReviewDecisionRequest) (*types.ReviewDecision, error) {
+	startTime := time.Now()
+
+	// Build the prompt for review decision
+	prompt := s.buildReviewSweepPrompt(request)
+
+	// Call Anthropic API with retry logic using Haiku (fast decision-making)
+	var response *anthropic.Message
+	err := s.retryWithBackoff(ctx, "code-review-sweep-decision", func(attemptCtx context.Context) error {
+		resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+			Model:     anthropic.Model("claude-3-5-haiku-20241022"), // Use Haiku for cost efficiency
+			MaxTokens: 1024,                                         // Short decision
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			},
+		})
+		if apiErr != nil {
+			return apiErr
+		}
+		response = resp
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("anthropic API call failed: %w", err)
+	}
+
+	// Extract the text content from the response
+	var responseText string
+	for _, block := range response.Content {
+		if block.Type == "text" {
+			responseText += block.Text
+		}
+	}
+
+	// Parse the response as JSON using resilient parser
+	parseResult := Parse[types.ReviewDecision](responseText, ParseOptions{
+		Context:   "code review sweep decision response",
+		LogErrors: boolPtr(true),
+	})
+	if !parseResult.Success {
+		return nil, fmt.Errorf("failed to parse review decision response: %s (response: %s)", parseResult.Error, truncateString(responseText, 200))
+	}
+	decision := parseResult.Data
+
+	// Log the decision
+	duration := time.Since(startTime)
+	fmt.Printf("AI Code Review Sweep Decision: should_review=%v, scope=%s, target_areas=%d, duration=%v\n",
+		decision.ShouldReview, decision.Scope, len(decision.TargetAreas), duration)
+
+	// Log AI usage to events
+	if err := s.logAIUsage(ctx, "", "code-review-sweep-decision", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
+	}
+
+	return &decision, nil
+}
+
+// buildReviewSweepPrompt builds the prompt for AI decision about code review sweep
+func (s *Supervisor) buildReviewSweepPrompt(request *types.ReviewDecisionRequest) string {
+	heavyChurnStr := "none"
+	if len(request.HeavyChurnAreas) > 0 {
+		heavyChurnStr = strings.Join(request.HeavyChurnAreas, ", ")
+	}
+
+	lastReviewStr := "No previous reviews"
+	if request.LastReviewSummary != "" {
+		lastReviewStr = request.LastReviewSummary
+	}
+
+	return fmt.Sprintf(`You are deciding whether to trigger a code review sweep based on activity metrics.
+
+PHILOSOPHY:
+Code review sweeps catch non-obvious issues that agents miss during focused task work.
+Agents focus on their assigned task and miss: inefficiencies, subtle bugs, poor patterns,
+missing best practices, and unnamed anti-patterns.
+
+Review when enough work has accumulated that subtle issues could emerge.
+
+ACTIVITY METRICS:
+Since last review (%d days ago):
+- Lines added: %d
+- Lines deleted: %d
+- Files changed: %d
+- Heavy churn areas: %s
+
+Codebase context:
+- Total LOC: ~%d
+- Last review findings: %s
+
+DECISION TASK:
+Analyze the metrics and decide:
+1. Should we trigger a code review now? (yes/no)
+2. If yes, what scope? (quick/thorough/targeted)
+3. Which areas to focus on? (broad sampling or specific directories)
+
+SCOPE LEVELS:
+- quick: 3-5 files, surface-level scan, ~$1, focus on obvious issues
+- thorough: 10-15 files, deep analysis, ~$5, catch subtle problems
+- targeted: Focus on specific high-churn directories
+
+DECISION CRITERIA (use your judgment, not hard thresholds):
+- Magnitude of changes (how much code has changed?)
+- Criticality of areas touched (security, auth, core business logic?)
+- Time elapsed (has it been a while since last review?)
+- Previous findings (did we find issues last time?)
+
+WHEN TO REVIEW:
+- Significant changes accumulated (e.g., >500 LOC added/changed)
+- Critical areas modified (even small changes)
+- Long time since last review (e.g., >7 days with any changes)
+- Previous reviews found issues (suggests ongoing issues)
+
+WHEN TO SKIP:
+- Minimal changes (<100 LOC total)
+- Only documentation or comments changed
+- Very recent review (<2 days ago) with clean results
+- No changes at all
+
+Provide your decision as a JSON object:
+{
+  "should_review": true/false,
+  "reasoning": "Detailed explanation of your decision",
+  "scope": "quick" | "thorough" | "targeted",
+  "target_areas": ["internal/executor", "internal/ai"] or null for broad,
+  "estimated_files": 5-15,
+  "estimated_cost": "$1-5"
+}
+
+Be objective. Consider cost vs. benefit. Don't be overly eager to review trivial changes,
+but don't hesitate when meaningful work has accumulated.
+
+IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences. Just the JSON object.`,
+		request.DaysSinceReview,
+		request.LinesAdded,
+		request.LinesDeleted,
+		request.FilesChanged,
+		heavyChurnStr,
+		request.TotalLOC,
+		lastReviewStr)
 }

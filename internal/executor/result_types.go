@@ -28,6 +28,7 @@ type ResultsProcessor struct {
 	actor              string             // The actor performing the update (e.g., "repl", "executor-instance-id")
 	sandbox            *sandbox.Sandbox   // The sandbox being used (can be nil if sandboxing is disabled)
 	sandboxManager     sandbox.Manager    // Sandbox manager for cleanup operations (can be nil if sandboxing is disabled)
+	executor           *Executor          // Reference to parent executor for code review checks (can be nil for REPL)
 }
 
 // ResultsProcessorConfig holds configuration for the results processor
@@ -43,6 +44,7 @@ type ResultsProcessorConfig struct {
 	Actor              string           // Actor ID for tracking who made the changes
 	Sandbox            *sandbox.Sandbox // The sandbox being used (can be nil if sandboxing is disabled)
 	SandboxManager     sandbox.Manager  // Sandbox manager for cleanup operations (can be nil if sandboxing is disabled)
+	Executor           *Executor        // Reference to parent executor for code review checks (can be nil for REPL)
 }
 
 // ProcessingResult contains the outcome of processing agent results
