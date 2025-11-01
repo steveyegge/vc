@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/steveyegge/vc/internal/storage/beads"
@@ -16,6 +17,14 @@ import (
 
 // commitSHAPattern matches valid git commit SHAs (7-40 hexadecimal characters)
 var commitSHAPattern = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
+
+// Cache for getTotalLOC() to avoid expensive pipeline on every call (vc-ab9d)
+var (
+	cachedLOC      int
+	cachedLOCTime  time.Time
+	cachedLOCMutex sync.RWMutex
+	locCacheTTL    = 1 * time.Hour
+)
 
 // isValidCommitSHA validates that a string is a valid git commit SHA
 // Valid SHAs are 7-40 hexadecimal characters (lowercase)
@@ -49,8 +58,8 @@ func (s *Sweeper) GetDiffMetrics(ctx context.Context) (*types.ReviewMetricsResul
 	// If no checkpoint yet, use initial commit or default
 	var lastCommitSHA string
 	if checkpoint == nil {
-		// Find first commit as baseline
-		cmd := exec.Command("git", "rev-list", "--max-parents=0", "HEAD")
+		// Find first commit as baseline (vc-ecc6: use CommandContext)
+		cmd := exec.CommandContext(ctx, "git", "rev-list", "--max-parents=0", "HEAD")
 		output, err := cmd.Output()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get initial commit: %w", err)
@@ -71,7 +80,8 @@ func (s *Sweeper) GetDiffMetrics(ctx context.Context) (*types.ReviewMetricsResul
 	}
 
 	// Get current HEAD commit (ACTUAL SHA, not symbolic ref "HEAD")
-	cmd := exec.Command("git", "rev-parse", "HEAD")
+	// vc-ecc6: use CommandContext for cancellation support
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current commit: %w", err)
@@ -98,8 +108,8 @@ func (s *Sweeper) GetDiffMetrics(ctx context.Context) (*types.ReviewMetricsResul
 		}, nil
 	}
 
-	// Get diff stats using git diff --shortstat
-	cmd = exec.Command("git", "diff", "--shortstat", lastCommitSHA+"..HEAD")
+	// Get diff stats using git diff --shortstat (vc-ecc6: use CommandContext)
+	cmd = exec.CommandContext(ctx, "git", "diff", "--shortstat", lastCommitSHA+"..HEAD")
 	output, err = cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get diff stats: %w", err)
@@ -109,8 +119,8 @@ func (s *Sweeper) GetDiffMetrics(ctx context.Context) (*types.ReviewMetricsResul
 	statsLine := strings.TrimSpace(string(output))
 	linesAdded, linesDeleted, filesChanged := parseDiffStats(statsLine)
 
-	// Get heavy churn areas using git diff --stat
-	cmd = exec.Command("git", "diff", "--stat", lastCommitSHA+"..HEAD")
+	// Get heavy churn areas using git diff --stat (vc-ecc6: use CommandContext)
+	cmd = exec.CommandContext(ctx, "git", "diff", "--stat", lastCommitSHA+"..HEAD")
 	output, err = cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get diff stat: %w", err)
@@ -125,7 +135,7 @@ func (s *Sweeper) GetDiffMetrics(ctx context.Context) (*types.ReviewMetricsResul
 	}
 
 	// Get total LOC (approximate using git ls-files and wc -l)
-	totalLOC := getTotalLOC()
+	totalLOC := getTotalLOC(ctx)
 
 	// Get last review summary (if available)
 	lastReviewSummary := ""
@@ -257,10 +267,23 @@ func identifyHeavyChurnAreas(statOutput string) []string {
 }
 
 // getTotalLOC gets approximate total lines of code in the repository
-func getTotalLOC() int {
+// Uses 1-hour cache to avoid expensive pipeline on every call (vc-ab9d)
+// Accepts context for cancellation support (vc-ecc6)
+func getTotalLOC(ctx context.Context) int {
+	// Check cache first (read lock)
+	cachedLOCMutex.RLock()
+	if time.Since(cachedLOCTime) < locCacheTTL && cachedLOC > 0 {
+		loc := cachedLOC
+		cachedLOCMutex.RUnlock()
+		return loc
+	}
+	cachedLOCMutex.RUnlock()
+
+	// Cache miss or expired - calculate (expensive operation)
 	// Use git ls-files to get all tracked files, then count lines
 	// Exclude common non-code files
-	cmd := exec.Command("sh", "-c",
+	// vc-ecc6: use CommandContext for cancellation support
+	cmd := exec.CommandContext(ctx, "sh", "-c",
 		`git ls-files | grep -E '\.(go|js|ts|py|java|c|cpp|h|hpp)$' | xargs wc -l 2>/dev/null | tail -1 | awk '{print $1}'`)
 	output, err := cmd.Output()
 	if err != nil {
@@ -273,6 +296,12 @@ func getTotalLOC() int {
 	if err != nil {
 		return 0
 	}
+
+	// Update cache (write lock)
+	cachedLOCMutex.Lock()
+	cachedLOC = total
+	cachedLOCTime = time.Now()
+	cachedLOCMutex.Unlock()
 
 	return total
 }
