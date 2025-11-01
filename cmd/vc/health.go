@@ -43,6 +43,7 @@ Examples:
   vc health check --monitor file-size
   vc health check --monitor cruft
   vc health check --monitor zfc
+  vc health check --monitor duplication
 
   # Dry run (show issues without filing)
   vc health check --dry-run
@@ -180,7 +181,7 @@ Examples:
 }
 
 func init() {
-	healthCheckCmd.Flags().StringP("monitor", "m", "", "Run specific monitor (file-size, cruft, zfc)")
+	healthCheckCmd.Flags().StringP("monitor", "m", "", "Run specific monitor (file-size, cruft, zfc, duplication)")
 	healthCheckCmd.Flags().Bool("dry-run", false, "Show issues without filing")
 	healthCheckCmd.Flags().BoolP("verbose", "v", false, "Verbose output")
 
@@ -203,6 +204,9 @@ func createMonitors(projectRoot string, supervisor *ai.Supervisor, monitorName s
 		"zfc": func() (health.HealthMonitor, error) {
 			return health.NewZFCDetector(projectRoot, supervisor)
 		},
+		"duplication": func() (health.HealthMonitor, error) {
+			return health.NewDuplicationDetector(projectRoot, supervisor)
+		},
 	}
 
 	// If specific monitor requested, only create that one
@@ -224,8 +228,8 @@ func createMonitors(projectRoot string, supervisor *ai.Supervisor, monitorName s
 		monitors = append(monitors, monitor)
 	} else {
 		// Create all monitors
-		// Order matters: run cheaper checks first
-		monitorOrder := []string{"file-size", "cruft", "zfc"}
+		// Order matters: run cheaper checks first, expensive checks last
+		monitorOrder := []string{"file-size", "cruft", "zfc", "duplication"}
 
 		for _, name := range monitorOrder {
 			createFn := allMonitors[name]
