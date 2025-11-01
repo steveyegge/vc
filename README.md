@@ -118,6 +118,32 @@ You: Link them to the epic
 AI: [Adds dependencies]
 ```
 
+## Testing
+
+VC uses build tags to separate fast unit tests from slower integration tests that make API calls.
+
+### Running Tests
+
+```bash
+# Run unit tests only (fast, no API calls required)
+go test ./...
+
+# Run all tests including integration tests (requires ANTHROPIC_API_KEY)
+export ANTHROPIC_API_KEY=your-key-here
+go test -tags=integration ./...
+
+# Run integration tests for specific packages
+go test -tags=integration ./internal/ai/...
+go test -tags=integration ./internal/gates/...
+go test -tags=integration ./internal/watchdog/...
+```
+
+**Test performance:**
+- Unit tests: ~5-10 seconds (no API calls, no cost)
+- Integration tests: ~30-60 seconds (makes real API calls, incurs token costs)
+
+The integration tests validate AI supervision features (assessment, analysis, quality gates) against the actual Claude API.
+
 ## Documentation
 
 ### Core Docs
