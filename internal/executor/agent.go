@@ -405,12 +405,13 @@ func (a *Agent) captureOutput() {
 				}
 			}
 
+			a.mu.Unlock()
+
 			// Parse line for events if parser is enabled
+			// Must be called OUTSIDE mutex to avoid deadlock with checkCircuitBreaker
 			if a.parser != nil && a.config.Store != nil {
 				a.parseAndStoreEvents(line)
 			}
-
-			a.mu.Unlock()
 		}
 	}()
 
@@ -432,12 +433,13 @@ func (a *Agent) captureOutput() {
 				a.result.Errors = append(a.result.Errors, "[... error output truncated: limit reached ...]")
 			}
 
+			a.mu.Unlock()
+
 			// Parse stderr for events too (errors, warnings, etc.)
+			// Must be called OUTSIDE mutex to avoid deadlock with checkCircuitBreaker
 			if a.parser != nil && a.config.Store != nil {
 				a.parseAndStoreEvents(line)
 			}
-
-			a.mu.Unlock()
 		}
 	}()
 
@@ -445,7 +447,6 @@ func (a *Agent) captureOutput() {
 }
 
 // parseAndStoreEvents parses a line for events and stores them immediately
-// This method should be called with the mutex held
 // vc-236: First tries to parse as JSON (structured events from Amp), then falls back to regex patterns
 func (a *Agent) parseAndStoreEvents(line string) {
 	var extractedEvents []*events.AgentEvent
@@ -720,7 +721,6 @@ func (a *Agent) GetErrors() []string {
 }
 
 // checkCircuitBreaker checks if the agent is stuck in an infinite loop (vc-117)
-// This must be called with the mutex held
 func (a *Agent) checkCircuitBreaker(filePath string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
