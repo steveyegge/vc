@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -474,5 +475,50 @@ func TestMergeResultsWithComments(t *testing.T) {
 	}
 	if !foundSandboxComment {
 		t.Error("sandbox comments were not merged to main DB")
+	}
+}
+
+// TestIsUniqueConstraintError tests the helper function for detecting UNIQUE constraint errors
+func TestIsUniqueConstraintError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "unique constraint error - dependencies table",
+			err:      fmt.Errorf("UNIQUE constraint failed: dependencies.issue_id"),
+			expected: true,
+		},
+		{
+			name:     "unique constraint error - generic",
+			err:      fmt.Errorf("constraint failed: UNIQUE constraint failed"),
+			expected: true,
+		},
+		{
+			name:     "foreign key constraint error",
+			err:      fmt.Errorf("foreign key constraint failed"),
+			expected: false,
+		},
+		{
+			name:     "generic database error",
+			err:      fmt.Errorf("database is locked"),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isUniqueConstraintError(tt.err)
+			if result != tt.expected {
+				t.Errorf("isUniqueConstraintError() = %v, expected %v for error: %v",
+					result, tt.expected, tt.err)
+			}
+		})
 	}
 }

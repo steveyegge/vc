@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -23,6 +24,15 @@ type SandboxMetadata struct {
 	ParentDBPath string    `json:"parent_db_path"`
 	MissionID    string    `json:"mission_id"`
 	CreatedAt    time.Time `json:"created_at"`
+}
+
+// isUniqueConstraintError checks if an error is a UNIQUE constraint violation.
+// This is used to distinguish expected duplicate dependency errors from unexpected database errors.
+func isUniqueConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
 
 // initSandboxDB creates and initializes a beads database for the sandbox.
@@ -516,8 +526,13 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 
 		if issueExists && targetExists {
 			if err := mainDB.AddDependency(ctx, dep, "sandbox-discovered"); err != nil {
-				// Ignore if dependency already exists (might happen if issue was pre-existing)
-				// TODO: Consider checking for specific "already exists" error
+				// Expected error: dependency already exists (might happen if issue was pre-existing)
+				if isUniqueConstraintError(err) {
+					continue
+				}
+				// Unexpected error: log warning with context to help debugging
+				log.Printf("[SANDBOX] WARNING: Failed to add dependency %s -> %s: %v",
+					dep.IssueID, dep.DependsOnID, err)
 				continue
 			}
 		}
