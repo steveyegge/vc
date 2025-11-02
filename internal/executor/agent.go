@@ -722,6 +722,9 @@ func (a *Agent) GetErrors() []string {
 // checkCircuitBreaker checks if the agent is stuck in an infinite loop (vc-117)
 // This must be called with the mutex held
 func (a *Agent) checkCircuitBreaker(filePath string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	// Initialize map if needed (for tests that create agents without using SpawnAgent)
 	if a.fileReadCounts == nil {
 		a.fileReadCounts = make(map[string]int)
