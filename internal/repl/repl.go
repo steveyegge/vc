@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +58,41 @@ func New(cfg *Config) (*REPL, error) {
 	return r, nil
 }
 
+// getHistoryPath returns the path to the history file
+func getHistoryPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	vcDir := filepath.Join(homeDir, ".vc")
+
+	// Create .vc directory if it doesn't exist
+	if err := os.MkdirAll(vcDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create .vc directory: %w", err)
+	}
+
+	return filepath.Join(vcDir, "repl_history"), nil
+}
+
+// createAutoCompleter creates a tab completion handler for the REPL
+func createAutoCompleter() *readline.PrefixCompleter {
+	return readline.NewPrefixCompleter(
+		// Slash commands
+		readline.PcItem("/quit"),
+		readline.PcItem("/exit"),
+
+		// Common natural language starters
+		readline.PcItem("What's "),
+		readline.PcItem("Let's "),
+		readline.PcItem("Show "),
+		readline.PcItem("Create "),
+		readline.PcItem("Add "),
+		readline.PcItem("How "),
+		readline.PcItem("Continue"),
+	)
+}
+
 // Run starts the REPL loop
 func (r *REPL) Run(ctx context.Context) error {
 	r.ctx = ctx
@@ -78,14 +114,21 @@ func (r *REPL) Run(ctx context.Context) error {
 		close(r.stopCleanup) // Signal cleanup to stop
 	}()
 
+	// Get history file path
+	historyPath, err := getHistoryPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to get history path: %v\n", err)
+		historyPath = "" // Fall back to in-memory history
+	}
+
 	// Create readline instance
 	cyan := color.New(color.FgCyan).SprintFunc()
 	prompt := cyan("vc> ")
 
 	rl, err := readline.NewEx(&readline.Config{
 		Prompt:                 prompt,
-		HistoryFile:            "", // In-memory for now, will persist later
-		AutoComplete:           nil, // Will add tab completion later
+		HistoryFile:            historyPath,
+		AutoComplete:           createAutoCompleter(),
 		InterruptPrompt:        "^C",
 		EOFPrompt:              "exit",
 		HistorySearchFold:      true,
@@ -112,7 +155,9 @@ func (r *REPL) Run(ctx context.Context) error {
 		line, err := rl.Readline()
 		if err != nil {
 			if err == readline.ErrInterrupt {
-				// Ctrl+C - just show prompt again
+				// Ctrl+C - show hint and continue
+				gray := color.New(color.FgHiBlack).SprintFunc()
+				fmt.Printf("%s (use /quit or /exit to leave)\n", gray("^C"))
 				continue
 			} else if err == io.EOF {
 				// Ctrl+D - exit
@@ -155,20 +200,35 @@ func (r *REPL) printWelcome() {
 	cyan := color.New(color.FgCyan, color.Bold).SprintFunc()
 	gray := color.New(color.FgHiBlack).SprintFunc()
 	green := color.New(color.FgGreen).SprintFunc()
-	fmt.Printf("\n%s\n", cyan("Welcome to VC - VibeCoder v2"))
-	fmt.Println("AI-orchestrated coding agent colony")
+	yellow := color.New(color.FgYellow).SprintFunc()
+
 	fmt.Println()
+	fmt.Printf("%s\n", cyan("╔══════════════════════════════════════════════════════════╗"))
+	fmt.Printf("%s\n", cyan("║          Welcome to VC - VibeCoder v2                    ║"))
+	fmt.Printf("%s\n", cyan("║      AI-orchestrated coding agent colony                 ║"))
+	fmt.Printf("%s\n", cyan("╚══════════════════════════════════════════════════════════╝"))
+	fmt.Println()
+
 	fmt.Printf("%s No commands to memorize - just talk naturally!\n", green("✓"))
 	fmt.Println()
-	fmt.Println("Example interactions:")
-	fmt.Printf("  %s\n", gray("• \"What's ready to work on?\""))
-	fmt.Printf("  %s\n", gray("• \"Let's continue working\""))
-	fmt.Printf("  %s\n", gray("• \"Add a login feature\""))
-	fmt.Printf("  %s\n", gray("• \"Show me what's blocked\""))
-	fmt.Printf("  %s\n", gray("• \"How's the project doing?\""))
-	fmt.Printf("  %s\n", gray("• \"Create an epic for user auth\""))
+
+	fmt.Printf("%s\n", yellow("Quick Start:"))
+	fmt.Printf("  %s\n", gray("• \"What's ready to work on?\"    - See available issues"))
+	fmt.Printf("  %s\n", gray("• \"Let's continue\"              - Resume execution"))
+	fmt.Printf("  %s\n", gray("• \"Continue until blocked\"      - Run until no ready work"))
+	fmt.Printf("  %s\n", gray("• \"Show me what's blocked\"      - View blocked issues"))
+	fmt.Printf("  %s\n", gray("• \"Create a feature for X\"      - Add new work"))
 	fmt.Println()
-	fmt.Printf("Type %s or %s to exit\n", cyan("/quit"), cyan("/exit"))
+
+	fmt.Printf("%s\n", yellow("Features:"))
+	fmt.Printf("  %s Tab completion for common phrases and commands\n", green("✓"))
+	fmt.Printf("  %s Persistent command history across sessions\n", green("✓"))
+	fmt.Printf("  %s Press Ctrl+C to cancel current input (not exit)\n", green("✓"))
+	fmt.Printf("  %s Use Up/Down arrows to navigate command history\n", green("✓"))
+	fmt.Println()
+
+	fmt.Printf("%s Type %s or %s to exit • Press %s for help\n",
+		gray("━"), cyan("/quit"), cyan("/exit"), cyan("Tab"))
 	fmt.Println()
 }
 
