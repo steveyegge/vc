@@ -195,10 +195,13 @@ func (e *Executor) getNextReadyBlocker(ctx context.Context) (*types.Issue, error
 	}
 
 	if len(blockers) == 0 {
+		fmt.Printf("No ready blockers found, falling back to regular work\n")
 		return nil, nil
 	}
 
-	return blockers[0], nil
+	bestBlocker := blockers[0]
+	fmt.Printf("Found ready blocker: %s (P%d) - %s\n", bestBlocker.ID, bestBlocker.Priority, bestBlocker.Title)
+	return bestBlocker, nil
 }
 
 // processNextIssue claims and processes the next ready issue with priority order:
@@ -306,6 +309,9 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 		return fmt.Errorf("failed to get ready blockers: %w", err)
 	}
 
+	// Track whether we found work via blocker path
+	foundViaBlocker := (issue != nil)
+
 	// Priority 2: Fall back to regular ready work
 	if issue == nil {
 		// vc-7100: Request multiple issues from storage since VC filters out no-auto-claim
@@ -328,6 +334,20 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 
 		// vc-7100: Take the first issue after filtering
 		issue = issues[0]
+	}
+
+	// Log when blocker is selected over regular work (vc-159)
+	if foundViaBlocker {
+		fmt.Printf("Claiming blocker %s (P%d) over regular ready work\n", issue.ID, issue.Priority)
+
+		// Log agent event for blocker prioritization
+		e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, issue.ID,
+			fmt.Sprintf("Blocker %s prioritized over regular work", issue.ID),
+			map[string]interface{}{
+				"event_subtype": "blocker_prioritized",
+				"blocker_id":    issue.ID,
+				"priority":      issue.Priority,
+			})
 	}
 
 	// Attempt to claim the issue

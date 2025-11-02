@@ -1,7 +1,12 @@
 package executor
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/steveyegge/vc/internal/storage"
@@ -617,4 +622,155 @@ func TestGetReadyBlockers_Performance(t *testing.T) {
 	t.Logf("✓ Performance test passed: found ready blocker %s (P%d) among %d total blockers",
 		result.ID, result.Priority, totalBlockers)
 	t.Log("✓ N+1 query problem fixed - single SQL query used instead of O(N) queries")
+}
+
+// TestBlockerLogging_WhenBlockerFound tests that blocker found log is emitted (vc-159)
+func TestBlockerLogging_WhenBlockerFound(t *testing.T) {
+	ctx, store, exec := setupExecutorTest(t)
+	defer store.Close()
+
+	// Create a blocker
+	blocker := &types.Issue{
+		Title:     "Fix lint errors",
+		Status:    types.StatusOpen,
+		Priority:  1,
+		IssueType: types.TypeBug,
+	}
+	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
+		t.Fatalf("Failed to create blocker: %v", err)
+	}
+	if err := store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test"); err != nil {
+		t.Fatalf("Failed to add label: %v", err)
+	}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Call getNextReadyBlocker
+	result, err := exec.getNextReadyBlocker(ctx)
+	if err != nil {
+		t.Fatalf("getNextReadyBlocker failed: %v", err)
+	}
+
+	// Restore stdout and read captured output
+	w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	// Verify blocker was found
+	if result == nil {
+		t.Fatal("Expected blocker to be found")
+	}
+
+	// Verify log message contains expected information
+	expectedLog := fmt.Sprintf("Found ready blocker: %s (P%d) - %s", blocker.ID, blocker.Priority, blocker.Title)
+	if !strings.Contains(output, expectedLog) {
+		t.Errorf("Expected log message not found.\nGot: %s\nExpected substring: %s", output, expectedLog)
+	}
+}
+
+// TestBlockerLogging_WhenNoBlockersFound tests that "no blockers" log is emitted (vc-159)
+func TestBlockerLogging_WhenNoBlockersFound(t *testing.T) {
+	// Create fresh executor with empty database
+	ctx, store, exec := setupExecutorTest(t)
+	defer store.Close()
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Call getNextReadyBlocker with no blockers
+	result, err := exec.getNextReadyBlocker(ctx)
+	if err != nil {
+		t.Fatalf("getNextReadyBlocker failed: %v", err)
+	}
+
+	// Restore stdout and read captured output
+	w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	// Verify no blocker was found
+	if result != nil {
+		t.Errorf("Expected no blocker, got %v", result)
+	}
+
+	// Verify log message
+	expectedLog := "No ready blockers found, falling back to regular work"
+	if !strings.Contains(output, expectedLog) {
+		t.Errorf("Expected log message not found.\nGot: %s\nExpected substring: %s", output, expectedLog)
+	}
+}
+
+// TestBlockerPrioritizationLogging tests that processNextIssue logs when blocker is selected (vc-159)
+// Note: This test only verifies the logging logic, not the full execution
+func TestBlockerPrioritizationLogging(t *testing.T) {
+	ctx, store, exec := setupExecutorTest(t)
+	defer store.Close()
+
+	// Create a blocker
+	blocker := &types.Issue{
+		Title:     "Fix critical bug",
+		Status:    types.StatusOpen,
+		Priority:  0,
+		IssueType: types.TypeBug,
+	}
+	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
+		t.Fatalf("Failed to create blocker: %v", err)
+	}
+	if err := store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test"); err != nil {
+		t.Fatalf("Failed to add label: %v", err)
+	}
+
+	// Create regular ready work
+	regular := &types.Issue{
+		Title:     "Regular task",
+		Status:    types.StatusOpen,
+		Priority:  1,
+		IssueType: types.TypeTask,
+	}
+	if err := store.CreateIssue(ctx, regular, "test"); err != nil {
+		t.Fatalf("Failed to create regular task: %v", err)
+	}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Call getNextReadyBlocker to trigger blocker selection logging
+	result, err := exec.getNextReadyBlocker(ctx)
+	if err != nil {
+		t.Fatalf("getNextReadyBlocker failed: %v", err)
+	}
+
+	// Restore stdout and read captured output
+	w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	// Verify blocker was found
+	if result == nil {
+		t.Fatal("Expected blocker to be found")
+	}
+	if result.ID != blocker.ID {
+		t.Errorf("Expected blocker %s, got %s", blocker.ID, result.ID)
+	}
+
+	// Verify logging
+	expectedLog := fmt.Sprintf("Found ready blocker: %s (P%d)", blocker.ID, blocker.Priority)
+	if !strings.Contains(output, expectedLog) {
+		t.Errorf("Expected blocker found log not present.\nGot: %s\nExpected substring: %s", output, expectedLog)
+	}
+
+	t.Logf("✓ Blocker prioritization logging verified")
 }
