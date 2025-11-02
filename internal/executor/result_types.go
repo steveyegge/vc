@@ -24,6 +24,7 @@ type ResultsProcessor struct {
 	messageGen         *git.MessageGenerator
 	enableQualityGates bool
 	enableAutoCommit   bool
+	enableAutoPR       bool
 	workingDir         string
 	actor              string             // The actor performing the update (e.g., "repl", "executor-instance-id")
 	sandbox            *sandbox.Sandbox   // The sandbox being used (can be nil if sandboxing is disabled)
@@ -40,6 +41,7 @@ type ResultsProcessorConfig struct {
 	MessageGen         *git.MessageGenerator      // Can be nil to disable auto-commit
 	EnableQualityGates bool
 	EnableAutoCommit   bool
+	EnableAutoPR       bool
 	WorkingDir         string
 	Actor              string           // Actor ID for tracking who made the changes
 	Sandbox            *sandbox.Sandbox // The sandbox being used (can be nil if sandboxing is disabled)

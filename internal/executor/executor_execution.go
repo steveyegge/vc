@@ -458,6 +458,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		MessageGen:         e.messageGen,   // Commit message generator (vc-136)
 		EnableQualityGates: e.enableQualityGates,
 		EnableAutoCommit:   e.config.EnableAutoCommit, // Auto-commit configuration (vc-142)
+		EnableAutoPR:       e.config.EnableAutoPR,     // Auto-PR configuration (vc-389e)
 		WorkingDir:         workingDir,                // Use sandbox path if sandboxing is enabled (vc-117)
 		Actor:              e.instanceID,
 		Sandbox:            sb,           // Pass sandbox for status tracking (vc-134)

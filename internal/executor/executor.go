@@ -99,6 +99,7 @@ type Config struct {
 	EnableAISupervision     bool                         // Enable AI assessment and analysis (default: true)
 	EnableQualityGates      bool                         // Enable quality gates enforcement (default: true)
 	EnableAutoCommit        bool                         // Enable automatic git commits after successful execution (default: false, vc-142)
+	EnableAutoPR            bool                         // Enable automatic PR creation after successful commit (default: false, requires EnableAutoCommit, vc-389e)
 	EnableSandboxes         bool                         // Enable sandbox isolation (default: true, vc-144)
 	KeepSandboxOnFailure    bool                         // Keep failed sandboxes for debugging (default: false)
 	KeepBranches            bool                         // Keep mission branches after cleanup (default: false)

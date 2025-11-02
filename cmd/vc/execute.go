@@ -46,10 +46,21 @@ func runExecutor(cmd *cobra.Command) error {
 	sandboxRoot, _ := cmd.Flags().GetString("sandbox-root")
 	parentRepo, _ := cmd.Flags().GetString("parent-repo")
 	enableAutoCommit, _ := cmd.Flags().GetBool("enable-auto-commit")
+	enableAutoPR, _ := cmd.Flags().GetBool("enable-auto-pr")
 
 	// Check environment variable as fallback for auto-commit (vc-142)
 	if !enableAutoCommit {
 		enableAutoCommit = os.Getenv("VC_ENABLE_AUTO_COMMIT") == "true"
+	}
+
+	// Check environment variable as fallback for auto-PR (vc-389e)
+	if !enableAutoPR {
+		enableAutoPR = os.Getenv("VC_ENABLE_AUTO_PR") == "true"
+	}
+
+	// Validate auto-PR requires auto-commit (vc-389e)
+	if enableAutoPR && !enableAutoCommit {
+		return fmt.Errorf("--enable-auto-pr requires --enable-auto-commit to be enabled")
 	}
 
 	// Derive working directory from database location
@@ -111,6 +122,7 @@ func runExecutor(cmd *cobra.Command) error {
 	cfg.InstanceCleanupAge = instanceCleanupConfig.CleanupAge() // vc-33: from environment
 	cfg.InstanceCleanupKeep = instanceCleanupConfig.CleanupKeep  // vc-33: from environment
 	cfg.EnableAutoCommit = enableAutoCommit // vc-142: expose auto-commit configuration
+	cfg.EnableAutoPR = enableAutoPR         // vc-389e: expose auto-PR configuration
 	if pollSeconds > 0 {
 		cfg.PollInterval = time.Duration(pollSeconds) * time.Second
 	}
@@ -187,5 +199,6 @@ func init() {
 	executeCmd.Flags().String("sandbox-root", ".sandboxes", "Root directory for sandboxes")
 	executeCmd.Flags().String("parent-repo", ".", "Parent repository path")
 	executeCmd.Flags().Bool("enable-auto-commit", false, "Enable automatic git commits after successful execution (can also use VC_ENABLE_AUTO_COMMIT=true)")
+	executeCmd.Flags().Bool("enable-auto-pr", false, "Enable automatic PR creation after successful commit (requires --enable-auto-commit, can also use VC_ENABLE_AUTO_PR=true)")
 	rootCmd.AddCommand(executeCmd)
 }

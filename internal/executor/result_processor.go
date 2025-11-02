@@ -37,6 +37,7 @@ func NewResultsProcessor(cfg *ResultsProcessorConfig) (*ResultsProcessor, error)
 		messageGen:         cfg.MessageGen,
 		enableQualityGates: cfg.EnableQualityGates,
 		enableAutoCommit:   cfg.EnableAutoCommit,
+		enableAutoPR:       cfg.EnableAutoPR,
 		workingDir:         cfg.WorkingDir,
 		actor:              cfg.Actor,
 		sandbox:            cfg.Sandbox,
@@ -724,7 +725,22 @@ SkipGates:
 				fmt.Fprintf(os.Stderr, "warning: failed to add commit comment: %v\n", err)
 			}
 
-			// Step 3.6: AI-based code review decision and automated quality analysis (vc-216)
+			// Step 3.7: Auto-PR creation (if enabled) (vc-389e)
+			if rp.enableAutoPR {
+				prURL, err := rp.createAutoPR(ctx, issue, commitHash, gateResults)
+				if err != nil {
+					// Don't fail - just log and continue
+					fmt.Fprintf(os.Stderr, "Warning: auto-PR failed: %v (continuing without PR)\n", err)
+				} else if prURL != "" {
+					// Add comment with PR URL
+					prComment := fmt.Sprintf("Auto-created PR: %s", prURL)
+					if err := rp.store.AddComment(ctx, issue.ID, rp.actor, prComment); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: failed to add PR comment: %v\n", err)
+					}
+				}
+			}
+
+			// Step 3.8: AI-based code review decision and automated quality analysis (vc-216)
 			if rp.supervisor != nil {
 				fmt.Printf("\n=== Code Review Decision ===\n")
 
@@ -833,14 +849,25 @@ SkipGates:
 
 		// Update issue status
 		if shouldClose {
-		// Note: closed_at is automatically managed by Beads when status changes to/from closed
-		updates := map[string]interface{}{
-		"status": string(types.StatusClosed), // vc-57d7: Convert Status type to string for Beads
+		// Build close reason from quality gates results
+		closeReason := "Completed: agent succeeded, quality gates passed"
+		if len(gateResults) > 0 {
+			passedGates := []string{}
+			for _, gr := range gateResults {
+				if gr.Passed {
+					passedGates = append(passedGates, string(gr.Gate))
+				}
+			}
+			if len(passedGates) > 0 {
+				closeReason = fmt.Sprintf("Completed: gates passed (%s)", strings.Join(passedGates, ", "))
+			}
 		}
-		if err := rp.store.UpdateIssue(ctx, issue.ID, updates, rp.actor); err != nil {
+
+		// vc-0d49: Use CloseIssue instead of UpdateIssue to properly set closed_at and close reason
+		if err := rp.store.CloseIssue(ctx, issue.ID, closeReason, rp.actor); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to close issue: %v\n", err)
 		} else {
-		fmt.Printf("\n✓ Issue %s marked as closed\n", issue.ID)
+		fmt.Printf("\n✓ Issue %s closed: %s\n", issue.ID, closeReason)
 
 				// vc-230: Emit baseline_test_fix_completed event if this was a baseline issue
 				// vc-261: Use IsBaselineIssue() and get fix_type from diagnosis (not string matching)

@@ -3875,6 +3875,110 @@ func TestMissionLifecycleEvents(t *testing.T) {
 	})
 }
 
+// TestUpdateMissionRejectsInvalidFields tests SQL injection protection (vc-8891)
+func TestUpdateMissionRejectsInvalidFields(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a mission
+	mission := &types.Mission{
+		Issue: types.Issue{
+			Title:        "Test Mission",
+			Description:  "Test mission for SQL injection protection",
+			Status:       types.StatusOpen,
+			Priority:     1,
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypeMission,
+		},
+		Goal: "Test SQL injection protection",
+	}
+	if err := store.CreateMission(ctx, mission, "test"); err != nil {
+		t.Fatalf("Failed to create mission: %v", err)
+	}
+
+	t.Run("UpdateMission rejects invalid field names", func(t *testing.T) {
+		// Try to update with an invalid field that could be SQL injection attempt
+		maliciousUpdates := map[string]interface{}{
+			"malicious_field": "value",
+		}
+
+		err := store.UpdateMission(ctx, mission.ID, maliciousUpdates, "attacker")
+		if err == nil {
+			t.Fatal("Expected UpdateMission to reject invalid field, but it succeeded")
+		}
+
+		// The error will come from either base issue validation or mission field validation
+		// Both provide protection against SQL injection
+		if err.Error() != "invalid mission field: malicious_field" &&
+			err.Error() != "failed to update base issue fields: invalid field for update: malicious_field" {
+			t.Errorf("Expected error about invalid field, got %q", err.Error())
+		}
+
+		t.Logf("✓ UpdateMission correctly rejected invalid field: %v", err)
+	})
+
+	t.Run("UpdateMission accepts valid fields", func(t *testing.T) {
+		// Try to update with valid fields
+		validUpdates := map[string]interface{}{
+			"sandbox_path": ".sandboxes/mission-test/",
+			"branch_name":  "mission/test-branch",
+			"goal":         "Test goal",
+		}
+
+		err := store.UpdateMission(ctx, mission.ID, validUpdates, "test")
+		if err != nil {
+			t.Fatalf("UpdateMission failed with valid fields: %v", err)
+		}
+
+		// Verify the updates were applied
+		updated, err := store.GetMission(ctx, mission.ID)
+		if err != nil {
+			t.Fatalf("Failed to get updated mission: %v", err)
+		}
+
+		if updated.SandboxPath != ".sandboxes/mission-test/" {
+			t.Errorf("Expected sandbox_path='.sandboxes/mission-test/', got %q", updated.SandboxPath)
+		}
+		if updated.BranchName != "mission/test-branch" {
+			t.Errorf("Expected branch_name='mission/test-branch', got %q", updated.BranchName)
+		}
+		if updated.Goal != "Test goal" {
+			t.Errorf("Expected goal='Test goal', got %q", updated.Goal)
+		}
+
+		t.Logf("✓ UpdateMission correctly accepted valid fields")
+	})
+
+	t.Run("UpdateMission rejects SQL injection attempt in field name", func(t *testing.T) {
+		// Try SQL injection via field name
+		sqlInjectionUpdates := map[string]interface{}{
+			"sandbox_path = 'pwned'; DROP TABLE issues; --": "malicious",
+		}
+
+		err := store.UpdateMission(ctx, mission.ID, sqlInjectionUpdates, "attacker")
+		if err == nil {
+			t.Fatal("Expected UpdateMission to reject SQL injection attempt, but it succeeded")
+		}
+
+		// Verify that the issues table still exists and wasn't dropped
+		issues, err := store.GetReadyWork(ctx, types.WorkFilter{})
+		if err != nil {
+			t.Fatalf("GetReadyWork failed, table may have been dropped: %v", err)
+		}
+
+		t.Logf("✓ UpdateMission correctly rejected SQL injection attempt, issues table still intact (%d issues)", len(issues))
+	})
+}
+
 // TestGetIssues tests batch issue retrieval (vc-58)
 func TestGetIssues(t *testing.T) {
 	ctx := context.Background()

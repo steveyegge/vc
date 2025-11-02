@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/steveyegge/vc/internal/gates"
 	"github.com/steveyegge/vc/internal/git"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -254,4 +255,77 @@ func (rp *ResultsProcessor) isVCRepo() bool {
 	}
 
 	return false
+}
+
+// createAutoPR creates a GitHub PR using gh CLI after successful auto-commit (vc-389e)
+// Returns the PR URL if successful, empty string if PR creation was skipped or failed
+func (rp *ResultsProcessor) createAutoPR(ctx context.Context, issue *types.Issue, commitHash string, gateResults []*gates.Result) (string, error) {
+	fmt.Printf("\n=== Auto-PR Creation ===\n")
+
+	// Check if gh CLI is available
+	if _, err := exec.LookPath("gh"); err != nil {
+		return "", fmt.Errorf("gh CLI not found: %w (install from https://cli.github.com/)", err)
+	}
+
+	// Get current branch name
+	branchCmd := exec.CommandContext(ctx, "git", "-C", rp.workingDir, "branch", "--show-current")
+	branchOutput, err := branchCmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current branch: %w", err)
+	}
+	branchName := strings.TrimSpace(string(branchOutput))
+
+	if branchName == "" || branchName == "main" || branchName == "master" {
+		fmt.Printf("Not creating PR: on branch '%s' (PRs only created from feature branches)\n", branchName)
+		return "", nil
+	}
+
+	// Build PR title from issue
+	prTitle := fmt.Sprintf("[%s] %s", issue.ID, issue.Title)
+
+	// Build PR body with quality gate results
+	var bodyBuilder strings.Builder
+	bodyBuilder.WriteString("## Summary\n\n")
+	bodyBuilder.WriteString(fmt.Sprintf("Automated PR for issue %s\n\n", issue.ID))
+
+	if issue.Description != "" {
+		bodyBuilder.WriteString(fmt.Sprintf("%s\n\n", issue.Description))
+	}
+
+	bodyBuilder.WriteString("## Quality Gates\n\n")
+	if len(gateResults) > 0 {
+		for _, gr := range gateResults {
+			status := "❌ FAIL"
+			if gr.Passed {
+				status = "✅ PASS"
+			}
+			bodyBuilder.WriteString(fmt.Sprintf("- %s **%s**\n", status, gr.Gate))
+		}
+	} else {
+		bodyBuilder.WriteString("No quality gates were run.\n")
+	}
+
+	bodyBuilder.WriteString(fmt.Sprintf("\n## Commit\n\n- %s\n\n", commitHash))
+	bodyBuilder.WriteString("---\n")
+	bodyBuilder.WriteString("🤖 Generated with [Claude Code](https://claude.com/claude-code)\n")
+
+	prBody := bodyBuilder.String()
+
+	// Create PR using gh CLI
+	cmd := exec.CommandContext(ctx, "gh", "pr", "create",
+		"--title", prTitle,
+		"--body", prBody,
+		"--head", branchName)
+	cmd.Dir = rp.workingDir
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("gh pr create failed: %w\nOutput: %s", err, string(output))
+	}
+
+	// Extract PR URL from output
+	prURL := strings.TrimSpace(string(output))
+	fmt.Printf("✓ Created PR: %s\n", prURL)
+
+	return prURL, nil
 }

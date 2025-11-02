@@ -402,11 +402,30 @@ func (s *VCStorage) UpdateMission(ctx context.Context, id string, updates map[st
 
 	// Update mission-specific fields if any
 	if len(missionUpdates) > 0 {
+		// Whitelist of valid column names (defense against SQL injection)
+		validColumns := map[string]bool{
+			"approved_at":       true,
+			"approved_by":       true,
+			"goal":              true,
+			"context":           true,
+			"sandbox_path":      true,
+			"branch_name":       true,
+			"phase_count":       true,
+			"current_phase":     true,
+			"approval_required": true,
+			"iteration_count":   true,
+			"gates_status":      true,
+		}
+
 		// Build dynamic UPDATE query
 		setClauses := []string{}
 		args := []interface{}{}
 
 		for key, value := range missionUpdates {
+			// Validate column name before interpolation (vc-8891)
+			if !validColumns[key] {
+				return fmt.Errorf("invalid mission field: %s", key)
+			}
 			setClauses = append(setClauses, fmt.Sprintf("%s = ?", key))
 			args = append(args, value)
 		}
