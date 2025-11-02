@@ -224,9 +224,10 @@ func (g *Git) Rebase(ctx context.Context, repoPath string, opts RebaseOptions) (
 	// Handle continue case
 	if opts.Continue {
 		continueCmd := exec.CommandContext(ctx, g.gitPath, "-C", repoPath, "rebase", "--continue")
-		// Set GIT_EDITOR to 'true' to avoid opening an editor for commit messages
-		// This accepts the default commit message when continuing a rebase
-		continueCmd.Env = append(os.Environ(), "GIT_EDITOR=true")
+		// Set GIT_EDITOR to ':' (colon) which is a no-op shell command
+		// This avoids opening an editor and accepts the default commit message
+		// Using ':' is more reliable than 'true' across different systems
+		continueCmd.Env = append(os.Environ(), "GIT_EDITOR=:")
 		output, err := continueCmd.CombinedOutput()
 		if err != nil {
 			outputStr := string(output)
