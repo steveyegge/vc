@@ -69,7 +69,9 @@ func (e *Executor) processNextQAWork(ctx context.Context) error {
 
 	// Execute quality gates in background goroutine to enable parallelism
 	// This allows code workers to continue working while gates run
+	e.qaWorkersWg.Add(1) // Track goroutine for graceful shutdown (vc-0d58)
 	go func() {
+		defer e.qaWorkersWg.Done() // Release goroutine tracker (vc-0d58)
 		if err := e.qaWorker.Execute(ctx, mission); err != nil {
 			// Log error - QA worker handles state transitions internally
 			fmt.Fprintf(os.Stderr, "QA worker execution failed for %s: %v\n", mission.ID, err)
@@ -254,20 +256,13 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 				// Ignore failures completely
 				// Continue to claim work below
 			}
-		}
-	}
-
-	// If in degraded mode, determine if we can exit before claiming
-	if e.isDegraded() {
-		resolved, err := e.checkBaselineIssuesResolved(ctx)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to check baseline issues: %v\n", err)
-			return nil
-		}
-		if resolved {
-			// Print banner only on state transition (exiting degraded mode)
-			fmt.Printf("✓ Baseline issues resolved. Exiting degraded mode.\n")
-			e.setDegraded(false)
+		} else {
+			// vc-1d3d: Baseline passes - exit degraded mode if we were in it
+			if e.isDegraded() {
+				// Print banner only on state transition (exiting degraded mode)
+				fmt.Printf("✓ Baseline quality gates passing. Exiting degraded mode.\n")
+				e.setDegraded(false)
+			}
 		}
 	}
 
@@ -344,19 +339,4 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 
 	// Successfully claimed - now execute it
 	return e.executeIssue(ctx, issue)
-}
-
-// checkBaselineIssuesResolved returns true when there are no open baseline-failure issues
-func (e *Executor) checkBaselineIssuesResolved(ctx context.Context) (bool, error) {
-	issues, err := e.store.GetIssuesByLabel(ctx, "baseline-failure")
-	if err != nil {
-		return false, err
-	}
-	// Consider resolved only if no baseline-failure issue remains open
-	for _, is := range issues {
-		if is.Status != types.StatusClosed {
-			return false, nil
-		}
-	}
-	return true, nil
 }

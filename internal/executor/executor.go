@@ -72,6 +72,7 @@ type Executor struct {
 	running              bool
 	degradedMode         bool      // In degraded mode, only claim baseline issues
 	degradedModeMsgLast  time.Time // Last time we printed the degraded mode message (for throttling)
+	qaWorkersWg          sync.WaitGroup // Tracks active QA worker goroutines for graceful shutdown (vc-0d58)
 }
 
 // isDegraded returns whether the executor is in degraded mode (thread-safe)
@@ -587,6 +588,10 @@ func (e *Executor) Stop(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
+
+	// Wait for all QA worker goroutines to complete (vc-0d58)
+	// This ensures quality gates finish and release database claims before shutdown
+	e.qaWorkersWg.Wait()
 
 	// Update internal state first (vc-192: set running=false before DB update)
 	e.mu.Lock()

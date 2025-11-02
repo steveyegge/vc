@@ -280,6 +280,35 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, a.config.Timeout)
 	defer cancel()
 
+	// Start a monitoring goroutine to check for circuit breaker triggers
+	// This runs outside the mutex to avoid deadlocks (vc-5783)
+	monitorDone := make(chan struct{})
+	go func() {
+		defer close(monitorDone)
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		
+		for {
+			select {
+			case <-ticker.C:
+				// Check if circuit breaker was triggered (without holding mutex for too long)
+				a.mu.Lock()
+				loopDetected := a.loopDetected
+				a.mu.Unlock()
+				
+				if loopDetected {
+					// Kill the agent outside of the mutex
+					if err := a.Kill(); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: failed to kill agent after circuit breaker: %v\n", err)
+					}
+					return
+				}
+			case <-monitorDone:
+				return
+			}
+		}
+	}()
+
 	// Wait for process to complete or timeout
 	errCh := make(chan error, 1)
 	go func() {
@@ -305,6 +334,16 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 		return nil, fmt.Errorf("agent execution canceled (parent context): %w", timeoutCtx.Err())
 	case err := <-errCh:
 		// Process completed
+		a.mu.Lock()
+		loopDetected := a.loopDetected
+		loopReason := a.loopReason
+		a.mu.Unlock()
+
+		// Check if it was killed by circuit breaker
+		if loopDetected {
+			return nil, fmt.Errorf("agent killed by circuit breaker: %s", loopReason)
+		}
+
 		a.mu.Lock()
 		defer a.mu.Unlock()
 
@@ -503,13 +542,11 @@ func (a *Agent) convertJSONToEvent(msg AgentMessage, rawLine string) *events.Age
 			}
 
 			// Check for infinite loop condition
+			// Note: Do NOT kill here while holding mutex - just set flag
 			if err := a.checkCircuitBreaker(filePath); err != nil {
-				// Kill the agent immediately
+				// Circuit breaker triggered - log it but don't kill yet
 				fmt.Fprintf(os.Stderr, "\n!!! CIRCUIT BREAKER TRIGGERED !!!\n%v\n", err)
-				if killErr := a.Kill(); killErr != nil {
-					fmt.Fprintf(os.Stderr, "warning: failed to kill agent after circuit breaker: %v\n", killErr)
-				}
-				// Don't return an event - the agent will be terminated
+				// Don't return an event - the agent will be terminated by Wait()
 				return nil
 			}
 		}
