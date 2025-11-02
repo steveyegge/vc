@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/steveyegge/vc/internal/types"
@@ -336,7 +337,40 @@ func (s *VCStorage) DeleteOldStoppedInstances(ctx context.Context, olderThanSeco
 // ======================================================================
 
 // ClaimIssue atomically claims an issue for execution
+// Retries on SQLite busy errors to handle concurrent claim attempts
 func (s *VCStorage) ClaimIssue(ctx context.Context, issueID, executorInstanceID string) error {
+	const maxRetries = 5
+	const baseDelay = 10 * time.Millisecond
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff: 10ms, 20ms, 40ms, 80ms
+			delay := baseDelay * time.Duration(1<<uint(attempt-1))
+			time.Sleep(delay)
+		}
+
+		err := s.claimIssueAttempt(ctx, issueID, executorInstanceID)
+		if err == nil {
+			return nil
+		}
+
+		// Check if error is a SQLite busy error
+		if isSQLiteBusyError(err) {
+			lastErr = err
+			continue // Retry
+		}
+
+		// Non-retryable error
+		return err
+	}
+
+	// All retries exhausted
+	return lastErr
+}
+
+// claimIssueAttempt performs a single claim attempt
+func (s *VCStorage) claimIssueAttempt(ctx context.Context, issueID, executorInstanceID string) error {
 	// Begin transaction to ensure atomicity
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -400,6 +434,15 @@ func (s *VCStorage) ClaimIssue(ctx context.Context, issueID, executorInstanceID 
 	}
 
 	return nil
+}
+
+// isSQLiteBusyError checks if an error is a SQLite database locked/busy error
+func isSQLiteBusyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "database is locked") || strings.Contains(errMsg, "SQLITE_BUSY")
 }
 
 // GetExecutionState retrieves execution state for an issue
