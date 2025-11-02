@@ -3035,6 +3035,144 @@ func TestGetReadyWorkWithMissionContext(t *testing.T) {
 
 		t.Logf("✓ GetReadyWork efficiently handled 3 tasks from mission %s", sharedMission.ID)
 	})
+
+	t.Run("GetReadyWork filters issues with no-auto-claim label", func(t *testing.T) {
+		// Create two tasks: one with no-auto-claim label, one without
+		claimableTask := &types.Issue{
+			Title:       "Claimable Task",
+			Description: "This can be auto-claimed",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, claimableTask, "test"); err != nil {
+			t.Fatalf("Failed to create claimable task: %v", err)
+		}
+
+		noAutoClaimTask := &types.Issue{
+			Title:       "No Auto Claim Task",
+			Description: "This should not be auto-claimed",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, noAutoClaimTask, "test"); err != nil {
+			t.Fatalf("Failed to create no-auto-claim task: %v", err)
+		}
+
+		// Add no-auto-claim label to second task
+		if err := store.AddLabel(ctx, noAutoClaimTask.ID, "no-auto-claim", "test"); err != nil {
+			t.Fatalf("Failed to add no-auto-claim label: %v", err)
+		}
+
+		// Get ready work - use large limit to ensure we get both tasks despite accumulated test data
+		readyWork, err := store.GetReadyWork(ctx, types.WorkFilter{
+			Status: types.StatusOpen,
+			Limit:  100, // Large limit to ensure we get all tasks from this test run
+		})
+		if err != nil {
+			t.Fatalf("GetReadyWork failed: %v", err)
+		}
+
+		// Check results
+		foundClaimable := false
+		foundNoAutoClaim := false
+		for _, issue := range readyWork {
+			if issue.ID == claimableTask.ID {
+				foundClaimable = true
+			}
+			if issue.ID == noAutoClaimTask.ID {
+				foundNoAutoClaim = true
+			}
+		}
+
+		if !foundClaimable {
+			t.Errorf("GetReadyWork should include tasks without no-auto-claim label (task %s not found in %d results)",
+				claimableTask.ID, len(readyWork))
+		}
+
+		if foundNoAutoClaim {
+			t.Errorf("GetReadyWork should NOT include tasks with no-auto-claim label (vc-4ec0) (task %s found in results)",
+				noAutoClaimTask.ID)
+		}
+
+		t.Logf("✓ GetReadyWork correctly excluded task %s with no-auto-claim label", noAutoClaimTask.ID)
+		t.Logf("✓ GetReadyWork correctly included task %s without no-auto-claim label", claimableTask.ID)
+	})
+
+	t.Run("GetReadyWork filters issues with no-auto-claim among multiple labels", func(t *testing.T) {
+		// Create task with multiple labels including 'no-auto-claim'
+		multiLabelTask := &types.Issue{
+			Title:       "Multi Label Task",
+			Description: "Has multiple labels including no-auto-claim",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, multiLabelTask, "test"); err != nil {
+			t.Fatalf("Failed to create multi-label task: %v", err)
+		}
+
+		// Add multiple labels
+		if err := store.AddLabel(ctx, multiLabelTask.ID, "bug", "test"); err != nil {
+			t.Fatalf("Failed to add bug label: %v", err)
+		}
+		if err := store.AddLabel(ctx, multiLabelTask.ID, "no-auto-claim", "test"); err != nil {
+			t.Fatalf("Failed to add no-auto-claim label: %v", err)
+		}
+		if err := store.AddLabel(ctx, multiLabelTask.ID, "high-priority", "test"); err != nil {
+			t.Fatalf("Failed to add high-priority label: %v", err)
+		}
+
+		// Get ready work
+		readyWork, err := store.GetReadyWork(ctx, types.WorkFilter{
+			Status: types.StatusOpen,
+			Limit:  100,
+		})
+		if err != nil {
+			t.Fatalf("GetReadyWork failed: %v", err)
+		}
+
+		// Check that task with no-auto-claim is excluded even with other labels
+		for _, issue := range readyWork {
+			if issue.ID == multiLabelTask.ID {
+				t.Errorf("GetReadyWork should exclude task with no-auto-claim even when it has other labels")
+			}
+		}
+
+		t.Logf("✓ GetReadyWork correctly excluded task %s with no-auto-claim among multiple labels", multiLabelTask.ID)
+	})
+
+	t.Run("GetReadyWork handles empty result set gracefully", func(t *testing.T) {
+		// Create an epic (should be filtered out)
+		epic := &types.Issue{
+			Title:       "Test Epic",
+			Description: "Should be filtered",
+			Status:      types.StatusOpen,
+			Priority:    1,
+			IssueType:   types.TypeEpic,
+		}
+		if err := store.CreateIssue(ctx, epic, "test"); err != nil {
+			t.Fatalf("Failed to create epic: %v", err)
+		}
+
+		// Even with the epic, GetReadyWork should succeed (it filters epics)
+		// This tests that empty issueIDs map is handled correctly
+		readyWork, err := store.GetReadyWork(ctx, types.WorkFilter{
+			Status: types.StatusClosed, // Query for closed issues (should be empty)
+			Limit:  10,
+		})
+		if err != nil {
+			t.Fatalf("GetReadyWork should handle empty results gracefully: %v", err)
+		}
+
+		// Should return empty list, not nil
+		if readyWork == nil {
+			t.Error("GetReadyWork should return empty slice, not nil")
+		}
+
+		t.Logf("✓ GetReadyWork handled empty result set gracefully (%d results)", len(readyWork))
+	})
 }
 
 // TestMissionSandboxMetadataPersistence tests that sandbox_path and branch_name are properly

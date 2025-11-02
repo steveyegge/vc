@@ -142,7 +142,17 @@ bd create \
 
 # Add dependency (if needed)
 bd dep add vc-NEW vc-PARENT --type blocks
+
+# Prevent executor from auto-claiming (vc-4ec0)
+# Use for design tasks, research, or issues requiring human oversight
+bd label add vc-X no-auto-claim
 ```
+
+**Executor Exclusion Label** (vc-4ec0):
+- Use `no-auto-claim` label for issues that should NOT be auto-claimed by VC executors
+- Examples: design tasks, strategic planning, research, issues requiring human review
+- The executor's `GetReadyWork()` query automatically filters out these issues
+- Humans and Claude Code sessions can still work on these issues normally
 
 ### Completing Work
 

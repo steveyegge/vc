@@ -697,8 +697,35 @@ func (s *VCStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) (
 		vcIssues = append(vcIssues, beadsIssueToVC(bi))
 	}
 
+	// vc-4ec0: Batch-load labels for all issues to check for 'no-auto-claim' (avoid N+1)
+	issueIDs := make(map[string]bool, len(vcIssues))
+	for _, issue := range vcIssues {
+		issueIDs[issue.ID] = true
+	}
+
+	issueLabels, err := s.batchLoadLabels(ctx, issueIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch-load issue labels: %w", err)
+	}
+
+	// Filter out issues with 'no-auto-claim' label
+	filteredIssues := make([]*types.Issue, 0, len(vcIssues))
+	for _, issue := range vcIssues {
+		labels := issueLabels[issue.ID]
+		hasNoAutoClaim := false
+		for _, label := range labels {
+			if label == "no-auto-claim" {
+				hasNoAutoClaim = true
+				break
+			}
+		}
+		if !hasNoAutoClaim {
+			filteredIssues = append(filteredIssues, issue)
+		}
+	}
+
 	// vc-234: Enrich with mission context and filter by mission active state
-	return s.enrichWithMissionContext(ctx, vcIssues)
+	return s.enrichWithMissionContext(ctx, filteredIssues)
 }
 
 // enrichWithMissionContext populates mission context for each issue and filters out
