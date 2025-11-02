@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -4325,6 +4326,157 @@ func TestGetIssues(t *testing.T) {
 			t.Error("Normal bug not found")
 		} else if issue.IssueSubtype != "" {
 			t.Errorf("Normal bug should have empty subtype, got '%s'", issue.IssueSubtype)
+		}
+	})
+}
+
+// TestGetReadyWorkFiltersBlocked verifies that GetReadyWork excludes blocked issues (vc-185)
+// Root cause of vc-184: vc-10 was assigned as a task despite being marked as blocked/deferred
+func TestGetReadyWorkFiltersBlocked(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create three issues: open, blocked, and in_progress
+	openIssue := &types.Issue{
+		Title:     "Open task",
+		Status:    types.StatusOpen,
+		Priority:  1,
+		IssueType: types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, openIssue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create open issue: %v", err)
+	}
+
+	blockedIssue := &types.Issue{
+		Title:     "Blocked task",
+		Status:    types.StatusBlocked,
+		Priority:  1,
+		IssueType: types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, blockedIssue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create blocked issue: %v", err)
+	}
+
+	inProgressIssue := &types.Issue{
+		Title:     "In-progress task",
+		Status:    types.StatusInProgress,
+		Priority:  1,
+		IssueType: types.TypeTask,
+	}
+	err = store.CreateIssue(ctx, inProgressIssue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create in-progress issue: %v", err)
+	}
+
+	now := time.Now()
+	closedIssue := &types.Issue{
+		Title:     "Closed task",
+		Status:    types.StatusClosed,
+		Priority:  1,
+		IssueType: types.TypeTask,
+		ClosedAt:  &now,
+	}
+	err = store.CreateIssue(ctx, closedIssue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create closed issue: %v", err)
+	}
+
+	// Create an epic (should also be filtered out per vc-203)
+	epic := &types.Issue{
+		Title:     "Epic task",
+		Status:    types.StatusOpen,
+		Priority:  1,
+		IssueType: types.TypeEpic,
+	}
+	err = store.CreateIssue(ctx, epic, "test")
+	if err != nil {
+		t.Fatalf("Failed to create epic: %v", err)
+	}
+
+	// Test 1: Query all ready work - should only return open issue
+	t.Run("GetReadyWork excludes blocked issues", func(t *testing.T) {
+		ready, err := store.GetReadyWork(ctx, types.WorkFilter{
+			Limit: 100,
+		})
+		if err != nil {
+			t.Fatalf("Failed to get ready work: %v", err)
+		}
+
+		// Should only contain the open issue, not blocked/in_progress/closed/epic
+		foundOpen := false
+		for _, issue := range ready {
+			if issue.ID == openIssue.ID {
+				foundOpen = true
+			}
+			if issue.ID == blockedIssue.ID {
+				t.Errorf("GetReadyWork returned blocked issue %s - should have been filtered (vc-185)", blockedIssue.ID)
+			}
+			if issue.ID == inProgressIssue.ID {
+				t.Errorf("GetReadyWork returned in_progress issue %s - should have been filtered", inProgressIssue.ID)
+			}
+			if issue.ID == closedIssue.ID {
+				t.Errorf("GetReadyWork returned closed issue %s - should have been filtered (vc-fef8)", closedIssue.ID)
+			}
+			if issue.ID == epic.ID {
+				t.Errorf("GetReadyWork returned epic %s - should have been filtered (vc-203)", epic.ID)
+			}
+		}
+
+		if !foundOpen {
+			t.Errorf("GetReadyWork did not return open issue %s", openIssue.ID)
+		}
+	})
+
+	// Register an executor instance for claim tests
+	instance := &types.ExecutorInstance{
+		InstanceID:    "test-executor",
+		Hostname:      "localhost",
+		PID:           12345,
+		Version:       "test",
+		StartedAt:     time.Now(),
+		LastHeartbeat: time.Now(),
+		Status:        "running",
+	}
+	err = store.RegisterInstance(ctx, instance)
+	if err != nil {
+		t.Fatalf("Failed to register executor: %v", err)
+	}
+
+	// Test 2: Verify claiming blocked issue fails
+	t.Run("ClaimIssue rejects blocked issues", func(t *testing.T) {
+		err := store.ClaimIssue(ctx, blockedIssue.ID, "test-executor")
+		if err == nil {
+			t.Error("ClaimIssue should fail for blocked issue (vc-185)")
+		}
+		if err != nil && !strings.Contains(err.Error(), "not open") {
+			t.Errorf("ClaimIssue error should mention 'not open', got: %v", err)
+		}
+	})
+
+	// Test 3: Verify claiming open issue succeeds
+	t.Run("ClaimIssue accepts open issues", func(t *testing.T) {
+
+		err = store.ClaimIssue(ctx, openIssue.ID, "test-executor")
+		if err != nil {
+			t.Errorf("ClaimIssue should succeed for open issue, got error: %v", err)
+		}
+
+		// Verify the issue is now in_progress
+		issue, err := store.GetIssue(ctx, openIssue.ID)
+		if err != nil {
+			t.Fatalf("Failed to get issue: %v", err)
+		}
+		if issue.Status != types.StatusInProgress {
+			t.Errorf("Issue status = %s, want %s after claiming", issue.Status, types.StatusInProgress)
 		}
 	})
 }
