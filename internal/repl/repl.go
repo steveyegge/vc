@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/chzyer/readline"
@@ -20,6 +22,8 @@ import (
 type REPL struct {
 	store          storage.Storage
 	rl             *readline.Instance
+	rlClosed       bool       // Track if readline has been closed
+	rlMu           sync.Mutex // Protects rl and rlClosed
 	ctx            context.Context
 	actor          string
 	conversation   *ConversationHandler
@@ -56,6 +60,19 @@ func New(cfg *Config) (*REPL, error) {
 	}
 
 	return r, nil
+}
+
+// closeReadline safely closes the readline instance (idempotent)
+func (r *REPL) closeReadline() error {
+	r.rlMu.Lock()
+	defer r.rlMu.Unlock()
+
+	if r.rlClosed || r.rl == nil {
+		return nil
+	}
+
+	r.rlClosed = true
+	return r.rl.Close()
 }
 
 // getHistoryPath returns the path to the history file
@@ -114,6 +131,27 @@ func (r *REPL) Run(ctx context.Context) error {
 		close(r.stopCleanup) // Signal cleanup to stop
 	}()
 
+	// Set up signal handler for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		sig := <-sigChan
+		green := color.New(color.FgGreen).SprintFunc()
+		fmt.Printf("\n%s Received signal %v, shutting down gracefully...\n", green("✓"), sig)
+
+		// Close readline to interrupt the Readline() call
+		if err := r.closeReadline(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to close readline: %v\n", err)
+		}
+
+		// Mark executor instance as stopped
+		if err := r.store.MarkInstanceStopped(context.Background(), r.instanceID); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to mark instance as stopped: %v\n", err)
+		}
+
+		os.Exit(0)
+	}()
+
 	// Get history file path
 	historyPath, err := getHistoryPath()
 	if err != nil {
@@ -140,7 +178,7 @@ func (r *REPL) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to create readline: %w", err)
 	}
 	defer func() {
-		if err := rl.Close(); err != nil {
+		if err := r.closeReadline(); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to close readline: %v\n", err)
 		}
 	}()
@@ -236,7 +274,7 @@ func (r *REPL) printWelcome() {
 func (r *REPL) cmdExit(_ []string) error {
 	green := color.New(color.FgGreen).SprintFunc()
 	fmt.Printf("\n%s Goodbye!\n", green("✓"))
-	if err := r.rl.Close(); err != nil {
+	if err := r.closeReadline(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to close readline: %v\n", err)
 	}
 	return io.EOF // Signal to exit the loop
