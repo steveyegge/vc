@@ -148,11 +148,40 @@ bd dep add vc-NEW vc-PARENT --type blocks
 bd label add vc-X no-auto-claim
 ```
 
-**Executor Exclusion Label** (vc-4ec0):
-- Use `no-auto-claim` label for issues that should NOT be auto-claimed by VC executors
-- Examples: design tasks, strategic planning, research, issues requiring human review
-- The executor's `GetReadyWork()` query automatically filters out these issues
+**Executor Exclusion Label** - Narrow Policy (vc-c913):
+
+**ONLY use `no-auto-claim` for these 4 criteria:**
+1. **External coordination** - Requires talking to other teams, approval workflows, or external dependencies
+2. **Human creativity** - Product design decisions, UX choices, branding, marketing content
+3. **Business judgment** - Pricing decisions, legal review, compliance, contracts
+4. **Pure research** - Exploring unknowns with no clear deliverable or action plan
+
+**Everything else is FAIR GAME for VC**, including:
+- Concurrency bugs, race conditions, deadlocks
+- Shutdown logic, lifecycle issues, cleanup
+- Schema changes, migrations, data integrity
+- Performance issues, optimization
+- Critical code paths, core infrastructure
+- Architectural changes, refactoring
+- Complex debugging, root cause analysis
+
+**Why this narrow policy?**
+VC has robust safety nets that catch issues before they cause damage:
+- **Quality gates** (test/lint/build) validate changes before merge
+- **AI supervision** (assessment + analysis) guides approach and catches mistakes
+- **Sandbox isolation** (git worktrees) prevents contamination of main branch
+- **Self-healing** (vc-210) fixes broken baselines automatically
+- **Activity feed** provides full visibility into what's happening
+- **Human intervention** possible at any time via CLI
+
+The old conservative approach slowed the path to self-hosting. Trust the safety nets and let VC tackle hard problems.
+
+See [docs/NO_AUTO_CLAIM_POLICY.md](docs/NO_AUTO_CLAIM_POLICY.md) for detailed guidance and examples.
+
+**Technical notes:**
+- The executor's `GetReadyWork()` query automatically filters out `no-auto-claim` issues
 - Humans and Claude Code sessions can still work on these issues normally
+- When in doubt, err on the side of letting VC try (safety nets will catch real issues)
 
 ### Completing Work
 
