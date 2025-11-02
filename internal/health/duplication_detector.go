@@ -505,11 +505,14 @@ func (d *DuplicationDetector) buildIssues(eval *duplicationEvaluation) []Discove
 
 	for _, extract := range eval.DuplicatesToExtract {
 		// Determine severity based on priority
-		severity := "medium"
-		if extract.Priority == "P0" || extract.Priority == "P1" {
+		var severity string
+		switch extract.Priority {
+		case "P0", "P1":
 			severity = "high"
-		} else if extract.Priority == "P3" {
+		case "P3":
 			severity = "low"
+		default:
+			severity = "medium"
 		}
 
 		// Build description

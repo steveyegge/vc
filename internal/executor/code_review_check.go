@@ -20,7 +20,9 @@ import (
 // 2. Pass metrics to AI for decision
 // 3. If AI decides review is needed, create review issue
 // 4. Save checkpoint
-func (e *Executor) checkCodeReviewSweep(ctx context.Context, completedIssueID string) error {
+//
+//nolint:unparam // error return reserved for future use
+func (e *Executor) checkCodeReviewSweep(ctx context.Context) error {
 	// Only run if AI supervision is enabled (code review requires AI)
 	if !e.enableAISupervision || e.supervisor == nil {
 		return nil

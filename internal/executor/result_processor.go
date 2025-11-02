@@ -939,7 +939,7 @@ SkipGates:
 		// Step 8: Check if code review sweep is needed (vc-1)
 		// This runs after successful issue completion to check accumulated changes
 		if rp.executor != nil {
-			if err := rp.executor.checkCodeReviewSweep(ctx, issue.ID); err != nil {
+			if err := rp.executor.checkCodeReviewSweep(ctx); err != nil {
 				// Log warning but don't fail - review checks are non-critical
 				fmt.Fprintf(os.Stderr, "warning: failed to check code review sweep: %v\n", err)
 			}

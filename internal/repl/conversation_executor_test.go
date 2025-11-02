@@ -618,11 +618,11 @@ func TestReleaseIssueWithErrorVariants(t *testing.T) {
 			actor:   "test-actor",
 		}
 
-		// Use a cancelled context
+		// Use a canceled context
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		// Should not panic even with cancelled context
+		// Should not panic even with canceled context
 		handler.releaseIssueWithError(ctx, "vc-1", "test-actor", "Test error")
 	})
 
