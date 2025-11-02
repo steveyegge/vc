@@ -32,6 +32,7 @@ type REPL struct {
 	stopHeartbeat  chan struct{}                  // Signal to stop heartbeat goroutine
 	stopCleanup    chan struct{}                  // Signal to stop cleanup goroutine
 	instanceID     string                         // Executor instance ID for this REPL
+	ctrlCCount     int                            // Track Ctrl+C presses to show hint only once
 }
 
 // Config holds REPL configuration
@@ -98,6 +99,7 @@ func createAutoCompleter() *readline.PrefixCompleter {
 		// Slash commands
 		readline.PcItem("/quit"),
 		readline.PcItem("/exit"),
+		readline.PcItem("/help"),
 
 		// Common natural language starters
 		readline.PcItem("What's "),
@@ -166,6 +168,7 @@ func (r *REPL) Run(ctx context.Context) error {
 	rl, err := readline.NewEx(&readline.Config{
 		Prompt:                 prompt,
 		HistoryFile:            historyPath,
+		HistoryLimit:           1000, // Keep last 1000 commands to prevent unbounded growth
 		AutoComplete:           createAutoCompleter(),
 		InterruptPrompt:        "^C",
 		EOFPrompt:              "exit",
@@ -193,9 +196,12 @@ func (r *REPL) Run(ctx context.Context) error {
 		line, err := rl.Readline()
 		if err != nil {
 			if err == readline.ErrInterrupt {
-				// Ctrl+C - show hint and continue
-				gray := color.New(color.FgHiBlack).SprintFunc()
-				fmt.Printf("%s (use /quit or /exit to leave)\n", gray("^C"))
+				// Ctrl+C - show hint only on first press to reduce noise
+				r.ctrlCCount++
+				if r.ctrlCCount == 1 {
+					gray := color.New(color.FgHiBlack).SprintFunc()
+					fmt.Printf("%s (use /quit or /exit to leave)\n", gray("^C"))
+				}
 				continue
 			} else if err == io.EOF {
 				// Ctrl+D - exit
@@ -224,9 +230,13 @@ func (r *REPL) Run(ctx context.Context) error {
 
 // processInput processes a single line of input
 func (r *REPL) processInput(line string) error {
-	// Only intercept /quit and /exit - everything else goes to AI
-	if line == "/quit" || line == "/exit" {
+	// Intercept slash commands
+	switch line {
+	case "/quit", "/exit":
 		return r.cmdExit(nil)
+	case "/help":
+		r.printHelp()
+		return nil
 	}
 
 	// Send everything else to AI conversation handler
@@ -270,13 +280,50 @@ func (r *REPL) printWelcome() {
 	fmt.Println()
 }
 
+// printHelp prints the help message
+func (r *REPL) printHelp() {
+	cyan := color.New(color.FgCyan, color.Bold).SprintFunc()
+	gray := color.New(color.FgHiBlack).SprintFunc()
+	green := color.New(color.FgGreen).SprintFunc()
+	yellow := color.New(color.FgYellow).SprintFunc()
+
+	fmt.Println()
+	fmt.Printf("%s\n", cyan("VC REPL Help"))
+	fmt.Println(strings.Repeat("─", 60))
+	fmt.Println()
+
+	fmt.Printf("%s\n", yellow("Slash Commands:"))
+	fmt.Printf("  %s  - Display this help message\n", cyan("/help"))
+	fmt.Printf("  %s  - Exit the REPL\n", cyan("/quit"))
+	fmt.Printf("  %s  - Exit the REPL\n", cyan("/exit"))
+	fmt.Println()
+
+	fmt.Printf("%s\n", yellow("Natural Language Queries:"))
+	fmt.Printf("  %s\n", gray("• \"What's ready to work on?\""))
+	fmt.Printf("  %s\n", gray("• \"Let's continue\""))
+	fmt.Printf("  %s\n", gray("• \"Continue until blocked\""))
+	fmt.Printf("  %s\n", gray("• \"Show me what's blocked\""))
+	fmt.Printf("  %s\n", gray("• \"Create a feature for X\""))
+	fmt.Println()
+
+	fmt.Printf("%s\n", yellow("Session Information:"))
+	fmt.Printf("  Actor:    %s\n", green(r.actor))
+	fmt.Printf("  Instance: %s\n", gray(r.instanceID))
+	fmt.Println()
+
+	fmt.Printf("%s\n", yellow("Tips:"))
+	fmt.Printf("  %s Press %s for auto-completion of commands and phrases\n", green("✓"), cyan("Tab"))
+	fmt.Printf("  %s Use %s and %s to navigate command history\n", green("✓"), cyan("Up"), cyan("Down"))
+	fmt.Printf("  %s Press %s to cancel current input (not exit)\n", green("✓"), cyan("Ctrl+C"))
+	fmt.Printf("  %s Press %s or type %s to exit\n", green("✓"), cyan("Ctrl+D"), cyan("/quit"))
+	fmt.Println()
+}
+
 // cmdExit exits the REPL
 func (r *REPL) cmdExit(_ []string) error {
 	green := color.New(color.FgGreen).SprintFunc()
 	fmt.Printf("\n%s Goodbye!\n", green("✓"))
-	if err := r.closeReadline(); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to close readline: %v\n", err)
-	}
+	// Don't close readline here - the defer in Run() will handle it
 	return io.EOF // Signal to exit the loop
 }
 
@@ -340,8 +387,12 @@ func (r *REPL) cleanupLoop(ctx context.Context) {
 			cleaned, err := r.store.CleanupStaleInstances(ctx, staleThreshold)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to cleanup stale instances: %v\n", err)
-			} else if cleaned > 0 {
-				fmt.Printf("Cleanup: Cleaned up %d stale executor instance(s)\n", cleaned)
+			} else if cleaned > 3 {
+				// Only show cleanup messages for significant counts (> 3)
+				// Use subdued gray color with timestamp to avoid disrupting workflow
+				gray := color.New(color.FgHiBlack).SprintFunc()
+				timestamp := time.Now().Format("15:04:05")
+				fmt.Printf("%s [%s] Cleanup: %d stale instances\n", gray("•"), timestamp, cleaned)
 			}
 		}
 	}
