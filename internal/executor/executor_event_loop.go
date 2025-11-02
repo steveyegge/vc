@@ -208,6 +208,13 @@ func (e *Executor) getNextReadyBlocker(ctx context.Context) (*types.Issue, error
 // 1. Discovered blockers (label=discovered:blocker, status=open, no blocking dependencies)
 // 2. Regular ready work (no dependencies)
 // 3. Discovered related work (label=discovered:related, status=open, no blocking dependencies)
+//
+// Note: Blockers take absolute priority over regular work, regardless of priority numbers.
+// This may cause regular work to wait indefinitely if blockers continuously appear.
+// This is intentional behavior to ensure mission convergence - discovered blockers must
+// be addressed before missions can be considered complete. Work starvation of regular
+// tasks is acceptable to maintain mission quality and ensure discovered issues are resolved.
+// See vc-160 for monitoring work starvation, and vc-161 for prioritization policy docs.
 func (e *Executor) processNextIssue(ctx context.Context) error {
 	// vc-196: Run preflight quality gates check before claiming work
 	if e.preFlightChecker != nil {
@@ -303,14 +310,19 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 		return e.executeIssue(ctx, issue)
 	}
 
-	// Priority 1: Try to get a ready blocker
-	issue, err := e.getNextReadyBlocker(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get ready blockers: %w", err)
-	}
+	// Priority 1: Try to get a ready blocker (if blocker priority enabled)
+	var issue *types.Issue
+	var foundViaBlocker bool
+	if e.config.EnableBlockerPriority {
+		var err error
+		issue, err = e.getNextReadyBlocker(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get ready blockers: %w", err)
+		}
 
-	// Track whether we found work via blocker path
-	foundViaBlocker := (issue != nil)
+		// Track whether we found work via blocker path
+		foundViaBlocker = (issue != nil)
+	}
 
 	// Priority 2: Fall back to regular ready work
 	if issue == nil {

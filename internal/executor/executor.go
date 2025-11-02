@@ -105,6 +105,7 @@ type Config struct {
 	KeepSandboxOnFailure    bool                         // Keep failed sandboxes for debugging (default: false)
 	KeepBranches            bool                         // Keep mission branches after cleanup (default: false)
 	SandboxRetentionCount   int                          // Number of failed sandboxes to keep (default: 3, 0 = keep all)
+	EnableBlockerPriority   bool                         // Enable blocker-first prioritization (default: true, vc-161)
 	EnableHealthMonitoring  bool                         // Enable health monitoring (default: false, opt-in)
 	EnableQualityGateWorker bool                         // Enable QA worker for quality gate execution (default: true, vc-254)
 	HealthConfigPath        string                       // Path to health_monitors.yaml (default: ".beads/health_monitors.yaml")
@@ -136,6 +137,7 @@ func DefaultConfig() *Config {
 		KeepSandboxOnFailure:    false,
 		KeepBranches:            false,
 		SandboxRetentionCount:   3,
+		EnableBlockerPriority:   true,  // Enable blocker-first prioritization by default (vc-161)
 		EnableHealthMonitoring:  false, // Opt-in for now
 		EnableQualityGateWorker: true,  // Enable QA worker by default (vc-254)
 		HealthConfigPath:        ".beads/health_monitors.yaml",

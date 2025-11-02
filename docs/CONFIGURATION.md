@@ -166,6 +166,40 @@ AI supervision can be explicitly disabled via config: `EnableAISupervision: fals
 
 ---
 
+## 🎯 Blocker Priority Configuration
+
+**EnableBlockerPriority** (Default: true):
+
+VC uses blocker-first prioritization to ensure missions run to completion. Discovered blockers are ALWAYS selected before regular ready work, regardless of priority numbers.
+
+**Default behavior** (EnableBlockerPriority: true):
+- Discovered blockers (label=discovered:blocker) have absolute priority
+- A P3 blocker will be selected over a P0 regular task
+- Regular work may wait indefinitely if blockers continuously appear
+- This is intentional for mission convergence
+
+**Disabling blocker priority** (EnableBlockerPriority: false):
+- All work is prioritized by priority number only
+- Blockers and regular work compete equally
+- Use this if work starvation becomes a problem
+
+**Configuration:**
+```go
+cfg := executor.DefaultConfig()
+cfg.EnableBlockerPriority = false  // Disable blocker-first prioritization
+```
+
+**Monitoring:**
+- Check blocker discovery rate: `bd list --status open | grep discovered:blocker`
+- Monitor work starvation metrics (see vc-160)
+- See CLAUDE.md Workflow section for full prioritization policy
+
+**Related issues:**
+- vc-161: Documentation for blocker prioritization policy
+- vc-160: Monitoring work starvation
+
+---
+
 ## 🗄️ Event Retention Configuration (Future Work)
 
 **Status:** Not yet implemented. Punted until database size becomes a real issue (vc-184, vc-198).

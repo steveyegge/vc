@@ -102,6 +102,28 @@ vc/
 
 ## 🔄 Workflow
 
+### Blocker-First Prioritization
+
+**VC uses blocker-first prioritization to ensure missions run to completion.**
+
+Discovered blockers are ALWAYS selected before regular ready work, regardless of priority numbers. This prevents missions from abandoning discovered work and ensures quality gates pass before moving forward.
+
+**What this means:**
+- A P3 blocker will be selected over a P0 regular task
+- If missions continuously spawn blockers, regular work waits indefinitely
+- This is intentional behavior for mission convergence
+
+**Work starvation is acceptable** for ensuring mission completion. If regular work appears stuck:
+- Check if blocker issues are continuously being discovered: `bd list --status open | grep discovered:blocker`
+- Monitor work starvation metrics (see vc-160 for monitoring tools)
+- Blockers will eventually be exhausted as the mission converges
+
+**Priority order:**
+1. Baseline-failure issues (in degraded mode)
+2. Discovered blockers (`discovered:blocker` label)
+3. Regular ready work (sorted by priority)
+4. Discovered related work (`discovered:related` label)
+
 ### Finding Work
 
 ```bash
