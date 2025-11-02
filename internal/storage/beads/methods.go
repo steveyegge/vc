@@ -48,9 +48,18 @@ func (s *VCStorage) GetIssue(ctx context.Context, id string) (*types.Issue, erro
 // GetIssues retrieves multiple issues by IDs in a single batch query (vc-58)
 // Returns a map of issueID -> Issue for issues that exist
 // Missing issues are omitted from the result map (not an error)
+// vc-4573: Enforces a maximum batch size of 500 to prevent SQLite variable overflow
 func (s *VCStorage) GetIssues(ctx context.Context, ids []string) (map[string]*types.Issue, error) {
 	if len(ids) == 0 {
 		return make(map[string]*types.Issue), nil
+	}
+
+	// vc-4573: SQLite has a limit of 999 variables per query (SQLITE_MAX_VARIABLE_NUMBER)
+	// We use 2 queries (issues + subtypes), each with len(ids) variables, so max safe limit is ~499
+	// Set limit to 500 for safety margin
+	const maxBatchSize = 500
+	if len(ids) > maxBatchSize {
+		return nil, fmt.Errorf("batch size %d exceeds maximum of %d (SQLite variable limit)", len(ids), maxBatchSize)
 	}
 
 	// Build placeholders for IN clause

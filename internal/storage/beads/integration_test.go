@@ -4055,4 +4055,276 @@ func TestGetIssues(t *testing.T) {
 			t.Error("Closed issue should have ClosedAt timestamp")
 		}
 	})
+
+	// vc-4573: Test batch size limit enforcement
+	t.Run("Batch size exceeds limit", func(t *testing.T) {
+		// Create 501 IDs to exceed the limit of 500
+		ids := make([]string, 501)
+		for i := 0; i < 501; i++ {
+			ids[i] = fmt.Sprintf("vc-%d", i)
+		}
+
+		_, err := store.GetIssues(ctx, ids)
+		if err == nil {
+			t.Error("Expected error for batch size > 500, got nil")
+		}
+
+		// Verify error message contains key information
+		expectedErr := "batch size 501 exceeds maximum of 500 (SQLite variable limit)"
+		if err != nil && err.Error() != expectedErr {
+			t.Errorf("Expected error message '%s', got '%s'", expectedErr, err.Error())
+		}
+	})
+
+	t.Run("Batch size at limit boundary", func(t *testing.T) {
+		// Create exactly 500 IDs (should work)
+		ids := make([]string, 500)
+		for i := 0; i < 500; i++ {
+			ids[i] = fmt.Sprintf("vc-%d", i)
+		}
+
+		_, err := store.GetIssues(ctx, ids)
+		if err != nil {
+			t.Errorf("Expected no error for batch size = 500, got: %v", err)
+		}
+	})
+
+	// vc-278d: Edge case tests for GetIssues
+	t.Run("Large batch (150+ issues)", func(t *testing.T) {
+		// Create 150 issues to test large batch loading
+		createdIDs := make([]string, 150)
+		for i := 0; i < 150; i++ {
+			issue := &types.Issue{
+				Title:       fmt.Sprintf("Batch test issue %d", i),
+				Description: fmt.Sprintf("Test issue number %d", i),
+				Status:      types.StatusOpen,
+				Priority:    i % 3, // Mix of priorities
+				IssueType:   types.TypeTask,
+			}
+			if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+				t.Fatalf("Failed to create issue %d: %v", i, err)
+			}
+			createdIDs[i] = issue.ID
+		}
+
+		// Fetch all 150 in one batch
+		issues, err := store.GetIssues(ctx, createdIDs)
+		if err != nil {
+			t.Fatalf("GetIssues failed for 150 issues: %v", err)
+		}
+
+		if len(issues) != 150 {
+			t.Errorf("Expected 150 issues, got %d", len(issues))
+		}
+
+		// Verify a few random issues
+		if issue, exists := issues[createdIDs[0]]; !exists {
+			t.Error("First issue not found")
+		} else if issue.Title != "Batch test issue 0" {
+			t.Errorf("First issue title = %s, want 'Batch test issue 0'", issue.Title)
+		}
+
+		if issue, exists := issues[createdIDs[75]]; !exists {
+			t.Error("Middle issue not found")
+		} else if issue.Title != "Batch test issue 75" {
+			t.Errorf("Middle issue title = %s, want 'Batch test issue 75'", issue.Title)
+		}
+
+		if issue, exists := issues[createdIDs[149]]; !exists {
+			t.Error("Last issue not found")
+		} else if issue.Title != "Batch test issue 149" {
+			t.Errorf("Last issue title = %s, want 'Batch test issue 149'", issue.Title)
+		}
+	})
+
+	t.Run("Subtype enrichment edge cases", func(t *testing.T) {
+		// Create a regular issue (no subtype)
+		regularIssue := &types.Issue{
+			Title:       "Regular issue without subtype",
+			Description: "Should have empty IssueSubtype",
+			Status:      types.StatusOpen,
+			Priority:    2,
+			IssueType:   types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, regularIssue, "test"); err != nil {
+			t.Fatalf("Failed to create regular issue: %v", err)
+		}
+
+		// Create a mission issue (has subtype)
+		missionIssue := &types.Issue{
+			Title:        "Mission issue with subtype",
+			Description:  "Should have IssueSubtype = mission",
+			Status:       types.StatusOpen,
+			Priority:     1,
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypeMission,
+		}
+		if err := store.CreateIssue(ctx, missionIssue, "test"); err != nil {
+			t.Fatalf("Failed to create mission issue: %v", err)
+		}
+
+		// Fetch both in one batch
+		ids := []string{regularIssue.ID, missionIssue.ID}
+		issues, err := store.GetIssues(ctx, ids)
+		if err != nil {
+			t.Fatalf("GetIssues failed: %v", err)
+		}
+
+		if len(issues) != 2 {
+			t.Errorf("Expected 2 issues, got %d", len(issues))
+		}
+
+		// Verify regular issue has no subtype
+		if issue, exists := issues[regularIssue.ID]; !exists {
+			t.Error("Regular issue not found")
+		} else if issue.IssueSubtype != "" {
+			t.Errorf("Regular issue should have empty subtype, got '%s'", issue.IssueSubtype)
+		}
+
+		// Verify mission issue has subtype
+		if issue, exists := issues[missionIssue.ID]; !exists {
+			t.Error("Mission issue not found")
+		} else if issue.IssueSubtype != types.SubtypeMission {
+			t.Errorf("Mission issue subtype = %s, want %s", issue.IssueSubtype, types.SubtypeMission)
+		}
+	})
+
+	t.Run("EstimatedMinutes handling", func(t *testing.T) {
+		// Create issue with EstimatedMinutes set
+		estimatedMins := 120
+		issueWithEstimate := &types.Issue{
+			Title:            "Issue with estimate",
+			Description:      "Has estimated_minutes set",
+			Status:           types.StatusOpen,
+			Priority:         2,
+			IssueType:        types.TypeTask,
+			EstimatedMinutes: &estimatedMins,
+		}
+		if err := store.CreateIssue(ctx, issueWithEstimate, "test"); err != nil {
+			t.Fatalf("Failed to create issue with estimate: %v", err)
+		}
+
+		// Create issue without EstimatedMinutes (nil)
+		issueWithoutEstimate := &types.Issue{
+			Title:       "Issue without estimate",
+			Description: "Has nil estimated_minutes",
+			Status:      types.StatusOpen,
+			Priority:    2,
+			IssueType:   types.TypeTask,
+		}
+		if err := store.CreateIssue(ctx, issueWithoutEstimate, "test"); err != nil {
+			t.Fatalf("Failed to create issue without estimate: %v", err)
+		}
+
+		// Fetch both in one batch
+		ids := []string{issueWithEstimate.ID, issueWithoutEstimate.ID}
+		issues, err := store.GetIssues(ctx, ids)
+		if err != nil {
+			t.Fatalf("GetIssues failed: %v", err)
+		}
+
+		if len(issues) != 2 {
+			t.Errorf("Expected 2 issues, got %d", len(issues))
+		}
+
+		// Verify issue with estimate
+		if issue, exists := issues[issueWithEstimate.ID]; !exists {
+			t.Error("Issue with estimate not found")
+		} else {
+			if issue.EstimatedMinutes == nil {
+				t.Error("EstimatedMinutes should not be nil")
+			} else if *issue.EstimatedMinutes != 120 {
+				t.Errorf("EstimatedMinutes = %d, want 120", *issue.EstimatedMinutes)
+			}
+		}
+
+		// Verify issue without estimate
+		if issue, exists := issues[issueWithoutEstimate.ID]; !exists {
+			t.Error("Issue without estimate not found")
+		} else if issue.EstimatedMinutes != nil {
+			t.Errorf("EstimatedMinutes should be nil, got %d", *issue.EstimatedMinutes)
+		}
+	})
+
+	t.Run("Mixed subtypes in batch", func(t *testing.T) {
+		// Create mix of issue types and subtypes
+		normalTask := &types.Issue{
+			Title:       "Normal task",
+			Status:      types.StatusOpen,
+			Priority:    2,
+			IssueType:   types.TypeTask,
+			IssueSubtype: types.SubtypeNormal,
+		}
+		if err := store.CreateIssue(ctx, normalTask, "test"); err != nil {
+			t.Fatalf("Failed to create normal task: %v", err)
+		}
+
+		missionEpic := &types.Issue{
+			Title:        "Mission epic",
+			Status:       types.StatusOpen,
+			Priority:     1,
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypeMission,
+		}
+		if err := store.CreateIssue(ctx, missionEpic, "test"); err != nil {
+			t.Fatalf("Failed to create mission epic: %v", err)
+		}
+
+		phaseEpic := &types.Issue{
+			Title:        "Phase epic",
+			Status:       types.StatusOpen,
+			Priority:     1,
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypePhase,
+		}
+		if err := store.CreateIssue(ctx, phaseEpic, "test"); err != nil {
+			t.Fatalf("Failed to create phase epic: %v", err)
+		}
+
+		normalBug := &types.Issue{
+			Title:     "Normal bug",
+			Status:    types.StatusOpen,
+			Priority:  0,
+			IssueType: types.TypeBug,
+		}
+		if err := store.CreateIssue(ctx, normalBug, "test"); err != nil {
+			t.Fatalf("Failed to create normal bug: %v", err)
+		}
+
+		// Fetch all 4 in one batch
+		ids := []string{normalTask.ID, missionEpic.ID, phaseEpic.ID, normalBug.ID}
+		issues, err := store.GetIssues(ctx, ids)
+		if err != nil {
+			t.Fatalf("GetIssues failed for mixed subtypes: %v", err)
+		}
+
+		if len(issues) != 4 {
+			t.Errorf("Expected 4 issues, got %d", len(issues))
+		}
+
+		// Verify each issue has correct subtype
+		if issue, exists := issues[normalTask.ID]; !exists {
+			t.Error("Normal task not found")
+		} else if issue.IssueSubtype != types.SubtypeNormal {
+			t.Errorf("Normal task subtype = %s, want %s", issue.IssueSubtype, types.SubtypeNormal)
+		}
+
+		if issue, exists := issues[missionEpic.ID]; !exists {
+			t.Error("Mission epic not found")
+		} else if issue.IssueSubtype != types.SubtypeMission {
+			t.Errorf("Mission epic subtype = %s, want %s", issue.IssueSubtype, types.SubtypeMission)
+		}
+
+		if issue, exists := issues[phaseEpic.ID]; !exists {
+			t.Error("Phase epic not found")
+		} else if issue.IssueSubtype != types.SubtypePhase {
+			t.Errorf("Phase epic subtype = %s, want %s", issue.IssueSubtype, types.SubtypePhase)
+		}
+
+		if issue, exists := issues[normalBug.ID]; !exists {
+			t.Error("Normal bug not found")
+		} else if issue.IssueSubtype != "" {
+			t.Errorf("Normal bug should have empty subtype, got '%s'", issue.IssueSubtype)
+		}
+	})
 }
