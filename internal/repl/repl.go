@@ -93,23 +93,294 @@ func getHistoryPath() (string, error) {
 	return filepath.Join(vcDir, "repl_history"), nil
 }
 
-// createAutoCompleter creates a tab completion handler for the REPL
-func createAutoCompleter() *readline.PrefixCompleter {
-	return readline.NewPrefixCompleter(
-		// Slash commands
-		readline.PcItem("/quit"),
-		readline.PcItem("/exit"),
-		readline.PcItem("/help"),
+// dynamicCompleter implements readline.AutoCompleter interface for dynamic, context-aware completions
+type dynamicCompleter struct {
+	store         storage.Storage
+	ctx           context.Context
+	lastUpdate    time.Time
+	cachedIssues  []string // Cached issue IDs from ready work
+	historyPath   string
+	cacheDuration time.Duration
+}
 
-		// Common natural language starters
-		readline.PcItem("What's "),
-		readline.PcItem("Let's "),
-		readline.PcItem("Show "),
-		readline.PcItem("Create "),
-		readline.PcItem("Add "),
-		readline.PcItem("How "),
-		readline.PcItem("Continue"),
-	)
+// newDynamicCompleter creates a new dynamic auto-completer
+func newDynamicCompleter(ctx context.Context, store storage.Storage, historyPath string) *dynamicCompleter {
+	return &dynamicCompleter{
+		store:         store,
+		ctx:           ctx,
+		historyPath:   historyPath,
+		cacheDuration: 30 * time.Second, // Refresh ready work every 30 seconds
+	}
+}
+
+// Do implements the AutoCompleter interface for dynamic tab completion
+func (d *dynamicCompleter) Do(line []rune, pos int) (newLine [][]rune, length int) {
+	lineStr := string(line[:pos])
+	
+	// Get all possible completions
+	completions := d.getCompletions(lineStr)
+	
+	// Filter completions that match the current input
+	var matches []string
+	for _, completion := range completions {
+		if strings.HasPrefix(completion, lineStr) && completion != lineStr {
+			matches = append(matches, completion)
+		}
+	}
+	
+	// Convert matches to the format readline expects
+	if len(matches) == 0 {
+		return nil, 0
+	}
+	
+	// Sort matches for consistent ordering
+	sortCompletions(matches)
+	
+	// Convert to [][]rune
+	var result [][]rune
+	for _, match := range matches {
+		result = append(result, []rune(match))
+	}
+	
+	return result, pos
+}
+
+// getCompletions returns all possible completions based on context
+func (d *dynamicCompleter) getCompletions(prefix string) []string {
+	completions := make(map[string]bool)
+	
+	// 1. Slash commands (always available)
+	slashCommands := []string{"/quit", "/exit", "/help"}
+	for _, cmd := range slashCommands {
+		completions[cmd] = true
+	}
+	
+	// 2. Issue IDs from ready work (Phase 1)
+	if time.Since(d.lastUpdate) > d.cacheDuration {
+		d.refreshReadyWork()
+	}
+	for _, issueID := range d.cachedIssues {
+		completions[issueID] = true
+	}
+	
+	// 3. Common natural language starters (static baseline)
+	naturalStarters := []string{
+		"What's ",
+		"What's ready to work on?",
+		"What's blocked?",
+		"Let's ",
+		"Let's continue",
+		"Show ",
+		"Show me what's blocked",
+		"Show ready work",
+		"Create ",
+		"Add ",
+		"How ",
+		"Continue",
+		"Continue until blocked",
+	}
+	for _, starter := range naturalStarters {
+		completions[starter] = true
+	}
+	
+	// 4. History-based completions (Phase 2)
+	historyCompletions := d.getHistoryBasedCompletions(prefix)
+	for _, comp := range historyCompletions {
+		completions[comp] = true
+	}
+	
+	// 5. Context-aware suggestions (Phase 3)
+	contextSuggestions := d.getContextAwareSuggestions(prefix)
+	for _, sug := range contextSuggestions {
+		completions[sug] = true
+	}
+	
+	// 6. Fuzzy matching (Phase 4) - expand matches based on prefix patterns
+	fuzzyMatches := d.getFuzzyMatches(prefix, completions)
+	for _, match := range fuzzyMatches {
+		completions[match] = true
+	}
+	
+	// Convert map to slice
+	var result []string
+	for comp := range completions {
+		result = append(result, comp)
+	}
+	
+	return result
+}
+
+// refreshReadyWork updates the cached list of ready work issue IDs
+func (d *dynamicCompleter) refreshReadyWork() {
+	ctx, cancel := context.WithTimeout(d.ctx, 50*time.Millisecond)
+	defer cancel()
+	
+	filter := types.WorkFilter{
+		Status: types.StatusOpen,
+		Limit:  20, // Keep top 20 ready issues for completion
+	}
+	
+	issues, err := d.store.GetReadyWork(ctx, filter)
+	if err != nil {
+		// Silently fail - don't disrupt tab completion
+		return
+	}
+	
+	d.cachedIssues = nil
+	for _, issue := range issues {
+		d.cachedIssues = append(d.cachedIssues, issue.ID)
+	}
+	d.lastUpdate = time.Now()
+}
+
+// getHistoryBasedCompletions analyzes command history for common patterns
+func (d *dynamicCompleter) getHistoryBasedCompletions(prefix string) []string {
+	if d.historyPath == "" {
+		return nil
+	}
+	
+	// Read history file
+	data, err := os.ReadFile(d.historyPath)
+	if err != nil {
+		return nil
+	}
+	
+	lines := strings.Split(string(data), "\n")
+	
+	// Count frequency of commands
+	frequency := make(map[string]int)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "/") {
+			continue // Skip empty lines and slash commands
+		}
+		if prefix != "" && !strings.HasPrefix(line, prefix) {
+			continue // Filter by prefix if provided
+		}
+		frequency[line]++
+	}
+	
+	// Return top 10 most frequent commands
+	type freqPair struct {
+		cmd   string
+		count int
+	}
+	var pairs []freqPair
+	for cmd, count := range frequency {
+		if count >= 2 { // Only suggest commands used at least twice
+			pairs = append(pairs, freqPair{cmd, count})
+		}
+	}
+	
+	// Sort by frequency
+	for i := 0; i < len(pairs); i++ {
+		for j := i + 1; j < len(pairs); j++ {
+			if pairs[j].count > pairs[i].count {
+				pairs[i], pairs[j] = pairs[j], pairs[i]
+			}
+		}
+	}
+	
+	// Take top 10
+	var result []string
+	for i := 0; i < len(pairs) && i < 10; i++ {
+		result = append(result, pairs[i].cmd)
+	}
+	
+	return result
+}
+
+// getContextAwareSuggestions provides suggestions based on conversation context
+func (d *dynamicCompleter) getContextAwareSuggestions(prefix string) []string {
+	// For now, provide intelligent follow-up suggestions based on common workflows
+	suggestions := []string{
+		"start working on it",
+		"what dependencies does it have?",
+		"show me the design",
+		"add a task",
+		"mark it as blocked",
+		"close it",
+		"what's the status?",
+	}
+	
+	// TODO: In future, track actual conversation state to provide smarter suggestions
+	// For example, if last query was "What's ready?", suggest "Let's work on vc-XXX"
+	
+	return suggestions
+}
+
+// getFuzzyMatches performs fuzzy/smart prefix matching
+func (d *dynamicCompleter) getFuzzyMatches(prefix string, existing map[string]bool) []string {
+	if len(prefix) < 2 {
+		return nil
+	}
+	
+	lowerPrefix := strings.ToLower(prefix)
+	var matches []string
+	
+	// Fuzzy match patterns
+	fuzzyMappings := map[string][]string{
+		"cont": {"Continue", "Continue until blocked", "Let's continue"},
+		"show": {"Show ready work", "Show me what's blocked"},
+		"what": {"What's ready to work on?", "What's blocked?"},
+		"read": {"What's ready to work on?"},
+		"bloc": {"What's blocked?", "Show me what's blocked"},
+		"creat": {"Create a feature", "Create a bug"},
+	}
+	
+	// Check if prefix matches any fuzzy pattern
+	for pattern, expansions := range fuzzyMappings {
+		if strings.HasPrefix(pattern, lowerPrefix) || strings.HasPrefix(lowerPrefix, pattern) {
+			for _, expansion := range expansions {
+				if !existing[expansion] {
+					matches = append(matches, expansion)
+				}
+			}
+		}
+	}
+	
+	return matches
+}
+
+// sortCompletions sorts completions in a smart order:
+// 1. Slash commands first
+// 2. Issue IDs (vc-xxx)
+// 3. Natural language (alphabetically)
+func sortCompletions(completions []string) {
+	// Simple bubble sort with custom comparison
+	for i := 0; i < len(completions); i++ {
+		for j := i + 1; j < len(completions); j++ {
+			if shouldSwap(completions[i], completions[j]) {
+				completions[i], completions[j] = completions[j], completions[i]
+			}
+		}
+	}
+}
+
+// shouldSwap returns true if a should come after b
+func shouldSwap(a, b string) bool {
+	// Slash commands first
+	aIsSlash := strings.HasPrefix(a, "/")
+	bIsSlash := strings.HasPrefix(b, "/")
+	if aIsSlash && !bIsSlash {
+		return false
+	}
+	if !aIsSlash && bIsSlash {
+		return true
+	}
+	
+	// Issue IDs second (vc-xxx pattern)
+	aIsIssue := strings.HasPrefix(a, "vc-")
+	bIsIssue := strings.HasPrefix(b, "vc-")
+	if aIsIssue && !bIsIssue {
+		return false
+	}
+	if !aIsIssue && bIsIssue {
+		return true
+	}
+	
+	// Otherwise alphabetical
+	return a > b
 }
 
 // Run starts the REPL loop
@@ -161,6 +432,9 @@ func (r *REPL) Run(ctx context.Context) error {
 		historyPath = "" // Fall back to in-memory history
 	}
 
+	// Create dynamic auto-completer
+	completer := newDynamicCompleter(ctx, r.store, historyPath)
+
 	// Create readline instance
 	cyan := color.New(color.FgCyan).SprintFunc()
 	prompt := cyan("vc> ")
@@ -169,7 +443,7 @@ func (r *REPL) Run(ctx context.Context) error {
 		Prompt:                 prompt,
 		HistoryFile:            historyPath,
 		HistoryLimit:           1000, // Keep last 1000 commands to prevent unbounded growth
-		AutoComplete:           createAutoCompleter(),
+		AutoComplete:           completer,
 		InterruptPrompt:        "^C",
 		EOFPrompt:              "exit",
 		HistorySearchFold:      true,
@@ -269,7 +543,7 @@ func (r *REPL) printWelcome() {
 	fmt.Println()
 
 	fmt.Printf("%s\n", yellow("Features:"))
-	fmt.Printf("  %s Tab completion for common phrases and commands\n", green("✓"))
+	fmt.Printf("  %s Smart tab completion (issue IDs, commands, history)\n", green("✓"))
 	fmt.Printf("  %s Persistent command history across sessions\n", green("✓"))
 	fmt.Printf("  %s Press Ctrl+C to cancel current input (not exit)\n", green("✓"))
 	fmt.Printf("  %s Use Up/Down arrows to navigate command history\n", green("✓"))
