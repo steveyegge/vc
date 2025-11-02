@@ -313,9 +313,11 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 
 	// Priority 2: Fall back to regular ready work
 	if issue == nil {
+		// vc-7100: Request multiple issues from storage since VC filters out no-auto-claim
+		// If we only request 1 issue and it has no-auto-claim, we'd get nothing
 		filter := types.WorkFilter{
 			Status:     types.StatusOpen,
-			Limit:      1,
+			Limit:      10, // vc-7100: Request 10 so filtering doesn't exhaust the queue
 			SortPolicy: types.SortPolicyPriority, // vc-190: Always use priority-first sorting
 		}
 
@@ -329,6 +331,7 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 			return nil
 		}
 
+		// vc-7100: Take the first issue after filtering
 		issue = issues[0]
 	}
 

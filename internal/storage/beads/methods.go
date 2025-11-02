@@ -689,10 +689,14 @@ func (s *VCStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) (
 	}
 
 	// vc-203: Filter out epics - they are tracking/meta issues, not executable work
+	// vc-185: Filter out blocked issues - they should not be assigned as active work
 	vcIssues := make([]*types.Issue, 0, len(beadsIssues))
 	for _, bi := range beadsIssues {
 		if bi.IssueType == beads.TypeEpic {
 			continue // Skip epics
+		}
+		if bi.Status == beads.StatusBlocked {
+			continue // Skip blocked issues (vc-185)
 		}
 		vcIssues = append(vcIssues, beadsIssueToVC(bi))
 	}
