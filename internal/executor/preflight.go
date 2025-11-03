@@ -300,6 +300,15 @@ func (p *PreFlightChecker) invalidateCachedBaseline(commitHash string) {
 	delete(p.cache, commitHash)
 }
 
+// InvalidateAllCache clears the entire in-memory cache (vc-47e0)
+// Used when in degraded mode to force fresh baseline checks
+func (p *PreFlightChecker) InvalidateAllCache() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.cache = make(map[string]*cachedBaseline)
+}
+
 // GetCachedResults retrieves gate results from the cached baseline for a commit hash
 // Returns nil if no cached baseline exists or if the baseline has expired
 func (p *PreFlightChecker) GetCachedResults(ctx context.Context, commitHash string) ([]*gates.Result, error) {

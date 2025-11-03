@@ -677,15 +677,27 @@ func (s *VCStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, actor, e
 
 // RecordWatchdogIntervention increments the intervention count and updates last intervention time (vc-165b)
 // This is called by the watchdog when it intervenes on an issue
+// vc-39e8: Use INSERT ... ON CONFLICT to ensure row exists - UPDATE silently fails if row deleted
 func (s *VCStorage) RecordWatchdogIntervention(ctx context.Context, issueID string) error {
 	now := time.Now()
+
+	// Use INSERT ... ON CONFLICT to handle both cases:
+	// 1. Row exists: increment intervention_count
+	// 2. Row doesn't exist (deleted by ReleaseIssue): create new row with intervention_count=1
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE vc_issue_execution_state
-		SET intervention_count = intervention_count + 1,
-		    last_intervention_time = ?,
-		    updated_at = ?
-		WHERE issue_id = ?
-	`, now, now, issueID)
+		INSERT INTO vc_issue_execution_state (
+			issue_id,
+			state,
+			intervention_count,
+			last_intervention_time,
+			updated_at
+		)
+		VALUES (?, ?, 1, ?, ?)
+		ON CONFLICT(issue_id) DO UPDATE SET
+			intervention_count = intervention_count + 1,
+			last_intervention_time = excluded.last_intervention_time,
+			updated_at = excluded.updated_at
+	`, issueID, types.ExecutionStatePending, now, now)
 
 	if err != nil {
 		return fmt.Errorf("failed to record watchdog intervention: %w", err)

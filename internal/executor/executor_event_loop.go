@@ -218,6 +218,12 @@ func (e *Executor) getNextReadyBlocker(ctx context.Context) (*types.Issue, error
 func (e *Executor) processNextIssue(ctx context.Context) error {
 	// vc-196: Run preflight quality gates check before claiming work
 	if e.preFlightChecker != nil {
+		// vc-47e0: When in degraded mode, invalidate cache to force fresh baseline check
+		// This allows the executor to detect when baseline issues are fixed without restart
+		if e.isDegraded() {
+			e.preFlightChecker.InvalidateAllCache()
+		}
+
 		allPassed, commitHash, err := e.preFlightChecker.CheckBaseline(ctx, e.instanceID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Preflight check failed: %v\n", err)

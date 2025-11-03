@@ -537,7 +537,21 @@ func (s *VCStorage) UpdateIssue(ctx context.Context, id string, updates map[stri
 }
 
 // CloseIssue closes an issue in Beads
+// vc-4820: Also clears execution state to prevent orphaned claims
 func (s *VCStorage) CloseIssue(ctx context.Context, id string, reason string, actor string) error {
+	// First, clean up execution state if it exists (vc-4820)
+	// This prevents leaving orphaned execution state when closing issues manually
+	_, err := s.db.ExecContext(ctx, `
+		DELETE FROM vc_issue_execution_state
+		WHERE issue_id = ?
+	`, id)
+	if err != nil {
+		// Log warning but don't fail the close operation
+		// Execution state cleanup is best-effort - the close should succeed even if this fails
+		fmt.Fprintf(os.Stderr, "Warning: failed to clean up execution state for %s: %v\n", id, err)
+	}
+
+	// Delegate to Beads for the actual issue close
 	return s.Storage.CloseIssue(ctx, id, reason, actor)
 }
 

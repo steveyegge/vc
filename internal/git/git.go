@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -224,10 +225,14 @@ func (g *Git) Rebase(ctx context.Context, repoPath string, opts RebaseOptions) (
 	// Handle continue case
 	if opts.Continue {
 		continueCmd := exec.CommandContext(ctx, g.gitPath, "-C", repoPath, "rebase", "--continue")
-		// Set GIT_EDITOR to ':' (colon) which is a no-op shell command
-		// This avoids opening an editor and accepts the default commit message
-		// Using ':' is more reliable than 'true' across different systems
-		continueCmd.Env = append(os.Environ(), "GIT_EDITOR=:")
+		// Set GIT_EDITOR to a no-op command to avoid opening an editor
+		// This accepts the default commit message during automated rebases
+		// vc-db5d: Use platform-specific no-op command for cross-platform compatibility
+		noopEditor := ":"
+		if runtime.GOOS == "windows" {
+			noopEditor = "cmd.exe /c exit 0"
+		}
+		continueCmd.Env = append(os.Environ(), fmt.Sprintf("GIT_EDITOR=%s", noopEditor))
 		output, err := continueCmd.CombinedOutput()
 		if err != nil {
 			outputStr := string(output)
