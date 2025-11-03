@@ -377,14 +377,16 @@ func (s ExecutionState) CanTransitionTo(target ExecutionState) bool {
 
 // IssueExecutionState tracks the execution state of an issue being processed by an executor
 type IssueExecutionState struct {
-	IssueID            string         `json:"issue_id"`
-	ExecutorInstanceID string         `json:"executor_instance_id"`
-	State              ExecutionState `json:"state"`
-	CheckpointData     string         `json:"checkpoint_data"` // JSON string (must be valid JSON)
-	ClaimedAt          time.Time      `json:"claimed_at"`
-	StartedAt          time.Time      `json:"started_at"`
-	UpdatedAt          time.Time      `json:"updated_at"`
-	ErrorMessage       string         `json:"error_message,omitempty"`
+	IssueID               string         `json:"issue_id"`
+	ExecutorInstanceID    string         `json:"executor_instance_id"`
+	State                 ExecutionState `json:"state"`
+	CheckpointData        string         `json:"checkpoint_data"` // JSON string (must be valid JSON)
+	ClaimedAt             time.Time      `json:"claimed_at"`
+	StartedAt             time.Time      `json:"started_at"`
+	UpdatedAt             time.Time      `json:"updated_at"`
+	ErrorMessage          string         `json:"error_message,omitempty"`
+	InterventionCount     int            `json:"intervention_count"`              // vc-165b: Count of watchdog interventions
+	LastInterventionTime  *time.Time     `json:"last_intervention_time,omitempty"` // vc-165b: When last intervention occurred
 }
 
 // Validate checks if the issue execution state has valid field values

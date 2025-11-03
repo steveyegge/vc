@@ -759,8 +759,35 @@ func (s *VCStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) (
 		}
 	}
 
+	// vc-165b: Filter out issues with active intervention backoff
+	backoffFilteredIssues := make([]*types.Issue, 0, len(filteredIssues))
+	for _, issue := range filteredIssues {
+		// Get execution state to check intervention backoff
+		execState, err := s.GetExecutionState(ctx, issue.ID)
+		if err != nil {
+			// Log warning but don't fail - include the issue if we can't check state
+			fmt.Fprintf(os.Stderr, "Warning: failed to get execution state for %s: %v\n", issue.ID, err)
+			backoffFilteredIssues = append(backoffFilteredIssues, issue)
+			continue
+		}
+
+		// If no execution state, no backoff - include it
+		if execState == nil {
+			backoffFilteredIssues = append(backoffFilteredIssues, issue)
+			continue
+		}
+
+		// Calculate backoff duration
+		backoff := CalculateInterventionBackoff(execState.InterventionCount, execState.LastInterventionTime)
+		if backoff == 0 {
+			// No active backoff - include it
+			backoffFilteredIssues = append(backoffFilteredIssues, issue)
+		}
+		// Otherwise skip this issue - it's in backoff period
+	}
+
 	// vc-234: Enrich with mission context and filter by mission active state
-	return s.enrichWithMissionContext(ctx, filteredIssues)
+	return s.enrichWithMissionContext(ctx, backoffFilteredIssues)
 }
 
 // enrichWithMissionContext populates mission context for each issue and filters out

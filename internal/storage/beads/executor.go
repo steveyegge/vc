@@ -453,9 +453,12 @@ func (s *VCStorage) GetExecutionState(ctx context.Context, issueID string) (*typ
 	var claimedAt sql.NullTime
 	var checkpointData sql.NullString
 	var errorMessage sql.NullString
+	var interventionCount sql.NullInt64
+	var lastInterventionTime sql.NullTime
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT issue_id, executor_instance_id, claimed_at, state, checkpoint_data, error_message, updated_at
+		SELECT issue_id, executor_instance_id, claimed_at, state, checkpoint_data, error_message, updated_at,
+		       COALESCE(intervention_count, 0) as intervention_count, last_intervention_time
 		FROM vc_issue_execution_state
 		WHERE issue_id = ?
 	`, issueID).Scan(
@@ -466,6 +469,8 @@ func (s *VCStorage) GetExecutionState(ctx context.Context, issueID string) (*typ
 		&checkpointData,
 		&errorMessage,
 		&state.UpdatedAt,
+		&interventionCount,
+		&lastInterventionTime,
 	)
 
 	if err != nil {
@@ -487,6 +492,12 @@ func (s *VCStorage) GetExecutionState(ctx context.Context, issueID string) (*typ
 	}
 	if errorMessage.Valid {
 		state.ErrorMessage = errorMessage.String
+	}
+	if interventionCount.Valid {
+		state.InterventionCount = int(interventionCount.Int64)
+	}
+	if lastInterventionTime.Valid {
+		state.LastInterventionTime = &lastInterventionTime.Time
 	}
 
 	return &state, nil
@@ -662,6 +673,58 @@ func (s *VCStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, actor, e
 	}
 
 	return nil
+}
+
+// RecordWatchdogIntervention increments the intervention count and updates last intervention time (vc-165b)
+// This is called by the watchdog when it intervenes on an issue
+func (s *VCStorage) RecordWatchdogIntervention(ctx context.Context, issueID string) error {
+	now := time.Now()
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE vc_issue_execution_state
+		SET intervention_count = intervention_count + 1,
+		    last_intervention_time = ?,
+		    updated_at = ?
+		WHERE issue_id = ?
+	`, now, now, issueID)
+
+	if err != nil {
+		return fmt.Errorf("failed to record watchdog intervention: %w", err)
+	}
+
+	return nil
+}
+
+// CalculateInterventionBackoff calculates the backoff duration for an issue based on intervention count (vc-165b)
+// Implements exponential backoff: min(5min * 2^(count-1), 4hr)
+// First intervention: 5min, Second: 10min, Third: 20min, etc.
+// Returns 0 if no backoff is needed
+func CalculateInterventionBackoff(interventionCount int, lastInterventionTime *time.Time) time.Duration {
+	if interventionCount == 0 || lastInterventionTime == nil {
+		return 0 // No interventions, no backoff
+	}
+
+	// Calculate exponential backoff: 5min * 2^(count-1)
+	// count=1 -> 5min * 2^0 = 5min
+	// count=2 -> 5min * 2^1 = 10min
+	// count=3 -> 5min * 2^2 = 20min
+	const baseBackoff = 5 * time.Minute
+	const maxBackoff = 4 * time.Hour
+
+	backoff := baseBackoff * time.Duration(1<<uint(interventionCount-1))
+	if backoff > maxBackoff {
+		backoff = maxBackoff
+	}
+
+	// Calculate how much time has elapsed since last intervention
+	elapsed := time.Since(*lastInterventionTime)
+
+	// If enough time has passed, no backoff needed
+	if elapsed >= backoff {
+		return 0
+	}
+
+	// Return remaining backoff time
+	return backoff - elapsed
 }
 
 // ======================================================================

@@ -104,6 +104,11 @@ func createVCExtensionTables(ctx context.Context, conn *sql.Conn) error {
 		return fmt.Errorf("failed to migrate agent_events table: %w", err)
 	}
 
+	// vc-165b: Migrate execution state table for intervention tracking
+	if err := migrateExecutionStateTable(ctx, conn); err != nil {
+		return fmt.Errorf("failed to migrate execution_state table: %w", err)
+	}
+
 	// Step 3: Create indexes (now that all columns exist)
 	_, err = conn.ExecContext(ctx, vcExtensionIndexSchema)
 	if err != nil {
@@ -184,6 +189,62 @@ func migrateAgentEventsTable(ctx context.Context, conn *sql.Conn) error {
 		`)
 		if err != nil {
 			return fmt.Errorf("failed to add source_line column: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// migrateExecutionStateTable adds intervention tracking columns to vc_issue_execution_state (vc-165b)
+// Uses a scoped connection (*sql.Conn) for DDL operations as recommended by Beads
+func migrateExecutionStateTable(ctx context.Context, conn *sql.Conn) error {
+	// Check if intervention_count column exists
+	var hasInterventionCount bool
+	err := conn.QueryRowContext(ctx, `
+		SELECT COUNT(*) > 0
+		FROM pragma_table_info('vc_issue_execution_state')
+		WHERE name = 'intervention_count'
+	`).Scan(&hasInterventionCount)
+	if err != nil {
+		return fmt.Errorf("failed to check for intervention_count column: %w", err)
+	}
+
+	if !hasInterventionCount {
+		// Add intervention_count column
+		_, err = conn.ExecContext(ctx, `
+			ALTER TABLE vc_issue_execution_state ADD COLUMN intervention_count INTEGER DEFAULT 0
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to add intervention_count column: %w", err)
+		}
+	}
+
+	// Check if last_intervention_time column exists
+	var hasLastInterventionTime bool
+	err = conn.QueryRowContext(ctx, `
+		SELECT COUNT(*) > 0
+		FROM pragma_table_info('vc_issue_execution_state')
+		WHERE name = 'last_intervention_time'
+	`).Scan(&hasLastInterventionTime)
+	if err != nil {
+		return fmt.Errorf("failed to check for last_intervention_time column: %w", err)
+	}
+
+	if !hasLastInterventionTime {
+		// Add last_intervention_time column
+		_, err = conn.ExecContext(ctx, `
+			ALTER TABLE vc_issue_execution_state ADD COLUMN last_intervention_time DATETIME
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to add last_intervention_time column: %w", err)
+		}
+
+		// Create index for efficient backoff queries
+		_, err = conn.ExecContext(ctx, `
+			CREATE INDEX IF NOT EXISTS idx_vc_execution_intervention ON vc_issue_execution_state(intervention_count, last_intervention_time)
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create intervention index: %w", err)
 		}
 	}
 

@@ -128,6 +128,11 @@ func (ic *InterventionController) PauseAgent(ctx context.Context, report *Anomal
 	// Cancel the agent's context to trigger graceful shutdown
 	ic.cancelFunc()
 
+	// vc-165b: Record intervention for backoff tracking
+	if err := ic.store.RecordWatchdogIntervention(ctx, ic.currentIssueID); err != nil {
+		result.Message += fmt.Sprintf(" (warning: failed to record intervention: %v)", err)
+	}
+
 	// Create escalation issue for human review
 	// Pass currentIssueID to avoid reading without lock
 	escalationID, err := ic.createEscalationIssue(ctx, report, InterventionPauseAgent, ic.currentIssueID)
@@ -170,6 +175,11 @@ func (ic *InterventionController) KillAgent(ctx context.Context, report *Anomaly
 
 	// Cancel the agent's context immediately
 	ic.cancelFunc()
+
+	// vc-165b: Record intervention for backoff tracking
+	if err := ic.store.RecordWatchdogIntervention(ctx, ic.currentIssueID); err != nil {
+		result.Message += fmt.Sprintf(" (warning: failed to record intervention: %v)", err)
+	}
 
 	// Create escalation issue for human review
 	// Pass currentIssueID to avoid reading without lock
@@ -268,6 +278,11 @@ func (ic *InterventionController) RequestCheckpoint(ctx context.Context, report 
 	// Cancel the agent's context to trigger graceful shutdown
 	// The agent should detect this and checkpoint its state
 	ic.cancelFunc()
+
+	// vc-165b: Record intervention for backoff tracking
+	if err := ic.store.RecordWatchdogIntervention(ctx, ic.currentIssueID); err != nil {
+		result.Message += fmt.Sprintf(" (warning: failed to record intervention: %v)", err)
+	}
 
 	// Create escalation issue documenting the checkpoint request
 	// Pass currentIssueID to avoid reading without lock
