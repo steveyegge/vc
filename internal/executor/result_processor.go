@@ -170,8 +170,14 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			fmt.Sprintf("Starting AI analysis for issue %s", issue.ID),
 			map[string]interface{}{})
 
+		// Track analysis phase duration
+		analysisStart := time.Now()
 		var err error
 		analysis, err = rp.supervisor.AnalyzeExecutionResult(ctx, issue, agentOutput, agentResult.Success)
+		// Record analysis duration via executor's monitor
+		if rp.executor != nil && rp.executor.monitor != nil {
+			rp.executor.monitor.RecordPhaseDuration("analyze", time.Since(analysisStart))
+		}
 		if err != nil {
 			// Don't fail - just log and continue
 			fmt.Fprintf(os.Stderr, "Warning: AI analysis failed: %v (continuing without analysis)\n", err)
@@ -213,6 +219,11 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				} else if len(createdIDs) > 0 {
 					fmt.Printf("✓ Created %d discovered issue(s) from analysis: %v\n", len(createdIDs), createdIDs)
 					result.DiscoveredIssues = createdIDs
+
+					// Record discovered issues count in telemetry
+					if rp.executor != nil && rp.executor.monitor != nil {
+						rp.executor.monitor.RecordDiscoveredIssues(len(createdIDs))
+					}
 				}
 			}
 
@@ -343,6 +354,24 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 			// Run gates with timeout protection
 			var allPassed bool
 			gateResults, allPassed = gateRunner.RunAll(gateCtx)
+
+			// Record gate results in telemetry
+			// Note: gates.Result doesn't track individual gate duration, so we use 0
+			// and rely on total gates duration from the overall timing
+			if rp.executor != nil && rp.executor.monitor != nil {
+				for _, gateResult := range gateResults {
+					message := gateResult.Output
+					if gateResult.Error != nil {
+						message = gateResult.Error.Error()
+					}
+					rp.executor.monitor.RecordGateResult(
+						string(gateResult.Gate),
+						gateResult.Passed,
+						0, // Duration not available from gates.Result
+						message,
+					)
+				}
+			}
 
 			// Log progress for each gate (vc-245)
 			for i, gateResult := range gateResults {
@@ -1129,6 +1158,21 @@ func (rp *ResultsProcessor) buildSummary(issue *types.Issue, agentResult *AgentR
 	summary.WriteString(fmt.Sprintf("Duration: %v\n", agentResult.Duration))
 	summary.WriteString(fmt.Sprintf("Success: %v\n", agentResult.Success))
 
+	// Add phase duration breakdown if available (vc-b5db)
+	if rp.executor != nil && rp.executor.monitor != nil {
+		telemetry := rp.executor.monitor.GetCurrentExecution()
+		if telemetry != nil && len(telemetry.PhaseDurations) > 0 {
+			summary.WriteString("\nPhase Breakdown:\n")
+			// Show phases in logical order
+			phaseOrder := []string{"assess", "execute", "analyze", "gates"}
+			for _, phase := range phaseOrder {
+				if duration, ok := telemetry.PhaseDurations[phase]; ok {
+					summary.WriteString(fmt.Sprintf("  %s: %v\n", phase, duration.Round(time.Millisecond)))
+				}
+			}
+		}
+	}
+
 	if procResult.Completed {
 		summary.WriteString("Status: ✓ Closed\n")
 	} else {
@@ -1150,6 +1194,30 @@ func (rp *ResultsProcessor) buildSummary(issue *types.Issue, agentResult *AgentR
 	if len(procResult.DiscoveredIssues) > 0 {
 		summary.WriteString(fmt.Sprintf("\n✓ Created %d discovered issues: %v\n",
 			len(procResult.DiscoveredIssues), procResult.DiscoveredIssues))
+	}
+
+	// Add quality gate details if available (vc-b5db)
+	if rp.executor != nil && rp.executor.monitor != nil {
+		telemetry := rp.executor.monitor.GetCurrentExecution()
+		if telemetry != nil && len(telemetry.GateResults) > 0 {
+			summary.WriteString("\nQuality Gates:\n")
+			for _, gateResult := range telemetry.GateResults {
+				status := "✓ PASS"
+				if !gateResult.Passed {
+					status = "✗ FAIL"
+				}
+				// Don't show duration since gates.Result doesn't provide it
+				summary.WriteString(fmt.Sprintf("  %s %s\n", status, gateResult.Name))
+				if !gateResult.Passed && gateResult.Message != "" {
+					// Show first line of error message
+					firstLine := strings.Split(gateResult.Message, "\n")[0]
+					if len(firstLine) > 80 {
+						firstLine = firstLine[:77] + "..."
+					}
+					summary.WriteString(fmt.Sprintf("    %s\n", firstLine))
+				}
+			}
+		}
 	}
 
 	if !procResult.GatesPassed {

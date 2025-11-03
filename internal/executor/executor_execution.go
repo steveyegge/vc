@@ -84,8 +84,11 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 			fmt.Sprintf("Starting AI assessment for issue %s", issue.ID),
 			map[string]interface{}{})
 
+		// Track assessment phase duration
+		assessStart := time.Now()
 		var err error
 		assessment, err = e.supervisor.AssessIssueState(ctx, issue)
+		e.monitor.RecordPhaseDuration("assess", time.Since(assessStart))
 		if err != nil {
 			// Check if context was canceled (shutdown initiated)
 			if ctx.Err() != nil {
@@ -415,7 +418,10 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		})
 
 	// Wait for agent to complete
+	// Track execution phase duration
+	execStart := time.Now()
 	result, err := agent.Wait(agentCtx)
+	e.monitor.RecordPhaseDuration("execute", time.Since(execStart))
 	if err != nil {
 		// Log agent execution failure BEFORE releasing issue
 		e.logEvent(ctx, events.EventTypeAgentCompleted, events.SeverityError, issue.ID,
