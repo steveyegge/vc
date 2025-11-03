@@ -11,7 +11,8 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/ncruces/go-sqlite3/driver"
+	_ "github.com/ncruces/go-sqlite3/embed"
 	"github.com/steveyegge/vc/internal/deduplication"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/storage"
