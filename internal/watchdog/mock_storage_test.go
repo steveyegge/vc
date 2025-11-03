@@ -157,3 +157,6 @@ func (m *mockStorage) GetEventCounts(ctx context.Context) (*types.EventCounts, e
 	return &types.EventCounts{}, nil
 }
 func (m *mockStorage) VacuumDatabase(ctx context.Context) error { return nil }
+func (m *mockStorage) RecordWatchdogIntervention(ctx context.Context, issueID string) error {
+	return nil
+}
