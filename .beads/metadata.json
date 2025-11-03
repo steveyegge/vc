@@ -1,0 +1,5 @@
+{
+  "database": "vc.db",
+  "version": "0.20.1",
+  "jsonl_export": "issues.jsonl"
+}
