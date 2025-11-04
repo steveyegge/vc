@@ -313,7 +313,7 @@ func setupTestStorage(t *testing.T) (storage.Storage, func()) {
 	t.Helper()
 	
 	ctx := context.Background()
-	cfg := &storage.Config{Path: ":memory:"}
+	cfg := &storage.Config{Path: t.TempDir() + "/test.db"}
 	store, err := storage.NewStorage(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to create test storage: %v", err)

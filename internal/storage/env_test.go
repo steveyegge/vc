@@ -120,7 +120,7 @@ func TestVC_DB_PATH_ExplicitConfig(t *testing.T) {
 
 	// Set env var but provide explicit config - explicit should win
 	_ = os.Setenv("VC_DB_PATH", "/tmp/env.db")
-	cfg := &Config{Path: ":memory:"}
+	cfg := &Config{Path: t.TempDir() + "/test.db"}
 	store, err := NewStorage(ctx, cfg)
 	if err != nil {
 		t.Fatalf("NewStorage with explicit config failed: %v", err)

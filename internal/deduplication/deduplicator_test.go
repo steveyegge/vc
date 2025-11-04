@@ -572,7 +572,7 @@ func TestNewAIDeduplicatorValidation(t *testing.T) {
 
 	// Create a valid in-memory storage for tests
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 	store, err := storage.NewStorage(ctx, cfg)
 	if err != nil {
 		t.Fatalf("failed to create test storage: %v", err)
@@ -658,7 +658,7 @@ func TestNewAIDeduplicatorConfigValidation(t *testing.T) {
 
 	// Create a valid in-memory storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 	store, err := storage.NewStorage(ctx, cfg)
 	if err != nil {
 		t.Fatalf("failed to create test storage: %v", err)

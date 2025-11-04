@@ -82,7 +82,7 @@ func (p *TestGateProvider) GetRunCount() int {
 func TestQualityGateBlockingIntegration(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -335,7 +335,7 @@ func TestQualityGateBlockingIntegration(t *testing.T) {
 func TestQualityGateBlockingWithStoreValidation(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)

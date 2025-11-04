@@ -30,7 +30,7 @@ func TestConcurrentQAWorkerAndExecutorShutdown(t *testing.T) {
 
 	// Create in-memory storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 	store, err := storage.NewStorage(ctx, cfg)
 	if err != nil {
 		t.Fatalf("failed to create storage: %v", err)
@@ -333,7 +333,7 @@ func TestQAWorkerShutdownWithSlowGates(t *testing.T) {
 
 	// Create in-memory storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 	store, err := storage.NewStorage(ctx, cfg)
 	if err != nil {
 		t.Fatalf("failed to create storage: %v", err)

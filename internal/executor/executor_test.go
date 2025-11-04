@@ -15,7 +15,7 @@ import (
 func TestExecutorStateTransitions(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -181,7 +181,7 @@ func TestExecutorStateTransitions(t *testing.T) {
 func TestExecutorWithAISupervisionEnabled(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -217,7 +217,7 @@ func TestExecutorWithAISupervisionEnabled(t *testing.T) {
 func TestExecutorStateSequence(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -342,7 +342,7 @@ func TestExecutorStateSequenceWithAI(t *testing.T) {
 func TestExecutorDoubleClaim(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -444,7 +444,7 @@ func TestExecutorDoubleClaim(t *testing.T) {
 func TestExecutorShutdownCleansOldInstances(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)

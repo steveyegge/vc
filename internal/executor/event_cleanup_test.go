@@ -16,7 +16,7 @@ func TestEventCleanupIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	// Create in-memory storage
-	store, err := storage.NewStorage(ctx, &storage.Config{Path: ":memory:"})
+	store, err := storage.NewStorage(ctx, &storage.Config{Path: t.TempDir() + "/test.db"})
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestEventCleanupDisabled(t *testing.T) {
 	ctx := context.Background()
 
 	// Create in-memory storage
-	store, err := storage.NewStorage(ctx, &storage.Config{Path: ":memory:"})
+	store, err := storage.NewStorage(ctx, &storage.Config{Path: t.TempDir() + "/test.db"})
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestEventCleanupGracefulShutdown(t *testing.T) {
 	ctx := context.Background()
 
 	// Create in-memory storage
-	store, err := storage.NewStorage(ctx, &storage.Config{Path: ":memory:"})
+	store, err := storage.NewStorage(ctx, &storage.Config{Path: t.TempDir() + "/test.db"})
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}

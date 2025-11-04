@@ -12,7 +12,7 @@ import (
 func TestNewContextGatherer(t *testing.T) {
 	ctx := context.Background()
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 	store, err := storage.NewStorage(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
@@ -28,7 +28,7 @@ func TestNewContextGatherer(t *testing.T) {
 func TestGetParentMission(t *testing.T) {
 	ctx := context.Background()
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 	store, err := storage.NewStorage(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
@@ -107,7 +107,7 @@ func TestGetParentMission(t *testing.T) {
 func TestGetRelatedIssues(t *testing.T) {
 	ctx := context.Background()
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 	store, err := storage.NewStorage(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
@@ -239,7 +239,7 @@ func TestGetRelatedIssues(t *testing.T) {
 func TestGetPreviousAttempts(t *testing.T) {
 	ctx := context.Background()
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 	store, err := storage.NewStorage(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
@@ -321,7 +321,7 @@ func TestGetPreviousAttempts(t *testing.T) {
 func TestAnalyzeResumeState(t *testing.T) {
 	ctx := context.Background()
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 	store, err := storage.NewStorage(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
@@ -425,7 +425,7 @@ func TestAnalyzeResumeState(t *testing.T) {
 func TestGatherContext(t *testing.T) {
 	ctx := context.Background()
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 	store, err := storage.NewStorage(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)

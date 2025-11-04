@@ -862,7 +862,7 @@ func setupQATestStorage(t *testing.T, ctx context.Context) storage.Storage {
 	t.Helper()
 
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	store, err := storage.NewStorage(ctx, cfg)
 	if err != nil {

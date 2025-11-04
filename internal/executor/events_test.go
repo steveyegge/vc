@@ -15,7 +15,7 @@ import (
 func TestEventLoggingOrderInErrorPaths(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -115,7 +115,7 @@ func TestEventLoggingOrderInErrorPaths(t *testing.T) {
 func TestEventLoggingInMultipleErrorPaths(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -306,7 +306,7 @@ func TestQualityGatesSkippedEvent(t *testing.T) {
 func TestEventDataNoRedundancy(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -427,7 +427,7 @@ func TestEventDataNoRedundancy(t *testing.T) {
 func TestEventSeverityConsistency(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -527,7 +527,7 @@ func TestEventSeverityConsistency(t *testing.T) {
 func TestContextCancellationHandling(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -643,7 +643,7 @@ func TestContextCancellationHandling(t *testing.T) {
 func TestAgentIDFieldDocumentation(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -748,7 +748,7 @@ func TestCompleteEventSequence(t *testing.T) {
 func BenchmarkEventLogging(b *testing.B) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = b.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -797,7 +797,7 @@ func BenchmarkEventLogging(b *testing.B) {
 func TestOutputParserIntegration(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)

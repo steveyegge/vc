@@ -14,7 +14,7 @@ import (
 func TestResultsProcessorAnalysisEvents(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -195,7 +195,7 @@ func TestResultsProcessorAnalysisEvents(t *testing.T) {
 func TestResultsProcessorQualityGatesSkippedEvent(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -406,7 +406,7 @@ func TestResultsProcessorGateRunnerCreationFailure(t *testing.T) {
 func TestResultsProcessorEventDataNoRedundancy(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -501,7 +501,7 @@ func TestResultsProcessorEventDataNoRedundancy(t *testing.T) {
 func TestResultsProcessorEventSeverityConsistency(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -593,7 +593,7 @@ func TestResultsProcessorEventSeverityConsistency(t *testing.T) {
 func TestResultsProcessorContextCancellation(t *testing.T) {
 	// Setup storage
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)

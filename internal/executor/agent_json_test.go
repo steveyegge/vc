@@ -17,7 +17,7 @@ import (
 func TestConvertJSONToEventActualAmpFormat(t *testing.T) {
 	// Setup test agent with mock dependencies
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)

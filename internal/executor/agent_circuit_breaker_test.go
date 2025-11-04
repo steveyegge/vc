@@ -18,7 +18,7 @@ import (
 func TestCircuitBreakerNoDeadlock(t *testing.T) {
 	// Setup test agent with mock dependencies
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -190,7 +190,7 @@ func TestCircuitBreakerNoDeadlock(t *testing.T) {
 func TestCircuitBreakerTerminatesAgent(t *testing.T) {
 	// Setup test agent with mock dependencies
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)
@@ -317,7 +317,7 @@ func TestCircuitBreakerTerminatesAgent(t *testing.T) {
 func TestCircuitBreakerRaceDetector(t *testing.T) {
 	// Setup test agent with mock dependencies
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	cfg.Path = t.TempDir() + "/test.db"
 
 	ctx := context.Background()
 	store, err := storage.NewStorage(ctx, cfg)

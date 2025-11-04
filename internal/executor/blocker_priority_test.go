@@ -17,7 +17,9 @@ import (
 func setupExecutorTest(t *testing.T) (context.Context, storage.Storage, *Executor) {
 	ctx := context.Background()
 	cfg := storage.DefaultConfig()
-	cfg.Path = ":memory:"
+	// Use temp file instead of :memory: to avoid connection pool deadlocks
+	// with nested queries (Beads v0.21.7 sets MaxOpenConns=1 for :memory:)
+	cfg.Path = t.TempDir() + "/test.db"
 	store, err := storage.NewStorage(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
