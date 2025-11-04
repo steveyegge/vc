@@ -218,7 +218,7 @@ func (e *Executor) getNextReadyBlocker(ctx context.Context) (*types.Issue, error
 func (e *Executor) processNextIssue(ctx context.Context) error {
 	// vc-196: Run preflight quality gates check before claiming work
 	if e.preFlightChecker != nil {
-		// vc-47e0: When in degraded mode, invalidate cache to force fresh baseline check
+		// vc-47e0: When in self-healing mode, invalidate cache to force fresh baseline check
 		// This allows the executor to detect when baseline issues are fixed without restart
 		if e.isDegraded() {
 			e.preFlightChecker.InvalidateAllCache()
@@ -232,7 +232,7 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 		}
 
 		if !allPassed {
-			// Baseline failed - enter degraded mode
+			// Baseline failed - enter self-healing mode
 			failureMode := e.preFlightChecker.config.FailureMode
 
 			switch failureMode {
@@ -256,10 +256,10 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 					// Continue anyway - we'll try again next poll
 				}
 
-				// Enter degraded mode - only claim baseline issues until fixed
+				// Enter self-healing mode - only claim baseline issues until fixed
 				if !e.isDegraded() {
-					// Print banner only on state transition (entering degraded mode)
-					fmt.Printf("⚠️  Entering degraded mode: baseline failures detected\n")
+					// Print banner only on state transition (entering self-healing mode)
+					fmt.Printf("⚠️  Entering self-healing mode: baseline failures detected\n")
 				}
 				e.setDegraded(true)
 
@@ -273,20 +273,20 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 				// Continue to claim work below
 			}
 		} else {
-			// vc-1d3d: Baseline passes - exit degraded mode if we were in it
+			// vc-1d3d: Baseline passes - exit self-healing mode if we were in it
 			if e.isDegraded() {
-				// Print banner only on state transition (exiting degraded mode)
-				fmt.Printf("✓ Baseline quality gates passing. Exiting degraded mode.\n")
+				// Print banner only on state transition (exiting self-healing mode)
+				fmt.Printf("✓ Baseline quality gates passing. Exiting self-healing mode.\n")
 				e.setDegraded(false)
 			}
 		}
 	}
 
-	// While degraded, only claim baseline-failure issues
+	// While in self-healing mode, only claim baseline-failure issues
 	if e.isDegraded() {
 		// Throttle log message: only print once per minute
 		if time.Since(e.degradedModeMsgLast) > time.Minute {
-			fmt.Printf("⚠️  Degraded mode: only claiming baseline issues\n")
+			fmt.Printf("⚠️  Self-healing mode: only claiming baseline issues\n")
 			e.degradedModeMsgLast = time.Now()
 		}
 		baselineIssues, err := e.store.GetIssuesByLabel(ctx, "baseline-failure")

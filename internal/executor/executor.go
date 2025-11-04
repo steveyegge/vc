@@ -70,19 +70,19 @@ type Executor struct {
 	// State
 	mu                   sync.RWMutex
 	running              bool
-	degradedMode         bool      // In degraded mode, only claim baseline issues
-	degradedModeMsgLast  time.Time // Last time we printed the degraded mode message (for throttling)
+	degradedMode         bool      // In self-healing mode, only claim baseline issues
+	degradedModeMsgLast  time.Time // Last time we printed the self-healing mode message (for throttling)
 	qaWorkersWg          sync.WaitGroup // Tracks active QA worker goroutines for graceful shutdown (vc-0d58)
 }
 
-// isDegraded returns whether the executor is in degraded mode (thread-safe)
+// isDegraded returns whether the executor is in self-healing mode (thread-safe)
 func (e *Executor) isDegraded() bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.degradedMode
 }
 
-// setDegraded sets the degraded mode state (thread-safe)
+// setDegraded sets the self-healing mode state (thread-safe)
 func (e *Executor) setDegraded(v bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

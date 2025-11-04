@@ -55,7 +55,7 @@ type PreFlightConfig struct {
 type FailureMode string
 
 const (
-	FailureModeBlock  FailureMode = "block"  // Don't claim work (degraded mode)
+	FailureModeBlock  FailureMode = "block"  // Don't claim work (self-healing mode)
 	FailureModeWarn   FailureMode = "warn"   // Warn but continue claiming work
 	FailureModeIgnore FailureMode = "ignore" // Ignore failures completely
 )
@@ -301,7 +301,7 @@ func (p *PreFlightChecker) invalidateCachedBaseline(commitHash string) {
 }
 
 // InvalidateAllCache clears the entire in-memory cache (vc-47e0)
-// Used when in degraded mode to force fresh baseline checks
+// Used when in self-healing mode to force fresh baseline checks
 func (p *PreFlightChecker) InvalidateAllCache() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -391,8 +391,8 @@ func mustParseTime(s string) time.Time {
 	return t
 }
 
-// HandleBaselineFailure handles degraded mode when baseline fails
-// vc-200: Degraded mode - create system blocking issues for failing gates
+// HandleBaselineFailure handles self-healing mode when baseline fails
+// vc-200: Self-healing mode - create system blocking issues for failing gates
 //
 // This creates system-level blocking issues with IDs like:
 // - vc-baseline-test (test gate failure)
@@ -412,18 +412,18 @@ func (p *PreFlightChecker) HandleBaselineFailure(ctx context.Context, executorID
 		}
 	}
 
-	// Emit degraded mode event
-	p.emitEvent(ctx, executorID, events.EventTypeExecutorDegradedMode, map[string]interface{}{
+	// Emit self-healing mode event
+	p.emitEvent(ctx, executorID, events.EventTypeExecutorSelfHealingMode, map[string]interface{}{
 		"commit_hash":   commitHash,
 		"failing_gates": failingGates,
 		"total_gates":   len(results),
 		"severity":      "critical",
 	})
 
-	fmt.Printf("\n⚠️  DEGRADED MODE: Baseline quality gates failed\n")
+	fmt.Printf("\n⚠️  SELF-HEALING MODE: Baseline quality gates failed\n")
 	fmt.Printf("   Commit: %s\n", commitHash)
 	fmt.Printf("   Failing gates: %v\n", failingGates)
-	fmt.Printf("   Executor will not claim work until baseline is fixed\n\n")
+	fmt.Printf("   Executor will prioritize fixing baseline before claiming regular work\n\n")
 
 	return nil
 }
@@ -463,7 +463,7 @@ func (p *PreFlightChecker) createBaselineBlockingIssue(ctx context.Context, resu
 		if err := p.storage.UpdateIssue(ctx, issueID, map[string]interface{}{
 			"status": string(types.StatusOpen),
 			"notes":  newNotes,
-		}, "preflight-degraded-mode"); err != nil {
+		}, "preflight-self-healing"); err != nil {
 			return fmt.Errorf("failed to reopen baseline issue: %w", err)
 		}
 		return nil
@@ -498,18 +498,18 @@ func (p *PreFlightChecker) createBaselineBlockingIssue(ctx context.Context, resu
 			result.Gate),
 	}
 
-	if err := p.storage.CreateIssue(ctx, issue, "preflight-degraded-mode"); err != nil {
+	if err := p.storage.CreateIssue(ctx, issue, "preflight-self-healing"); err != nil {
 		return fmt.Errorf("failed to create baseline issue: %w", err)
 	}
 
 	// Add labels
-	if err := p.storage.AddLabel(ctx, issueID, fmt.Sprintf("gate:%s", result.Gate), "preflight-degraded-mode"); err != nil {
+	if err := p.storage.AddLabel(ctx, issueID, fmt.Sprintf("gate:%s", result.Gate), "preflight-self-healing"); err != nil {
 		fmt.Printf("warning: failed to add gate label: %v\n", err)
 	}
-	if err := p.storage.AddLabel(ctx, issueID, "baseline-failure", "preflight-degraded-mode"); err != nil {
+	if err := p.storage.AddLabel(ctx, issueID, "baseline-failure", "preflight-self-healing"); err != nil {
 		fmt.Printf("warning: failed to add baseline-failure label: %v\n", err)
 	}
-	if err := p.storage.AddLabel(ctx, issueID, "system", "preflight-degraded-mode"); err != nil {
+	if err := p.storage.AddLabel(ctx, issueID, "system", "preflight-self-healing"); err != nil {
 		fmt.Printf("warning: failed to add system label: %v\n", err)
 	}
 

@@ -97,8 +97,8 @@ const (
 	EventTypeBaselineCacheHit EventType = "baseline_cache_hit"
 	// EventTypeBaselineCacheMiss indicates baseline was not in cache (will run gates)
 	EventTypeBaselineCacheMiss EventType = "baseline_cache_miss"
-	// EventTypeExecutorDegradedMode indicates executor entered degraded mode (baseline failed)
-	EventTypeExecutorDegradedMode EventType = "executor_degraded_mode"
+	// EventTypeExecutorSelfHealingMode indicates executor entered self-healing mode (baseline failed)
+	EventTypeExecutorSelfHealingMode EventType = "executor_self_healing_mode"
 
 	// Self-healing events (vc-210)
 	// EventTypeBaselineTestFixStarted indicates self-healing started for a baseline test failure
