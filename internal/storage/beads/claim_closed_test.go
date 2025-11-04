@@ -135,6 +135,79 @@ func TestClaimOpenIssue(t *testing.T) {
 	}
 }
 
+// TestClaimBlockedIssue verifies that ClaimIssue refuses to claim blocked issues (vc-22dd)
+// This was explicitly required in the acceptance criteria for vc-185
+func TestClaimBlockedIssue(t *testing.T) {
+	ctx := context.Background()
+
+	// Create test storage
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create test storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Register an executor instance first (required for foreign key in ClaimIssue)
+	instance := &types.ExecutorInstance{
+		InstanceID: "test-instance-1",
+		Version:    "test",
+		StartedAt:  time.Now(),
+		Hostname:   "test-host",
+		Status:     "running",
+	}
+	err = store.RegisterInstance(ctx, instance)
+	if err != nil {
+		t.Fatalf("Failed to register instance: %v", err)
+	}
+
+	// Create a blocked issue
+	blockedIssue := &types.Issue{
+		Title:       "Test Blocked Issue",
+		Description: "This issue is blocked",
+		Status:      types.StatusBlocked,
+		Priority:    1,
+		IssueType:   types.TypeTask,
+	}
+
+	err = store.CreateIssue(ctx, blockedIssue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create blocked issue: %v", err)
+	}
+
+	// Try to claim the blocked issue - should fail
+	err = store.ClaimIssue(ctx, blockedIssue.ID, "test-instance-1")
+	if err == nil {
+		t.Fatal("Expected error claiming blocked issue, got nil")
+	}
+
+	// Verify error message mentions the issue is not open (blocked)
+	expectedMsg := "not open"
+	if !contains(err.Error(), expectedMsg) {
+		t.Errorf("Expected error message to contain %q, got: %v", expectedMsg, err)
+	}
+
+	// Verify issue status is still blocked (not changed to in_progress)
+	issue, err := store.GetIssue(ctx, blockedIssue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get issue: %v", err)
+	}
+
+	if issue.Status != types.StatusBlocked {
+		t.Errorf("Expected status to remain 'blocked', got: %s", issue.Status)
+	}
+
+	// Verify no execution state was created
+	execState, err := store.GetExecutionState(ctx, blockedIssue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get execution state: %v", err)
+	}
+	if execState != nil && execState.State == types.ExecutionStateClaimed {
+		t.Errorf("Expected no claimed execution state, but issue was claimed")
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && findSubstring(s, substr))
 }
