@@ -47,6 +47,8 @@ type Executor struct {
 	// Control channels
 	stopCh             chan struct{}
 	doneCh             chan struct{}
+	heartbeatStopCh    chan struct{} // Separate channel for heartbeat shutdown (vc-m4od)
+	heartbeatDoneCh    chan struct{} // Signals when heartbeat goroutine finished (vc-m4od)
 	watchdogStopCh     chan struct{} // Separate channel for watchdog shutdown
 	watchdogDoneCh     chan struct{} // Signals when watchdog goroutine finished
 	cleanupStopCh      chan struct{} // Separate channel for cleanup goroutine shutdown
@@ -56,6 +58,7 @@ type Executor struct {
 
 	// Configuration
 	pollInterval            time.Duration
+	heartbeatPeriod         time.Duration // vc-m4od: Period for heartbeat updates
 	cleanupInterval         time.Duration
 	staleThreshold          time.Duration
 	instanceCleanupAge      time.Duration
@@ -178,6 +181,12 @@ func New(cfg *Config) (*Executor, error) {
 		parentRepo = "."
 	}
 
+	// Set default heartbeat period if not specified (vc-m4od)
+	heartbeatPeriod := cfg.HeartbeatPeriod
+	if heartbeatPeriod == 0 {
+		heartbeatPeriod = 30 * time.Second
+	}
+
 	// Set default cleanup interval if not specified
 	cleanupInterval := cfg.CleanupInterval
 	if cleanupInterval == 0 {
@@ -210,6 +219,7 @@ func New(cfg *Config) (*Executor, error) {
 		pid:                     os.Getpid(),
 		version:                 cfg.Version,
 		pollInterval:            cfg.PollInterval,
+		heartbeatPeriod:         heartbeatPeriod,
 		cleanupInterval:         cleanupInterval,
 		staleThreshold:          staleThreshold,
 		instanceCleanupAge:      instanceCleanupAge,
@@ -221,6 +231,8 @@ func New(cfg *Config) (*Executor, error) {
 		workingDir:              workingDir,
 		stopCh:                  make(chan struct{}),
 		doneCh:                  make(chan struct{}),
+		heartbeatStopCh:         make(chan struct{}),
+		heartbeatDoneCh:         make(chan struct{}),
 		cleanupStopCh:           make(chan struct{}),
 		cleanupDoneCh:           make(chan struct{}),
 		eventCleanupStopCh:      make(chan struct{}),
@@ -526,6 +538,9 @@ func (e *Executor) Start(ctx context.Context) error {
 	// Start the event loop
 	go e.eventLoop(ctx)
 
+	// Start the heartbeat loop (vc-m4od)
+	go e.heartbeatLoop(ctx)
+
 	// Start the watchdog loop if enabled and components are initialized
 	if e.watchdogConfig.IsEnabled() && e.analyzer != nil && e.intervention != nil {
 		go e.watchdogLoop(ctx)
@@ -546,6 +561,31 @@ func (e *Executor) Start(ctx context.Context) error {
 	return nil
 }
 
+// heartbeatLoop sends periodic heartbeats independently of issue execution (vc-m4od)
+// This runs in a separate goroutine to ensure heartbeats continue even when
+// processNextIssue() blocks for extended periods during agent execution.
+func (e *Executor) heartbeatLoop(ctx context.Context) {
+	defer close(e.heartbeatDoneCh)
+
+	ticker := time.NewTicker(e.heartbeatPeriod)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-e.stopCh:
+			return
+		case <-e.heartbeatStopCh:
+			return
+		case <-ticker.C:
+			if err := e.store.UpdateHeartbeat(ctx, e.instanceID); err != nil {
+				fmt.Fprintf(os.Stderr, "heartbeat update failed: %v\n", err)
+			}
+		}
+	}
+}
+
 // Stop gracefully stops the executor
 func (e *Executor) Stop(ctx context.Context) error {
 	e.mu.Lock()
@@ -558,6 +598,9 @@ func (e *Executor) Stop(ctx context.Context) error {
 	// Signal shutdown
 	close(e.stopCh)
 
+	// Stop heartbeat goroutine (vc-m4od)
+	close(e.heartbeatStopCh)
+
 	// Stop watchdog if it's running
 	if e.watchdogConfig.IsEnabled() && e.analyzer != nil {
 		close(e.watchdogStopCh)
@@ -569,17 +612,20 @@ func (e *Executor) Stop(ctx context.Context) error {
 	// Stop event cleanup goroutine
 	close(e.eventCleanupStopCh)
 
-	// Wait for event loop, watchdog, cleanup, and event cleanup to finish concurrently (vc-113, vc-122, vc-195)
+	// Wait for event loop, heartbeat, watchdog, cleanup, and event cleanup to finish concurrently (vc-m4od, vc-113, vc-122, vc-195)
 	// This prevents sequential timeouts if one takes longer than expected
 	eventDone := false
+	heartbeatDone := false
 	watchdogDone := !e.watchdogConfig.IsEnabled() || e.analyzer == nil // Skip if not enabled
 	cleanupDone := false
 	eventCleanupDone := false
 
-	for !eventDone || !watchdogDone || !cleanupDone || !eventCleanupDone {
+	for !eventDone || !heartbeatDone || !watchdogDone || !cleanupDone || !eventCleanupDone {
 		select {
 		case <-e.doneCh:
 			eventDone = true
+		case <-e.heartbeatDoneCh:
+			heartbeatDone = true
 		case <-e.watchdogDoneCh:
 			watchdogDone = true
 		case <-e.cleanupDoneCh:

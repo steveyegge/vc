@@ -24,12 +24,8 @@ func (e *Executor) eventLoop(ctx context.Context) {
 		case <-e.stopCh:
 			return
 		case <-ticker.C:
-			// Update heartbeat
-			if err := e.store.UpdateHeartbeat(ctx, e.instanceID); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to update heartbeat: %v\n", err)
-			}
-
 			// Process one code work issue (regular tasks)
+			// Note: Heartbeat updates now happen in dedicated heartbeatLoop() goroutine (vc-m4od)
 			if err := e.processNextIssue(ctx); err != nil {
 				// Log error but continue
 				fmt.Fprintf(os.Stderr, "error processing issue: %v\n", err)
