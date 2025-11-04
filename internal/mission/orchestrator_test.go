@@ -264,6 +264,12 @@ func (m *MockStorage) CleanupEventsByIssueLimit(ctx context.Context, perIssueLim
 func (m *MockStorage) CleanupEventsByGlobalLimit(ctx context.Context, globalLimit, batchSize int) (int, error) {
 	return 0, nil
 }
+
+// Watchdog methods
+func (m *MockStorage) RecordWatchdogIntervention(ctx context.Context, issueID string) error {
+	return nil
+}
+
 func (m *MockStorage) GetEventCounts(ctx context.Context) (*types.EventCounts, error) {
 	return &types.EventCounts{}, nil
 }

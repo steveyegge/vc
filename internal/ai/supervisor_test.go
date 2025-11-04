@@ -235,6 +235,11 @@ func (m *mockStorage) CleanupEventsByAge(ctx context.Context, retentionDays, cri
 	return 0, nil
 }
 
+// Watchdog methods
+func (m *mockStorage) RecordWatchdogIntervention(ctx context.Context, issueID string) error {
+	return nil
+}
+
 func (m *mockStorage) CleanupEventsByGlobalLimit(ctx context.Context, globalLimit int, batchSize int) (int, error) {
 	return 0, nil
 }
