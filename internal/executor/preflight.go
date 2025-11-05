@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -429,6 +430,7 @@ func (p *PreFlightChecker) HandleBaselineFailure(ctx context.Context, executorID
 }
 
 // createBaselineBlockingIssue creates a system-level blocking issue for a gate failure
+// vc-ebd9: Extended to parse individual test failures and deduplicate child issues
 func (p *PreFlightChecker) createBaselineBlockingIssue(ctx context.Context, result *gates.Result) error {
 	issueID := fmt.Sprintf("vc-baseline-%s", result.Gate)
 
@@ -443,6 +445,14 @@ func (p *PreFlightChecker) createBaselineBlockingIssue(ctx context.Context, resu
 		if existingIssue.Status != types.StatusClosed {
 			// Issue is still open - don't create duplicate
 			fmt.Printf("   Issue %s already exists (status: %s)\n", issueID, existingIssue.Status)
+
+			// vc-ebd9: Parse test failures and create/link child issues even if baseline exists
+			if result.Gate == gates.GateTest {
+				if err := p.parseAndDeduplicateTestFailures(ctx, issueID, result.Output); err != nil {
+					fmt.Printf("   warning: failed to parse test failures: %v\n", err)
+				}
+			}
+
 			return nil
 		}
 		// Issue exists but is closed - reopen it with updated information
@@ -514,7 +524,194 @@ func (p *PreFlightChecker) createBaselineBlockingIssue(ctx context.Context, resu
 	}
 
 	fmt.Printf("   Created baseline blocking issue: %s\n", issueID)
+
+	// vc-ebd9: For test gate failures, parse individual test failures and create child issues
+	if result.Gate == gates.GateTest {
+		if err := p.parseAndDeduplicateTestFailures(ctx, issueID, result.Output); err != nil {
+			fmt.Printf("   warning: failed to parse test failures: %v\n", err)
+		}
+	}
+
 	return nil
+}
+
+// parseAndDeduplicateTestFailures parses individual test failures and creates deduplicated child issues (vc-ebd9)
+func (p *PreFlightChecker) parseAndDeduplicateTestFailures(ctx context.Context, baselineIssueID, testOutput string) error {
+	// Parse individual test failures from output
+	failures := ParseTestFailures(testOutput)
+	if len(failures) == 0 {
+		fmt.Printf("   No individual test failures parsed from output\n")
+		return nil
+	}
+
+	fmt.Printf("   Parsed %d individual test failure(s)\n", len(failures))
+
+	// Process each failure with deduplication
+	for i, failure := range failures {
+		// Compute signature for deduplication
+		signature := ComputeFailureSignature(failure)
+
+		// Check if an issue with this signature already exists
+		// We search for issues with matching title patterns as a simple dedup mechanism
+		// (More sophisticated: could store signature in issue metadata/labels)
+		childTitle := fmt.Sprintf("Test failure: %s", failure.Test)
+
+		// Query for existing open issues with similar title
+		existingChildID, err := p.findExistingTestFailureIssue(ctx, childTitle, signature)
+		if err != nil {
+			fmt.Printf("   warning: failed to check for existing test failure issue: %v\n", err)
+			// Continue anyway - better to create potential duplicate than skip
+		}
+
+		if existingChildID != "" {
+			fmt.Printf("   [%d/%d] Test %s: found existing issue %s (signature: %s)\n",
+				i+1, len(failures), failure.Test, existingChildID, signature[:8])
+
+			// Ensure the existing issue is linked to the baseline
+			if err := p.ensureDependency(ctx, existingChildID, baselineIssueID); err != nil {
+				fmt.Printf("   warning: failed to link existing issue to baseline: %v\n", err)
+			}
+			continue
+		}
+
+		// Create new child issue
+		fmt.Printf("   [%d/%d] Test %s: creating new child issue (signature: %s)\n",
+			i+1, len(failures), failure.Test, signature[:8])
+
+		childIssue, err := p.createTestFailureChildIssue(ctx, baselineIssueID, failure, signature)
+		if err != nil {
+			return fmt.Errorf("failed to create test failure child issue: %w", err)
+		}
+
+		fmt.Printf("   Created child issue %s for test %s\n", childIssue.ID, failure.Test)
+	}
+
+	return nil
+}
+
+// findExistingTestFailureIssue searches for an existing test failure issue with the same signature
+func (p *PreFlightChecker) findExistingTestFailureIssue(ctx context.Context, titlePattern, signature string) (string, error) {
+	// Query open issues to find matching test failure
+	// We use the signature label for reliable matching
+	filter := types.WorkFilter{
+		Status: types.StatusOpen,
+		Limit:  100, // Check recent open issues
+	}
+
+	issues, err := p.storage.GetReadyWork(ctx, filter)
+	if err != nil {
+		return "", err
+	}
+
+	// Look for issues with matching signature label
+	// The signature is stored as a label "sig:abc12345"
+	sigLabel := fmt.Sprintf("sig:%s", signature[:8])
+
+	for _, issue := range issues {
+		// Get labels for this issue
+		labels, err := p.storage.GetLabels(ctx, issue.ID)
+		if err != nil {
+			continue // Skip this issue if we can't get labels
+		}
+
+		// Check if the signature label matches
+		for _, label := range labels {
+			if label == sigLabel {
+				return issue.ID, nil
+			}
+		}
+	}
+
+	return "", nil
+}
+
+// createTestFailureChildIssue creates a child issue for an individual test failure
+func (p *PreFlightChecker) createTestFailureChildIssue(ctx context.Context, parentID string, failure TestFailure, signature string) (*types.Issue, error) {
+	// Truncate error output for description
+	errorOutput := failure.Error
+	if len(errorOutput) > 1000 {
+		errorOutput = errorOutput[:1000] + "\n... (truncated)"
+	}
+
+	issue := &types.Issue{
+		Title: fmt.Sprintf("Test failure: %s", failure.Test),
+		Description: fmt.Sprintf("Test %s is failing in package %s.\n\n"+
+			"This is a child issue of baseline failure %s.\n\n"+
+			"Error output:\n```\n%s\n```\n\n"+
+			"Signature: %s",
+			failure.Test, failure.Package, parentID, errorOutput, signature),
+		Status:    types.StatusOpen,
+		Priority:  1, // P1 - critical (inherits from baseline)
+		IssueType: types.TypeBug,
+		Design: fmt.Sprintf("Fix the failing test %s in package %s.\n\n"+
+			"Analyze the error output above and determine the root cause.\n"+
+			"The test may be flaky, have a real bug, or be affected by environmental issues.",
+			failure.Test, failure.Package),
+		AcceptanceCriteria: fmt.Sprintf("- Test %s passes consistently\n"+
+			"- No flakiness observed across multiple runs\n"+
+			"- Root cause documented in PR/commit message",
+			failure.Test),
+	}
+
+	// Create the issue
+	if err := p.storage.CreateIssue(ctx, issue, "baseline-test-failure"); err != nil {
+		return nil, fmt.Errorf("failed to create child issue: %w", err)
+	}
+
+	// Add dependency: child blocks parent
+	// This ensures the baseline issue stays open until all test failures are fixed
+	dep := &types.Dependency{
+		IssueID:     issue.ID,
+		DependsOnID: parentID,
+		Type:        types.DepBlocks,
+		CreatedAt:   time.Now(),
+		CreatedBy:   "baseline-test-failure",
+	}
+	if err := p.storage.AddDependency(ctx, dep, "baseline-test-failure"); err != nil {
+		return nil, fmt.Errorf("failed to create dependency: %w", err)
+	}
+
+	// Add labels
+	if err := p.storage.AddLabel(ctx, issue.ID, "baseline-failure", "baseline-test-failure"); err != nil {
+		fmt.Printf("warning: failed to add baseline-failure label: %v\n", err)
+	}
+	if err := p.storage.AddLabel(ctx, issue.ID, fmt.Sprintf("test:%s", failure.Test), "baseline-test-failure"); err != nil {
+		fmt.Printf("warning: failed to add test label: %v\n", err)
+	}
+	if err := p.storage.AddLabel(ctx, issue.ID, fmt.Sprintf("sig:%s", signature[:8]), "baseline-test-failure"); err != nil {
+		fmt.Printf("warning: failed to add signature label: %v\n", err)
+	}
+
+	return issue, nil
+}
+
+// ensureDependency ensures a dependency exists between child and parent issues
+func (p *PreFlightChecker) ensureDependency(ctx context.Context, childID, parentID string) error {
+	// Create the dependency (AddDependency is idempotent - won't duplicate if it exists)
+	newDep := &types.Dependency{
+		IssueID:     childID,
+		DependsOnID: parentID,
+		Type:        types.DepBlocks,
+		CreatedAt:   time.Now(),
+		CreatedBy:   "baseline-dedup",
+	}
+	if err := p.storage.AddDependency(ctx, newDep, "baseline-dedup"); err != nil {
+		// Check if the error is about duplicate - that's okay
+		if !containsIgnoreCase(err.Error(), "already exists") && !containsIgnoreCase(err.Error(), "duplicate") {
+			return fmt.Errorf("failed to create dependency: %w", err)
+		}
+		// Dependency already exists - that's fine
+	}
+
+	fmt.Printf("   Linked existing issue %s to baseline %s\n", childID, parentID)
+	return nil
+}
+
+// containsIgnoreCase checks if a string contains a substring (case-insensitive)
+func containsIgnoreCase(s, substr string) bool {
+	s = strings.ToLower(s)
+	substr = strings.ToLower(substr)
+	return strings.Contains(s, substr)
 }
 
 // PreFlightConfigFromEnv creates a PreFlightConfig from environment variables
