@@ -24,6 +24,12 @@ func (e *Executor) eventLoop(ctx context.Context) {
 		case <-e.stopCh:
 			return
 		case <-ticker.C:
+			// Check budget before processing work (vc-e3s7)
+			// If budget exceeded, pause and skip this cycle
+			if !e.checkBudgetBeforeWork(ctx) {
+				continue // Skip this cycle, wait for budget to reset
+			}
+
 			// Process one code work issue (regular tasks)
 			// Note: Heartbeat updates now happen in dedicated heartbeatLoop() goroutine (vc-m4od)
 			if err := e.processNextIssue(ctx); err != nil {

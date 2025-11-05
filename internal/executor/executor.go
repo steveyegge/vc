@@ -67,6 +67,7 @@ type Executor struct {
 	gitOps           git.GitOperations          // Git operations for auto-commit (vc-136)
 	messageGen       *git.MessageGenerator      // Commit message generator (vc-136)
 	qaWorker         *QualityGateWorker         // QA worker for quality gate execution (vc-254)
+	costTracker      *cost.Tracker              // Cost budget tracker (vc-e3s7)
 	config           *Config
 	instanceID       string
 	hostname         string
@@ -376,23 +377,25 @@ func New(cfg *Config) (*Executor, error) {
 		escalationTrackers: make(map[string]*escalationTracker),
 	}
 
-	// Initialize AI supervisor if enabled (do this before sandbox manager to provide deduplicator)
-	if cfg.EnableAISupervision {
-		// Initialize cost tracker first (vc-e3s7)
-		var costTracker ai.CostTracker
-		costConfig := cost.LoadFromEnv()
-		if costConfig.Enabled {
-			tracker, err := cost.NewTracker(costConfig, cfg.Store)
-			if err != nil {
-				// Log warning but continue without cost tracking
-				fmt.Fprintf(os.Stderr, "Warning: failed to initialize cost tracker: %v (continuing without cost budgeting)\n", err)
-			} else {
-				costTracker = tracker
-				fmt.Printf("✓ Cost budget tracking enabled (limit: %d tokens/hour, $%.2f/hour)\n",
-					costConfig.MaxTokensPerHour, costConfig.MaxCostPerHour)
-			}
+	// Initialize cost tracker first (vc-e3s7)
+	// This is initialized even if AI supervision is disabled, for budget monitoring
+	var costTracker *cost.Tracker
+	costConfig := cost.LoadFromEnv()
+	if costConfig.Enabled {
+		tracker, err := cost.NewTracker(costConfig, cfg.Store)
+		if err != nil {
+			// Log warning but continue without cost tracking
+			fmt.Fprintf(os.Stderr, "Warning: failed to initialize cost tracker: %v (continuing without cost budgeting)\n", err)
+		} else {
+			costTracker = tracker
+			fmt.Printf("✓ Cost budget tracking enabled (limit: %d tokens/hour, $%.2f/hour)\n",
+				costConfig.MaxTokensPerHour, costConfig.MaxCostPerHour)
 		}
+	}
+	e.costTracker = costTracker
 
+	// Initialize AI supervisor if enabled (do this after cost tracker)
+	if cfg.EnableAISupervision {
 		supervisor, err := ai.NewSupervisor(&ai.Config{
 			Store:       cfg.Store,
 			CostTracker: costTracker, // Pass cost tracker to supervisor (vc-e3s7)
