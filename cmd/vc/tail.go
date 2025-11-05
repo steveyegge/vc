@@ -68,7 +68,7 @@ func runTailOnce(ctx context.Context, issueID string, limit int) {
 
 	// Display events in reverse chronological order (newest last)
 	for i := len(events) - 1; i >= 0; i-- {
-		displayEvent(events[i])
+		displayActivityEvent(events[i])
 	}
 }
 
@@ -90,7 +90,7 @@ func runTailFollow(ctx context.Context, issueID string, initialLimit int) {
 
 	// Display initial events in reverse chronological order
 	for i := len(events) - 1; i >= 0; i-- {
-		displayEvent(events[i])
+		displayActivityEvent(events[i])
 	}
 
 	// Track the most recent event timestamp
@@ -118,7 +118,7 @@ func runTailFollow(ctx context.Context, issueID string, initialLimit int) {
 
 			// Display new events in chronological order
 			for i := len(newEvents) - 1; i >= 0; i-- {
-				displayEvent(newEvents[i])
+				displayActivityEvent(newEvents[i])
 				if newEvents[i].Timestamp.After(lastTimestamp) {
 					lastTimestamp = newEvents[i].Timestamp
 				}
@@ -147,55 +147,4 @@ func fetchEventsAfter(ctx context.Context, issueID string, afterTime time.Time) 
 	return store.GetAgentEvents(ctx, filter)
 }
 
-// displayEvent formats and prints a single event with color
-func displayEvent(event *events.AgentEvent) {
-	// Color coding by severity
-	var severityColor *color.Color
-	var severityIcon string
-
-	switch event.Severity {
-	case events.SeverityInfo:
-		severityColor = color.New(color.FgCyan)
-		severityIcon = "ℹ️"
-	case events.SeverityWarning:
-		severityColor = color.New(color.FgYellow)
-		severityIcon = "⚠️"
-	case events.SeverityError:
-		severityColor = color.New(color.FgRed)
-		severityIcon = "❌"
-	case events.SeverityCritical:
-		severityColor = color.New(color.FgRed, color.Bold)
-		severityIcon = "🔥"
-	default:
-		severityColor = color.New(color.FgWhite)
-		severityIcon = "•"
-	}
-
-	// Format timestamp
-	timestamp := event.Timestamp.Format("15:04:05")
-
-	// Color the event type
-	typeColor := color.New(color.FgMagenta)
-	eventType := typeColor.Sprint(event.Type)
-
-	// Color the issue ID
-	issueColor := color.New(color.FgGreen)
-	issueID := issueColor.Sprint(event.IssueID)
-
-	// Print the event
-	fmt.Printf("%s [%s] %s %s: %s\n",
-		severityIcon,
-		timestamp,
-		issueID,
-		eventType,
-		severityColor.Sprint(event.Message),
-	)
-
-	// If there's additional structured data, show it indented
-	if len(event.Data) > 0 {
-		gray := color.New(color.FgHiBlack)
-		for key, value := range event.Data {
-			fmt.Printf("    %s: %v\n", gray.Sprint(key), value)
-		}
-	}
-}
+// Note: displayActivityEvent and related helper functions are in event_display.go
