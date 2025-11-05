@@ -100,7 +100,7 @@ func (s *Supervisor) AnalyzeExecutionResult(ctx context.Context, issue *types.Is
 		issue.ID, analysis.Completed, len(analysis.DiscoveredIssues), len(analysis.QualityIssues), duration)
 
 	// Log AI usage to events
-	if err := s.logAIUsage(ctx, issue.ID, "analysis", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+	if err := s.recordAIUsage(ctx, issue.ID, "analysis", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
 	}
 

@@ -33,17 +33,29 @@ type Supervisor struct {
 	retry          RetryConfig
 	circuitBreaker *CircuitBreaker
 	concurrencySem *semaphore.Weighted // Limits concurrent AI API calls (vc-220)
+	costTracker    CostTracker         // Tracks AI costs and enforces budgets (vc-e3s7)
 }
 
 // Compile-time check that Supervisor implements MissionPlanner
 var _ types.MissionPlanner = (*Supervisor)(nil)
 
+// CostTracker defines the interface for cost budgeting (vc-e3s7)
+// This allows dependency injection and testing without circular imports
+type CostTracker interface {
+	// RecordUsage records token usage for an issue
+	// Returns budget status (as interface{} to avoid circular dependencies) and error
+	RecordUsage(ctx context.Context, issueID string, inputTokens, outputTokens int64) (interface{}, error)
+	// CanProceed checks if we can make another AI call within budget
+	CanProceed(issueID string) (bool, string)
+}
+
 // Config holds supervisor configuration
 type Config struct {
-	APIKey string // Anthropic API key (if empty, reads from ANTHROPIC_API_KEY env var)
-	Model  string // Model to use (default: claude-sonnet-4-5-20250929)
-	Store  storage.Storage
-	Retry  RetryConfig // Retry configuration (uses defaults if not specified)
+	APIKey      string       // Anthropic API key (if empty, reads from ANTHROPIC_API_KEY env var)
+	Model       string       // Model to use (default: claude-sonnet-4-5-20250929)
+	Store       storage.Storage
+	Retry       RetryConfig  // Retry configuration (uses defaults if not specified)
+	CostTracker CostTracker  // Optional cost tracker for budget enforcement (vc-e3s7)
 }
 
 // NewSupervisor creates a new AI supervisor
@@ -99,6 +111,7 @@ func NewSupervisor(cfg *Config) (*Supervisor, error) {
 		retry:          retry,
 		circuitBreaker: circuitBreaker,
 		concurrencySem: concurrencySem,
+		costTracker:    cfg.CostTracker, // Optional cost tracker (vc-e3s7)
 	}, nil
 }
 

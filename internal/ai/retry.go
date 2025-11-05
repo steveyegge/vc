@@ -221,6 +221,14 @@ func (s *Supervisor) retryWithBackoff(ctx context.Context, operation string, fn 
 	backoff := s.retry.InitialBackoff
 
 	for attempt := 0; attempt <= s.retry.MaxRetries; attempt++ {
+		// Check cost budget before attempting request (vc-e3s7)
+		// Note: We check budget per-attempt to handle budget resets during retries
+		if err := s.checkBudget(""); err != nil {
+			// Budget exceeded, fail fast without retrying
+			fmt.Fprintf(os.Stderr, "AI API %s blocked by cost budget: %v\n", operation, err)
+			return fmt.Errorf("%s failed: %w", operation, err)
+		}
+
 		// Check circuit breaker before attempting request
 		if s.circuitBreaker != nil {
 			if err := s.circuitBreaker.Allow(); err != nil {

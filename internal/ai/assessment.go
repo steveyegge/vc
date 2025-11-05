@@ -81,7 +81,7 @@ func (s *Supervisor) AssessIssueState(ctx context.Context, issue *types.Issue) (
 		issue.ID, assessment.Confidence, duration)
 
 	// Log AI usage to events
-	if err := s.logAIUsage(ctx, issue.ID, "assessment", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+	if err := s.recordAIUsage(ctx, issue.ID, "assessment", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
 	}
 
@@ -149,7 +149,7 @@ func (s *Supervisor) AssessCompletion(ctx context.Context, issue *types.Issue, c
 		issue.ID, assessment.ShouldClose, assessment.Confidence, duration)
 
 	// Log AI usage to events
-	if err := s.logAIUsage(ctx, issue.ID, "completion-assessment", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+	if err := s.recordAIUsage(ctx, issue.ID, "completion-assessment", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage for issue %s: %v\n", issue.ID, err)
 	}
 

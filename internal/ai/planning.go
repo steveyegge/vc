@@ -84,7 +84,7 @@ func (s *Supervisor) GeneratePlan(ctx context.Context, planningCtx *types.Planni
 		planningCtx.Mission.ID, len(plan.Phases), plan.Confidence, plan.EstimatedEffort, duration)
 
 	// Log AI usage to events
-	if err := s.logAIUsage(ctx, planningCtx.Mission.ID, "planning", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+	if err := s.recordAIUsage(ctx, planningCtx.Mission.ID, "planning", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
 	}
 
@@ -176,7 +176,7 @@ func (s *Supervisor) RefinePhase(ctx context.Context, phase *types.Phase, missio
 		phase.ID, len(tasks), duration)
 
 	// Log AI usage
-	if err := s.logAIUsage(ctx, phase.ID, "refinement", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+	if err := s.recordAIUsage(ctx, phase.ID, "refinement", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
 	}
 
@@ -285,7 +285,7 @@ func (s *Supervisor) ValidatePhaseStructure(ctx context.Context, phases []types.
 		result.Valid, len(result.Errors), len(result.Warnings), duration)
 
 	// Log AI usage (use a dummy issue ID for now since we don't have one in this context)
-	if err := s.logAIUsage(ctx, "phase-validation", "phase-validation", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+	if err := s.recordAIUsage(ctx, "phase-validation", "phase-validation", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
 	}
 

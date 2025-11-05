@@ -12,6 +12,35 @@ import (
 	"github.com/steveyegge/vc/internal/types"
 )
 
+// checkBudget checks if we can proceed with an AI call within budget (vc-e3s7)
+// Returns an error if budget is exceeded
+func (s *Supervisor) checkBudget(issueID string) error {
+	if s.costTracker == nil {
+		return nil // Budget tracking disabled
+	}
+
+	canProceed, reason := s.costTracker.CanProceed(issueID)
+	if !canProceed {
+		return fmt.Errorf("budget exceeded: %s", reason)
+	}
+
+	return nil
+}
+
+// recordAIUsage records AI usage to both the cost tracker and activity feed (vc-e3s7)
+func (s *Supervisor) recordAIUsage(ctx context.Context, issueID, activity string, inputTokens, outputTokens int64, duration time.Duration) error {
+	// Record to cost tracker first (if enabled)
+	if s.costTracker != nil {
+		if _, err := s.costTracker.RecordUsage(ctx, issueID, inputTokens, outputTokens); err != nil {
+			// Log warning but don't fail (cost tracking is best-effort)
+			fmt.Fprintf(os.Stderr, "Warning: failed to record AI cost: %v\n", err)
+		}
+	}
+
+	// Then log to issue comments (existing behavior)
+	return s.logAIUsage(ctx, issueID, activity, inputTokens, outputTokens, duration)
+}
+
 // logAIUsage logs AI API usage metrics to the issue's event stream
 func (s *Supervisor) logAIUsage(ctx context.Context, issueID, activity string, inputTokens, outputTokens int64, duration time.Duration) error {
 	// Check if issue exists before trying to add comment
@@ -144,7 +173,7 @@ func (s *Supervisor) SummarizeAgentOutput(ctx context.Context, issue *types.Issu
 		len(fullOutput), len(summaryText), duration)
 
 	// Log AI usage to events
-	if err := s.logAIUsage(ctx, issue.ID, "summarization", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+	if err := s.recordAIUsage(ctx, issue.ID, "summarization", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
 	}
 

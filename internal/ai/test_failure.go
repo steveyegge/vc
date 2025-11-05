@@ -98,7 +98,7 @@ func (s *Supervisor) DiagnoseTestFailure(ctx context.Context, issue *types.Issue
 		issue.ID, diagnosis.FailureType, diagnosis.Confidence, duration)
 
 	// Log AI usage to events
-	if err := s.logAIUsage(ctx, issue.ID, "test-failure-diagnosis", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+	if err := s.recordAIUsage(ctx, issue.ID, "test-failure-diagnosis", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
 	}
 

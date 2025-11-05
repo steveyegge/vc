@@ -98,7 +98,7 @@ func (s *Supervisor) AnalyzeCodeReviewNeed(ctx context.Context, issue *types.Iss
 		issue.ID, decision.NeedsReview, decision.Confidence, duration)
 
 	// Log AI usage to events
-	if err := s.logAIUsage(ctx, issue.ID, "code-review-decision", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+	if err := s.recordAIUsage(ctx, issue.ID, "code-review-decision", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
 	}
 
@@ -167,7 +167,7 @@ func (s *Supervisor) AnalyzeTestCoverage(ctx context.Context, issue *types.Issue
 		issue.ID, analysis.SufficientCoverage, len(analysis.TestIssues), analysis.Confidence, duration)
 
 	// Log AI usage to events
-	if err := s.logAIUsage(ctx, issue.ID, "test-coverage-analysis", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+	if err := s.recordAIUsage(ctx, issue.ID, "test-coverage-analysis", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
 	}
 
@@ -237,7 +237,7 @@ func (s *Supervisor) AnalyzeCodeQuality(ctx context.Context, issue *types.Issue,
 		issue.ID, len(analysis.Issues), analysis.Confidence, duration)
 
 	// Log AI usage to events
-	if err := s.logAIUsage(ctx, issue.ID, "code-quality-analysis", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+	if err := s.recordAIUsage(ctx, issue.ID, "code-quality-analysis", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
 	}
 
@@ -641,7 +641,7 @@ func (s *Supervisor) DecideCodeReviewSweep(ctx context.Context, request *types.R
 		decision.ShouldReview, decision.Scope, len(decision.TargetAreas), duration)
 
 	// Log AI usage to events
-	if err := s.logAIUsage(ctx, "", "code-review-sweep-decision", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+	if err := s.recordAIUsage(ctx, "", "code-review-sweep-decision", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
 	}
 
@@ -703,7 +703,7 @@ func (s *Supervisor) ReviewSingleFile(ctx context.Context, filePath string, file
 	fmt.Printf("AI File Review for %s: issues=%d, duration=%v\n", filePath, len(result.Issues), duration)
 
 	// Log AI usage to events
-	if err := s.logAIUsage(ctx, "", "file-review", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+	if err := s.recordAIUsage(ctx, "", "file-review", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
 	}
 

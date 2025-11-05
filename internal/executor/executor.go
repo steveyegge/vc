@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/config"
+	"github.com/steveyegge/vc/internal/cost"
 	"github.com/steveyegge/vc/internal/deduplication"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/gates"
@@ -377,8 +378,24 @@ func New(cfg *Config) (*Executor, error) {
 
 	// Initialize AI supervisor if enabled (do this before sandbox manager to provide deduplicator)
 	if cfg.EnableAISupervision {
+		// Initialize cost tracker first (vc-e3s7)
+		var costTracker ai.CostTracker
+		costConfig := cost.LoadFromEnv()
+		if costConfig.Enabled {
+			tracker, err := cost.NewTracker(costConfig, cfg.Store)
+			if err != nil {
+				// Log warning but continue without cost tracking
+				fmt.Fprintf(os.Stderr, "Warning: failed to initialize cost tracker: %v (continuing without cost budgeting)\n", err)
+			} else {
+				costTracker = tracker
+				fmt.Printf("✓ Cost budget tracking enabled (limit: %d tokens/hour, $%.2f/hour)\n",
+					costConfig.MaxTokensPerHour, costConfig.MaxCostPerHour)
+			}
+		}
+
 		supervisor, err := ai.NewSupervisor(&ai.Config{
-			Store: cfg.Store,
+			Store:       cfg.Store,
+			CostTracker: costTracker, // Pass cost tracker to supervisor (vc-e3s7)
 		})
 		if err != nil {
 			// Don't fail - just disable AI supervision

@@ -159,6 +159,12 @@ const (
 	EventTypeCodeReviewDecision EventType = "code_review_decision"
 	// EventTypeCodeReviewCreated indicates a code review sweep issue was created
 	EventTypeCodeReviewCreated EventType = "code_review_created"
+
+	// Cost budgeting events (vc-e3s7)
+	// EventTypeAICost indicates AI API usage and associated cost
+	EventTypeAICost EventType = "ai_cost"
+	// EventTypeBudgetAlert indicates budget warning or exceeded alert
+	EventTypeBudgetAlert EventType = "budget_alert"
 )
 
 // EventSeverity represents the severity level of an event.

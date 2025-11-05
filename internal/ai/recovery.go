@@ -92,7 +92,7 @@ func (s *Supervisor) GenerateRecoveryStrategy(ctx context.Context, issue *types.
 		issue.ID, strategy.Action, strategy.Confidence, duration)
 
 	// Log AI usage to events
-	if err := s.logAIUsage(ctx, issue.ID, "recovery-strategy", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+	if err := s.recordAIUsage(ctx, issue.ID, "recovery-strategy", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
 	}
 

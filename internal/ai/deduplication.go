@@ -86,7 +86,7 @@ func (s *Supervisor) CheckIssueDuplicate(ctx context.Context, candidate, existin
 
 	// Log AI usage (don't fail on logging errors)
 	duration := time.Since(startTime)
-	_ = s.logAIUsage(ctx, candidate.ID, fmt.Sprintf("duplicate_check vs %s", existing.ID), 0, 0, duration)
+	_ = s.recordAIUsage(ctx, candidate.ID, fmt.Sprintf("duplicate_check vs %s", existing.ID), 0, 0, duration)
 
 	return &response, nil
 }
@@ -203,7 +203,7 @@ func (s *Supervisor) CheckIssueDuplicateBatch(ctx context.Context, candidate *ty
 	for i, issue := range existingIssues {
 		issueIDs[i] = issue.ID
 	}
-	_ = s.logAIUsage(ctx, candidate.ID, fmt.Sprintf("batch_duplicate_check vs [%s]", join(issueIDs, ",")), 0, 0, duration)
+	_ = s.recordAIUsage(ctx, candidate.ID, fmt.Sprintf("batch_duplicate_check vs [%s]", join(issueIDs, ",")), 0, 0, duration)
 
 	return &response, nil
 }
