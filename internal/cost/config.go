@@ -55,7 +55,7 @@ func DefaultConfig() *Config {
 		Enabled:              true,
 		MaxTokensPerHour:     100000, // Conservative default
 		MaxTokensPerIssue:    50000,  // Half of hourly budget
-		MaxCostPerHour:       1.50,   // ~$1.50/hour = ~$36/day max
+		MaxCostPerHour:       5.00,   // $5/hour = ~$120/day max
 		AlertThreshold:       0.80,   // Alert at 80% of budget
 		BudgetResetInterval:  time.Hour,
 		PersistStatePath:     ".beads/cost_state.json",
