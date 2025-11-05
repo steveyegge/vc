@@ -730,22 +730,19 @@ func (a *Agent) checkCircuitBreaker(filePath string) error {
 		a.fileReadCounts = make(map[string]int)
 	}
 
-	// Increment total read count
-	a.totalReadCount++
-
-	// Track per-file read count
+	// Track per-file read count and check limit BEFORE incrementing
+	// This ensures we stop at exactly the limit, not limit+1
 	if filePath != "" {
-		a.fileReadCounts[filePath]++
-
-		// Check if same file read too many times
-		if a.fileReadCounts[filePath] > maxSameFileReads {
+		if a.fileReadCounts[filePath] >= maxSameFileReads {
 			a.loopDetected = true
-			a.loopReason = fmt.Sprintf("Read file %s %d times (limit: %d)", filePath, a.fileReadCounts[filePath], maxSameFileReads)
+			a.loopReason = fmt.Sprintf("Read file %s %d times (limit: %d)", filePath, maxSameFileReads, maxSameFileReads)
 			return fmt.Errorf("infinite loop detected: %s", a.loopReason)
 		}
+		a.fileReadCounts[filePath]++
 	}
 
-	// Check if total reads exceeded
+	// Increment total read count and check limit
+	a.totalReadCount++
 	if a.totalReadCount > maxFileReads {
 		a.loopDetected = true
 		a.loopReason = fmt.Sprintf("Total Read operations: %d (limit: %d)", a.totalReadCount, maxFileReads)

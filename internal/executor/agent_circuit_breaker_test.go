@@ -298,8 +298,8 @@ func TestCircuitBreakerTerminatesAgent(t *testing.T) {
 	if finalReason == "" {
 		t.Error("Expected loopReason to be set")
 	}
-	if finalReadCount <= maxSameFileReads {
-		t.Errorf("Expected read count > %d, got %d", maxSameFileReads, finalReadCount)
+	if finalReadCount != maxSameFileReads {
+		t.Errorf("Expected read count = %d, got %d", maxSameFileReads, finalReadCount)
 	}
 
 	t.Logf("Circuit breaker triggered correctly: %s (read count: %d)", finalReason, finalReadCount)
