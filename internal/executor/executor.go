@@ -24,12 +24,12 @@ import (
 	"github.com/steveyegge/vc/internal/watchdog"
 )
 
-// DegradedMode represents the self-healing state machine state
-type DegradedMode int
+// SelfHealingMode represents the self-healing state machine state
+type SelfHealingMode int
 
 const (
 	// ModeHealthy indicates normal operation - baseline quality gates passing
-	ModeHealthy DegradedMode = iota
+	ModeHealthy SelfHealingMode = iota
 	// ModeSelfHealing indicates baseline failed and executor is actively trying to fix it
 	ModeSelfHealing
 	// ModeEscalated indicates baseline is broken and needs human intervention
@@ -37,7 +37,7 @@ const (
 )
 
 // String returns a human-readable string representation of the mode
-func (m DegradedMode) String() string {
+func (m SelfHealingMode) String() string {
 	switch m {
 	case ModeHealthy:
 		return "HEALTHY"
@@ -104,16 +104,16 @@ type Executor struct {
 	qaWorkersWg         sync.WaitGroup // Tracks active QA worker goroutines for graceful shutdown (vc-0d58)
 
 	// Self-healing state machine (vc-23t0)
-	degradedMode      DegradedMode  // Current state in the self-healing state machine
-	modeMutex         sync.RWMutex  // Protects degradedMode and modeChangedAt
-	modeChangedAt     time.Time     // When the mode last changed (for escalation thresholds)
+	selfHealingMode   SelfHealingMode // Current state in the self-healing state machine
+	modeMutex         sync.RWMutex    // Protects selfHealingMode and modeChangedAt
+	modeChangedAt     time.Time       // When the mode last changed (for escalation thresholds)
 }
 
-// getDegradedMode returns the current degraded mode state (thread-safe)
-func (e *Executor) getDegradedMode() DegradedMode {
+// getSelfHealingMode returns the current self-healing mode state (thread-safe)
+func (e *Executor) getSelfHealingMode() SelfHealingMode {
 	e.modeMutex.RLock()
 	defer e.modeMutex.RUnlock()
-	return e.degradedMode
+	return e.selfHealingMode
 }
 
 // getModeChangedAt returns when the mode last changed (thread-safe)
@@ -126,12 +126,12 @@ func (e *Executor) getModeChangedAt() time.Time {
 // transitionToHealthy transitions to HEALTHY state (baseline passing)
 func (e *Executor) transitionToHealthy(ctx context.Context) {
 	e.modeMutex.Lock()
-	oldMode := e.degradedMode
+	oldMode := e.selfHealingMode
 	if oldMode == ModeHealthy {
 		e.modeMutex.Unlock()
 		return // Already healthy, no transition needed
 	}
-	e.degradedMode = ModeHealthy
+	e.selfHealingMode = ModeHealthy
 	e.modeChangedAt = time.Now()
 	e.modeMutex.Unlock()
 
@@ -151,12 +151,12 @@ func (e *Executor) transitionToHealthy(ctx context.Context) {
 // transitionToSelfHealing transitions to SELF_HEALING state (baseline failed)
 func (e *Executor) transitionToSelfHealing(ctx context.Context) {
 	e.modeMutex.Lock()
-	oldMode := e.degradedMode
+	oldMode := e.selfHealingMode
 	if oldMode == ModeSelfHealing {
 		e.modeMutex.Unlock()
 		return // Already in self-healing, no transition needed
 	}
-	e.degradedMode = ModeSelfHealing
+	e.selfHealingMode = ModeSelfHealing
 	e.modeChangedAt = time.Now()
 	e.modeMutex.Unlock()
 
@@ -176,12 +176,12 @@ func (e *Executor) transitionToSelfHealing(ctx context.Context) {
 // transitionToEscalated transitions to ESCALATED state (needs human intervention)
 func (e *Executor) transitionToEscalated(ctx context.Context, reason string) {
 	e.modeMutex.Lock()
-	oldMode := e.degradedMode
+	oldMode := e.selfHealingMode
 	if oldMode == ModeEscalated {
 		e.modeMutex.Unlock()
 		return // Already escalated, no transition needed
 	}
-	e.degradedMode = ModeEscalated
+	e.selfHealingMode = ModeEscalated
 	e.modeChangedAt = time.Now()
 	e.modeMutex.Unlock()
 
@@ -345,7 +345,7 @@ func New(cfg *Config) (*Executor, error) {
 		eventCleanupStopCh:      make(chan struct{}),
 		eventCleanupDoneCh:      make(chan struct{}),
 		// Initialize self-healing state machine (vc-23t0)
-		degradedMode:            ModeHealthy,
+		selfHealingMode:         ModeHealthy,
 		modeChangedAt:           time.Now(),
 	}
 

@@ -216,7 +216,7 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 	if e.preFlightChecker != nil {
 		// vc-47e0: When in self-healing mode, invalidate cache to force fresh baseline check
 		// This allows the executor to detect when baseline issues are fixed without restart
-		if e.getDegradedMode() != ModeHealthy {
+		if e.getSelfHealingMode() != ModeHealthy {
 			e.preFlightChecker.InvalidateAllCache()
 		}
 
@@ -247,7 +247,7 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 				}
 
 				// Enter self-healing mode - only claim baseline issues until fixed
-				if e.getDegradedMode() == ModeHealthy {
+				if e.getSelfHealingMode() == ModeHealthy {
 					// Create baseline blocking issues for failing gates (only on state transition)
 					if err := e.preFlightChecker.HandleBaselineFailure(ctx, e.instanceID, commitHash, results); err != nil {
 						fmt.Fprintf(os.Stderr, "Failed to handle baseline failure: %v\n", err)
@@ -269,7 +269,7 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 			}
 		} else {
 			// vc-1d3d: Baseline passes - exit self-healing mode if we were in it
-			if e.getDegradedMode() != ModeHealthy {
+			if e.getSelfHealingMode() != ModeHealthy {
 				// Note: transitionToHealthy will print the banner
 				e.transitionToHealthy(ctx)
 			}
@@ -277,7 +277,7 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 	}
 
 	// While in self-healing mode, only claim baseline-failure issues and discovered blockers
-	if e.getDegradedMode() != ModeHealthy {
+	if e.getSelfHealingMode() != ModeHealthy {
 		// Throttle log message: only print once per minute
 		if time.Since(e.selfHealingMsgLast) > time.Minute {
 			fmt.Printf("⚠️  Self-healing mode: only claiming baseline issues\n")
