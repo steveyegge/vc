@@ -104,6 +104,10 @@ func (e *Executor) findBaselineIssues(ctx context.Context) *types.Issue {
 
 			if !hasBlockingDeps {
 				fmt.Printf("Found ready baseline issue: %s - %s\n", issue.ID, issue.Title)
+
+				// Track escalation attempt for this baseline issue (vc-h8b8)
+				e.incrementAttempt(issue.ID)
+
 				e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, issue.ID,
 					fmt.Sprintf("Self-healing: found ready baseline issue %s", issue.ID),
 					map[string]interface{}{
@@ -207,6 +211,11 @@ func (e *Executor) investigateBlockedBaseline(ctx context.Context) *types.Issue 
 		// Found ready dependent - work on it
 		fmt.Printf("Found ready dependent of blocked baseline: %s - %s (child of %s)\n",
 			ready[0].ID, ready[0].Title, baseline.ID)
+
+		// Track escalation attempt for the parent baseline issue (vc-h8b8)
+		// We're working on a child to unblock the baseline, so this counts as an attempt
+		e.incrementAttempt(baseline.ID)
+
 		e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, ready[0].ID,
 			fmt.Sprintf("Self-healing: found ready dependent %s of blocked baseline %s", ready[0].ID, baseline.ID),
 			map[string]interface{}{
@@ -418,16 +427,21 @@ func (e *Executor) logBlockageDiagnostics(ctx context.Context) {
 }
 
 // shouldEscalate checks if self-healing mode should escalate to human intervention.
-// Returns true if the executor has been stuck in self-healing mode for too long.
+// Returns true if any baseline issue has exceeded escalation thresholds (attempts or duration).
+// This is now per-baseline-issue tracking rather than overall self-healing mode duration (vc-h8b8).
 func (e *Executor) shouldEscalate(ctx context.Context) bool {
-	// Get how long we've been in self-healing mode
-	modeChangedAt := e.getModeChangedAt()
-	duration := time.Since(modeChangedAt)
+	// Check if any baseline issue has exceeded thresholds
+	issueID, reason := e.checkEscalationThresholds(ctx)
+	if issueID != "" {
+		fmt.Printf("⚠️  Escalation threshold exceeded: %s\n", reason)
 
-	// Escalate if stuck for more than 30 minutes
-	escalationThreshold := 30 * time.Minute
-	if duration > escalationThreshold {
-		fmt.Printf("⚠️  Self-healing mode has been active for %v (threshold: %v)\n", duration, escalationThreshold)
+		// Perform escalation actions
+		if err := e.escalateBaseline(ctx, issueID, reason); err != nil {
+			fmt.Fprintf(os.Stderr, "Error escalating baseline issue %s: %v\n", issueID, err)
+			// Don't return true on error - we'll retry on next iteration
+			return false
+		}
+
 		return true
 	}
 

@@ -107,6 +107,10 @@ type Executor struct {
 	selfHealingMode   SelfHealingMode // Current state in the self-healing state machine
 	modeMutex         sync.RWMutex    // Protects selfHealingMode and modeChangedAt
 	modeChangedAt     time.Time       // When the mode last changed (for escalation thresholds)
+
+	// Escalation tracking (vc-h8b8)
+	escalationTrackers map[string]*escalationTracker // Maps baseline issue ID to escalation state
+	escalationMutex    sync.RWMutex                  // Protects escalationTrackers map
 }
 
 // getSelfHealingMode returns the current self-healing mode state (thread-safe)
@@ -134,6 +138,9 @@ func (e *Executor) transitionToHealthy(ctx context.Context) {
 	e.selfHealingMode = ModeHealthy
 	e.modeChangedAt = time.Now()
 	e.modeMutex.Unlock()
+
+	// Clear all escalation trackers since baseline is now healthy (vc-h8b8)
+	e.clearAllTrackers()
 
 	// Log transition
 	fmt.Printf("✓ State transition: %s → HEALTHY (baseline quality gates passing)\n", oldMode)
@@ -229,6 +236,8 @@ type Config struct {
 	EventRetentionConfig    *config.EventRetentionConfig // Event retention and cleanup configuration (default: sensible defaults, nil = use defaults)
 	InstanceCleanupAge      time.Duration                // How old stopped instances must be before deletion (default: 24h)
 	InstanceCleanupKeep     int                          // Minimum number of stopped instances to keep (default: 10, 0 = keep none)
+	MaxEscalationAttempts   int                          // Maximum attempts before escalating baseline issues (default: 5, vc-h8b8)
+	MaxEscalationDuration   time.Duration                // Maximum duration in self-healing mode before escalating (default: 24h, vc-h8b8)
 }
 
 // DefaultConfig returns default executor configuration
@@ -256,6 +265,8 @@ func DefaultConfig() *Config {
 		SandboxRoot:             ".sandboxes",
 		ParentRepo:              ".",
 		DefaultBranch:           "main",
+		MaxEscalationAttempts:   5,        // Escalate after 5 failed attempts (vc-h8b8)
+		MaxEscalationDuration:   24 * time.Hour, // Escalate after 24 hours (vc-h8b8)
 	}
 }
 
@@ -347,6 +358,8 @@ func New(cfg *Config) (*Executor, error) {
 		// Initialize self-healing state machine (vc-23t0)
 		selfHealingMode:         ModeHealthy,
 		modeChangedAt:           time.Now(),
+		// Initialize escalation tracking (vc-h8b8)
+		escalationTrackers:      make(map[string]*escalationTracker),
 	}
 
 	// Initialize AI supervisor if enabled (do this before sandbox manager to provide deduplicator)
