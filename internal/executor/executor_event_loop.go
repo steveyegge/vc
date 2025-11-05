@@ -278,24 +278,68 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 		}
 	}
 
-	// While in self-healing mode, only claim baseline-failure issues
+	// While in self-healing mode, only claim baseline-failure issues and discovered blockers
 	if e.isDegraded() {
 		// Throttle log message: only print once per minute
 		if time.Since(e.degradedModeMsgLast) > time.Minute {
 			fmt.Printf("⚠️  Self-healing mode: only claiming baseline issues\n")
 			e.degradedModeMsgLast = time.Now()
 		}
-		baselineIssues, err := e.store.GetIssuesByLabel(ctx, "baseline-failure")
-		if err != nil {
-			return fmt.Errorf("failed to get baseline issues: %w", err)
-		}
+
+		// Priority 1: Try discovered blockers first (ready children of baseline issues)
+		// These are the actual fixable work decomposed from baseline failures
 		var issue *types.Issue
-		for _, is := range baselineIssues {
+		blockerIssues, err := e.store.GetIssuesByLabel(ctx, "discovered:blocker")
+		if err != nil {
+			return fmt.Errorf("failed to get discovered blocker issues: %w", err)
+		}
+		// Find first ready (open + no blocking deps) blocker
+		for _, is := range blockerIssues {
 			if is.Status == types.StatusOpen {
-				issue = is
-				break
+				// Check if it has blocking dependencies (exclude discovered-from metadata)
+				depRecords, err := e.store.GetDependencyRecords(ctx, is.ID)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to get dependency records for %s: %v\n", is.ID, err)
+					continue
+				}
+				// Filter out discovered-from metadata dependencies
+				hasBlockingDeps := false
+				for _, dep := range depRecords {
+					if dep.Type != "discovered-from" {
+						// Check if this dependency is blocking (parent is not closed)
+						parent, err := e.store.GetIssue(ctx, dep.DependsOnID)
+						if err != nil {
+							fmt.Fprintf(os.Stderr, "Warning: failed to get parent %s: %v\n", dep.DependsOnID, err)
+							hasBlockingDeps = true
+							break
+						}
+						if parent.Status != types.StatusClosed {
+							hasBlockingDeps = true
+							break
+						}
+					}
+				}
+				if !hasBlockingDeps {
+					issue = is
+					break
+				}
 			}
 		}
+
+		// Priority 2: Fall back to baseline-failure issues themselves
+		if issue == nil {
+			baselineIssues, err := e.store.GetIssuesByLabel(ctx, "baseline-failure")
+			if err != nil {
+				return fmt.Errorf("failed to get baseline issues: %w", err)
+			}
+			for _, is := range baselineIssues {
+				if is.Status == types.StatusOpen {
+					issue = is
+					break
+				}
+			}
+		}
+
 		if issue == nil {
 			// No baseline work available
 			fmt.Printf("   No baseline issues ready (may have dependencies)\n")
