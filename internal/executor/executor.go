@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -238,6 +239,12 @@ type Config struct {
 	InstanceCleanupKeep     int                          // Minimum number of stopped instances to keep (default: 10, 0 = keep none)
 	MaxEscalationAttempts   int                          // Maximum attempts before escalating baseline issues (default: 5, vc-h8b8)
 	MaxEscalationDuration   time.Duration                // Maximum duration in self-healing mode before escalating (default: 24h, vc-h8b8)
+
+	// Self-healing configuration (vc-tn9c)
+	SelfHealingMaxAttempts      int           // Maximum attempts before escalating (same as MaxEscalationAttempts, default: 5)
+	SelfHealingMaxDuration      time.Duration // Maximum duration before escalating (same as MaxEscalationDuration, default: 24h)
+	DegradedRecheckInterval     time.Duration // How often to recheck in degraded mode (default: 5m)
+	SelfHealingVerboseLogging   bool          // Enable verbose logging for self-healing decisions (default: true)
 }
 
 // DefaultConfig returns default executor configuration
@@ -265,8 +272,14 @@ func DefaultConfig() *Config {
 		SandboxRoot:             ".sandboxes",
 		ParentRepo:              ".",
 		DefaultBranch:           "main",
-		MaxEscalationAttempts:   5,        // Escalate after 5 failed attempts (vc-h8b8)
-		MaxEscalationDuration:   24 * time.Hour, // Escalate after 24 hours (vc-h8b8)
+		// Self-healing / Escalation configuration (vc-h8b8, vc-tn9c)
+		// MaxEscalation* fields are legacy, use SelfHealing* fields for consistency
+		MaxEscalationAttempts:     getEnvInt("VC_SELF_HEALING_MAX_ATTEMPTS", 5),
+		MaxEscalationDuration:     getEnvDuration("VC_SELF_HEALING_MAX_DURATION", 24*time.Hour),
+		SelfHealingMaxAttempts:    getEnvInt("VC_SELF_HEALING_MAX_ATTEMPTS", 5),
+		SelfHealingMaxDuration:    getEnvDuration("VC_SELF_HEALING_MAX_DURATION", 24*time.Hour),
+		DegradedRecheckInterval:   getEnvDuration("VC_DEGRADED_RECHECK_INTERVAL", 5*time.Minute),
+		SelfHealingVerboseLogging: getEnvBool("VC_SELF_HEALING_VERBOSE_LOGGING", true),
 	}
 }
 
@@ -846,4 +859,34 @@ func (e *Executor) MarkInstanceStoppedOnExit(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// getEnvInt retrieves an integer from an environment variable, or returns the default value
+func getEnvInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
+}
+
+// getEnvDuration retrieves a duration from an environment variable, or returns the default value
+func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if duration, err := time.ParseDuration(value); err == nil {
+			return duration
+		}
+	}
+	return defaultValue
+}
+
+// getEnvBool retrieves a boolean from an environment variable, or returns the default value
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
+		}
+	}
+	return defaultValue
 }

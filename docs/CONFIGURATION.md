@@ -200,6 +200,97 @@ cfg.EnableBlockerPriority = false  // Disable blocker-first prioritization
 
 ---
 
+## 🔄 Self-Healing Configuration
+
+VC uses a self-healing state machine to recover from baseline quality gate failures (test/lint/build). The self-healing system attempts to fix baseline issues automatically, escalating to humans when thresholds are exceeded.
+
+### Environment Variables
+
+```bash
+# Maximum attempts before escalating baseline issues (default: 5)
+# After this many failed attempts, the baseline issue is marked no-auto-claim
+# and an escalation issue is created for human intervention
+export VC_SELF_HEALING_MAX_ATTEMPTS=5
+
+# Maximum duration in self-healing mode before escalating (default: 24h)
+# If a baseline issue remains unresolved for this long, it gets escalated
+# Format: duration string (e.g., "24h", "48h", "2h30m")
+export VC_SELF_HEALING_MAX_DURATION=24h
+
+# How often to recheck baseline in degraded mode (default: 5m)
+# When in degraded mode (no baseline work found), this controls how often
+# to recheck if the baseline has been fixed by other means
+# Format: duration string (e.g., "5m", "10m", "1m")
+export VC_DEGRADED_RECHECK_INTERVAL=5m
+
+# Enable verbose logging for self-healing decisions (default: true)
+# Logs every decision in the fallback chain for observability
+# Useful for debugging self-healing behavior
+export VC_SELF_HEALING_VERBOSE_LOGGING=true
+```
+
+### Self-Healing State Machine
+
+The executor uses three states to manage baseline failures:
+
+- **HEALTHY**: Normal operation, all quality gates passing
+- **SELF_HEALING**: Baseline failed, actively trying to fix it with smart work selection
+- **ESCALATED**: Thresholds exceeded, human intervention needed
+
+### Smart Work Selection (SELF_HEALING Mode)
+
+When in SELF_HEALING mode, the executor uses this fallback chain:
+
+1. Find baseline-failure labeled issues (ready to execute)
+2. Investigate blocked baseline → claim ready dependents
+3. Find discovered:blocker issues (ready to execute)
+4. Log diagnostics if no work found
+5. Check escalation thresholds
+6. Fall through to regular work
+
+### Escalation Triggers
+
+Escalation happens when EITHER threshold is exceeded:
+
+- **Attempt threshold**: `VC_SELF_HEALING_MAX_ATTEMPTS` (default: 5)
+- **Duration threshold**: `VC_SELF_HEALING_MAX_DURATION` (default: 24h)
+
+When escalated:
+- Baseline issue gets `no-auto-claim` label (executor stops working on it)
+- Escalation issue created (P0, urgent, no-auto-claim)
+- Executor transitions to ESCALATED mode
+- Regular work continues normally
+
+### Tuning Guidelines
+
+**For aggressive self-healing** (attempt fixes more times before giving up):
+```bash
+export VC_SELF_HEALING_MAX_ATTEMPTS=10  # Try more times
+export VC_SELF_HEALING_MAX_DURATION=48h # Allow more time
+```
+
+**For conservative self-healing** (escalate to humans sooner):
+```bash
+export VC_SELF_HEALING_MAX_ATTEMPTS=3   # Escalate sooner
+export VC_SELF_HEALING_MAX_DURATION=12h # Shorter time window
+```
+
+**For debugging self-healing behavior:**
+```bash
+export VC_SELF_HEALING_VERBOSE_LOGGING=true  # Enable detailed logs
+export VC_DEGRADED_RECHECK_INTERVAL=1m       # Check more frequently
+```
+
+### Related Issues
+
+- vc-210: Self-Healing Baseline Failures (original implementation)
+- vc-wlk2: Robust Self-Healing: Graceful Degradation and Smart Fallback (epic)
+- vc-23t0: Implement DegradedMode state machine
+- vc-h8b8: Implement escalation mechanism with thresholds
+- vc-tn9c: Add configuration for self-healing thresholds
+
+---
+
 ## 🗄️ Event Retention Configuration (Future Work)
 
 **Status:** Not yet implemented. Punted until database size becomes a real issue (vc-184, vc-198).
