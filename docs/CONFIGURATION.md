@@ -221,7 +221,7 @@ export VC_SELF_HEALING_MAX_DURATION=24h
 # When in degraded mode (no baseline work found), this controls how often
 # to recheck if the baseline has been fixed by other means
 # Format: duration string (e.g., "5m", "10m", "1m")
-export VC_DEGRADED_RECHECK_INTERVAL=5m
+export VC_SELF_HEALING_RECHECK_INTERVAL=5m
 
 # Enable verbose logging for self-healing decisions (default: true)
 # Logs every decision in the fallback chain for observability
@@ -278,14 +278,14 @@ export VC_SELF_HEALING_MAX_DURATION=12h # Shorter time window
 **For debugging self-healing behavior:**
 ```bash
 export VC_SELF_HEALING_VERBOSE_LOGGING=true  # Enable detailed logs
-export VC_DEGRADED_RECHECK_INTERVAL=1m       # Check more frequently
+export VC_SELF_HEALING_RECHECK_INTERVAL=1m       # Check more frequently
 ```
 
 ### Related Issues
 
 - vc-210: Self-Healing Baseline Failures (original implementation)
 - vc-wlk2: Robust Self-Healing: Graceful Degradation and Smart Fallback (epic)
-- vc-23t0: Implement DegradedMode state machine
+- vc-23t0: Implement SelfHealingMode state machine
 - vc-h8b8: Implement escalation mechanism with thresholds
 - vc-tn9c: Add configuration for self-healing thresholds
 

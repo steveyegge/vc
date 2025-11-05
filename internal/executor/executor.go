@@ -53,24 +53,24 @@ func (m SelfHealingMode) String() string {
 
 // Executor manages the issue processing event loop
 type Executor struct {
-	store           storage.Storage
-	supervisor      *ai.Supervisor
-	monitor         *watchdog.Monitor
-	analyzer        *watchdog.Analyzer
-	intervention    *watchdog.InterventionController
-	watchdogConfig  *watchdog.WatchdogConfig
-	sandboxMgr      sandbox.Manager
-	healthRegistry  *health.MonitorRegistry
-	preFlightChecker *PreFlightChecker              // Preflight quality gates checker (vc-196)
-	deduplicator    deduplication.Deduplicator     // Shared deduplicator for sandbox manager and results processor (vc-137)
-	gitOps          git.GitOperations              // Git operations for auto-commit (vc-136)
-	messageGen      *git.MessageGenerator          // Commit message generator (vc-136)
-	qaWorker        *QualityGateWorker             // QA worker for quality gate execution (vc-254)
-	config          *Config
-	instanceID      string
-	hostname        string
-	pid             int
-	version         string
+	store            storage.Storage
+	supervisor       *ai.Supervisor
+	monitor          *watchdog.Monitor
+	analyzer         *watchdog.Analyzer
+	intervention     *watchdog.InterventionController
+	watchdogConfig   *watchdog.WatchdogConfig
+	sandboxMgr       sandbox.Manager
+	healthRegistry   *health.MonitorRegistry
+	preFlightChecker *PreFlightChecker          // Preflight quality gates checker (vc-196)
+	deduplicator     deduplication.Deduplicator // Shared deduplicator for sandbox manager and results processor (vc-137)
+	gitOps           git.GitOperations          // Git operations for auto-commit (vc-136)
+	messageGen       *git.MessageGenerator      // Commit message generator (vc-136)
+	qaWorker         *QualityGateWorker         // QA worker for quality gate execution (vc-254)
+	config           *Config
+	instanceID       string
+	hostname         string
+	pid              int
+	version          string
 
 	// Control channels
 	stopCh             chan struct{}
@@ -99,15 +99,15 @@ type Executor struct {
 	workingDir              string
 
 	// State
-	mu                  sync.RWMutex
-	running             bool
-	selfHealingMsgLast  time.Time // Last time we printed the self-healing mode message (for throttling)
-	qaWorkersWg         sync.WaitGroup // Tracks active QA worker goroutines for graceful shutdown (vc-0d58)
+	mu                 sync.RWMutex
+	running            bool
+	selfHealingMsgLast time.Time      // Last time we printed the self-healing mode message (for throttling)
+	qaWorkersWg        sync.WaitGroup // Tracks active QA worker goroutines for graceful shutdown (vc-0d58)
 
 	// Self-healing state machine (vc-23t0)
-	selfHealingMode   SelfHealingMode // Current state in the self-healing state machine
-	modeMutex         sync.RWMutex    // Protects selfHealingMode and modeChangedAt
-	modeChangedAt     time.Time       // When the mode last changed (for escalation thresholds)
+	selfHealingMode SelfHealingMode // Current state in the self-healing state machine
+	modeMutex       sync.RWMutex    // Protects selfHealingMode and modeChangedAt
+	modeChangedAt   time.Time       // When the mode last changed (for escalation thresholds)
 
 	// Escalation tracking (vc-h8b8)
 	escalationTrackers map[string]*escalationTracker // Maps baseline issue ID to escalation state
@@ -241,10 +241,10 @@ type Config struct {
 	MaxEscalationDuration   time.Duration                // Maximum duration in self-healing mode before escalating (default: 24h, vc-h8b8)
 
 	// Self-healing configuration (vc-tn9c)
-	SelfHealingMaxAttempts      int           // Maximum attempts before escalating (same as MaxEscalationAttempts, default: 5)
-	SelfHealingMaxDuration      time.Duration // Maximum duration before escalating (same as MaxEscalationDuration, default: 24h)
-	DegradedRecheckInterval     time.Duration // How often to recheck in degraded mode (default: 5m)
-	SelfHealingVerboseLogging   bool          // Enable verbose logging for self-healing decisions (default: true)
+	SelfHealingMaxAttempts     int           // Maximum attempts before escalating (same as MaxEscalationAttempts, default: 5)
+	SelfHealingMaxDuration     time.Duration // Maximum duration before escalating (same as MaxEscalationDuration, default: 24h)
+	SelfHealingRecheckInterval time.Duration // How often to recheck in degraded mode (default: 5m)
+	SelfHealingVerboseLogging  bool          // Enable verbose logging for self-healing decisions (default: true)
 }
 
 // DefaultConfig returns default executor configuration
@@ -274,12 +274,12 @@ func DefaultConfig() *Config {
 		DefaultBranch:           "main",
 		// Self-healing / Escalation configuration (vc-h8b8, vc-tn9c)
 		// MaxEscalation* fields are legacy, use SelfHealing* fields for consistency
-		MaxEscalationAttempts:     getEnvInt("VC_SELF_HEALING_MAX_ATTEMPTS", 5),
-		MaxEscalationDuration:     getEnvDuration("VC_SELF_HEALING_MAX_DURATION", 24*time.Hour),
-		SelfHealingMaxAttempts:    getEnvInt("VC_SELF_HEALING_MAX_ATTEMPTS", 5),
-		SelfHealingMaxDuration:    getEnvDuration("VC_SELF_HEALING_MAX_DURATION", 24*time.Hour),
-		DegradedRecheckInterval:   getEnvDuration("VC_DEGRADED_RECHECK_INTERVAL", 5*time.Minute),
-		SelfHealingVerboseLogging: getEnvBool("VC_SELF_HEALING_VERBOSE_LOGGING", true),
+		MaxEscalationAttempts:      getEnvInt("VC_SELF_HEALING_MAX_ATTEMPTS", 5),
+		MaxEscalationDuration:      getEnvDuration("VC_SELF_HEALING_MAX_DURATION", 24*time.Hour),
+		SelfHealingMaxAttempts:     getEnvInt("VC_SELF_HEALING_MAX_ATTEMPTS", 5),
+		SelfHealingMaxDuration:     getEnvDuration("VC_SELF_HEALING_MAX_DURATION", 24*time.Hour),
+		SelfHealingRecheckInterval: getEnvDuration("VC_SELF_HEALING_RECHECK_INTERVAL", 5*time.Minute),
+		SelfHealingVerboseLogging:  getEnvBool("VC_SELF_HEALING_VERBOSE_LOGGING", true),
 	}
 }
 
@@ -369,10 +369,10 @@ func New(cfg *Config) (*Executor, error) {
 		eventCleanupStopCh:      make(chan struct{}),
 		eventCleanupDoneCh:      make(chan struct{}),
 		// Initialize self-healing state machine (vc-23t0)
-		selfHealingMode:         ModeHealthy,
-		modeChangedAt:           time.Now(),
+		selfHealingMode: ModeHealthy,
+		modeChangedAt:   time.Now(),
 		// Initialize escalation tracking (vc-h8b8)
-		escalationTrackers:      make(map[string]*escalationTracker),
+		escalationTrackers: make(map[string]*escalationTracker),
 	}
 
 	// Initialize AI supervisor if enabled (do this before sandbox manager to provide deduplicator)

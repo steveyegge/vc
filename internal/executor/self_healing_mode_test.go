@@ -9,8 +9,8 @@ import (
 	"github.com/steveyegge/vc/internal/types"
 )
 
-// TestDegradedMode_StateTransitions verifies all state machine transitions work correctly
-func TestDegradedMode_StateTransitions(t *testing.T) {
+// TestSelfHealingMode_StateTransitions verifies all state machine transitions work correctly
+func TestSelfHealingMode_StateTransitions(t *testing.T) {
 	tests := []struct {
 		name          string
 		initialMode   SelfHealingMode
@@ -100,9 +100,9 @@ func TestDegradedMode_StateTransitions(t *testing.T) {
 	}
 }
 
-// TestDegradedMode_FindBaselineIssues tests the first fallback: finding baseline-failure issues
+// TestSelfHealingMode_FindBaselineIssues tests the first fallback: finding baseline-failure issues
 // Note: More comprehensive integration testing happens in baseline_selfhealing_test.go
-func TestDegradedMode_FindBaselineIssues(t *testing.T) {
+func TestSelfHealingMode_FindBaselineIssues(t *testing.T) {
 	t.Skip("Skipping - findBaselineIssues is tested via integration tests in baseline_selfhealing_test.go")
 	ctx := context.Background()
 
@@ -188,9 +188,9 @@ func TestDegradedMode_FindBaselineIssues(t *testing.T) {
 	}
 }
 
-// TestDegradedMode_InvestigateBlockedBaseline tests investigating blocked baseline and claiming dependents
+// TestSelfHealingMode_InvestigateBlockedBaseline tests investigating blocked baseline and claiming dependents
 // Note: More comprehensive testing happens in baseline_selfhealing_test.go
-func TestDegradedMode_InvestigateBlockedBaseline(t *testing.T) {
+func TestSelfHealingMode_InvestigateBlockedBaseline(t *testing.T) {
 	t.Skip("Skipping - investigateBlockedBaseline is tested via integration tests")
 	ctx := context.Background()
 
@@ -293,9 +293,9 @@ func TestDegradedMode_InvestigateBlockedBaseline(t *testing.T) {
 	}
 }
 
-// TestDegradedMode_FindDiscoveredBlockers tests finding discovered:blocker issues
+// TestSelfHealingMode_FindDiscoveredBlockers tests finding discovered:blocker issues
 // Note: More comprehensive testing happens in blocker_priority_test.go
-func TestDegradedMode_FindDiscoveredBlockers(t *testing.T) {
+func TestSelfHealingMode_FindDiscoveredBlockers(t *testing.T) {
 	t.Skip("Skipping - findDiscoveredBlockers is tested via blocker priority tests")
 	ctx := context.Background()
 
@@ -349,8 +349,8 @@ func TestDegradedMode_FindDiscoveredBlockers(t *testing.T) {
 	}
 }
 
-// TestDegradedMode_SmartWorkSelectionFallbackChain tests the full fallback chain in SELF_HEALING mode
-func TestDegradedMode_SmartWorkSelectionFallbackChain(t *testing.T) {
+// TestSelfHealingMode_SmartWorkSelectionFallbackChain tests the full fallback chain in SELF_HEALING mode
+func TestSelfHealingMode_SmartWorkSelectionFallbackChain(t *testing.T) {
 	t.Skip("Skipping integration test - tests individual fallback steps separately")
 	ctx := context.Background()
 
@@ -477,9 +477,9 @@ func TestDegradedMode_SmartWorkSelectionFallbackChain(t *testing.T) {
 	}
 }
 
-// TestDegradedMode_EscalationIntegration tests escalation triggering in SELF_HEALING mode
+// TestSelfHealingMode_EscalationIntegration tests escalation triggering in SELF_HEALING mode
 // Note: Escalation is thoroughly tested in escalation_test.go
-func TestDegradedMode_EscalationIntegration(t *testing.T) {
+func TestSelfHealingMode_EscalationIntegration(t *testing.T) {
 	t.Skip("Skipping - escalation is thoroughly tested in escalation_test.go")
 	ctx := context.Background()
 
@@ -572,8 +572,8 @@ func TestDegradedMode_EscalationIntegration(t *testing.T) {
 	}
 }
 
-// TestDegradedMode_ModeString tests the String() method for modes
-func TestDegradedMode_ModeString(t *testing.T) {
+// TestSelfHealingMode_ModeString tests the String() method for modes
+func TestSelfHealingMode_ModeString(t *testing.T) {
 	tests := []struct {
 		mode     SelfHealingMode
 		expected string
