@@ -119,7 +119,7 @@ Discovered blockers are ALWAYS selected before regular ready work, regardless of
 - Blockers will eventually be exhausted as the mission converges
 
 **Priority order:**
-1. Baseline-failure issues (in degraded mode)
+1. Baseline-failure issues (in self-healing mode)
 2. Discovered blockers (`discovered:blocker` label)
 3. Regular ready work (sorted by priority)
 4. Discovered related work (`discovered:related` label)

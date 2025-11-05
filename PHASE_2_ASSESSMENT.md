@@ -77,14 +77,14 @@ Phase 2 experiment **failed catastrophically** with only 11.1% success rate (vs 
 **Problem**:
 - Executor caches baseline health status on startup
 - When baseline failures are fixed (manually or via self-healing), cache is stale
-- Executor continues operating in degraded mode indefinitely
+- Executor continues operating in self-healing mode indefinitely
 - Only workaround: restart executor process
 
 **Fix Required**:
 - Re-run baseline quality gates every N poll cycles (e.g., every 5 minutes)
 - OR: Watch for issue status changes and invalidate cache
 - OR: Add `vc refresh-baseline` command for manual invalidation
-- Goal: Exit degraded mode within 1 poll cycle without restart
+- Goal: Exit self-healing mode within 1 poll cycle without restart
 
 ---
 
@@ -183,7 +183,7 @@ There are TWO Phase 2 experiment issues in the tracker:
 2. **Fix vc-47e0** (baseline cache)
    - Implement periodic baseline re-check (every 5 poll cycles?)
    - OR: Invalidate cache on issue status changes
-   - Test: fix baseline → verify executor exits degraded mode
+   - Test: fix baseline → verify executor exits self-healing mode
    - Estimated: 20-40 minutes
 
 3. **Fix vc-db5d** (Windows GIT_EDITOR)
