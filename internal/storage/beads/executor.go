@@ -610,6 +610,7 @@ func (s *VCStorage) GetCheckpoint(ctx context.Context, issueID string) (string, 
 }
 
 // ReleaseIssue releases an issue claim (deletes execution state)
+// This is idempotent - if the execution state doesn't exist, it returns nil
 func (s *VCStorage) ReleaseIssue(ctx context.Context, issueID string) error {
 	// Check if execution state exists first
 	state, err := s.GetExecutionState(ctx, issueID)
@@ -617,7 +618,8 @@ func (s *VCStorage) ReleaseIssue(ctx context.Context, issueID string) error {
 		return fmt.Errorf("failed to check execution state for issue %s: %w", issueID, err)
 	}
 	if state == nil {
-		return fmt.Errorf("execution state not found for issue %s", issueID)
+		// Already released or never claimed - this is fine, return success
+		return nil
 	}
 
 	// Delete the execution state

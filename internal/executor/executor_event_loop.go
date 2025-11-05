@@ -216,7 +216,7 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 	if e.preFlightChecker != nil {
 		// vc-47e0: When in self-healing mode, invalidate cache to force fresh baseline check
 		// This allows the executor to detect when baseline issues are fixed without restart
-		if e.isDegraded() {
+		if e.isSelfHealing() {
 			e.preFlightChecker.InvalidateAllCache()
 		}
 
@@ -247,7 +247,7 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 				}
 
 				// Enter self-healing mode - only claim baseline issues until fixed
-				if !e.isDegraded() {
+				if !e.isSelfHealing() {
 					// Create baseline blocking issues for failing gates (only on state transition)
 					if err := e.preFlightChecker.HandleBaselineFailure(ctx, e.instanceID, commitHash, results); err != nil {
 						fmt.Fprintf(os.Stderr, "Failed to handle baseline failure: %v\n", err)
@@ -257,7 +257,7 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 					// Print banner only on state transition (entering self-healing mode)
 					fmt.Printf("⚠️  Entering self-healing mode: baseline failures detected\n")
 				}
-				e.setDegraded(true)
+				e.setSelfHealing(true)
 
 			case FailureModeWarn:
 				// Warn but continue claiming work
@@ -270,20 +270,20 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 			}
 		} else {
 			// vc-1d3d: Baseline passes - exit self-healing mode if we were in it
-			if e.isDegraded() {
+			if e.isSelfHealing() {
 				// Print banner only on state transition (exiting self-healing mode)
 				fmt.Printf("✓ Baseline quality gates passing. Exiting self-healing mode.\n")
-				e.setDegraded(false)
+				e.setSelfHealing(false)
 			}
 		}
 	}
 
 	// While in self-healing mode, only claim baseline-failure issues and discovered blockers
-	if e.isDegraded() {
+	if e.isSelfHealing() {
 		// Throttle log message: only print once per minute
-		if time.Since(e.degradedModeMsgLast) > time.Minute {
+		if time.Since(e.selfHealingMsgLast) > time.Minute {
 			fmt.Printf("⚠️  Self-healing mode: only claiming baseline issues\n")
-			e.degradedModeMsgLast = time.Now()
+			e.selfHealingMsgLast = time.Now()
 		}
 
 		// Priority 1: Try discovered blockers first (ready children of baseline issues)

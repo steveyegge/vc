@@ -71,25 +71,25 @@ type Executor struct {
 	workingDir              string
 
 	// State
-	mu                   sync.RWMutex
-	running              bool
-	degradedMode         bool      // In self-healing mode, only claim baseline issues
-	degradedModeMsgLast  time.Time // Last time we printed the self-healing mode message (for throttling)
-	qaWorkersWg          sync.WaitGroup // Tracks active QA worker goroutines for graceful shutdown (vc-0d58)
+	mu                  sync.RWMutex
+	running             bool
+	selfHealingMode     bool      // In self-healing mode, only claim baseline issues
+	selfHealingMsgLast  time.Time // Last time we printed the self-healing mode message (for throttling)
+	qaWorkersWg         sync.WaitGroup // Tracks active QA worker goroutines for graceful shutdown (vc-0d58)
 }
 
-// isDegraded returns whether the executor is in self-healing mode (thread-safe)
-func (e *Executor) isDegraded() bool {
+// isSelfHealing returns whether the executor is in self-healing mode (thread-safe)
+func (e *Executor) isSelfHealing() bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.degradedMode
+	return e.selfHealingMode
 }
 
-// setDegraded sets the self-healing mode state (thread-safe)
-func (e *Executor) setDegraded(v bool) {
+// setSelfHealing sets the self-healing mode state (thread-safe)
+func (e *Executor) setSelfHealing(v bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.degradedMode = v
+	e.selfHealingMode = v
 }
 
 // Config holds executor configuration
