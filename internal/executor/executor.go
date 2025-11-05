@@ -13,6 +13,7 @@ import (
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/config"
 	"github.com/steveyegge/vc/internal/deduplication"
+	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/gates"
 	"github.com/steveyegge/vc/internal/git"
 	"github.com/steveyegge/vc/internal/health"
@@ -22,6 +23,32 @@ import (
 	"github.com/steveyegge/vc/internal/types"
 	"github.com/steveyegge/vc/internal/watchdog"
 )
+
+// DegradedMode represents the self-healing state machine state
+type DegradedMode int
+
+const (
+	// ModeHealthy indicates normal operation - baseline quality gates passing
+	ModeHealthy DegradedMode = iota
+	// ModeSelfHealing indicates baseline failed and executor is actively trying to fix it
+	ModeSelfHealing
+	// ModeEscalated indicates baseline is broken and needs human intervention
+	ModeEscalated
+)
+
+// String returns a human-readable string representation of the mode
+func (m DegradedMode) String() string {
+	switch m {
+	case ModeHealthy:
+		return "HEALTHY"
+	case ModeSelfHealing:
+		return "SELF_HEALING"
+	case ModeEscalated:
+		return "ESCALATED"
+	default:
+		return fmt.Sprintf("UNKNOWN(%d)", m)
+	}
+}
 
 // Executor manages the issue processing event loop
 type Executor struct {
@@ -73,23 +100,103 @@ type Executor struct {
 	// State
 	mu                  sync.RWMutex
 	running             bool
-	selfHealingMode     bool      // In self-healing mode, only claim baseline issues
 	selfHealingMsgLast  time.Time // Last time we printed the self-healing mode message (for throttling)
 	qaWorkersWg         sync.WaitGroup // Tracks active QA worker goroutines for graceful shutdown (vc-0d58)
+
+	// Self-healing state machine (vc-23t0)
+	degradedMode      DegradedMode  // Current state in the self-healing state machine
+	modeMutex         sync.RWMutex  // Protects degradedMode and modeChangedAt
+	modeChangedAt     time.Time     // When the mode last changed (for escalation thresholds)
 }
 
-// isSelfHealing returns whether the executor is in self-healing mode (thread-safe)
-func (e *Executor) isSelfHealing() bool {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	return e.selfHealingMode
+// getDegradedMode returns the current degraded mode state (thread-safe)
+func (e *Executor) getDegradedMode() DegradedMode {
+	e.modeMutex.RLock()
+	defer e.modeMutex.RUnlock()
+	return e.degradedMode
 }
 
-// setSelfHealing sets the self-healing mode state (thread-safe)
-func (e *Executor) setSelfHealing(v bool) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.selfHealingMode = v
+// getModeChangedAt returns when the mode last changed (thread-safe)
+func (e *Executor) getModeChangedAt() time.Time {
+	e.modeMutex.RLock()
+	defer e.modeMutex.RUnlock()
+	return e.modeChangedAt
+}
+
+// transitionToHealthy transitions to HEALTHY state (baseline passing)
+func (e *Executor) transitionToHealthy(ctx context.Context) {
+	e.modeMutex.Lock()
+	oldMode := e.degradedMode
+	if oldMode == ModeHealthy {
+		e.modeMutex.Unlock()
+		return // Already healthy, no transition needed
+	}
+	e.degradedMode = ModeHealthy
+	e.modeChangedAt = time.Now()
+	e.modeMutex.Unlock()
+
+	// Log transition
+	fmt.Printf("✓ State transition: %s → HEALTHY (baseline quality gates passing)\n", oldMode)
+
+	// Emit activity feed event
+	e.logEvent(ctx, events.EventTypeExecutorSelfHealingMode, events.SeverityInfo, "SYSTEM",
+		fmt.Sprintf("Executor transitioned from %s to HEALTHY", oldMode),
+		map[string]interface{}{
+			"from_mode": oldMode.String(),
+			"to_mode":   "HEALTHY",
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+}
+
+// transitionToSelfHealing transitions to SELF_HEALING state (baseline failed)
+func (e *Executor) transitionToSelfHealing(ctx context.Context) {
+	e.modeMutex.Lock()
+	oldMode := e.degradedMode
+	if oldMode == ModeSelfHealing {
+		e.modeMutex.Unlock()
+		return // Already in self-healing, no transition needed
+	}
+	e.degradedMode = ModeSelfHealing
+	e.modeChangedAt = time.Now()
+	e.modeMutex.Unlock()
+
+	// Log transition
+	fmt.Printf("⚠️  State transition: %s → SELF_HEALING (baseline failed, attempting fix)\n", oldMode)
+
+	// Emit activity feed event
+	e.logEvent(ctx, events.EventTypeExecutorSelfHealingMode, events.SeverityWarning, "SYSTEM",
+		fmt.Sprintf("Executor transitioned from %s to SELF_HEALING", oldMode),
+		map[string]interface{}{
+			"from_mode": oldMode.String(),
+			"to_mode":   "SELF_HEALING",
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+}
+
+// transitionToEscalated transitions to ESCALATED state (needs human intervention)
+func (e *Executor) transitionToEscalated(ctx context.Context, reason string) {
+	e.modeMutex.Lock()
+	oldMode := e.degradedMode
+	if oldMode == ModeEscalated {
+		e.modeMutex.Unlock()
+		return // Already escalated, no transition needed
+	}
+	e.degradedMode = ModeEscalated
+	e.modeChangedAt = time.Now()
+	e.modeMutex.Unlock()
+
+	// Log transition with reason
+	fmt.Printf("🚨 State transition: %s → ESCALATED (reason: %s)\n", oldMode, reason)
+
+	// Emit activity feed event
+	e.logEvent(ctx, events.EventTypeExecutorSelfHealingMode, events.SeverityCritical, "SYSTEM",
+		fmt.Sprintf("Executor transitioned from %s to ESCALATED: %s", oldMode, reason),
+		map[string]interface{}{
+			"from_mode": oldMode.String(),
+			"to_mode":   "ESCALATED",
+			"reason":    reason,
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
 }
 
 // Config holds executor configuration
@@ -237,6 +344,9 @@ func New(cfg *Config) (*Executor, error) {
 		cleanupDoneCh:           make(chan struct{}),
 		eventCleanupStopCh:      make(chan struct{}),
 		eventCleanupDoneCh:      make(chan struct{}),
+		// Initialize self-healing state machine (vc-23t0)
+		degradedMode:            ModeHealthy,
+		modeChangedAt:           time.Now(),
 	}
 
 	// Initialize AI supervisor if enabled (do this before sandbox manager to provide deduplicator)
