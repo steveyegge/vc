@@ -243,7 +243,7 @@ type Config struct {
 	// Self-healing configuration (vc-tn9c)
 	SelfHealingMaxAttempts     int           // Maximum attempts before escalating (same as MaxEscalationAttempts, default: 5)
 	SelfHealingMaxDuration     time.Duration // Maximum duration before escalating (same as MaxEscalationDuration, default: 24h)
-	SelfHealingRecheckInterval time.Duration // How often to recheck in degraded mode (default: 5m)
+	SelfHealingRecheckInterval time.Duration // How often to recheck in self-healing mode (default: 5m)
 	SelfHealingVerboseLogging  bool          // Enable verbose logging for self-healing decisions (default: true)
 }
 
