@@ -104,6 +104,12 @@ func init() {
 
 // displayActivityEvent formats and prints a single event with color
 func displayActivityEvent(event *events.AgentEvent) {
+	// Special compact formatting for agent_tool_use events
+	if event.Type == "agent_tool_use" {
+		displayToolUseEvent(event)
+		return
+	}
+
 	// Color coding by severity
 	var severityColor *color.Color
 	var severityIcon string
@@ -127,7 +133,7 @@ func displayActivityEvent(event *events.AgentEvent) {
 	}
 
 	// Format timestamp
-	timestamp := event.Timestamp.Format("2006-01-02 15:04:05")
+	timestamp := event.Timestamp.Format("15:04:05")
 
 	// Color the event type
 	typeColor := color.New(color.FgMagenta)
@@ -146,11 +152,80 @@ func displayActivityEvent(event *events.AgentEvent) {
 		severityColor.Sprint(event.Message),
 	)
 
-	// If there's additional structured data, show it indented
+	// For non-tool events, show important structured data (but filter out noise)
 	if len(event.Data) > 0 {
 		gray := color.New(color.FgHiBlack)
-		for key, value := range event.Data {
-			fmt.Printf("    %s: %v\n", gray.Sprint(key), value)
+		// Only show key fields, skip verbose JSON dumps
+		importantKeys := []string{"success", "confidence", "strategy", "error", "test_status", "files_modified"}
+		for _, key := range importantKeys {
+			if value, ok := event.Data[key]; ok {
+				fmt.Printf("    %s: %v\n", gray.Sprint(key), truncateString(fmt.Sprintf("%v", value), 100))
+			}
 		}
 	}
+}
+
+// displayToolUseEvent shows a compact one-line view of tool usage
+func displayToolUseEvent(event *events.AgentEvent) {
+	timestamp := event.Timestamp.Format("15:04:05")
+	issueColor := color.New(color.FgGreen)
+	issueID := issueColor.Sprint(event.IssueID)
+
+	// Extract tool name and key args from event data
+	toolName := "unknown"
+	if tn, ok := event.Data["tool_name"].(string); ok {
+		toolName = tn
+	}
+
+	// Build compact args display (tool-specific)
+	args := ""
+	switch toolName {
+	case "Read", "read":
+		if path, ok := event.Data["path"].(string); ok {
+			args = truncateString(path, 60)
+		}
+	case "edit_file":
+		if path, ok := event.Data["path"].(string); ok {
+			args = truncateString(path, 60)
+		}
+	case "Bash", "bash":
+		if cmd, ok := event.Data["command"].(string); ok {
+			args = truncateString(cmd, 60)
+		}
+	case "Grep", "grep":
+		if pattern, ok := event.Data["pattern"].(string); ok {
+			args = truncateString(pattern, 60)
+		}
+	default:
+		// Generic: show first arg we can find
+		for k, v := range event.Data {
+			if k != "tool_name" && k != "tool_description" {
+				args = truncateString(fmt.Sprintf("%v", v), 60)
+				break
+			}
+		}
+	}
+
+	// Status indicator (tools are always "in progress" in the feed, completion tracked separately)
+	gray := color.New(color.FgHiBlack)
+
+	// Compact one-line format: [TIME] ISSUE tool(args) ⋯
+	fmt.Printf("%s [%s] %s %s(%s)\n",
+		gray.Sprint("🔧"),
+		timestamp,
+		issueID,
+		color.New(color.FgCyan).Sprint(toolName),
+		args,
+	)
+}
+
+// truncateString truncates a string to maxLen, adding "..." if needed
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return "..."
+	}
+	return s[:maxLen-3] + "..."
 }
