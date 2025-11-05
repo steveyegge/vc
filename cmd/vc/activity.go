@@ -110,6 +110,11 @@ func displayActivityEvent(event *events.AgentEvent) {
 		return
 	}
 
+	// Filter out noisy system events that aren't interesting for monitoring
+	if shouldSkipEvent(event) {
+		return
+	}
+
 	// Color coding by severity
 	var severityColor *color.Color
 	var severityIcon string
@@ -153,16 +158,64 @@ func displayActivityEvent(event *events.AgentEvent) {
 	)
 
 	// For non-tool events, show important structured data (but filter out noise)
-	if len(event.Data) > 0 {
+	if len(event.Data) > 0 && shouldShowEventData(event) {
 		gray := color.New(color.FgHiBlack)
 		// Only show key fields, skip verbose JSON dumps
-		importantKeys := []string{"success", "confidence", "strategy", "error", "test_status", "files_modified"}
+		importantKeys := []string{"confidence", "strategy", "error", "test_status", "files_modified"}
 		for _, key := range importantKeys {
 			if value, ok := event.Data[key]; ok {
 				fmt.Printf("    %s: %v\n", gray.Sprint(key), truncateString(fmt.Sprintf("%v", value), 100))
 			}
 		}
 	}
+}
+
+// shouldSkipEvent returns true for noisy system events that clutter the feed
+func shouldSkipEvent(event *events.AgentEvent) bool {
+	// Skip routine system maintenance events
+	noisyEvents := []string{
+		"instance_cleanup_started",
+		"instance_cleanup_completed",
+		"watchdog_check",
+		"health_check",
+		"event_cleanup_started",
+		"event_cleanup_completed",
+		"pre_flight_check_started",
+		"pre_flight_check_completed",  // Too frequent (every 5s polling)
+		"baseline_cache_miss",
+		"baseline_cache_hit",
+		"quality_gates_progress",  // Keep started/completed, skip progress updates
+		"results_processing_completed",  // Redundant with issue_completed
+	}
+
+	eventTypeStr := string(event.Type)
+	for _, noisy := range noisyEvents {
+		if eventTypeStr == noisy {
+			return true
+		}
+	}
+
+	return false
+}
+
+// shouldShowEventData returns true if this event type should show structured data
+func shouldShowEventData(event *events.AgentEvent) bool {
+	// Only show data for high-value events
+	interestingEvents := []string{
+		"assessment_completed",
+		"analysis_completed",
+		"issue_completed",
+		"error",
+	}
+
+	eventTypeStr := string(event.Type)
+	for _, interesting := range interestingEvents {
+		if eventTypeStr == interesting {
+			return true
+		}
+	}
+
+	return false
 }
 
 // displayToolUseEvent shows a compact one-line view of tool usage
