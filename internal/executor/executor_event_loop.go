@@ -246,14 +246,14 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 					return nil
 				}
 
-				// Create baseline blocking issues for failing gates
-				if err := e.preFlightChecker.HandleBaselineFailure(ctx, e.instanceID, commitHash, results); err != nil {
-					fmt.Fprintf(os.Stderr, "Failed to handle baseline failure: %v\n", err)
-					// Continue anyway - we'll try again next poll
-				}
-
 				// Enter self-healing mode - only claim baseline issues until fixed
 				if !e.isDegraded() {
+					// Create baseline blocking issues for failing gates (only on state transition)
+					if err := e.preFlightChecker.HandleBaselineFailure(ctx, e.instanceID, commitHash, results); err != nil {
+						fmt.Fprintf(os.Stderr, "Failed to handle baseline failure: %v\n", err)
+						// Continue anyway - we'll try again next poll
+					}
+
 					// Print banner only on state transition (entering self-healing mode)
 					fmt.Printf("⚠️  Entering self-healing mode: baseline failures detected\n")
 				}
