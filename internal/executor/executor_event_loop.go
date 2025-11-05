@@ -211,6 +211,8 @@ func (e *Executor) getNextReadyBlocker(ctx context.Context) (*types.Issue, error
 // be addressed before missions can be considered complete. Work starvation of regular
 // tasks is acceptable to maintain mission quality and ensure discovered issues are resolved.
 // See vc-160 for monitoring work starvation, and vc-161 for prioritization policy docs.
+//
+// vc-a6ko: Refactored to use GetReadyWork() with smart fallback chain for self-healing mode
 func (e *Executor) processNextIssue(ctx context.Context) error {
 	// vc-196: Run preflight quality gates check before claiming work
 	if e.preFlightChecker != nil {
@@ -276,134 +278,24 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 		}
 	}
 
-	// While in self-healing mode, only claim baseline-failure issues and discovered blockers
+	// vc-a6ko: Use GetReadyWork() which handles self-healing fallback chain
+	// Throttle log message: only print once per minute when in self-healing mode
 	if e.getSelfHealingMode() != ModeHealthy {
-		// Throttle log message: only print once per minute
 		if time.Since(e.selfHealingMsgLast) > time.Minute {
-			fmt.Printf("⚠️  Self-healing mode: only claiming baseline issues\n")
+			fmt.Printf("⚠️  Self-healing mode: trying fallback chain\n")
 			e.selfHealingMsgLast = time.Now()
 		}
-
-		// Priority 1: Try discovered blockers first (ready children of baseline issues)
-		// These are the actual fixable work decomposed from baseline failures
-		var issue *types.Issue
-		blockerIssues, err := e.store.GetIssuesByLabel(ctx, "discovered:blocker")
-		if err != nil {
-			return fmt.Errorf("failed to get discovered blocker issues: %w", err)
-		}
-		// Find first ready (open + no blocking deps) blocker
-		for _, is := range blockerIssues {
-			if is.Status == types.StatusOpen {
-				// Check if it has blocking dependencies (exclude discovered-from metadata)
-				depRecords, err := e.store.GetDependencyRecords(ctx, is.ID)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: failed to get dependency records for %s: %v\n", is.ID, err)
-					continue
-				}
-				// Filter out discovered-from metadata dependencies
-				hasBlockingDeps := false
-				for _, dep := range depRecords {
-					if dep.Type != "discovered-from" {
-						// Check if this dependency is blocking (parent is not closed)
-						parent, err := e.store.GetIssue(ctx, dep.DependsOnID)
-						if err != nil {
-							fmt.Fprintf(os.Stderr, "Warning: failed to get parent %s: %v\n", dep.DependsOnID, err)
-							hasBlockingDeps = true
-							break
-						}
-						if parent.Status != types.StatusClosed {
-							hasBlockingDeps = true
-							break
-						}
-					}
-				}
-				if !hasBlockingDeps {
-					issue = is
-					break
-				}
-			}
-		}
-
-		// Priority 2: Fall back to baseline-failure issues themselves
-		if issue == nil {
-			baselineIssues, err := e.store.GetIssuesByLabel(ctx, "baseline-failure")
-			if err != nil {
-				return fmt.Errorf("failed to get baseline issues: %w", err)
-			}
-			for _, is := range baselineIssues {
-				if is.Status == types.StatusOpen {
-					issue = is
-					break
-				}
-			}
-		}
-
-		if issue == nil {
-			// No baseline work available
-			fmt.Printf("   No baseline issues ready (may have dependencies)\n")
-			return nil
-		}
-
-		// Attempt to claim the issue
-		if err := e.store.ClaimIssue(ctx, issue.ID, e.instanceID); err != nil {
-			// Issue may have been claimed by another executor
-			return nil
-		}
-
-		// Execute baseline fix issue
-		return e.executeIssue(ctx, issue)
 	}
 
-	// Priority 1: Try to get a ready blocker (if blocker priority enabled)
-	var issue *types.Issue
-	var foundViaBlocker bool
-	if e.config.EnableBlockerPriority {
-		var err error
-		issue, err = e.getNextReadyBlocker(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get ready blockers: %w", err)
-		}
-
-		// Track whether we found work via blocker path
-		foundViaBlocker = (issue != nil)
+	// Get next ready work using smart selection
+	issue, err := e.GetReadyWork(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get ready work: %w", err)
 	}
 
-	// Priority 2: Fall back to regular ready work
+	// No work available
 	if issue == nil {
-		// vc-7100: Request multiple issues from storage since VC filters out no-auto-claim
-		// If we only request 1 issue and it has no-auto-claim, we'd get nothing
-		filter := types.WorkFilter{
-			Status:     types.StatusOpen,
-			Limit:      10, // vc-7100: Request 10 so filtering doesn't exhaust the queue
-			SortPolicy: types.SortPolicyPriority, // vc-190: Always use priority-first sorting
-		}
-
-		issues, err := e.store.GetReadyWork(ctx, filter)
-		if err != nil {
-			return fmt.Errorf("failed to get ready work: %w", err)
-		}
-
-		if len(issues) == 0 {
-			// No work available
-			return nil
-		}
-
-		// vc-7100: Take the first issue after filtering
-		issue = issues[0]
-	}
-
-	// Log when blocker is selected over regular work (vc-159)
-	if foundViaBlocker {
-		fmt.Printf("Claiming blocker %s (P%d) over regular ready work\n", issue.ID, issue.Priority)
-
-		// Log agent event for blocker prioritization
-		e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, issue.ID,
-			fmt.Sprintf("Blocker %s prioritized over regular work", issue.ID),
-			map[string]interface{}{
-				"event_subtype": "blocker_prioritized",
-				"blocker_id":    issue.ID,
-				"priority":      issue.Priority,
-			})
+		return nil
 	}
 
 	// Attempt to claim the issue
