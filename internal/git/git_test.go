@@ -552,14 +552,15 @@ func TestRebaseOperations(t *testing.T) {
 		}
 
 		// Verify the file was actually staged
-		statusCmd := exec.Command("git", "status", "--porcelain")
-		statusCmd.Dir = tmpDir
-		statusOutput, err := statusCmd.Output()
+		stagedCmd := exec.Command("git", "diff", "--staged", "--name-only")
+		stagedCmd.Dir = tmpDir
+		stagedOutput, err := stagedCmd.Output()
 		if err != nil {
-			t.Fatalf("Failed to check git status: %v", err)
+			t.Fatalf("Failed to check staged files: %v", err)
 		}
-		if !strings.Contains(string(statusOutput), "conflict.txt") {
-			t.Logf("Git status after staging: %s", statusOutput)
+		stagedFiles := strings.TrimSpace(string(stagedOutput))
+		if !strings.Contains(stagedFiles, "conflict.txt") {
+			t.Fatalf("conflict.txt not in staged files. Staged files: %s", stagedFiles)
 		}
 
 		// Continue the rebase
@@ -681,16 +682,31 @@ func initRepo(t *testing.T, dir string) {
 		t.Fatalf("Failed to init git repo: %v", err)
 	}
 
-	configUser := exec.Command("git", "config", "user.name", "Test User")
-	configUser.Dir = dir
-	if err := configUser.Run(); err != nil {
-		t.Fatalf("Failed to config git user: %v", err)
+	configs := []struct{ key, value string }{
+		{"user.name", "Test User"},
+		{"user.email", "test@example.com"},
+		{"commit.gpgsign", "false"},
+		{"core.autocrlf", "false"},
+		{"rerere.enabled", "false"},
+		{"merge.autoEdit", "no"},
 	}
 
-	configEmail := exec.Command("git", "config", "user.email", "test@example.com")
-	configEmail.Dir = dir
-	if err := configEmail.Run(); err != nil {
-		t.Fatalf("Failed to config git email: %v", err)
+	for _, cfg := range configs {
+		configCmd := exec.Command("git", "config", cfg.key, cfg.value)
+		configCmd.Dir = dir
+		if err := configCmd.Run(); err != nil {
+			t.Fatalf("Failed to config git %s: %v", cfg.key, err)
+		}
+	}
+
+	emptyHooksDir := filepath.Join(dir, ".git", "empty-hooks")
+	if err := os.MkdirAll(emptyHooksDir, 0755); err != nil {
+		t.Fatalf("Failed to create empty hooks dir: %v", err)
+	}
+	configHooks := exec.Command("git", "config", "core.hooksPath", ".git/empty-hooks")
+	configHooks.Dir = dir
+	if err := configHooks.Run(); err != nil {
+		t.Fatalf("Failed to config git hooks path: %v", err)
 	}
 }
 

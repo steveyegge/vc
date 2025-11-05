@@ -228,11 +228,15 @@ func (g *Git) Rebase(ctx context.Context, repoPath string, opts RebaseOptions) (
 		// Set GIT_EDITOR to a no-op command to avoid opening an editor
 		// This accepts the default commit message during automated rebases
 		// vc-db5d: Use platform-specific no-op command for cross-platform compatibility
-		noopEditor := ":"
+		// Using "true" instead of ":" for better reliability (true is a binary, : is a shell builtin)
+		noopEditor := "true"
 		if runtime.GOOS == "windows" {
 			noopEditor = "cmd.exe /c exit 0"
 		}
-		continueCmd.Env = append(os.Environ(), fmt.Sprintf("GIT_EDITOR=%s", noopEditor))
+		continueCmd.Env = append(os.Environ(),
+			fmt.Sprintf("GIT_EDITOR=%s", noopEditor),
+			"GIT_TERMINAL_PROMPT=0",
+		)
 		output, err := continueCmd.CombinedOutput()
 		if err != nil {
 			outputStr := string(output)
@@ -254,7 +258,7 @@ func (g *Git) Rebase(ctx context.Context, repoPath string, opts RebaseOptions) (
 
 			// Some other error occurred
 			result.ErrorMessage = fmt.Sprintf("rebase --continue failed: %v\nOutput: %s", err, outputStr)
-			return result, fmt.Errorf("git rebase --continue failed in %s: %w", repoPath, err)
+			return result, fmt.Errorf("git rebase --continue failed in %s: %w (output: %s)", repoPath, err, outputStr)
 		}
 		result.Success = true
 		return result, nil
