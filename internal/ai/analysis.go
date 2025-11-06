@@ -158,6 +158,12 @@ Please analyze the execution systematically:
    - "related": Related to parent mission but not blocking (tech debt, improvements, follow-on enhancements)
    - "background": Opportunistic discoveries unrelated to mission (general refactoring, unrelated bugs)
 
+   CRITICAL (vc-4vot): For discovered issues that are "meta-issues" (issues about needing something for another issue):
+   - Add "meta-issue" to the labels array
+   - MUST provide acceptance_criteria (specific, measurable criteria for completion)
+   - Example: Issue "Add acceptance criteria to vc-xyz" should have labels: ["meta-issue"]
+     and acceptance_criteria: "1. Add specific acceptance criteria to vc-xyz\n2. Ensure criteria are measurable\n3. Verify criteria match issue description"
+
 Provide your analysis as a JSON object:
 {
   "completed": true,
@@ -176,7 +182,9 @@ Provide your analysis as a JSON object:
       "description": "Issue description",
       "type": "bug|task|enhancement",
       "priority": "P0|P1|P2|P3",
-      "discovery_type": "blocker|related|background"
+      "discovery_type": "blocker|related|background",
+      "acceptance_criteria": "Required for meta-issues, optional otherwise",
+      "labels": ["meta-issue"] // Optional: add "meta-issue" if this is an issue about needing something
     }
   ],
   "quality_issues": ["Quality problem 1", ...],
