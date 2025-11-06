@@ -462,31 +462,51 @@ func TestInterventionController_InterventionHistory(t *testing.T) {
 		t.Fatalf("Failed to create intervention controller: %v", err)
 	}
 
-	// Manually add intervention results to history to test pruning
-	// Note: We don't actually call PauseAgent in a loop here because of a Beads library bug (bd-5ots)
-	// where SearchIssues calls GetLabels in an N+1 loop, causing context timeouts.
-	// createEscalationIssue uses SearchIssues with labels for deduplication, which triggers this bug.
-	// Instead, we directly add results to the history to test the max size pruning logic.
-	ic.mu.Lock()
+	// Call PauseAgent 5 times to test history pruning
+	// This now works correctly with Beads v0.22.0 which fixes the N+1 query bug (bd-5ots)
 	for i := 1; i <= 5; i++ {
-		result := &InterventionResult{
-			Success:          true,
-			InterventionType: InterventionPauseAgent,
-			AnomalyReport: &AnomalyReport{
-				Detected:          true,
-				AnomalyType:       AnomalyInfiniteLoop,
-				Severity:          SeverityHigh,
-				Description:       fmt.Sprintf("Test anomaly %d", i),
-				RecommendedAction: ActionStopExecution,
-				Reasoning:         "Test",
-				Confidence:        0.9,
-			},
-			Message:   fmt.Sprintf("Test intervention %d", i),
-			Timestamp: time.Now(),
+		// Create a test issue for this iteration
+		testIssue := &types.Issue{
+			Title:              fmt.Sprintf("Test Issue %d", i),
+			Description:        "Test issue for intervention history",
+			Status:             types.StatusInProgress,
+			Priority:           2,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
 		}
-		ic.addToHistoryLocked(result)
+		if err := store.CreateIssue(ctx, testIssue, "test"); err != nil {
+			t.Fatalf("Failed to create test issue %d: %v", i, err)
+		}
+		issueID := testIssue.ID
+
+		// Register agent context
+		_, agentCancel := context.WithCancel(ctx)
+		defer agentCancel()
+		ic.SetAgentContext(issueID, agentCancel)
+
+		// Create anomaly report
+		report := &AnomalyReport{
+			Detected:          true,
+			AnomalyType:       AnomalyInfiniteLoop,
+			Severity:          SeverityHigh,
+			Description:       fmt.Sprintf("Test anomaly %d", i),
+			RecommendedAction: ActionStopExecution,
+			Reasoning:         "Test",
+			Confidence:        0.9,
+			AffectedIssues:    []string{issueID},
+		}
+
+		// Call PauseAgent
+		_, err := ic.PauseAgent(ctx, report)
+		if err != nil {
+			t.Fatalf("PauseAgent failed for iteration %d: %v", i, err)
+		}
+
+		// Clear agent context for next iteration
+		ic.ClearAgentContext()
 	}
-	ic.mu.Unlock()
 
 	// Verify history is limited to max size
 	history := ic.GetInterventionHistory()
