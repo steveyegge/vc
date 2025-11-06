@@ -21,10 +21,11 @@ func setupConvergenceTestStorage(t *testing.T) (context.Context, storage.Storage
 
 func createTestIssue(t *testing.T, ctx context.Context, store storage.Storage, title string, status types.Status) *types.Issue {
 	issue := &types.Issue{
-		Title:     title,
-		Status:    types.StatusOpen,
-		Priority:  2,
-		IssueType: types.TypeTask,
+		Title:              title,
+		Status:             types.StatusOpen,
+		Priority:           2,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
 		t.Fatalf("Failed to create issue %s: %v", title, err)

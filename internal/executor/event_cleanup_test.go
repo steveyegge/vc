@@ -53,6 +53,7 @@ func TestEventCleanupIntegration(t *testing.T) {
 			Description: "Test",
 			Status:      types.StatusOpen,
 			IssueType:   types.TypeTask,
+			AcceptanceCriteria: "Test completes successfully",
 			Priority:    2,
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),

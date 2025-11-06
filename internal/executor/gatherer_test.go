@@ -54,6 +54,7 @@ func TestGetParentMission(t *testing.T) {
 		Status:   types.StatusOpen,
 		Priority: 2,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, child, "test"); err != nil {
 		t.Fatalf("Failed to create child issue: %v", err)
@@ -89,6 +90,7 @@ func TestGetParentMission(t *testing.T) {
 		Status:   types.StatusOpen,
 		Priority: 1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, orphan, "test"); err != nil {
 		t.Fatalf("Failed to create orphan issue: %v", err)
@@ -133,6 +135,7 @@ func TestGetRelatedIssues(t *testing.T) {
 		Status:   types.StatusOpen,
 		Priority: 2,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, task, "test"); err != nil {
 		t.Fatalf("Failed to create task: %v", err)
@@ -144,6 +147,7 @@ func TestGetRelatedIssues(t *testing.T) {
 		Status:   types.StatusOpen,
 		Priority: 2,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, sibling, "test"); err != nil {
 		t.Fatalf("Failed to create sibling: %v", err)
@@ -155,6 +159,7 @@ func TestGetRelatedIssues(t *testing.T) {
 		Status:   types.StatusOpen,
 		Priority: 1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 		t.Fatalf("Failed to create blocker: %v", err)
@@ -166,6 +171,7 @@ func TestGetRelatedIssues(t *testing.T) {
 		Status:   types.StatusOpen,
 		Priority: 3,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, dependent, "test"); err != nil {
 		t.Fatalf("Failed to create dependent: %v", err)
@@ -254,6 +260,7 @@ func TestGetPreviousAttempts(t *testing.T) {
 		Status:   types.StatusOpen,
 		Priority: 1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
 		t.Fatalf("Failed to create issue: %v", err)
@@ -453,6 +460,7 @@ func TestGatherContext(t *testing.T) {
 		Status:   types.StatusInProgress,
 		Priority: 2,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, task, "test"); err != nil {
 		t.Fatalf("Failed to create task: %v", err)
@@ -464,6 +472,7 @@ func TestGatherContext(t *testing.T) {
 		Status:   types.StatusOpen,
 		Priority: 2,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, sibling, "test"); err != nil {
 		t.Fatalf("Failed to create sibling: %v", err)

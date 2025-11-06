@@ -145,10 +145,11 @@ func (e *Executor) escalateBaseline(ctx context.Context, issueID string, reason 
 
 	// Step 2: Create escalation issue
 	escalationIssue := &types.Issue{
-		Title:     fmt.Sprintf("ESCALATED: Baseline %s needs human intervention", GetGateType(issueID)),
-		IssueType: types.TypeTask,
-		Priority:  0, // P0 - highest priority
-		Status:    types.StatusOpen,
+		Title:              fmt.Sprintf("ESCALATED: Baseline %s needs human intervention", GetGateType(issueID)),
+		IssueType:          types.TypeTask,
+		Priority:           0, // P0 - highest priority
+		Status:             types.StatusOpen,
+		AcceptanceCriteria: "Baseline issue resolved and quality gates passing",
 		Description: fmt.Sprintf(`# Baseline Issue Escalation
 
 The baseline issue **%s** has exceeded escalation thresholds and requires human intervention.

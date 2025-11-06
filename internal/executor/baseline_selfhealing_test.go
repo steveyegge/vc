@@ -58,14 +58,15 @@ func TestBaselineSelfHealing_Integration(t *testing.T) {
 
 			// Create test issue
 			issue := &types.Issue{
-				ID:          tt.issueID,
-				Title:       "Baseline test failure",
-				Description: "Test output:\n--- FAIL: TestExample (0.00s)\n    example_test.go:10: race condition detected",
-				Status:      types.StatusOpen,
-				Priority:    1,
-				IssueType:   types.TypeTask,
-				CreatedAt:   time.Now(),
-				UpdatedAt:   time.Now(),
+				ID:                 tt.issueID,
+				Title:              "Baseline test failure",
+				Description:        "Test output:\n--- FAIL: TestExample (0.00s)\n    example_test.go:10: race condition detected",
+				Status:             types.StatusOpen,
+				Priority:           1,
+				IssueType:          types.TypeTask,
+				AcceptanceCriteria: "Baseline issue detection verified",
+				CreatedAt:          time.Now(),
+				UpdatedAt:          time.Now(),
 			}
 
 			if err := store.CreateIssue(ctx, issue, "test"); err != nil {
@@ -180,14 +181,15 @@ func TestBaselineSelfHealing_DiagnosisIntegration(t *testing.T) {
 
 		// Create baseline test issue
 		issue := &types.Issue{
-			ID:          "vc-baseline-test",
-			Title:       "Baseline test failure",
-			Description: "Test output:\n--- FAIL: TestRace (0.00s)\n    race.go:10: race condition detected",
-			Status:      types.StatusOpen,
-			Priority:    1,
-			IssueType:   types.TypeTask,
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
+			ID:                 "vc-baseline-test",
+			Title:              "Baseline test failure",
+			Description:        "Test output:\n--- FAIL: TestRace (0.00s)\n    race.go:10: race condition detected",
+			Status:             types.StatusOpen,
+			Priority:           1,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: "Results processor handles baseline issues correctly",
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
 		}
 
 		if err := store.CreateIssue(ctx, issue, "test"); err != nil {

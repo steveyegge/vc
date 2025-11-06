@@ -20,6 +20,7 @@ func createSystemIssue(ctx context.Context, t *testing.T, store storage.Storage)
 		Status:      types.StatusOpen,
 		Priority:    3,
 		IssueType:   types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
@@ -65,6 +66,7 @@ func TestEventCleanupMetricsLogging(t *testing.T) {
 		Status:      types.StatusOpen,
 		Priority:    2,
 		IssueType:   types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
@@ -293,6 +295,7 @@ func TestEventCleanupPartialFailure(t *testing.T) {
 		Status:      types.StatusOpen,
 		Priority:    2,
 		IssueType:   types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}

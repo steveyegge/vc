@@ -45,10 +45,11 @@ func TestGetNextReadyBlocker_NoBlockers(t *testing.T) {
 
 	// Create regular issues (no blocker label)
 	issue1 := &types.Issue{
-		Title:     "Regular task 1",
-		Status:    types.StatusOpen,
-		Priority:  1,
-		IssueType: types.TypeTask,
+		Title:              "Regular task 1",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, issue1, "test"); err != nil {
 		t.Fatalf("Failed to create issue: %v", err)
@@ -71,10 +72,11 @@ func TestGetNextReadyBlocker_WithReadyBlocker(t *testing.T) {
 
 	// Create a blocker issue
 	blocker1 := &types.Issue{
-		Title:     "Fix lint errors",
-		Status:    types.StatusOpen,
-		Priority:  0,
-		IssueType: types.TypeBug,
+		Title:              "Fix lint errors",
+		Status:             types.StatusOpen,
+		Priority:           0,
+		IssueType:          types.TypeBug,
+		AcceptanceCriteria: "Lint errors fixed",
 	}
 	if err := store.CreateIssue(ctx, blocker1, "test"); err != nil {
 		t.Fatalf("Failed to create blocker: %v", err)
@@ -106,10 +108,11 @@ func TestGetNextReadyBlocker_BlockedByDependency(t *testing.T) {
 
 	// Create dependency issue (open)
 	dep := &types.Issue{
-		Title:     "Dependency",
-		Status:    types.StatusOpen,
-		Priority:  1,
-		IssueType: types.TypeTask,
+		Title:              "Dependency",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Dependency resolved",
 	}
 	if err := store.CreateIssue(ctx, dep, "test"); err != nil {
 		t.Fatalf("Failed to create dependency: %v", err)
@@ -117,10 +120,11 @@ func TestGetNextReadyBlocker_BlockedByDependency(t *testing.T) {
 
 	// Create blocker that depends on the open issue
 	blocker := &types.Issue{
-		Title:     "Blocked blocker",
-		Status:    types.StatusOpen,
-		Priority:  0,
-		IssueType: types.TypeBug,
+		Title:              "Blocked blocker",
+		Status:             types.StatusOpen,
+		Priority:           0,
+		IssueType:          types.TypeBug,
+		AcceptanceCriteria: "Blocker resolved",
 	}
 	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 		t.Fatalf("Failed to create blocker: %v", err)
@@ -158,10 +162,11 @@ func TestGetNextReadyBlocker_PriorityOrdering(t *testing.T) {
 
 	// Create multiple ready blockers with different priorities
 	blocker1 := &types.Issue{
-		Title:     "Low priority blocker",
-		Status:    types.StatusOpen,
-		Priority:  2,
-		IssueType: types.TypeBug,
+		Title:              "Low priority blocker",
+		Status:             types.StatusOpen,
+		Priority:           2,
+		IssueType:          types.TypeBug,
+		AcceptanceCriteria: "Blocker resolved",
 	}
 	if err := store.CreateIssue(ctx, blocker1, "test"); err != nil {
 		t.Fatalf("Failed to create blocker1: %v", err)
@@ -171,10 +176,11 @@ func TestGetNextReadyBlocker_PriorityOrdering(t *testing.T) {
 	}
 
 	blocker2 := &types.Issue{
-		Title:     "High priority blocker",
-		Status:    types.StatusOpen,
-		Priority:  0,
-		IssueType: types.TypeBug,
+		Title:              "High priority blocker",
+		Status:             types.StatusOpen,
+		Priority:           0,
+		IssueType:          types.TypeBug,
+		AcceptanceCriteria: "Blocker resolved",
 	}
 	if err := store.CreateIssue(ctx, blocker2, "test"); err != nil {
 		t.Fatalf("Failed to create blocker2: %v", err)
@@ -184,10 +190,11 @@ func TestGetNextReadyBlocker_PriorityOrdering(t *testing.T) {
 	}
 
 	blocker3 := &types.Issue{
-		Title:     "Medium priority blocker",
-		Status:    types.StatusOpen,
-		Priority:  1,
-		IssueType: types.TypeBug,
+		Title:              "Medium priority blocker",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeBug,
+		AcceptanceCriteria: "Blocker resolved",
 	}
 	if err := store.CreateIssue(ctx, blocker3, "test"); err != nil {
 		t.Fatalf("Failed to create blocker3: %v", err)
@@ -218,10 +225,11 @@ func TestCheckMissionConvergence_NotABlocker(t *testing.T) {
 
 	// Create regular issue (not a blocker)
 	issue := &types.Issue{
-		Title:     "Regular task",
-		Status:    types.StatusOpen,
-		Priority:  1,
-		IssueType: types.TypeTask,
+		Title:              "Regular task",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Task completed",
 	}
 	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
 		t.Fatalf("Failed to create issue: %v", err)
@@ -240,10 +248,11 @@ func TestCheckMissionConvergence_DetectsConvergence(t *testing.T) {
 
 	// Create mission
 	mission := &types.Issue{
-		Title:     "Implement authentication",
-		Status:    types.StatusOpen,
-		Priority:  1,
-		IssueType: types.TypeTask,
+		Title:              "Implement authentication",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Authentication implemented",
 	}
 	if err := store.CreateIssue(ctx, mission, "test"); err != nil {
 		t.Fatalf("Failed to create mission: %v", err)
@@ -251,10 +260,11 @@ func TestCheckMissionConvergence_DetectsConvergence(t *testing.T) {
 
 	// Create blocker discovered from mission
 	blocker := &types.Issue{
-		Title:     "Fix lint errors",
-		Status:    types.StatusOpen,
-		Priority:  0,
-		IssueType: types.TypeBug,
+		Title:              "Fix lint errors",
+		Status:             types.StatusOpen,
+		Priority:           0,
+		IssueType:          types.TypeBug,
+		AcceptanceCriteria: "Lint errors fixed",
 	}
 	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 		t.Fatalf("Failed to create blocker: %v", err)
@@ -308,6 +318,7 @@ func TestBlockerPrioritization_Integration(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  0, // P0 - highest priority for regular work
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, regular1, "test"); err != nil {
 		t.Fatalf("Failed to create regular1: %v", err)
@@ -318,6 +329,7 @@ func TestBlockerPrioritization_Integration(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, regular2, "test"); err != nil {
 		t.Fatalf("Failed to create regular2: %v", err)
@@ -329,6 +341,7 @@ func TestBlockerPrioritization_Integration(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  2, // P2 - lower priority than regular1
 		IssueType: types.TypeBug,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 		t.Fatalf("Failed to create blocker: %v", err)
@@ -382,10 +395,11 @@ func TestMissionConvergenceFlow_Integration(t *testing.T) {
 
 	// Create mission
 	mission := &types.Issue{
-		Title:     "Implement user authentication",
-		Status:    types.StatusOpen,
-		Priority:  1,
-		IssueType: types.TypeFeature,
+		Title:              "Implement user authentication",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeFeature,
+		AcceptanceCriteria: "User authentication implemented",
 	}
 	if err := store.CreateIssue(ctx, mission, "test"); err != nil {
 		t.Fatalf("Failed to create mission: %v", err)
@@ -393,10 +407,11 @@ func TestMissionConvergenceFlow_Integration(t *testing.T) {
 
 	// Create blocker 1
 	blocker1 := &types.Issue{
-		Title:     "Fix lint errors",
-		Status:    types.StatusOpen,
-		Priority:  0,
-		IssueType: types.TypeBug,
+		Title:              "Fix lint errors",
+		Status:             types.StatusOpen,
+		Priority:           0,
+		IssueType:          types.TypeBug,
+		AcceptanceCriteria: "Lint errors fixed",
 	}
 	if err := store.CreateIssue(ctx, blocker1, "test"); err != nil {
 		t.Fatalf("Failed to create blocker1: %v", err)
@@ -419,6 +434,7 @@ func TestMissionConvergenceFlow_Integration(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  0,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, blocker2, "test"); err != nil {
 		t.Fatalf("Failed to create blocker2: %v", err)
@@ -510,6 +526,7 @@ func TestGetReadyBlockers_Performance(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  i % 5, // Mix of priorities 0-4
 			IssueType: types.TypeBug,
+			AcceptanceCriteria: "Test completes successfully",
 		}
 		if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 			t.Fatalf("Failed to create ready blocker %d: %v", i, err)
@@ -525,6 +542,7 @@ func TestGetReadyBlockers_Performance(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, dep, "test"); err != nil {
 		t.Fatalf("Failed to create dependency: %v", err)
@@ -537,6 +555,7 @@ func TestGetReadyBlockers_Performance(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  i % 5,
 			IssueType: types.TypeBug,
+			AcceptanceCriteria: "Test completes successfully",
 		}
 		if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 			t.Fatalf("Failed to create blocked blocker %d: %v", i, err)
@@ -562,6 +581,7 @@ func TestGetReadyBlockers_Performance(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  i % 5,
 			IssueType: types.TypeBug,
+			AcceptanceCriteria: "Test completes successfully",
 		}
 		if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 			t.Fatalf("Failed to create closed blocker %d: %v", i, err)
@@ -637,6 +657,7 @@ func TestBlockerLogging_WhenBlockerFound(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeBug,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 		t.Fatalf("Failed to create blocker: %v", err)
@@ -723,6 +744,7 @@ func TestBlockerPrioritizationLogging(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  0,
 		IssueType: types.TypeBug,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 		t.Fatalf("Failed to create blocker: %v", err)
@@ -737,6 +759,7 @@ func TestBlockerPrioritizationLogging(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, regular, "test"); err != nil {
 		t.Fatalf("Failed to create regular task: %v", err)

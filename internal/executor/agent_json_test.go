@@ -27,14 +27,15 @@ func TestConvertJSONToEventActualAmpFormat(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	issue := &types.Issue{
-		ID:          "vc-test-amp-format",
-		Title:       "Test Real Amp JSON Format",
-		Description: "Test convertJSONToEvent with actual Amp structure",
-		IssueType:   types.TypeTask,
-		Status:      types.StatusOpen,
-		Priority:    1,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:                 "vc-test-amp-format",
+		Title:              "Test Real Amp JSON Format",
+		Description:        "Test convertJSONToEvent with actual Amp structure",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		AcceptanceCriteria: "Test correctly parses Amp JSON format",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
 		t.Fatalf("Failed to create issue: %v", err)

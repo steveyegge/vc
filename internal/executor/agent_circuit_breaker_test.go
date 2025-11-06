@@ -28,14 +28,15 @@ func TestCircuitBreakerNoDeadlock(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	issue := &types.Issue{
-		ID:          "vc-test-circuit-breaker",
-		Title:       "Test Circuit Breaker Deadlock Fix",
-		Description: "Test that circuit breaker doesn't deadlock under concurrent load",
-		IssueType:   types.TypeTask,
-		Status:      types.StatusOpen,
-		Priority:    1,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:                 "vc-test-circuit-breaker",
+		Title:              "Test Circuit Breaker Deadlock Fix",
+		Description:        "Test that circuit breaker doesn't deadlock under concurrent load",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		AcceptanceCriteria: "Test completes successfully without deadlock",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
 		t.Fatalf("Failed to create issue: %v", err)
@@ -200,14 +201,15 @@ func TestCircuitBreakerTerminatesAgent(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	issue := &types.Issue{
-		ID:          "vc-test-circuit-terminate",
-		Title:       "Test Circuit Breaker Terminates Agent",
-		Description: "Test that agent terminates when circuit breaker triggers",
-		IssueType:   types.TypeTask,
-		Status:      types.StatusOpen,
-		Priority:    1,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:                 "vc-test-circuit-terminate",
+		Title:              "Test Circuit Breaker Terminates Agent",
+		Description:        "Test that agent terminates when circuit breaker triggers",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		AcceptanceCriteria: "Agent terminates correctly when circuit breaker is triggered",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
 		t.Fatalf("Failed to create issue: %v", err)
@@ -327,14 +329,15 @@ func TestCircuitBreakerRaceDetector(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	issue := &types.Issue{
-		ID:          "vc-test-race-detector",
-		Title:       "Test Circuit Breaker Race Conditions",
-		Description: "Test concurrent access to loopDetected and loopReason flags",
-		IssueType:   types.TypeTask,
-		Status:      types.StatusOpen,
-		Priority:    1,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:                 "vc-test-race-detector",
+		Title:              "Test Circuit Breaker Race Conditions",
+		Description:        "Test concurrent access to loopDetected and loopReason flags",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		AcceptanceCriteria: "Test verifies thread safety without race conditions",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
 		t.Fatalf("Failed to create issue: %v", err)

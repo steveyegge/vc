@@ -17,6 +17,7 @@ func TestCheckEpicCompletion_NoParentEpic(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, task, "test"); err != nil {
 		t.Fatalf("Failed to create task: %v", err)
@@ -67,6 +68,7 @@ func TestCheckEpicCompletion_EpicNotComplete(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, task1, "test"); err != nil {
 		t.Fatalf("Failed to create task1: %v", err)
@@ -88,6 +90,7 @@ func TestCheckEpicCompletion_EpicNotComplete(t *testing.T) {
 		Status:    types.StatusOpen, // Still open - epic not complete
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, task2, "test"); err != nil {
 		t.Fatalf("Failed to create task2: %v", err)
@@ -157,6 +160,7 @@ func TestCheckEpicCompletion_EpicComplete(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, task1, "test"); err != nil {
 		t.Fatalf("Failed to create task1: %v", err)
@@ -167,6 +171,7 @@ func TestCheckEpicCompletion_EpicComplete(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, task2, "test"); err != nil {
 		t.Fatalf("Failed to create task2: %v", err)
@@ -281,6 +286,7 @@ func TestCheckEpicCompletion_NestedEpics(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, task, "test"); err != nil {
 		t.Fatalf("Failed to create task: %v", err)
@@ -367,6 +373,7 @@ func TestCheckEpicCompletion_EventLogging(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, task, "test"); err != nil {
 		t.Fatalf("Failed to create task: %v", err)

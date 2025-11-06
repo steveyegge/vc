@@ -378,7 +378,31 @@ func (s *VCStorage) claimIssueAttempt(ctx context.Context, issueID, executorInst
 	}
 	defer func() { _ = tx.Rollback() }() // Rollback if not committed
 
-	// First, check if issue is already claimed or being executed
+	// First, validate the issue has acceptance criteria if it's a task or bug (vc-kmgv)
+	// This prevents the vc-hpcl scenario where issues without acceptance criteria
+	// get claimed and worked on, making it impossible to validate completion
+	var issueType string
+	var acceptanceCriteria string
+	err = tx.QueryRowContext(ctx, `
+		SELECT issue_type, acceptance_criteria
+		FROM issues
+		WHERE id = ?
+	`, issueID).Scan(&issueType, &acceptanceCriteria)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("issue %s not found", issueID)
+		}
+		return fmt.Errorf("failed to query issue for validation: %w", err)
+	}
+
+	// Require acceptance criteria for tasks and bugs
+	if (issueType == string(types.TypeTask) || issueType == string(types.TypeBug)) &&
+		strings.TrimSpace(acceptanceCriteria) == "" {
+		return fmt.Errorf("cannot claim issue %s: acceptance_criteria is required for %s issues (needed to validate completion)", issueID, issueType)
+	}
+
+	// Check if issue is already claimed or being executed
 	var existingClaim string
 	err = tx.QueryRowContext(ctx, `
 		SELECT executor_instance_id

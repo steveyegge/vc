@@ -31,6 +31,7 @@ func TestEpicLifecycleEvents_RegularEpic(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, task, "test"); err != nil {
 		t.Fatalf("Failed to create task: %v", err)
@@ -153,6 +154,7 @@ func TestEpicLifecycleEvents_MissionEpic(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, task, "test"); err != nil {
 		t.Fatalf("Failed to create task: %v", err)
@@ -246,6 +248,7 @@ func TestEpicLifecycleEvents_ExecutorInstanceID(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 	}
 	if err := store.CreateIssue(ctx, task, "test"); err != nil {
 		t.Fatalf("Failed to create task: %v", err)

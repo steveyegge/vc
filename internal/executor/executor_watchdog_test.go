@@ -24,6 +24,7 @@ func TestWatchdogIntegration_InfiniteLoopDetection(t *testing.T) {
 		Status:      types.StatusOpen,
 		Priority:    1,
 		IssueType:   types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
@@ -107,6 +108,7 @@ func TestWatchdogIntegration_ThrashingDetection(t *testing.T) {
 		Status:      types.StatusOpen,
 		Priority:    1,
 		IssueType:   types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
@@ -178,6 +180,7 @@ func TestWatchdogIntegration_AgentContextCancellation(t *testing.T) {
 		Status:      types.StatusOpen,
 		Priority:    1,
 		IssueType:   types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
