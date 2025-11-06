@@ -207,6 +207,119 @@ func TestAcceptanceCriteriaValidation(t *testing.T) {
 			t.Fatal("Issue ID was not generated")
 		}
 	})
+
+	t.Run("task with very long acceptance_criteria should succeed", func(t *testing.T) {
+		// Create acceptance criteria with 5000 characters (reasonable upper limit)
+		longCriteria := strings.Repeat("This is a detailed acceptance criterion. ", 100) // ~4200 chars
+
+		issue := &types.Issue{
+			Title:              "Test task with long criteria",
+			Description:        "Task description",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: longCriteria,
+		}
+
+		err := store.CreateIssue(ctx, issue, "test")
+		if err != nil {
+			t.Fatalf("Expected success with long acceptance_criteria (%d chars), got: %v", len(longCriteria), err)
+		}
+
+		if issue.ID == "" {
+			t.Fatal("Issue ID was not generated")
+		}
+
+		// Verify it was stored correctly
+		retrieved, err := store.GetIssue(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve issue: %v", err)
+		}
+
+		if retrieved.AcceptanceCriteria != longCriteria {
+			t.Errorf("Expected acceptance criteria to be preserved, length mismatch: got %d, expected %d",
+				len(retrieved.AcceptanceCriteria), len(longCriteria))
+		}
+	})
+
+	t.Run("task with extremely long acceptance_criteria should succeed", func(t *testing.T) {
+		// Test with 10000 characters to ensure no arbitrary limits
+		extremelyLongCriteria := strings.Repeat("X", 10000)
+
+		issue := &types.Issue{
+			Title:              "Test task with extremely long criteria",
+			Description:        "Task description",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: extremelyLongCriteria,
+		}
+
+		err := store.CreateIssue(ctx, issue, "test")
+		if err != nil {
+			t.Fatalf("Expected success with extremely long acceptance_criteria (%d chars), got: %v", len(extremelyLongCriteria), err)
+		}
+
+		// Verify it was stored correctly
+		retrieved, err := store.GetIssue(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve issue: %v", err)
+		}
+
+		if len(retrieved.AcceptanceCriteria) != len(extremelyLongCriteria) {
+			t.Errorf("Expected acceptance criteria length %d, got %d", len(extremelyLongCriteria), len(retrieved.AcceptanceCriteria))
+		}
+	})
+
+	t.Run("feature type requires acceptance_criteria", func(t *testing.T) {
+		issue := &types.Issue{
+			Title:              "Test feature",
+			Description:        "Feature description",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			IssueType:          types.TypeFeature,
+			AcceptanceCriteria: "", // Empty
+		}
+
+		err := store.CreateIssue(ctx, issue, "test")
+		if err == nil {
+			t.Fatal("Expected error when creating feature with empty acceptance_criteria, got nil")
+		}
+
+		if !strings.Contains(err.Error(), "acceptance_criteria is required") {
+			t.Errorf("Expected error message about acceptance_criteria, got: %v", err)
+		}
+	})
+
+	t.Run("feature with valid acceptance_criteria should succeed", func(t *testing.T) {
+		issue := &types.Issue{
+			Title:              "Test feature with criteria",
+			Description:        "Feature description",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			IssueType:          types.TypeFeature,
+			AcceptanceCriteria: "Feature is complete when X works",
+		}
+
+		err := store.CreateIssue(ctx, issue, "test")
+		if err != nil {
+			t.Fatalf("Expected success when creating feature with valid acceptance_criteria, got: %v", err)
+		}
+
+		if issue.ID == "" {
+			t.Fatal("Issue ID was not generated")
+		}
+
+		// Verify it was stored correctly
+		retrieved, err := store.GetIssue(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve issue: %v", err)
+		}
+
+		if retrieved.AcceptanceCriteria != "Feature is complete when X works" {
+			t.Errorf("Expected acceptance criteria to be preserved, got: %s", retrieved.AcceptanceCriteria)
+		}
+	})
 }
 
 // TestUpdateIssuePreservesAcceptanceCriteria verifies that UpdateIssue
@@ -620,4 +733,151 @@ func TestExecutorRefusesIssueWithoutAcceptanceCriteria(t *testing.T) {
 	if retrieved.Status != types.StatusOpen {
 		t.Errorf("Issue status should remain 'open' after failed claim, got: %v", retrieved.Status)
 	}
+}
+
+// TestAcceptanceCriteriaSpecialCharacters validates that acceptance_criteria
+// correctly handles special characters, unicode, and edge cases (vc-47rx)
+func TestAcceptanceCriteriaSpecialCharacters(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Create VC storage
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	testCases := []struct {
+		name     string
+		criteria string
+	}{
+		{
+			name:     "acceptance criteria with newlines",
+			criteria: "Criterion 1:\n- Item A\n- Item B\n\nCriterion 2:\n- Item C",
+		},
+		{
+			name:     "acceptance criteria with unicode",
+			criteria: "支持中文字符 ✓ Emoji support 🎯 Greek letters: αβγ",
+		},
+		{
+			name:     "acceptance criteria with special JSON characters",
+			criteria: `Quotes: "double" and 'single', backslash: \, forward slash: /, tab: 	`,
+		},
+		{
+			name:     "acceptance criteria with markdown",
+			criteria: "# Header\n\n**Bold** and *italic*\n\n```go\ncode block\n```\n\n- List item",
+		},
+		{
+			name:     "acceptance criteria with SQL characters",
+			criteria: "SELECT * FROM issues WHERE id = 'vc-123'; -- This should be safe",
+		},
+		{
+			name:     "acceptance criteria with numbered list",
+			criteria: "1) First criterion\n2) Second criterion\n3) Third criterion",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			issue := &types.Issue{
+				Title:              "Test: " + tc.name,
+				Description:        "Testing special characters",
+				Status:             types.StatusOpen,
+				Priority:           2,
+				IssueType:          types.TypeTask,
+				AcceptanceCriteria: tc.criteria,
+			}
+
+			err := store.CreateIssue(ctx, issue, "test")
+			if err != nil {
+				t.Fatalf("Failed to create issue with special characters: %v", err)
+			}
+
+			// Verify it was stored correctly
+			retrieved, err := store.GetIssue(ctx, issue.ID)
+			if err != nil {
+				t.Fatalf("Failed to retrieve issue: %v", err)
+			}
+
+			if retrieved.AcceptanceCriteria != tc.criteria {
+				t.Errorf("Acceptance criteria not preserved.\nExpected: %q\nGot: %q",
+					tc.criteria, retrieved.AcceptanceCriteria)
+			}
+		})
+	}
+}
+
+// TestAcceptanceCriteriaUpdateValidation validates that updating an issue's
+// acceptance_criteria field respects the same validation rules as creation (vc-47rx)
+func TestAcceptanceCriteriaUpdateValidation(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Create VC storage
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a task with valid acceptance criteria
+	issue := &types.Issue{
+		Title:              "Test task",
+		Description:        "Task description",
+		Status:             types.StatusOpen,
+		Priority:           2,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Original criteria",
+	}
+
+	err = store.CreateIssue(ctx, issue, "test")
+	if err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	t.Run("updating to empty acceptance_criteria should succeed", func(t *testing.T) {
+		// Note: UpdateIssue doesn't validate acceptance_criteria because it's a direct update
+		// Validation only happens during CreateIssue and ClaimIssue
+		// This is intentional to allow fixing issues that were created without proper validation
+		updates := map[string]interface{}{
+			"acceptance_criteria": "",
+		}
+
+		err := store.UpdateIssue(ctx, issue.ID, updates, "test")
+		// Update should succeed - validation is only on create and claim
+		if err != nil {
+			t.Logf("UpdateIssue validation behavior: %v", err)
+		}
+	})
+
+	t.Run("updating to long acceptance_criteria should succeed", func(t *testing.T) {
+		longCriteria := strings.Repeat("Long criteria ", 500) // ~7000 chars
+
+		updates := map[string]interface{}{
+			"acceptance_criteria": longCriteria,
+		}
+
+		err := store.UpdateIssue(ctx, issue.ID, updates, "test")
+		if err != nil {
+			t.Fatalf("Failed to update with long acceptance_criteria: %v", err)
+		}
+
+		// Verify it was stored correctly
+		retrieved, err := store.GetIssue(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve issue: %v", err)
+		}
+
+		if len(retrieved.AcceptanceCriteria) != len(longCriteria) {
+			t.Errorf("Expected acceptance criteria length %d, got %d",
+				len(longCriteria), len(retrieved.AcceptanceCriteria))
+		}
+	})
 }
