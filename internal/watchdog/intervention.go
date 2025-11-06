@@ -481,14 +481,21 @@ func (ic *InterventionController) createEscalationIssue(ctx context.Context, rep
 	}
 
 	// Create the escalation issue
+	acceptanceCriteria := fmt.Sprintf(`Investigate and resolve the %s anomaly:
+- Analyze the affected issue %s to determine root cause
+- Determine if the watchdog intervention was correct
+- Fix the underlying issue if it's a real problem
+- Update watchdog logic if it's a false positive`, report.AnomalyType, currentIssueID)
+
 	issue := &types.Issue{
-		Title:       title,
-		Description: description,
-		Status:      types.StatusOpen,
-		Priority:    priority,
-		IssueType:   types.TypeTask,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		Title:              title,
+		Description:        description,
+		Status:             types.StatusOpen,
+		Priority:           priority,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: acceptanceCriteria,
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 
 	// Store the issue (using "watchdog" as the actor)
