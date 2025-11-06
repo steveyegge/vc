@@ -421,6 +421,10 @@ func (ic *InterventionController) Intervene(ctx context.Context, report *Anomaly
 		// Just create the escalation issue without stopping execution
 		return ic.notifyHuman(ctx, report)
 
+	case ActionBackoff:
+		// Apply AI-recommended backoff (vc-ysqs)
+		return ic.applyBackoff(ctx, report)
+
 	case ActionInvestigate, ActionMonitor:
 		// These are lower-priority actions - just log and create escalation
 		return ic.flagForInvestigation(ctx, report)
@@ -428,6 +432,59 @@ func (ic *InterventionController) Intervene(ctx context.Context, report *Anomaly
 	default:
 		return nil, fmt.Errorf("unknown recommended action: %s", report.RecommendedAction)
 	}
+}
+
+// applyBackoff applies AI-recommended backoff to the check interval (vc-ysqs)
+// This is the ZFC-compliant way: AI decides when/how much to back off, not hardcoded thresholds
+func (ic *InterventionController) applyBackoff(ctx context.Context, report *AnomalyReport) (*InterventionResult, error) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+
+	// Extract suggested interval from AI metrics
+	suggestedIntervalStr, ok := report.Metrics["suggested_interval"].(string)
+	if !ok || suggestedIntervalStr == "" {
+		return nil, fmt.Errorf("AI recommended backoff but did not provide suggested_interval in metrics")
+	}
+
+	// Parse the interval
+	suggestedInterval, err := time.ParseDuration(suggestedIntervalStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid suggested_interval from AI: %s (%w)", suggestedIntervalStr, err)
+	}
+
+	result := &InterventionResult{
+		Success:          true,
+		InterventionType: InterventionPauseAgent, // Use pause as the generic type
+		AnomalyReport:    report,
+		Message:          fmt.Sprintf("Applied AI-recommended backoff: %v (reason: %s)", suggestedInterval, report.Description),
+		Timestamp:        time.Now(),
+	}
+
+	// Apply the AI-suggested interval to the config
+	if ic.config != nil {
+		ic.config.ApplyAIBackoff(suggestedInterval, report.Reasoning)
+	}
+
+	// Create escalation issue documenting the backoff decision
+	currentIssueID := ic.currentIssueID
+	escalationID, err := ic.createEscalationIssue(ctx, report, InterventionPauseAgent, currentIssueID)
+	if err != nil {
+		result.Message += fmt.Sprintf(" (warning: failed to create escalation issue: %v)", err)
+	} else {
+		result.EscalationIssueID = escalationID
+	}
+
+	// Emit watchdog event
+	if err := ic.emitWatchdogEvent(ctx, result, currentIssueID); err != nil {
+		result.Message += fmt.Sprintf(" (warning: failed to emit event: %v)", err)
+	}
+
+	// Add to history
+	ic.addToHistoryLocked(result)
+
+	fmt.Printf("Watchdog: Applied AI-recommended backoff to %v (escalation: %s)\n", suggestedInterval, escalationID)
+
+	return result, nil
 }
 
 // createEscalationIssue creates or updates an escalation issue for human review

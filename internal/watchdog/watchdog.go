@@ -88,6 +88,10 @@ func NewWatchdog(deps *WatchdogDeps) (*Watchdog, error) {
 		return nil, fmt.Errorf("failed to create intervention controller: %w", err)
 	}
 
+	// Wire up analyzer with intervention controller and config for backoff analysis (vc-ysqs)
+	analyzer.SetInterventionController(interventionController)
+	analyzer.SetConfig(config)
+
 	return &Watchdog{
 		monitor:                monitor,
 		analyzer:               analyzer,

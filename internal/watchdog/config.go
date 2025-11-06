@@ -647,6 +647,7 @@ func (c *WatchdogConfig) SaveToFile(path string) error {
 
 // RecordIntervention records an intervention and updates backoff state (vc-21pw)
 // This should be called after each intervention to track consecutive interventions
+// NOTE (vc-ysqs): This method only tracks state. The AI decides when to back off via ApplyAIBackoff().
 func (c *WatchdogConfig) RecordIntervention() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -658,10 +659,9 @@ func (c *WatchdogConfig) RecordIntervention() {
 	c.backoffState.ConsecutiveInterventions++
 	c.backoffState.LastInterventionTime = time.Now()
 
-	// Check if we should enter backoff mode
-	if c.backoffState.ConsecutiveInterventions >= c.BackoffConfig.TriggerThreshold {
-		c.applyBackoffLocked()
-	}
+	// NOTE: Hardcoded threshold check removed (vc-ysqs)
+	// The AI now decides when to back off by analyzing intervention patterns
+	// See analyzer.go for ZFC-compliant backoff decision logic
 }
 
 // RecordProgress records successful progress and resets backoff state (vc-21pw)
@@ -681,27 +681,36 @@ func (c *WatchdogConfig) RecordProgress() {
 	c.CheckInterval = c.BackoffConfig.BaseInterval
 }
 
-// applyBackoffLocked applies exponential backoff to the check interval
-// MUST be called with c.mu held (write lock)
-func (c *WatchdogConfig) applyBackoffLocked() {
+// ApplyAIBackoff applies AI-recommended backoff to the check interval (vc-ysqs)
+// This is the ZFC-compliant way: AI decides the interval based on telemetry analysis
+// The reasoning parameter contains the AI's explanation for why this interval was chosen
+func (c *WatchdogConfig) ApplyAIBackoff(suggestedInterval time.Duration, reasoning string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if !c.BackoffConfig.Enabled {
 		return
 	}
 
-	// Calculate new interval with exponential backoff
-	newInterval := time.Duration(float64(c.backoffState.CurrentInterval) * c.BackoffConfig.BackoffMultiplier)
-
-	// Cap at max interval
-	if newInterval > c.BackoffConfig.MaxInterval {
-		newInterval = c.BackoffConfig.MaxInterval
+	// Validate the AI's suggestion (basic sanity check, not a decision)
+	if suggestedInterval < c.BackoffConfig.BaseInterval {
+		fmt.Printf("Watchdog: AI suggested interval %v is below base interval %v, using base interval\n",
+			suggestedInterval, c.BackoffConfig.BaseInterval)
+		suggestedInterval = c.BackoffConfig.BaseInterval
+	}
+	if suggestedInterval > c.BackoffConfig.MaxInterval {
+		fmt.Printf("Watchdog: AI suggested interval %v exceeds max interval %v, capping at max\n",
+			suggestedInterval, c.BackoffConfig.MaxInterval)
+		suggestedInterval = c.BackoffConfig.MaxInterval
 	}
 
-	c.backoffState.CurrentInterval = newInterval
+	// Apply the AI's decision
+	c.backoffState.CurrentInterval = suggestedInterval
 	c.backoffState.IsBackedOff = true
-	c.CheckInterval = newInterval
+	c.CheckInterval = suggestedInterval
 
-	fmt.Printf("Watchdog: Backoff triggered - increasing check interval to %v (consecutive interventions: %d)\n",
-		newInterval, c.backoffState.ConsecutiveInterventions)
+	fmt.Printf("Watchdog: Applied AI-recommended backoff to %v\n", suggestedInterval)
+	fmt.Printf("Watchdog: AI reasoning: %s\n", reasoning)
 }
 
 // GetCurrentCheckInterval returns the current effective check interval

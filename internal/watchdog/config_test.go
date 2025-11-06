@@ -627,43 +627,54 @@ func TestBackoffMechanism(t *testing.T) {
 		t.Errorf("Initial interval should be base interval %v, got %v", baseInterval, cfg.GetCurrentCheckInterval())
 	}
 
-	// Record consecutive interventions
-	for i := 0; i < cfg.BackoffConfig.TriggerThreshold-1; i++ {
+	// vc-ysqs: RecordIntervention now only tracks state, doesn't trigger backoff
+	// The AI decides when to back off via ApplyAIBackoff()
+	for i := 0; i < 10; i++ {
 		cfg.RecordIntervention()
+		// Should NOT enter backoff automatically anymore
 		if cfg.IsInBackoff() {
-			t.Errorf("Should not enter backoff until threshold reached (iteration %d)", i)
+			t.Errorf("RecordIntervention should not trigger backoff (ZFC violation), iteration %d", i)
 		}
 	}
 
-	// One more intervention should trigger backoff
-	cfg.RecordIntervention()
+	// Verify state is being tracked
+	state := cfg.GetBackoffState()
+	if state.ConsecutiveInterventions != 10 {
+		t.Errorf("Expected 10 consecutive interventions tracked, got %d", state.ConsecutiveInterventions)
+	}
+
+	// vc-ysqs: AI decides to apply backoff with suggested interval
+	aiSuggestedInterval := 2 * time.Minute
+	cfg.ApplyAIBackoff(aiSuggestedInterval, "AI detected intervention storm")
+
+	// Now should be in backoff
 	if !cfg.IsInBackoff() {
-		t.Error("Should be in backoff mode after reaching threshold")
+		t.Error("Should be in backoff mode after AI applies backoff")
 	}
 
-	// Check that interval has increased
+	// Check that interval matches AI's suggestion
 	currentInterval := cfg.GetCurrentCheckInterval()
-	expectedInterval := time.Duration(float64(baseInterval) * cfg.BackoffConfig.BackoffMultiplier)
-	if currentInterval != expectedInterval {
-		t.Errorf("Expected interval %v after first backoff, got %v", expectedInterval, currentInterval)
+	if currentInterval != aiSuggestedInterval {
+		t.Errorf("Expected AI-suggested interval %v, got %v", aiSuggestedInterval, currentInterval)
 	}
 
-	// Record more interventions to test exponential increase
-	prevInterval := currentInterval
-	cfg.RecordIntervention()
-	currentInterval = cfg.GetCurrentCheckInterval()
-	expectedInterval = time.Duration(float64(prevInterval) * cfg.BackoffConfig.BackoffMultiplier)
-	if currentInterval != expectedInterval {
-		t.Errorf("Expected exponential backoff to %v, got %v", expectedInterval, currentInterval)
-	}
-
-	// Test max interval cap
-	for i := 0; i < 20; i++ {
-		cfg.RecordIntervention()
-	}
+	// Test that AI suggestion is capped at max interval
+	veryLargeInterval := 999 * time.Minute
+	cfg.ApplyAIBackoff(veryLargeInterval, "AI suggests very large backoff")
 	currentInterval = cfg.GetCurrentCheckInterval()
 	if currentInterval > cfg.BackoffConfig.MaxInterval {
-		t.Errorf("Interval exceeded max: %v > %v", currentInterval, cfg.BackoffConfig.MaxInterval)
+		t.Errorf("Interval should be capped at max: got %v, max is %v", currentInterval, cfg.BackoffConfig.MaxInterval)
+	}
+	if currentInterval != cfg.BackoffConfig.MaxInterval {
+		t.Errorf("Expected max interval %v when AI suggests too large, got %v", cfg.BackoffConfig.MaxInterval, currentInterval)
+	}
+
+	// Test that AI suggestion is raised to base interval if too small
+	tinyInterval := 1 * time.Second
+	cfg.ApplyAIBackoff(tinyInterval, "AI suggests tiny backoff")
+	currentInterval = cfg.GetCurrentCheckInterval()
+	if currentInterval < cfg.BackoffConfig.BaseInterval {
+		t.Errorf("Interval should be at least base: got %v, base is %v", currentInterval, cfg.BackoffConfig.BaseInterval)
 	}
 
 	// Test reset on progress
@@ -675,13 +686,13 @@ func TestBackoffMechanism(t *testing.T) {
 		t.Errorf("Interval should reset to base %v on progress, got %v", baseInterval, cfg.GetCurrentCheckInterval())
 	}
 
-	state := cfg.GetBackoffState()
+	state = cfg.GetBackoffState()
 	if state.ConsecutiveInterventions != 0 {
 		t.Errorf("Consecutive interventions should reset to 0, got %d", state.ConsecutiveInterventions)
 	}
 }
 
-// TestBackoffDisabled tests that backoff doesn't activate when disabled (vc-21pw)
+// TestBackoffDisabled tests that backoff doesn't activate when disabled (vc-21pw, vc-ysqs)
 func TestBackoffDisabled(t *testing.T) {
 	cfg := DefaultWatchdogConfig()
 	cfg.BackoffConfig.Enabled = false
@@ -698,6 +709,15 @@ func TestBackoffDisabled(t *testing.T) {
 		t.Error("Should not enter backoff when disabled")
 	}
 
+	if cfg.GetCurrentCheckInterval() != baseInterval {
+		t.Errorf("Interval should remain at base %v when backoff disabled, got %v", baseInterval, cfg.GetCurrentCheckInterval())
+	}
+
+	// vc-ysqs: AI-recommended backoff should also be disabled
+	cfg.ApplyAIBackoff(5*time.Minute, "AI recommends backoff")
+	if cfg.IsInBackoff() {
+		t.Error("Should not apply AI backoff when backoff is disabled")
+	}
 	if cfg.GetCurrentCheckInterval() != baseInterval {
 		t.Errorf("Interval should remain at base %v when backoff disabled, got %v", baseInterval, cfg.GetCurrentCheckInterval())
 	}

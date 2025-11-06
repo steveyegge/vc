@@ -44,6 +44,7 @@ const (
 	ActionMonitor       RecommendedAction = "monitor"         // Continue monitoring but no action yet
 	ActionNotifyHuman   RecommendedAction = "notify_human"    // Alert a human operator
 	ActionCheckpoint    RecommendedAction = "checkpoint"      // Request checkpoint and graceful termination
+	ActionBackoff       RecommendedAction = "backoff"         // Reduce check frequency due to intervention storm (vc-ysqs)
 )
 
 // AnomalyReport represents the result of anomaly detection analysis
@@ -79,8 +80,10 @@ type AnomalyReport struct {
 // Analyzer performs AI-driven behavioral analysis on execution telemetry
 // It detects anomalous patterns without using hardcoded heuristics (ZFC compliant)
 type Analyzer struct {
-	monitor    *Monitor
-	supervisor *ai.Supervisor
+	monitor                *Monitor
+	supervisor             *ai.Supervisor
+	interventionController *InterventionController // For accessing intervention history (vc-ysqs)
+	config                 *WatchdogConfig         // For accessing backoff state (vc-ysqs)
 	// TODO(vc-170): store will be used to query historical events for richer context
 	// Currently unused but required for future event-based anomaly correlation
 	store storage.Storage
@@ -88,9 +91,11 @@ type Analyzer struct {
 
 // AnalyzerConfig holds configuration for the analyzer
 type AnalyzerConfig struct {
-	Monitor    *Monitor
-	Supervisor *ai.Supervisor
-	Store      storage.Storage
+	Monitor                *Monitor
+	Supervisor             *ai.Supervisor
+	Store                  storage.Storage
+	InterventionController *InterventionController // Optional: for backoff analysis (vc-ysqs)
+	Config                 *WatchdogConfig         // Optional: for backoff state access (vc-ysqs)
 }
 
 // NewAnalyzer creates a new behavioral analyzer
@@ -106,10 +111,22 @@ func NewAnalyzer(cfg *AnalyzerConfig) (*Analyzer, error) {
 	}
 
 	return &Analyzer{
-		monitor:    cfg.Monitor,
-		supervisor: cfg.Supervisor,
-		store:      cfg.Store,
+		monitor:                cfg.Monitor,
+		supervisor:             cfg.Supervisor,
+		store:                  cfg.Store,
+		interventionController: cfg.InterventionController, // Optional (vc-ysqs)
+		config:                 cfg.Config,                 // Optional (vc-ysqs)
 	}, nil
+}
+
+// SetInterventionController sets the intervention controller (called after construction to avoid circular dependency)
+func (a *Analyzer) SetInterventionController(ic *InterventionController) {
+	a.interventionController = ic
+}
+
+// SetConfig sets the watchdog config (called after construction to avoid circular dependency)
+func (a *Analyzer) SetConfig(cfg *WatchdogConfig) {
+	a.config = cfg
 }
 
 // DetectAnomalies analyzes telemetry and event history to detect anomalous behavior
@@ -251,6 +268,41 @@ IMPORTANT: Base your analysis on the DATA provided, not on hardcoded thresholds.
 		}
 	}
 
+	// Add intervention history and backoff state (vc-ysqs)
+	if a.interventionController != nil && a.config != nil {
+		history := a.interventionController.GetInterventionHistory()
+		backoffState := a.config.GetBackoffState()
+
+		if len(history) > 0 {
+			prompt.WriteString(fmt.Sprintf("\n\nINTERVENTION HISTORY (%d recent interventions):\n", len(history)))
+			now := time.Now()
+			for i, intervention := range history {
+				timeSince := now.Sub(intervention.Timestamp)
+				prompt.WriteString(fmt.Sprintf("\nIntervention %d:\n", i+1))
+				prompt.WriteString(fmt.Sprintf("  Timestamp: %s (%v ago)\n", intervention.Timestamp.Format(time.RFC3339), timeSince))
+				prompt.WriteString(fmt.Sprintf("  Type: %s\n", intervention.InterventionType))
+				prompt.WriteString(fmt.Sprintf("  Anomaly: %s (severity=%s, confidence=%.2f)\n",
+					intervention.AnomalyReport.AnomalyType,
+					intervention.AnomalyReport.Severity,
+					intervention.AnomalyReport.Confidence))
+				prompt.WriteString(fmt.Sprintf("  Message: %s\n", intervention.Message))
+				if intervention.EscalationIssueID != "" {
+					prompt.WriteString(fmt.Sprintf("  Escalation: %s\n", intervention.EscalationIssueID))
+				}
+			}
+
+			prompt.WriteString(fmt.Sprintf("\nBACKOFF STATE:\n"))
+			prompt.WriteString(fmt.Sprintf("  Consecutive Interventions: %d\n", backoffState.ConsecutiveInterventions))
+			prompt.WriteString(fmt.Sprintf("  Current Check Interval: %v\n", backoffState.CurrentInterval))
+			prompt.WriteString(fmt.Sprintf("  Is Backed Off: %v\n", backoffState.IsBackedOff))
+			if !backoffState.LastInterventionTime.IsZero() {
+				timeSince := now.Sub(backoffState.LastInterventionTime)
+				prompt.WriteString(fmt.Sprintf("  Last Intervention: %s (%v ago)\n",
+					backoffState.LastInterventionTime.Format(time.RFC3339), timeSince))
+			}
+		}
+	}
+
 	prompt.WriteString(`
 
 ANALYSIS TASK:
@@ -274,6 +326,16 @@ Consider:
    - An agent making API calls may take 10-30 seconds between tool uses
    - Only flag as stuck if BOTH: (a) no tool usage AND (b) excessive time in same state
    - Short executions (<5 minutes) with tool activity are NOT stuck
+8. INTERVENTION STORM DETECTION (vc-ysqs): Analyze intervention history to detect anomaly storms:
+   - Are interventions happening too frequently (multiple in short time window)?
+   - Are interventions for the same anomaly type repeating?
+   - Is the watchdog stuck in an intervention loop (intervene → escalate → retry → intervene)?
+   - Would reducing check frequency help? (give the system time to stabilize)
+   - If intervention storm detected, recommend "backoff" action with suggested interval
+   - CRITICAL: YOU decide WHEN to back off, HOW MUCH to back off, and the interval duration
+   - Consider: severity of issue, rate of interventions, time since last intervention
+   - Example backoff intervals: 1m (mild), 2m (moderate), 5m (severe), 10m (extreme)
+   - Include your reasoning about WHY backoff is needed and HOW you chose the interval
 
 Provide your analysis as a JSON object:
 {
@@ -281,13 +343,13 @@ Provide your analysis as a JSON object:
   "anomaly_type": "infinite_loop|thrashing|stuck_state|regression|resource_spike|other",
   "severity": "critical|high|medium|low",
   "description": "Brief description of the anomaly",
-  "recommended_action": "stop_execution|restart_agent|mark_as_blocked|investigate|monitor|notify_human",
+  "recommended_action": "stop_execution|restart_agent|mark_as_blocked|investigate|monitor|notify_human|backoff",
   "reasoning": "Detailed explanation of what patterns led to this detection",
   "confidence": 0.85,
   "affected_issues": ["vc-123", "vc-456"],
   "metrics": {
     "key_metric_1": value,
-    "key_metric_2": value
+    "suggested_interval": "2m"  // REQUIRED if recommended_action is "backoff" (Go duration format: 1m, 2m, 5m, 10m, etc.)
   }
 }
 
@@ -297,13 +359,18 @@ Fields:
 - severity: only if detected=true (how urgent is this?)
 - description: concise summary (1-2 sentences)
 - recommended_action: only if detected=true (what should be done?)
+  - Use "backoff" when interventions are too frequent and system needs time to stabilize
+  - MUST include "suggested_interval" in metrics when using "backoff"
 - reasoning: detailed explanation of your analysis
+  - For backoff: explain WHY backing off helps and HOW you chose the interval duration
 - confidence: how confident are you (0.0-1.0)
 - affected_issues: list of issue IDs involved
 - metrics: relevant metrics that contributed to detection
+  - REQUIRED for backoff: "suggested_interval" as Go duration string (e.g., "2m", "5m", "10m")
 
 Be conservative - only flag real anomalies, not minor variations.
 Be specific - include actual data points in your reasoning.
+For backoff decisions: Balance between giving system time to recover vs. not slowing down too much.
 
 IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences. Just the JSON object.
 `)
