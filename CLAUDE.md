@@ -61,6 +61,179 @@ bd update vc-X --notes "Starting work in Claude Code session"
 
 ---
 
+## 🛬 Landing the Plane: Clean Session Ending
+
+**When the user says "let's land the plane"**, follow this protocol to cleanly end your session:
+
+### 1. File Remaining Work
+Create beads issues for any follow-up work discovered during the session:
+
+```bash
+# File new issues for remaining tasks
+bd create "Add integration tests for loop detector" -t task -p 2 \
+  -d "Add tests that simulate loop conditions and verify halt behavior"
+
+bd create "Document loop detector in FEATURES.md" -t task -p 3 \
+  -d "Add detailed section explaining ZFC approach and configuration"
+```
+
+### 2. Run Quality Gates (if code changes were made)
+Ensure all quality gates pass. **File P0 issues for any failures**:
+
+```bash
+# Run tests
+go test ./...
+
+# Run linters
+golangci-lint run ./...
+
+# If anything fails, file blocking issues:
+bd create "Fix failing TestLoopDetector test" -t bug -p 0 \
+  -d "Test fails with: [error details]" \
+  --label "quality-gate-failure"
+```
+
+### 3. Update Beads Issues
+Close completed work and update status:
+
+```bash
+# Close finished issues
+bd close vc-0vfg --reason "Completed all acceptance criteria"
+
+# Update in-progress issues
+bd update vc-123 --notes "Completed initial implementation, needs testing"
+```
+
+### 4. Sync Issue Tracker (CRITICAL)
+**Work methodically to ensure local and remote issues merge safely.** The `.beads/issues.jsonl` file is the source of truth - conflicts here must be resolved carefully.
+
+```bash
+# Check for remote changes
+git fetch
+git status
+
+# Pull remote changes (may cause conflicts)
+git pull --rebase
+
+# If .beads/issues.jsonl has conflicts:
+# Option A: Accept remote and re-apply your changes
+git checkout --theirs .beads/issues.jsonl
+bd import .beads/issues.jsonl
+# Then re-close/update your issues
+bd close vc-0vfg --reason "..."
+
+# Option B: Manual merge
+# Edit .beads/issues.jsonl to resolve conflicts
+# Then import the merged result
+bd import .beads/issues.jsonl
+
+# Export your final state
+bd export -o .beads/issues.jsonl
+
+# Verify database consistency
+bd list | head -20
+bd show vc-0vfg  # Verify your changes survived
+
+# Commit and push
+git add .beads/issues.jsonl
+git commit -m "Sync issue tracker after session"
+git push
+
+# If push fails (remote changed), repeat pull/merge/push cycle
+```
+
+**Goal:** Clean reconciliation where no issues are lost. Be patient and creative - sometimes multiple iterations are needed.
+
+### 5. Verify Clean State
+Ensure all changes are committed and no untracked files remain:
+
+```bash
+# Check git status
+git status
+
+# Verify no untracked files (except .beads/vc.db which is gitignored)
+# Verify no uncommitted changes
+
+# Verify pushed to remote
+git log --oneline -5
+git status  # Should show "Your branch is up to date with 'origin/main'"
+```
+
+### 6. Choose Follow-Up Issue
+Provide the user with a clear prompt for the next session:
+
+```bash
+# Find next ready work
+bd ready --limit 5
+
+# Show details of recommended issue
+bd show vc-X
+```
+
+**Then provide the user with:**
+- **Summary of completed work** (what was accomplished this session)
+- **Issues filed for follow-up** (with issue IDs)
+- **Quality gate status** (all passing / issues filed for failures)
+- **Recommended prompt for next session** in this format:
+
+```
+Continue work on vc-X: [issue title]
+
+Context: [1-2 sentences about what's been done and what's next]
+```
+
+### Example Complete "Land the Plane" Session
+
+```bash
+# 1. File remaining work
+bd create "Add loop detector metrics to activity feed" -t task -p 2
+
+# 2. Run quality gates
+go test ./...
+golangci-lint run ./...
+# All passed ✓
+
+# 3. Close finished issues
+bd close vc-0vfg --reason "Completed all acceptance criteria"
+
+# 4. Sync carefully
+git pull --rebase
+# No conflicts
+bd export -o .beads/issues.jsonl
+git add .beads/issues.jsonl
+git commit -m "Close vc-0vfg: loop detector implementation"
+git push
+# Success ✓
+
+# 5. Verify clean state
+git status
+# On branch main, nothing to commit, working tree clean ✓
+
+# 6. Choose next work
+bd ready --limit 5
+bd show vc-xyz
+```
+
+**Session Summary to User:**
+```
+✅ Completed this session:
+- Implemented activity feed loop detector (vc-0vfg)
+- All quality gates passing
+- All changes committed and pushed
+
+📋 Issues filed for follow-up:
+- vc-abc: Add loop detector metrics to activity feed
+
+🎯 Recommended next session:
+"Continue work on vc-xyz: Add health monitoring for executor state
+
+Context: The loop detector is now complete. Next up is implementing
+health monitoring to track executor state transitions and detect
+anomalies proactively."
+```
+
+---
+
 ## 📋 Current Focus
 
 VC is in **bootstrap phase**. We're building the AI-supervised issue workflow from scratch in Go.
