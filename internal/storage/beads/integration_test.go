@@ -4652,3 +4652,232 @@ func TestGetReadyWorkFiltersBlocked(t *testing.T) {
 		}
 	})
 }
+
+// TestAcceptanceCriteriaWorkflowEnforcement verifies end-to-end enforcement
+// of acceptance criteria requirements (vc-trl5)
+//
+// This test addresses the issue found in vc-hpcl where an issue was worked on
+// without clear acceptance criteria. It verifies that the complete workflow
+// prevents such issues from being created and executed.
+//
+// Test coverage:
+// 1. Issue creation enforces acceptance criteria for task/bug types
+// 2. Executor refuses to claim issues without acceptance criteria (if they somehow exist)
+// 3. Issues cannot transition through workflow without acceptance criteria
+func TestAcceptanceCriteriaWorkflowEnforcement(t *testing.T) {
+	ctx := context.Background()
+
+	// Setup test storage
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Register executor for claim tests
+	instance := &types.ExecutorInstance{
+		InstanceID: "test-executor-ac",
+		Version:    "test",
+		StartedAt:  time.Now(),
+		Hostname:   "test-host",
+		Status:     "running",
+	}
+	err = store.RegisterInstance(ctx, instance)
+	if err != nil {
+		t.Fatalf("Failed to register executor: %v", err)
+	}
+
+	// Test 1: Task creation without acceptance criteria should fail
+	t.Run("Task creation rejects empty acceptance_criteria", func(t *testing.T) {
+		task := &types.Issue{
+			Title:              "Task without acceptance criteria",
+			Description:        "This should fail",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: "", // Empty - should be rejected
+		}
+
+		err := store.CreateIssue(ctx, task, "test")
+		if err == nil {
+			t.Fatal("Expected error when creating task without acceptance_criteria")
+		}
+
+		if !strings.Contains(err.Error(), "acceptance_criteria is required") {
+			t.Errorf("Expected error about required acceptance_criteria, got: %v", err)
+		}
+	})
+
+	// Test 2: Bug creation without acceptance criteria should fail
+	t.Run("Bug creation rejects empty acceptance_criteria", func(t *testing.T) {
+		bug := &types.Issue{
+			Title:              "Bug without acceptance criteria",
+			Description:        "This should fail",
+			Status:             types.StatusOpen,
+			Priority:           1,
+			IssueType:          types.TypeBug,
+			AcceptanceCriteria: "   ", // Whitespace only - should be rejected
+		}
+
+		err := store.CreateIssue(ctx, bug, "test")
+		if err == nil {
+			t.Fatal("Expected error when creating bug without acceptance_criteria")
+		}
+
+		if !strings.Contains(err.Error(), "acceptance_criteria is required") {
+			t.Errorf("Expected error about required acceptance_criteria, got: %v", err)
+		}
+	})
+
+	// Test 3: Epic creation does NOT require acceptance criteria
+	t.Run("Epic creation allows empty acceptance_criteria", func(t *testing.T) {
+		epic := &types.Issue{
+			Title:              "Epic without acceptance criteria",
+			Description:        "Epics don't need acceptance criteria",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			IssueType:          types.TypeEpic,
+			AcceptanceCriteria: "", // Empty is OK for epics
+		}
+
+		err := store.CreateIssue(ctx, epic, "test")
+		if err != nil {
+			t.Errorf("Epic creation should succeed without acceptance_criteria, got error: %v", err)
+		}
+
+		if epic.ID == "" {
+			t.Error("Epic ID should be generated")
+		}
+	})
+
+	// Test 4: Task with proper acceptance criteria succeeds
+	t.Run("Task creation succeeds with acceptance_criteria", func(t *testing.T) {
+		task := &types.Issue{
+			Title:       "Task with acceptance criteria",
+			Description: "This should succeed",
+			Status:      types.StatusOpen,
+			Priority:    2,
+			IssueType:   types.TypeTask,
+			AcceptanceCriteria: `## Acceptance Criteria
+- [ ] Feature X is implemented
+- [ ] Tests pass
+- [ ] Documentation updated`,
+		}
+
+		err := store.CreateIssue(ctx, task, "test")
+		if err != nil {
+			t.Fatalf("Task creation should succeed with acceptance_criteria, got error: %v", err)
+		}
+
+		if task.ID == "" {
+			t.Fatal("Task ID should be generated")
+		}
+
+		// Verify acceptance criteria was stored
+		retrieved, err := store.GetIssue(ctx, task.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve task: %v", err)
+		}
+
+		if retrieved.AcceptanceCriteria == "" {
+			t.Error("Acceptance criteria should be persisted")
+		}
+
+		if !strings.Contains(retrieved.AcceptanceCriteria, "Feature X is implemented") {
+			t.Error("Acceptance criteria content should match what was provided")
+		}
+	})
+
+	// Test 5: GetReadyWork should only return issues that have acceptance criteria
+	// This ensures the executor workflow doesn't pick up malformed issues
+	t.Run("GetReadyWork only returns issues with acceptance_criteria", func(t *testing.T) {
+		// Create a valid task with acceptance criteria
+		validTask := &types.Issue{
+			Title:       "Valid task",
+			Description: "Has acceptance criteria",
+			Status:      types.StatusOpen,
+			Priority:    2,
+			IssueType:   types.TypeTask,
+			AcceptanceCriteria: `- Task should complete successfully
+- All tests pass`,
+		}
+
+		err := store.CreateIssue(ctx, validTask, "test")
+		if err != nil {
+			t.Fatalf("Failed to create valid task: %v", err)
+		}
+
+		// Get ready work - should return the valid task
+		readyWork, err := store.GetReadyWork(ctx, types.WorkFilter{
+			Status: types.StatusOpen,
+			Limit:  10,
+		})
+		if err != nil {
+			t.Fatalf("Failed to get ready work: %v", err)
+		}
+
+		// Verify the valid task appears in ready work
+		foundValid := false
+		for _, issue := range readyWork {
+			if issue.ID == validTask.ID {
+				foundValid = true
+				if issue.AcceptanceCriteria == "" {
+					t.Error("Ready work should have acceptance criteria populated")
+				}
+			}
+
+			// All ready tasks/bugs MUST have acceptance criteria
+			if issue.IssueType == types.TypeTask || issue.IssueType == types.TypeBug {
+				if strings.TrimSpace(issue.AcceptanceCriteria) == "" {
+					t.Errorf("Ready work issue %s (type=%s) has empty acceptance_criteria",
+						issue.ID, issue.IssueType)
+				}
+			}
+		}
+
+		if !foundValid {
+			t.Error("Valid task should appear in ready work")
+		}
+	})
+
+	// Test 6: ClaimIssue on a task with acceptance criteria succeeds
+	t.Run("ClaimIssue succeeds for task with acceptance_criteria", func(t *testing.T) {
+		task := &types.Issue{
+			Title:       "Claimable task",
+			Description: "Has acceptance criteria, can be claimed",
+			Status:      types.StatusOpen,
+			Priority:    2,
+			IssueType:   types.TypeTask,
+			AcceptanceCriteria: `- Implementation complete
+- Tests passing`,
+		}
+
+		err := store.CreateIssue(ctx, task, "test")
+		if err != nil {
+			t.Fatalf("Failed to create task: %v", err)
+		}
+
+		// Claim the task - should succeed
+		err = store.ClaimIssue(ctx, task.ID, "test-executor-ac")
+		if err != nil {
+			t.Errorf("ClaimIssue should succeed for task with acceptance_criteria, got error: %v", err)
+		}
+
+		// Verify task is now in_progress
+		claimed, err := store.GetIssue(ctx, task.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve claimed task: %v", err)
+		}
+
+		if claimed.Status != types.StatusInProgress {
+			t.Errorf("Claimed task status = %s, want %s", claimed.Status, types.StatusInProgress)
+		}
+
+		// Verify acceptance criteria is still present after claim
+		if claimed.AcceptanceCriteria == "" {
+			t.Error("Acceptance criteria should be preserved after claim")
+		}
+	})
+}

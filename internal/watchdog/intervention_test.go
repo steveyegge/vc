@@ -522,3 +522,204 @@ func TestInterventionController_InterventionHistory(t *testing.T) {
 		}
 	}
 }
+
+// TestRepeatedDetectionIntervention tests the behavior when the same issue
+// is detected multiple times with the same anomaly type (vc-tbyn).
+//
+// This test addresses the pattern seen in vc-hpcl where 58 separate detections
+// occurred over 30 minutes, all with intervention=pause_agent. This test verifies:
+// 1. Detection system behavior when same issue is detected multiple times
+// 2. Escalation issue deduplication works correctly
+// 3. Intervention count is properly tracked
+// 4. State persistence: intervention state is recorded correctly
+func TestRepeatedDetectionIntervention(t *testing.T) {
+	ctx := context.Background()
+
+	store, err := storage.NewStorage(ctx, &storage.Config{
+		Path:    ":memory:",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	ic, err := NewInterventionController(&InterventionControllerConfig{
+		Store:              store,
+		ExecutorInstanceID: "test-executor",
+		MaxHistorySize:     100,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create intervention controller: %v", err)
+	}
+
+	// Create a test issue that will be repeatedly detected
+	testIssue := &types.Issue{
+		Title:              "Repeatedly Detected Issue",
+		Description:        "This issue triggers multiple detections",
+		Status:             types.StatusInProgress,
+		Priority:           2,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+	if err := store.CreateIssue(ctx, testIssue, "test"); err != nil {
+		t.Fatalf("Failed to create test issue: %v", err)
+	}
+	issueID := testIssue.ID
+
+	// Simulate 10 repeated detections of the same anomaly type on the same issue
+	// This simulates what happened in vc-hpcl (though scaled down from 58)
+	const detectionCount = 10
+	var escalationIssueIDs []string
+
+	for i := 1; i <= detectionCount; i++ {
+		// Simulate agent re-starting after each pause
+		agentCtx, agentCancel := context.WithCancel(ctx)
+		ic.SetAgentContext(issueID, agentCancel)
+
+		// Create anomaly report with same anomaly type each time
+		report := &AnomalyReport{
+			Detected:          true,
+			AnomalyType:       AnomalyInfiniteLoop, // Same type each time
+			Severity:          SeverityHigh,
+			Description:       fmt.Sprintf("Iteration %d: Issue appears to be stuck in infinite loop", i),
+			RecommendedAction: ActionRestartAgent,
+			Reasoning:         fmt.Sprintf("Detection #%d: Issue has been executing with no progress", i),
+			Confidence:        0.92 + float64(i)*0.01, // Confidence varies slightly (0.92-0.95 range)
+			AffectedIssues:    []string{issueID},
+		}
+
+		// Pause the agent
+		result, err := ic.PauseAgent(ctx, report)
+		if err != nil {
+			t.Fatalf("PauseAgent failed for iteration %d: %v", i, err)
+		}
+
+		// Verify intervention succeeded
+		if !result.Success {
+			t.Errorf("Iteration %d: Expected successful intervention", i)
+		}
+
+		// Track escalation issue IDs
+		if result.EscalationIssueID != "" {
+			escalationIssueIDs = append(escalationIssueIDs, result.EscalationIssueID)
+		}
+
+		// Verify agent was actually paused (context canceled)
+		select {
+		case <-agentCtx.Done():
+			// Expected - agent was paused
+		case <-time.After(100 * time.Millisecond):
+			t.Errorf("Iteration %d: Agent context was not canceled", i)
+		}
+
+		// Clear agent context to simulate agent stopping
+		ic.ClearAgentContext()
+
+		// Small delay to simulate time passing between detections
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// TEST 1: Verify deduplication - should only create ONE escalation issue
+	// All 10 detections of the same anomaly type should update the same escalation
+	uniqueEscalationIDs := make(map[string]bool)
+	for _, id := range escalationIssueIDs {
+		uniqueEscalationIDs[id] = true
+	}
+
+	if len(uniqueEscalationIDs) != 1 {
+		t.Errorf("Expected 1 unique escalation issue (deduplication), got %d: %v",
+			len(uniqueEscalationIDs), escalationIssueIDs)
+	}
+
+	// TEST 2: Verify the escalation issue was updated with all detections
+	if len(escalationIssueIDs) > 0 {
+		escalationID := escalationIssueIDs[0]
+		escalation, err := store.GetIssue(ctx, escalationID)
+		if err != nil {
+			t.Fatalf("Failed to get escalation issue: %v", err)
+		}
+
+		// The description should contain multiple detection entries (one per iteration)
+		// Each detection adds a new line like: "- 2025-11-04 18:33:43: Detected..."
+		detectionLines := 0
+		lines := splitLines(escalation.Description)
+		for _, line := range lines {
+			if containsSubstring(line, "Detected (severity=") {
+				detectionLines++
+			}
+		}
+
+		// Should have detectionCount entries in the history
+		if detectionLines != detectionCount {
+			t.Errorf("Expected %d detection entries in escalation description, got %d",
+				detectionCount, detectionLines)
+		}
+	}
+
+	// TEST 3: Verify intervention history tracks all interventions
+	history := ic.GetInterventionHistory()
+	if len(history) != detectionCount {
+		t.Errorf("Expected %d interventions in history, got %d", detectionCount, len(history))
+	}
+
+	// TEST 4: Verify all interventions were of type pause_agent
+	for i, intervention := range history {
+		if intervention.InterventionType != InterventionPauseAgent {
+			t.Errorf("Intervention %d: Expected type %s, got %s",
+				i, InterventionPauseAgent, intervention.InterventionType)
+		}
+	}
+
+	// TEST 5: Verify intervention count was recorded in database (vc-165b)
+	// GetExecutionState should show the intervention count
+	execState, err := store.GetExecutionState(ctx, issueID)
+	if err != nil {
+		t.Fatalf("Failed to get execution state: %v", err)
+	}
+
+	if execState != nil {
+		// intervention_count should match the number of times we paused
+		if execState.InterventionCount != detectionCount {
+			t.Errorf("Expected intervention_count=%d in execution state, got %d",
+				detectionCount, execState.InterventionCount)
+		}
+
+		// last_intervention_time should be set
+		if execState.LastInterventionTime == nil {
+			t.Error("Expected last_intervention_time to be set")
+		}
+	}
+}
+
+// Helper functions for test
+func splitLines(s string) []string {
+	result := []string{}
+	current := ""
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			result = append(result, current)
+			current = ""
+		} else {
+			current += string(s[i])
+		}
+	}
+	if current != "" {
+		result = append(result, current)
+	}
+	return result
+}
+
+func containsSubstring(s, substr string) bool {
+	return len(s) >= len(substr) && findSubstring(s, substr)
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
