@@ -28,11 +28,12 @@ func TestTailCommand(t *testing.T) {
 
 	// Create a test issue
 	issue := &types.Issue{
-		Title:       "Test issue for tail",
-		Description: "Testing tail command",
-		Status:      types.StatusOpen,
-		Priority:    1,
-		IssueType:   types.TypeTask,
+		Title:              "Test issue for tail",
+		Description:        "Testing tail command",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test events are stored and retrieved correctly",
 	}
 	err = testStore.CreateIssue(ctx, issue, "test")
 	if err != nil {
@@ -163,6 +164,37 @@ func TestTailCommand(t *testing.T) {
 		// Should get the last 2 events (error and completed)
 		if len(recentEvents) < 2 {
 			t.Errorf("Expected at least 2 recent events, got %d", len(recentEvents))
+		}
+	})
+
+	// Test AfterTime filter with exact timestamp (should exclude that event)
+	t.Run("GetEventsAfterExactTimestamp", func(t *testing.T) {
+		// Get one of the test events
+		allEvents, err := testStore.GetRecentAgentEvents(ctx, 10)
+		if err != nil {
+			t.Fatalf("Failed to get events: %v", err)
+		}
+		if len(allEvents) == 0 {
+			t.Fatal("No events found")
+		}
+
+		// Use the exact timestamp of the most recent event
+		exactTimestamp := allEvents[0].Timestamp
+		filter := events.EventFilter{
+			AfterTime: exactTimestamp,
+		}
+
+		// Should NOT include the event with this exact timestamp (only events AFTER it)
+		laterEvents, err := testStore.GetAgentEvents(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to get events after exact time: %v", err)
+		}
+
+		// Verify that none of the returned events have the exact timestamp
+		for _, event := range laterEvents {
+			if event.Timestamp.Equal(exactTimestamp) {
+				t.Errorf("Found event with exact timestamp %v, should only return events AFTER this time", exactTimestamp)
+			}
 		}
 	})
 }

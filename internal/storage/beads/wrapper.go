@@ -467,7 +467,7 @@ func (s *VCStorage) GetAgentEvents(ctx context.Context, filter events.EventFilte
 	}
 
 	if !filter.AfterTime.IsZero() {
-		whereClauses = append(whereClauses, "timestamp >= ?")
+		whereClauses = append(whereClauses, "timestamp > ?")
 		args = append(args, filter.AfterTime)
 	}
 
