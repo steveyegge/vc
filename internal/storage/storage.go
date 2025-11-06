@@ -93,6 +93,16 @@ type Storage interface {
 	UpdateExecutionState(ctx context.Context, issueID string, state types.ExecutionState) error
 	SaveCheckpoint(ctx context.Context, issueID string, checkpointData interface{}) error
 	GetCheckpoint(ctx context.Context, issueID string) (string, error)
+
+	// Release functions - these handle execution state cleanup with different semantics:
+	// - ReleaseIssue: Low-level primitive that ONLY deletes execution state, does not change issue status
+	//   Use when you need fine-grained control or when status is managed separately (e.g., CloseIssue)
+	// - ReleaseIssueAndReopen: Marks execution as failed, reopens issue (status -> open), adds error comment
+	//   Use for failure/retry scenarios where work should be attempted again
+	// - CloseIssue: Deletes execution state AND closes issue (status -> closed)
+	//   Use for successful completion (defined in Issue Operations section)
+	// - CleanupStaleInstances: Releases execution state AND resets status to open
+	//   Use for crash recovery scenarios (defined in Executor Instance Management section)
 	ReleaseIssue(ctx context.Context, issueID string) error
 	ReleaseIssueAndReopen(ctx context.Context, issueID, actor, errorComment string) error
 	RecordWatchdogIntervention(ctx context.Context, issueID string) error // vc-165b: Track intervention for backoff

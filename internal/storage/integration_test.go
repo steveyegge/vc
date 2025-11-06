@@ -797,6 +797,258 @@ func createTestIssues(t *testing.T, ctx context.Context, store Storage, count in
 	return issues
 }
 
+// TestCloseIssueAndReleaseIssueInteraction tests the interaction between CloseIssue and ReleaseIssue
+func TestCloseIssueAndReleaseIssueInteraction(t *testing.T) {
+	backends := []string{"sqlite"}
+
+	for _, backend := range backends {
+		t.Run(backend, func(t *testing.T) {
+
+			ctx := context.Background()
+			store := setupStorage(t, backend)
+			defer func() { _ = store.Close() }()
+
+			// Test 1: CloseIssue successfully cleans up execution state
+			t.Run("CloseIssue cleans up execution state", func(t *testing.T) {
+				// Create executor and issue
+				executors := createExecutors(t, ctx, store, 1)
+				executor := executors[0]
+
+				issues := createTestIssues(t, ctx, store, 1)
+				issue := issues[0]
+
+				// Claim the issue
+				if err := store.ClaimIssue(ctx, issue.ID, executor.InstanceID); err != nil {
+					t.Fatalf("Failed to claim issue: %v", err)
+				}
+
+				// Verify execution state exists
+				state, err := store.GetExecutionState(ctx, issue.ID)
+				if err != nil {
+					t.Fatalf("Failed to get execution state: %v", err)
+				}
+				if state == nil {
+					t.Fatal("Expected execution state to exist after claim")
+				}
+
+				// Close the issue
+				if err := store.CloseIssue(ctx, issue.ID, "test completed", executor.InstanceID); err != nil {
+					t.Fatalf("Failed to close issue: %v", err)
+				}
+
+				// Verify execution state is cleaned up
+				state, err = store.GetExecutionState(ctx, issue.ID)
+				if err != nil {
+					t.Fatalf("Failed to get execution state after close: %v", err)
+				}
+				if state != nil {
+					t.Errorf("Expected execution state to be nil after CloseIssue, got state: %v", state.State)
+				}
+
+				// Verify issue is closed
+				closedIssue, err := store.GetIssue(ctx, issue.ID)
+				if err != nil {
+					t.Fatalf("Failed to get issue after close: %v", err)
+				}
+				if closedIssue.Status != types.StatusClosed {
+					t.Errorf("Expected issue to be closed, got %s", closedIssue.Status)
+				}
+			})
+
+			// Test 2: ReleaseIssue after CloseIssue is idempotent (returns nil)
+			t.Run("ReleaseIssue after CloseIssue is idempotent", func(t *testing.T) {
+				// Create executor and issue
+				executors := createExecutors(t, ctx, store, 1)
+				executor := executors[0]
+
+				issues := createTestIssues(t, ctx, store, 1)
+				issue := issues[0]
+
+				// Claim and close the issue
+				if err := store.ClaimIssue(ctx, issue.ID, executor.InstanceID); err != nil {
+					t.Fatalf("Failed to claim issue: %v", err)
+				}
+
+				if err := store.CloseIssue(ctx, issue.ID, "test completed", executor.InstanceID); err != nil {
+					t.Fatalf("Failed to close issue: %v", err)
+				}
+
+				// ReleaseIssue should be idempotent (no error when state already cleaned up)
+				err := store.ReleaseIssue(ctx, issue.ID)
+				if err != nil {
+					t.Errorf("ReleaseIssue after CloseIssue should be idempotent, got error: %v", err)
+				}
+
+				// Verify execution state is still nil
+				state, err := store.GetExecutionState(ctx, issue.ID)
+				if err != nil {
+					t.Fatalf("Failed to get execution state after release: %v", err)
+				}
+				if state != nil {
+					t.Errorf("Expected execution state to remain nil after ReleaseIssue, got state: %v", state.State)
+				}
+			})
+
+			// Test 3: Order matters - CloseIssue then ReleaseIssue vs ReleaseIssue then CloseIssue
+			t.Run("Operation ordering tests", func(t *testing.T) {
+				// Test 3a: CloseIssue then ReleaseIssue
+				t.Run("CloseIssue then ReleaseIssue", func(t *testing.T) {
+					executors := createExecutors(t, ctx, store, 1)
+					executor := executors[0]
+
+					issues := createTestIssues(t, ctx, store, 1)
+					issue := issues[0]
+
+					if err := store.ClaimIssue(ctx, issue.ID, executor.InstanceID); err != nil {
+						t.Fatalf("Failed to claim issue: %v", err)
+					}
+
+					// CloseIssue first (this cleans up execution state)
+					if err := store.CloseIssue(ctx, issue.ID, "test completed", executor.InstanceID); err != nil {
+						t.Fatalf("Failed to close issue: %v", err)
+					}
+
+					// ReleaseIssue second (should be idempotent)
+					if err := store.ReleaseIssue(ctx, issue.ID); err != nil {
+						t.Errorf("ReleaseIssue after CloseIssue should succeed, got error: %v", err)
+					}
+
+					// Verify final state: issue closed, no execution state
+					finalIssue, err := store.GetIssue(ctx, issue.ID)
+					if err != nil {
+						t.Fatalf("Failed to get final issue: %v", err)
+					}
+					if finalIssue.Status != types.StatusClosed {
+						t.Errorf("Expected issue to be closed, got %s", finalIssue.Status)
+					}
+
+					state, err := store.GetExecutionState(ctx, issue.ID)
+					if err != nil {
+						t.Fatalf("Failed to get execution state: %v", err)
+					}
+					if state != nil {
+						t.Errorf("Expected no execution state, got: %v", state.State)
+					}
+				})
+
+				// Test 3b: ReleaseIssue then CloseIssue
+				t.Run("ReleaseIssue then CloseIssue", func(t *testing.T) {
+					executors := createExecutors(t, ctx, store, 1)
+					executor := executors[0]
+
+					issues := createTestIssues(t, ctx, store, 1)
+					issue := issues[0]
+
+					if err := store.ClaimIssue(ctx, issue.ID, executor.InstanceID); err != nil {
+						t.Fatalf("Failed to claim issue: %v", err)
+					}
+
+					// ReleaseIssue first (cleans up execution state, but leaves status as in_progress)
+					if err := store.ReleaseIssue(ctx, issue.ID); err != nil {
+						t.Fatalf("Failed to release issue: %v", err)
+					}
+
+					// Verify issue is still in_progress (ReleaseIssue doesn't change status)
+					releasedIssue, err := store.GetIssue(ctx, issue.ID)
+					if err != nil {
+						t.Fatalf("Failed to get released issue: %v", err)
+					}
+					if releasedIssue.Status != types.StatusInProgress {
+						t.Errorf("Expected issue to remain in_progress after release, got %s", releasedIssue.Status)
+					}
+
+					// Verify execution state is cleared
+					state, err := store.GetExecutionState(ctx, issue.ID)
+					if err != nil {
+						t.Fatalf("Failed to get execution state after release: %v", err)
+					}
+					if state != nil {
+						t.Errorf("Expected execution state to be cleared, got: %v", state.State)
+					}
+
+					// CloseIssue second (should work even without execution state)
+					if err := store.CloseIssue(ctx, issue.ID, "test completed", executor.InstanceID); err != nil {
+						t.Fatalf("Failed to close issue after release: %v", err)
+					}
+
+					// Verify final state: issue closed, no execution state
+					finalIssue, err := store.GetIssue(ctx, issue.ID)
+					if err != nil {
+						t.Fatalf("Failed to get final issue: %v", err)
+					}
+					if finalIssue.Status != types.StatusClosed {
+						t.Errorf("Expected issue to be closed, got %s", finalIssue.Status)
+					}
+
+					state, err = store.GetExecutionState(ctx, issue.ID)
+					if err != nil {
+						t.Fatalf("Failed to get execution state: %v", err)
+					}
+					if state != nil {
+						t.Errorf("Expected no execution state, got: %v", state.State)
+					}
+				})
+			})
+
+			// Test 4: GetExecutionState after CloseIssue returns nil
+			t.Run("GetExecutionState after CloseIssue returns nil", func(t *testing.T) {
+				// Create executor and issue
+				executors := createExecutors(t, ctx, store, 1)
+				executor := executors[0]
+
+				issues := createTestIssues(t, ctx, store, 1)
+				issue := issues[0]
+
+				// Claim and progress through states (must follow valid transitions)
+				if err := store.ClaimIssue(ctx, issue.ID, executor.InstanceID); err != nil {
+					t.Fatalf("Failed to claim issue: %v", err)
+				}
+
+				// Go through valid state transitions: claimed -> assessing -> executing
+				if err := store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateAssessing); err != nil {
+					t.Fatalf("Failed to update state to assessing: %v", err)
+				}
+
+				if err := store.UpdateExecutionState(ctx, issue.ID, types.ExecutionStateExecuting); err != nil {
+					t.Fatalf("Failed to update state to executing: %v", err)
+				}
+
+				// Save checkpoint
+				checkpointData := map[string]interface{}{
+					"step": 1,
+					"data": "some progress",
+				}
+				if err := store.SaveCheckpoint(ctx, issue.ID, checkpointData); err != nil {
+					t.Fatalf("Failed to save checkpoint: %v", err)
+				}
+
+				// Close the issue
+				if err := store.CloseIssue(ctx, issue.ID, "test completed", executor.InstanceID); err != nil {
+					t.Fatalf("Failed to close issue: %v", err)
+				}
+
+				// GetExecutionState should return nil
+				state, err := store.GetExecutionState(ctx, issue.ID)
+				if err != nil {
+					t.Fatalf("Failed to get execution state: %v", err)
+				}
+				if state != nil {
+					t.Errorf("Expected GetExecutionState to return nil after CloseIssue, got: %+v", state)
+				}
+
+				// Checkpoint should also be cleared
+				checkpoint, err := store.GetCheckpoint(ctx, issue.ID)
+				if err != nil {
+					t.Fatalf("Failed to get checkpoint: %v", err)
+				}
+				if checkpoint != "" {
+					t.Errorf("Expected checkpoint to be empty after CloseIssue, got: %s", checkpoint)
+				}
+			})
+		})
+	}
+}
+
 // TestGetMissionWithApprovalMetadata tests that GetMission properly loads approval fields
 func TestGetMissionWithApprovalMetadata(t *testing.T) {
 	backends := []string{"sqlite"}

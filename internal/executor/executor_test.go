@@ -162,7 +162,7 @@ func TestExecutorStateTransitions(t *testing.T) {
 	}
 
 	// Test 8: Release the issue (vc-129: updated comment numbering)
-	// Note: ReleaseIssue sets state to completed, it doesn't delete the record
+	// Note: ReleaseIssue deletes the execution state record (does not change issue status)
 	if err := store.ReleaseIssue(ctx, issue.ID); err != nil {
 		t.Fatalf("Failed to release issue: %v", err)
 	}
