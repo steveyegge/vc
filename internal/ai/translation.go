@@ -117,8 +117,84 @@ func (s *Supervisor) isCircularMetaIssue(ctx context.Context, parentIssue *types
 	return false, nil
 }
 
+// verifyMetaIssueStillNeeded checks if a meta-issue about missing acceptance criteria is still needed
+// vc-o87x: State verification to prevent creating obsolete meta-issues
+// Returns (shouldCreate bool, reason string, error)
+func (s *Supervisor) verifyMetaIssueStillNeeded(ctx context.Context, parentIssue *types.Issue, discoveredIssue DiscoveredIssue) (bool, string, error) {
+	// Only apply state verification to meta-issues
+	if !hasLabel(discoveredIssue.Labels, "meta-issue") {
+		return true, "", nil // Not a meta-issue, no verification needed
+	}
+
+	// Re-fetch the current state of the parent issue from the database
+	// This ensures we check the CURRENT state, not the state when analysis started
+	currentParent, err := s.store.GetIssue(ctx, parentIssue.ID)
+	if err != nil {
+		return false, "", fmt.Errorf("failed to fetch current parent state: %w", err)
+	}
+
+	// Check if the meta-issue is about missing acceptance criteria
+	// Common patterns: "Add acceptance criteria to...", "Missing acceptance criteria", etc.
+	titleLower := strings.ToLower(discoveredIssue.Title)
+	descLower := strings.ToLower(discoveredIssue.Description)
+	isAboutAcceptanceCriteria := strings.Contains(titleLower, "acceptance criteria") ||
+		strings.Contains(descLower, "acceptance criteria")
+
+	if isAboutAcceptanceCriteria {
+		// Verify the parent actually still lacks acceptance criteria
+		if strings.TrimSpace(currentParent.AcceptanceCriteria) != "" {
+			return false, fmt.Sprintf("parent %s now has acceptance criteria (was empty during analysis)", currentParent.ID), nil
+		}
+	}
+
+	// Check if the meta-issue is about missing description
+	isAboutDescription := strings.Contains(titleLower, "description") ||
+		strings.Contains(descLower, "add description") ||
+		strings.Contains(descLower, "missing description")
+
+	if isAboutDescription {
+		if strings.TrimSpace(currentParent.Description) != "" {
+			return false, fmt.Sprintf("parent %s now has description (was empty during analysis)", currentParent.ID), nil
+		}
+	}
+
+	// Check if the meta-issue is about missing design
+	isAboutDesign := strings.Contains(titleLower, "design") ||
+		strings.Contains(descLower, "add design") ||
+		strings.Contains(descLower, "missing design")
+
+	if isAboutDesign {
+		if strings.TrimSpace(currentParent.Design) != "" {
+			return false, fmt.Sprintf("parent %s now has design (was empty during analysis)", currentParent.ID), nil
+		}
+	}
+
+	// Meta-issue is still needed
+	return true, "", nil
+}
+
 // CreateDiscoveredIssues creates issues from the AI analysis
-// vc-4vot: Added validation to prevent infinite meta-issue recursion
+//
+// Recursion Prevention (vc-4vot, vc-o87x):
+// This function implements multiple layers of protection against infinite meta-issue recursion:
+//
+// 1. State Verification (vc-o87x): Before creating a meta-issue, re-fetch the parent issue from
+//    the database to verify the problem still exists. This prevents creating obsolete meta-issues
+//    when the parent was updated between analysis time and creation time.
+//    Example: AI sees "missing acceptance criteria" at T0, but criteria were added at T1.
+//
+// 2. Circular Meta-Issue Detection (vc-4vot): Prevent meta-issues about meta-issues.
+//    If parent has "meta-issue" label AND child has "meta-issue" label, skip creation.
+//    Example: vc-hpcl → vc-9yhu (meta) → vc-qo2u (meta) is blocked at vc-qo2u.
+//
+// 3. Meta-Issue Acceptance Criteria (vc-4vot): Meta-issues MUST have acceptance criteria.
+//    Without criteria, meta-issues themselves trigger more meta-issues, creating infinite recursion.
+//
+// 4. Blocker Depth Limit (vc-4vot): Maximum 2 levels of discovered:blocker chains.
+//    This prevents blocker → blocker → blocker → ... chains that clog the tracker.
+//
+// 5. Circuit Breaker (vc-4vot): If >5 blockers discovered at once, create a single
+//    escalation issue instead. This catches systemic problems and runaway recursion.
 func (s *Supervisor) CreateDiscoveredIssues(ctx context.Context, parentIssue *types.Issue, discovered []DiscoveredIssue) ([]string, error) {
 	var createdIDs []string
 	var skipped []string
@@ -163,6 +239,18 @@ func (s *Supervisor) CreateDiscoveredIssues(ctx context.Context, parentIssue *ty
 	}
 
 	for _, disc := range discovered {
+		// vc-o87x: State verification - check if meta-issue is still needed
+		shouldCreate, reason, err := s.verifyMetaIssueStillNeeded(ctx, parentIssue, disc)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to verify meta-issue state: %v (allowing issue)\n", err)
+			// Continue creating the issue - err on the side of progress
+		} else if !shouldCreate {
+			fmt.Fprintf(os.Stderr, "⚠️  Skipping obsolete meta-issue: %s\n", disc.Title)
+			fmt.Fprintf(os.Stderr, "   Reason: %s\n", reason)
+			skipped = append(skipped, disc.Title)
+			continue
+		}
+
 		// vc-4vot: Check for circular meta-issue pattern (uses AI-set labels)
 		isCircular, err := s.isCircularMetaIssue(ctx, parentIssue, disc)
 		if err != nil {
