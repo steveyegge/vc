@@ -256,10 +256,11 @@ func TestDatabaseRecoveryAfterTableCreation(t *testing.T) {
 
 		// Verify we can perform basic operations
 		issue := &types.Issue{
-			Title:     "Test recovery",
-			Status:    types.StatusOpen,
-			Priority:  2,
-			IssueType: types.TypeTask,
+			Title:              "Test recovery",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 
 		err = store.CreateIssue(ctx, issue, "test")

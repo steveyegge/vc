@@ -29,11 +29,12 @@ func TestConcurrentGetReadyWork(t *testing.T) {
 	issueIDs := make([]string, numIssues)
 	for i := 0; i < numIssues; i++ {
 		issue := &types.Issue{
-			Title:       "Concurrent test issue",
-			Description: "Testing concurrent GetReadyWork",
-			Status:      types.StatusOpen,
-			Priority:    1,
-			IssueType:   types.TypeTask,
+			Title:              "Concurrent test issue",
+			Description:        "Testing concurrent GetReadyWork",
+			Status:             types.StatusOpen,
+			Priority:           1,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		err := store.CreateIssue(ctx, issue, "test")
 		if err != nil {
@@ -130,11 +131,12 @@ func TestConcurrentClaimSameIssue(t *testing.T) {
 
 	// Create a single open issue
 	issue := &types.Issue{
-		Title:       "Race condition test issue",
-		Description: "Testing concurrent claim attempts",
-		Status:      types.StatusOpen,
-		Priority:    1,
-		IssueType:   types.TypeTask,
+		Title:              "Race condition test issue",
+		Description:        "Testing concurrent claim attempts",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, issue, "test")
 	if err != nil {
@@ -261,11 +263,12 @@ func TestClaimedIssueNotInGetReadyWork(t *testing.T) {
 
 	// Create two open issues
 	issue1 := &types.Issue{
-		Title:       "Issue to be claimed",
-		Description: "This will be claimed",
-		Status:      types.StatusOpen,
-		Priority:    1,
-		IssueType:   types.TypeTask,
+		Title:              "Issue to be claimed",
+		Description:        "This will be claimed",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, issue1, "test")
 	if err != nil {
@@ -273,11 +276,12 @@ func TestClaimedIssueNotInGetReadyWork(t *testing.T) {
 	}
 
 	issue2 := &types.Issue{
-		Title:       "Issue to remain open",
-		Description: "This will stay open",
-		Status:      types.StatusOpen,
-		Priority:    1,
-		IssueType:   types.TypeTask,
+		Title:              "Issue to remain open",
+		Description:        "This will stay open",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, issue2, "test")
 	if err != nil {
@@ -362,11 +366,12 @@ func TestConcurrentClaimDifferentIssues(t *testing.T) {
 	issueIDs := make([]string, numExecutors)
 	for i := 0; i < numExecutors; i++ {
 		issue := &types.Issue{
-			Title:       "Parallel claim test issue",
-			Description: "Each executor gets one",
-			Status:      types.StatusOpen,
-			Priority:    1,
-			IssueType:   types.TypeTask,
+			Title:              "Parallel claim test issue",
+			Description:        "Each executor gets one",
+			Status:             types.StatusOpen,
+			Priority:           1,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		err := store.CreateIssue(ctx, issue, "test")
 		if err != nil {

@@ -40,6 +40,7 @@ func TestBeadsIntegration(t *testing.T) {
 			Status:      types.StatusOpen,
 			Priority:    2,
 			IssueType:   types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 
 		err := store.CreateIssue(ctx, issue, "test")
@@ -92,6 +93,7 @@ func TestBeadsIntegration(t *testing.T) {
 			Status:     types.StatusOpen,
 			Priority:   2,
 			IssueType:  types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 
 		err := store.CreateIssue(ctx, issue, "test")
@@ -130,6 +132,7 @@ func TestBeadsIntegration(t *testing.T) {
 			Status:     types.StatusOpen,
 			Priority:   1,
 			IssueType:  types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 
 		err := store.CreateIssue(ctx, task, "test")
@@ -193,6 +196,7 @@ func TestBeadsIntegration(t *testing.T) {
 			Status:     types.StatusOpen,
 			Priority:   2,
 			IssueType:  types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 
 		err := store.CreateIssue(ctx, issue, "test")
@@ -314,6 +318,7 @@ func TestGetAgentEvents(t *testing.T) {
 		Status:     types.StatusOpen,
 		Priority:   2,
 		IssueType:  types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, issue, "test")
 	if err != nil {
@@ -325,6 +330,7 @@ func TestGetAgentEvents(t *testing.T) {
 		Status:     types.StatusOpen,
 		Priority:   2,
 		IssueType:  types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, otherIssue, "test")
 	if err != nil {
@@ -521,6 +527,7 @@ func TestAgentEventDataPersistence(t *testing.T) {
 		Status:     types.StatusOpen,
 		Priority:   2,
 		IssueType:  types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, issue, "test")
 	if err != nil {
@@ -746,6 +753,7 @@ func TestGetDependencyTree(t *testing.T) {
 		Status:     types.StatusOpen,
 		Priority:   1,
 		IssueType:  types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, middle1, "test")
 	if err != nil {
@@ -757,6 +765,7 @@ func TestGetDependencyTree(t *testing.T) {
 		Status:     types.StatusOpen,
 		Priority:   1,
 		IssueType:  types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, middle2, "test")
 	if err != nil {
@@ -768,6 +777,7 @@ func TestGetDependencyTree(t *testing.T) {
 		Status:     types.StatusOpen,
 		Priority:   2,
 		IssueType:  types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, leaf, "test")
 	if err != nil {
@@ -928,6 +938,7 @@ func TestGetBlockedIssues(t *testing.T) {
 		Status:     types.StatusBlocked,
 		Priority:   1,
 		IssueType:  types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, issueA, "test")
 	if err != nil {
@@ -939,6 +950,7 @@ func TestGetBlockedIssues(t *testing.T) {
 		Status:     types.StatusOpen,
 		Priority:   1,
 		IssueType:  types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, issueB, "test")
 	if err != nil {
@@ -950,6 +962,7 @@ func TestGetBlockedIssues(t *testing.T) {
 		Status:     types.StatusOpen,
 		Priority:   1,
 		IssueType:  types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, issueC, "test")
 	if err != nil {
@@ -1035,6 +1048,7 @@ func TestGetBlockedIssues(t *testing.T) {
 			Status:     types.StatusOpen,
 			Priority:   1,
 			IssueType:  types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		err = store.CreateIssue(ctx, nonBlocked, "test")
 		if err != nil {
@@ -1093,6 +1107,7 @@ func TestVCStorageClose(t *testing.T) {
 		Status:     types.StatusOpen,
 		Priority:   2,
 		IssueType:  types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, issue, "test")
 	if err != nil {
@@ -1112,6 +1127,7 @@ func TestVCStorageClose(t *testing.T) {
 			Status:     types.StatusOpen,
 			Priority:   2,
 			IssueType:  types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		err = store.CreateIssue(ctx, newIssue, "test")
 		if err == nil {
@@ -1179,6 +1195,7 @@ func TestExecutionStateTransitions(t *testing.T) {
 		Status:     types.StatusOpen,
 		Priority:   2,
 		IssueType:  types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, issue, "test")
 	if err != nil {
@@ -1243,6 +1260,7 @@ func TestExecutionStateTransitions(t *testing.T) {
 			Status:     types.StatusOpen,
 			Priority:   2,
 			IssueType:  types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		err = store.CreateIssue(ctx, issue2, "test")
 		if err != nil {
@@ -1267,6 +1285,7 @@ func TestExecutionStateTransitions(t *testing.T) {
 				Status:     types.StatusOpen,
 				Priority:   2,
 				IssueType:  types.TypeTask,
+				AcceptanceCriteria: "Test acceptance criteria",
 			}
 			err = store.CreateIssue(ctx, testIssue, "test")
 			if err != nil {
@@ -1315,6 +1334,7 @@ func TestExecutionStateTransitions(t *testing.T) {
 			Status:     types.StatusOpen,
 			Priority:   2,
 			IssueType:  types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		err = store.CreateIssue(ctx, issue3, "test")
 		if err != nil {
@@ -1354,6 +1374,7 @@ func TestExecutionStateTransitions(t *testing.T) {
 			Status:     types.StatusOpen,
 			Priority:   2,
 			IssueType:  types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		err = store.CreateIssue(ctx, issue4, "test")
 		if err != nil {
@@ -1395,6 +1416,7 @@ func TestExecutionStateTransitions(t *testing.T) {
 			Status:     types.StatusOpen,
 			Priority:   2,
 			IssueType:  types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		err = store.CreateIssue(ctx, issue5, "test")
 		if err != nil {
@@ -1429,6 +1451,7 @@ func TestExecutionStateTransitions(t *testing.T) {
 			Status:     types.StatusOpen,
 			Priority:   2,
 			IssueType:  types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		err = store.CreateIssue(ctx, issue6, "test")
 		if err != nil {
@@ -1468,6 +1491,7 @@ func TestAgentEventsNullSeverity(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  2,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, issue, "test")
 	if err != nil {
@@ -1615,6 +1639,7 @@ func TestGetReadyBlockersFiltersDependencyTypes(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  2,
 		IssueType: types.TypeBug,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, blocker, "test")
 	if err != nil {
@@ -1662,6 +1687,7 @@ func TestGetReadyBlockersFiltersDependencyTypes(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, blockingIssue, "test")
 	if err != nil {
@@ -1724,6 +1750,7 @@ func TestGetReadyBlockersFiltersDependencyTypes(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  2,
 			IssueType: types.TypeBug,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		err = store.CreateIssue(ctx, childBlocker, "test")
 		if err != nil {
@@ -1792,6 +1819,7 @@ func TestEpicsExcludedFromReadyWork(t *testing.T) {
 		Status:      types.StatusOpen,
 		Priority:    2, // Lower priority than epic
 		IssueType:   types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, task, "test")
 	if err != nil {
@@ -1855,6 +1883,7 @@ func TestEpicsExcludedFromReadyWork(t *testing.T) {
 			Status:      types.StatusOpen,
 			Priority:    2,
 			IssueType:   types.TypeBug,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		err = store.CreateIssue(ctx, blocker, "test")
 		if err != nil {
@@ -1927,6 +1956,7 @@ func TestIsEpicComplete(t *testing.T) {
 			Status:    types.StatusClosed,
 			Priority:  2,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 			ClosedAt:  &now,
 		}
 		if err := store.CreateIssue(ctx, child1, "test"); err != nil {
@@ -1938,6 +1968,7 @@ func TestIsEpicComplete(t *testing.T) {
 			Status:    types.StatusClosed,
 			Priority:  2,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 			ClosedAt:  &now,
 		}
 		if err := store.CreateIssue(ctx, child2, "test"); err != nil {
@@ -1995,6 +2026,7 @@ func TestIsEpicComplete(t *testing.T) {
 			Status:    types.StatusClosed,
 			Priority:  2,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 			ClosedAt:  &now,
 		}
 		if err := store.CreateIssue(ctx, closedChild, "test"); err != nil {
@@ -2006,6 +2038,7 @@ func TestIsEpicComplete(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  2,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, openChild, "test"); err != nil {
 			t.Fatalf("Failed to create open child: %v", err)
@@ -2061,6 +2094,7 @@ func TestIsEpicComplete(t *testing.T) {
 			Status:    types.StatusInProgress,
 			Priority:  2,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, inProgressChild, "test"); err != nil {
 			t.Fatalf("Failed to create in_progress child: %v", err)
@@ -2132,6 +2166,7 @@ func TestIsEpicComplete(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  1,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 			t.Fatalf("Failed to create blocker: %v", err)
@@ -2179,6 +2214,7 @@ func TestIsEpicComplete(t *testing.T) {
 			Status:    types.StatusClosed,
 			Priority:  2,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 			ClosedAt:  &now,
 		}
 		if err := store.CreateIssue(ctx, child, "test"); err != nil {
@@ -2191,6 +2227,7 @@ func TestIsEpicComplete(t *testing.T) {
 			Status:    types.StatusClosed,
 			Priority:  1,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 			ClosedAt:  &now,
 		}
 		if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
@@ -2248,6 +2285,7 @@ func TestIsEpicComplete(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  2,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, relatedIssue, "test"); err != nil {
 			t.Fatalf("Failed to create related issue: %v", err)
@@ -2259,6 +2297,7 @@ func TestIsEpicComplete(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  2,
 			IssueType: types.TypeBug,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, discoveredIssue, "test"); err != nil {
 			t.Fatalf("Failed to create discovered issue: %v", err)
@@ -2337,6 +2376,7 @@ func TestGetMissionForTask(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  2,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, task, "test"); err != nil {
 			t.Fatalf("Failed to create task: %v", err)
@@ -2418,6 +2458,7 @@ func TestGetMissionForTask(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  2,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, task, "test"); err != nil {
 			t.Fatalf("Failed to create task: %v", err)
@@ -2456,6 +2497,7 @@ func TestGetMissionForTask(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  2,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, task, "test"); err != nil {
 			t.Fatalf("Failed to create task: %v", err)
@@ -2490,6 +2532,7 @@ func TestGetMissionForTask(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  2,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, task, "test"); err != nil {
 			t.Fatalf("Failed to create task: %v", err)
@@ -2537,6 +2580,7 @@ func TestGetMissionForTask(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  2,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, task, "test"); err != nil {
 			t.Fatalf("Failed to create task: %v", err)
@@ -2558,6 +2602,7 @@ func TestGetMissionForTask(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  2,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 			t.Fatalf("Failed to create blocker: %v", err)
@@ -2598,6 +2643,7 @@ func TestGetMissionForTask(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  1,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, taskA, "test"); err != nil {
 			t.Fatalf("Failed to create taskA: %v", err)
@@ -2609,6 +2655,7 @@ func TestGetMissionForTask(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  1,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, taskB, "test"); err != nil {
 			t.Fatalf("Failed to create taskB: %v", err)
@@ -2678,6 +2725,7 @@ func TestGetMissionForTask(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  1,
 			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, task, "test"); err != nil {
 			t.Fatalf("Failed to create task: %v", err)
@@ -2752,6 +2800,7 @@ func TestGetReadyWorkWithMissionContext(t *testing.T) {
 			Status:      types.StatusOpen,
 			Priority:    1,
 			IssueType:   types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, task, "test"); err != nil {
 			t.Fatalf("Failed to create task: %v", err)
@@ -2824,6 +2873,7 @@ func TestGetReadyWorkWithMissionContext(t *testing.T) {
 			Status:      types.StatusOpen,
 			Priority:    1,
 			IssueType:   types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, gatedTask, "test"); err != nil {
 			t.Fatalf("Failed to create gated task: %v", err)
@@ -2859,6 +2909,7 @@ func TestGetReadyWorkWithMissionContext(t *testing.T) {
 			Status:      types.StatusOpen,
 			Priority:    1,
 			IssueType:   types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, activeTask, "test"); err != nil {
 			t.Fatalf("Failed to create active task: %v", err)
@@ -2917,6 +2968,7 @@ func TestGetReadyWorkWithMissionContext(t *testing.T) {
 			Status:      types.StatusOpen,
 			Priority:    1,
 			IssueType:   types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, standalone, "test"); err != nil {
 			t.Fatalf("Failed to create standalone task: %v", err)
@@ -2973,6 +3025,7 @@ func TestGetReadyWorkWithMissionContext(t *testing.T) {
 				Status:      types.StatusOpen,
 				Priority:    1,
 				IssueType:   types.TypeTask,
+				AcceptanceCriteria: "Test acceptance criteria",
 			}
 			if err := store.CreateIssue(ctx, task, "test"); err != nil {
 				t.Fatalf("Failed to create task %d: %v", i+1, err)
@@ -3045,6 +3098,7 @@ func TestGetReadyWorkWithMissionContext(t *testing.T) {
 			Status:      types.StatusOpen,
 			Priority:    1,
 			IssueType:   types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, claimableTask, "test"); err != nil {
 			t.Fatalf("Failed to create claimable task: %v", err)
@@ -3056,6 +3110,7 @@ func TestGetReadyWorkWithMissionContext(t *testing.T) {
 			Status:      types.StatusOpen,
 			Priority:    1,
 			IssueType:   types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, noAutoClaimTask, "test"); err != nil {
 			t.Fatalf("Failed to create no-auto-claim task: %v", err)
@@ -3109,6 +3164,7 @@ func TestGetReadyWorkWithMissionContext(t *testing.T) {
 			Status:      types.StatusOpen,
 			Priority:    1,
 			IssueType:   types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, multiLabelTask, "test"); err != nil {
 			t.Fatalf("Failed to create multi-label task: %v", err)
@@ -4000,6 +4056,7 @@ func TestGetIssues(t *testing.T) {
 		Status:      types.StatusOpen,
 		Priority:    1,
 		IssueType:   types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	if err := store.CreateIssue(ctx, issue1, "test"); err != nil {
 		t.Fatalf("Failed to create issue1: %v", err)
@@ -4023,6 +4080,7 @@ func TestGetIssues(t *testing.T) {
 		Status:      types.StatusOpen,
 		Priority:    3,
 		IssueType:   types.TypeBug,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	if err := store.CreateIssue(ctx, issue3, "test"); err != nil {
 		t.Fatalf("Failed to create issue3: %v", err)
@@ -4205,6 +4263,7 @@ func TestGetIssues(t *testing.T) {
 				Status:      types.StatusOpen,
 				Priority:    i % 3, // Mix of priorities
 				IssueType:   types.TypeTask,
+				AcceptanceCriteria: "Test acceptance criteria",
 			}
 			if err := store.CreateIssue(ctx, issue, "test"); err != nil {
 				t.Fatalf("Failed to create issue %d: %v", i, err)
@@ -4250,6 +4309,7 @@ func TestGetIssues(t *testing.T) {
 			Status:      types.StatusOpen,
 			Priority:    2,
 			IssueType:   types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, regularIssue, "test"); err != nil {
 			t.Fatalf("Failed to create regular issue: %v", err)
@@ -4303,6 +4363,7 @@ func TestGetIssues(t *testing.T) {
 			Status:           types.StatusOpen,
 			Priority:         2,
 			IssueType:        types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 			EstimatedMinutes: &estimatedMins,
 		}
 		if err := store.CreateIssue(ctx, issueWithEstimate, "test"); err != nil {
@@ -4316,6 +4377,7 @@ func TestGetIssues(t *testing.T) {
 			Status:      types.StatusOpen,
 			Priority:    2,
 			IssueType:   types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, issueWithoutEstimate, "test"); err != nil {
 			t.Fatalf("Failed to create issue without estimate: %v", err)
@@ -4358,6 +4420,7 @@ func TestGetIssues(t *testing.T) {
 			Status:      types.StatusOpen,
 			Priority:    2,
 			IssueType:   types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
 			IssueSubtype: types.SubtypeNormal,
 		}
 		if err := store.CreateIssue(ctx, normalTask, "test"); err != nil {
@@ -4391,6 +4454,7 @@ func TestGetIssues(t *testing.T) {
 			Status:    types.StatusOpen,
 			Priority:  0,
 			IssueType: types.TypeBug,
+			AcceptanceCriteria: "Test acceptance criteria",
 		}
 		if err := store.CreateIssue(ctx, normalBug, "test"); err != nil {
 			t.Fatalf("Failed to create normal bug: %v", err)
@@ -4453,6 +4517,7 @@ func TestGetReadyWorkFiltersBlocked(t *testing.T) {
 		Status:    types.StatusOpen,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, openIssue, "test")
 	if err != nil {
@@ -4464,6 +4529,7 @@ func TestGetReadyWorkFiltersBlocked(t *testing.T) {
 		Status:    types.StatusBlocked,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, blockedIssue, "test")
 	if err != nil {
@@ -4475,6 +4541,7 @@ func TestGetReadyWorkFiltersBlocked(t *testing.T) {
 		Status:    types.StatusInProgress,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 	}
 	err = store.CreateIssue(ctx, inProgressIssue, "test")
 	if err != nil {
@@ -4487,6 +4554,7 @@ func TestGetReadyWorkFiltersBlocked(t *testing.T) {
 		Status:    types.StatusClosed,
 		Priority:  1,
 		IssueType: types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
 		ClosedAt:  &now,
 	}
 	err = store.CreateIssue(ctx, closedIssue, "test")
