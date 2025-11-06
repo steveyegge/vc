@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -188,7 +189,7 @@ type Agent struct {
 	// Circuit breaker state for detecting infinite loops (vc-117)
 	totalReadCount int            // Total number of Read tool invocations
 	fileReadCounts map[string]int // Number of times each file has been read
-	loopDetected   bool           // Whether an infinite loop was detected
+	loopDetected   atomic.Bool    // Whether an infinite loop was detected (lock-free for monitoring goroutine)
 	loopReason     string         // Reason for loop detection (for error messages)
 }
 
@@ -252,8 +253,8 @@ func SpawnAgent(ctx context.Context, cfg AgentConfig, prompt string) (*Agent, er
 		// Initialize circuit breaker state (vc-117)
 		totalReadCount: 0,
 		fileReadCounts: make(map[string]int),
-		loopDetected:   false,
 		loopReason:     "",
+		// loopDetected is atomic.Bool and initializes to false automatically
 	}
 
 	// Initialize OutputParser if event storage is enabled
@@ -291,13 +292,9 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 		for {
 			select {
 			case <-ticker.C:
-				// Check if circuit breaker was triggered (without holding mutex for too long)
-				a.mu.Lock()
-				loopDetected := a.loopDetected
-				a.mu.Unlock()
-				
-				if loopDetected {
-					// Kill the agent outside of the mutex
+				// Check if circuit breaker was triggered (lock-free read via atomic)
+				if a.loopDetected.Load() {
+					// Kill the agent
 					if err := a.Kill(); err != nil {
 						fmt.Fprintf(os.Stderr, "warning: failed to kill agent after circuit breaker: %v\n", err)
 					}
@@ -334,13 +331,12 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 		return nil, fmt.Errorf("agent execution canceled (parent context): %w", timeoutCtx.Err())
 	case err := <-errCh:
 		// Process completed
-		a.mu.Lock()
-		loopDetected := a.loopDetected
-		loopReason := a.loopReason
-		a.mu.Unlock()
-
-		// Check if it was killed by circuit breaker
-		if loopDetected {
+		// Check if it was killed by circuit breaker (lock-free atomic read)
+		if a.loopDetected.Load() {
+			// Read loopReason with mutex protection (it's a string)
+			a.mu.Lock()
+			loopReason := a.loopReason
+			a.mu.Unlock()
 			return nil, fmt.Errorf("agent killed by circuit breaker: %s", loopReason)
 		}
 
@@ -734,8 +730,8 @@ func (a *Agent) checkCircuitBreaker(filePath string) error {
 	// This ensures we stop at exactly the limit, not limit+1
 	if filePath != "" {
 		if a.fileReadCounts[filePath] >= maxSameFileReads {
-			a.loopDetected = true
 			a.loopReason = fmt.Sprintf("Read file %s %d times (limit: %d)", filePath, maxSameFileReads, maxSameFileReads)
+			a.loopDetected.Store(true) // Atomic write for lock-free monitoring
 			return fmt.Errorf("infinite loop detected: %s", a.loopReason)
 		}
 		a.fileReadCounts[filePath]++
@@ -744,8 +740,8 @@ func (a *Agent) checkCircuitBreaker(filePath string) error {
 	// Increment total read count and check limit
 	a.totalReadCount++
 	if a.totalReadCount > maxFileReads {
-		a.loopDetected = true
 		a.loopReason = fmt.Sprintf("Total Read operations: %d (limit: %d)", a.totalReadCount, maxFileReads)
+		a.loopDetected.Store(true) // Atomic write for lock-free monitoring
 		return fmt.Errorf("infinite loop detected: %s", a.loopReason)
 	}
 

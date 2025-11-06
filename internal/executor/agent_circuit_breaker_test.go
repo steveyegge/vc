@@ -57,8 +57,8 @@ func TestCircuitBreakerNoDeadlock(t *testing.T) {
 		ctx:            ctx,
 		totalReadCount: 0,
 		fileReadCounts: make(map[string]int),
-		loopDetected:   false,
 		loopReason:     "",
+		// loopDetected is atomic.Bool and initializes to false
 	}
 
 	// Create a test file path that we'll "read" multiple times
@@ -123,10 +123,8 @@ func TestCircuitBreakerNoDeadlock(t *testing.T) {
 				// Convert to event - this will trigger checkCircuitBreaker
 				event := agent.convertJSONToEvent(msg, rawLine)
 
-				// Check if circuit breaker was triggered
-				agent.mu.Lock()
-				if agent.loopDetected {
-					agent.mu.Unlock()
+				// Check if circuit breaker was triggered (lock-free atomic read)
+				if agent.loopDetected.Load() {
 					testMu.Lock()
 					circuitTriggered = true
 					testMu.Unlock()
@@ -136,7 +134,6 @@ func TestCircuitBreakerNoDeadlock(t *testing.T) {
 					}
 					return
 				}
-				agent.mu.Unlock()
 
 				if event == nil {
 					// Circuit breaker may have triggered
@@ -174,8 +171,8 @@ func TestCircuitBreakerNoDeadlock(t *testing.T) {
 	}
 
 	// Verify that circuit breaker was actually triggered
+	wasTriggered := agent.loopDetected.Load()
 	agent.mu.Lock()
-	wasTriggered := agent.loopDetected
 	reason := agent.loopReason
 	agent.mu.Unlock()
 
@@ -230,8 +227,8 @@ func TestCircuitBreakerTerminatesAgent(t *testing.T) {
 		ctx:            ctx,
 		totalReadCount: 0,
 		fileReadCounts: make(map[string]int),
-		loopDetected:   false,
 		loopReason:     "",
+		// loopDetected is atomic.Bool and initializes to false
 	}
 
 	// Trigger the circuit breaker by reading the same file too many times
@@ -272,8 +269,8 @@ func TestCircuitBreakerTerminatesAgent(t *testing.T) {
 				t.Errorf("Expected nil event after exceeding limit, got %v", event)
 			}
 
+			loopDetected := agent.loopDetected.Load()
 			agent.mu.Lock()
-			loopDetected := agent.loopDetected
 			loopReason := agent.loopReason
 			agent.mu.Unlock()
 
@@ -288,8 +285,8 @@ func TestCircuitBreakerTerminatesAgent(t *testing.T) {
 	}
 
 	// Verify final state
+	finalDetected := agent.loopDetected.Load()
 	agent.mu.Lock()
-	finalDetected := agent.loopDetected
 	finalReason := agent.loopReason
 	finalReadCount := agent.fileReadCounts[testFilePath]
 	agent.mu.Unlock()
@@ -358,8 +355,8 @@ func TestCircuitBreakerRaceDetector(t *testing.T) {
 		ctx:            ctx,
 		totalReadCount: 0,
 		fileReadCounts: make(map[string]int),
-		loopDetected:   false,
 		loopReason:     "",
+		// loopDetected is atomic.Bool and initializes to false
 	}
 
 	testFilePath := "/test/race-test-file.go"
@@ -407,11 +404,9 @@ func TestCircuitBreakerRaceDetector(t *testing.T) {
 		for {
 			select {
 			case <-ticker.C:
-				// Simulate monitoring goroutine checking loopDetected
-				agent.mu.Lock()
-				detected := agent.loopDetected
-				agent.mu.Unlock()
-				
+				// Simulate monitoring goroutine checking loopDetected (lock-free atomic read)
+				detected := agent.loopDetected.Load()
+
 				monitoringReads++
 				if detected {
 					t.Logf("Monitoring goroutine detected loop after %d reads", monitoringReads)
@@ -436,12 +431,12 @@ func TestCircuitBreakerRaceDetector(t *testing.T) {
 		for {
 			select {
 			case <-ticker.C:
-				// Simulate Wait() reading both loopDetected and loopReason
+				// Simulate Wait() reading loopDetected (atomic) and loopReason (mutex)
+				detected := agent.loopDetected.Load()
 				agent.mu.Lock()
-				detected := agent.loopDetected
 				reason := agent.loopReason
 				agent.mu.Unlock()
-				
+
 				waitReads++
 				if detected {
 					t.Logf("Wait() detected loop: %s (after %d reads)", reason, waitReads)
@@ -464,9 +459,9 @@ func TestCircuitBreakerRaceDetector(t *testing.T) {
 			select {
 			case <-time.After(1 * time.Millisecond):
 				// Read various counters and flags
+				_ = agent.loopDetected.Load() // Lock-free atomic read
 				agent.mu.Lock()
 				_ = agent.totalReadCount
-				_ = agent.loopDetected
 				_ = agent.loopReason
 				for range agent.fileReadCounts {
 					// Just iterate to stress the map access
@@ -495,8 +490,8 @@ func TestCircuitBreakerRaceDetector(t *testing.T) {
 	}
 
 	// Final verification: circuit breaker should have triggered
+	finalDetected := agent.loopDetected.Load()
 	agent.mu.Lock()
-	finalDetected := agent.loopDetected
 	finalReason := agent.loopReason
 	finalReadCount := agent.fileReadCounts[testFilePath]
 	agent.mu.Unlock()
