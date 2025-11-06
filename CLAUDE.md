@@ -144,7 +144,31 @@ git push
 
 **Goal:** Clean reconciliation where no issues are lost. Be patient and creative - sometimes multiple iterations are needed.
 
-### 5. Verify Clean State
+### 5. Clean Up Old Git Stashes
+Check for and handle any lingering git stashes from previous sessions:
+
+```bash
+# List all stashes
+git stash list
+
+# If there are old stashes, review each one
+git stash show -p stash@{0}
+
+# Options for handling stashes:
+# Option A: Drop if no longer needed
+git stash drop stash@{0}
+
+# Option B: Apply and commit if contains useful work
+git stash pop stash@{0}
+# Review changes, commit if appropriate
+
+# Option C: Clear all stashes (use with caution!)
+git stash clear
+```
+
+**Best practice:** Clean up stashes regularly to avoid accumulating orphaned work. If uncertain about a stash's contents, show it first before dropping.
+
+### 6. Verify Clean State
 Ensure all changes are committed and no untracked files remain:
 
 ```bash
@@ -153,13 +177,14 @@ git status
 
 # Verify no untracked files (except .beads/vc.db which is gitignored)
 # Verify no uncommitted changes
+# Verify no lingering stashes
 
 # Verify pushed to remote
 git log --oneline -5
 git status  # Should show "Your branch is up to date with 'origin/main'"
 ```
 
-### 6. Choose Follow-Up Issue
+### 7. Choose Follow-Up Issue
 Provide the user with a clear prompt for the next session:
 
 ```bash
@@ -205,11 +230,15 @@ git commit -m "Close vc-0vfg: loop detector implementation"
 git push
 # Success ✓
 
-# 5. Verify clean state
+# 5. Clean up stashes
+git stash list
+# No stashes ✓
+
+# 6. Verify clean state
 git status
 # On branch main, nothing to commit, working tree clean ✓
 
-# 6. Choose next work
+# 7. Choose next work
 bd ready --limit 5
 bd show vc-xyz
 ```
