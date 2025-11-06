@@ -348,6 +348,13 @@ func TestWatchdogIntegration_ConfigurationValidation(t *testing.T) {
 						watchdog.SeverityLow:      3,
 					},
 				},
+				BackoffConfig: watchdog.BackoffConfig{
+					Enabled:           true,
+					BaseInterval:      30 * time.Second,
+					MaxInterval:       10 * time.Minute,
+					BackoffMultiplier: 2.0,
+					TriggerThreshold:  3,
+				},
 				MaxHistorySize: 100,
 			},
 			shouldFail: false,

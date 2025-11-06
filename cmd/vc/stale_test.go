@@ -25,11 +25,12 @@ func TestStaleCommand(t *testing.T) {
 
 	// Create a test issue
 	issue := &types.Issue{
-		Title:       "Test issue for stale detection",
-		Description: "This issue will be claimed by a stopped executor",
-		Status:      types.StatusOpen,
-		Priority:    2,
-		IssueType:   types.TypeTask,
+		Title:              "Test issue for stale detection",
+		Description:        "This issue will be claimed by a stopped executor",
+		Status:             types.StatusOpen,
+		Priority:           2,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Issue should be detected as stale and released",
 	}
 
 	err = testStore.CreateIssue(ctx, issue, "test-user")
@@ -147,11 +148,12 @@ func TestStaleCommandWithStaleHeartbeat(t *testing.T) {
 
 	// Create a test issue
 	issue := &types.Issue{
-		Title:       "Test issue for stale heartbeat detection",
-		Description: "This issue will be claimed by an executor with stale heartbeat",
-		Status:      types.StatusOpen,
-		Priority:    2,
-		IssueType:   types.TypeTask,
+		Title:              "Test issue for stale heartbeat detection",
+		Description:        "This issue will be claimed by an executor with stale heartbeat",
+		Status:             types.StatusOpen,
+		Priority:           2,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Issue should be detected as stale when heartbeat is stale",
 	}
 
 	err = testStore.CreateIssue(ctx, issue, "test-user")

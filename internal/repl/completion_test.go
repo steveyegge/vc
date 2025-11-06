@@ -330,14 +330,15 @@ func setupTestStorage(t *testing.T) (storage.Storage, func()) {
 
 func createTestIssues(t *testing.T, ctx context.Context, store storage.Storage, count int) {
 	t.Helper()
-	
+
 	for i := 0; i < count; i++ {
 		issue := &types.Issue{
-			IssueType:   types.TypeTask,
-			Title:       "Test issue",
-			Description: "Test description",
-			Status:      types.StatusOpen,
-			Priority:    2,
+			IssueType:          types.TypeTask,
+			Title:              "Test issue",
+			Description:        "Test description",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			AcceptanceCriteria: "Complete the test",
 		}
 		if err := store.CreateIssue(ctx, issue, "test"); err != nil {
 			t.Fatalf("Failed to create test issue: %v", err)

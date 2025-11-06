@@ -311,6 +311,12 @@ func (s *Supervisor) CreateDiscoveredIssues(ctx context.Context, parentIssue *ty
 			issueType = types.TypeChore
 		}
 
+		// Ensure acceptance criteria for task/bug/feature issues
+		acceptanceCriteria := disc.AcceptanceCriteria
+		if acceptanceCriteria == "" && (issueType == types.TypeTask || issueType == types.TypeBug || issueType == types.TypeFeature) {
+			acceptanceCriteria = "Complete the described work"
+		}
+
 		// Create the issue
 		newIssue := &types.Issue{
 			Title:              disc.Title,
@@ -319,7 +325,7 @@ func (s *Supervisor) CreateDiscoveredIssues(ctx context.Context, parentIssue *ty
 			Status:             types.StatusOpen,
 			Priority:           priority, // Use calculated priority (vc-152)
 			Assignee:           "ai-supervisor",
-			AcceptanceCriteria: disc.AcceptanceCriteria, // vc-4vot: Include acceptance criteria from AI
+			AcceptanceCriteria: acceptanceCriteria, // vc-4vot: Include acceptance criteria from AI
 		}
 
 		if err := s.store.CreateIssue(ctx, newIssue, "ai-supervisor"); err != nil {

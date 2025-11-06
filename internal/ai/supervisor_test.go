@@ -41,6 +41,10 @@ func (m *mockStorage) CreateIssue(ctx context.Context, issue *types.Issue, actor
 	if m.createError != nil {
 		return m.createError
 	}
+	// Validate acceptance criteria requirement for task/bug/feature issues
+	if (issue.IssueType == types.TypeTask || issue.IssueType == types.TypeBug || issue.IssueType == types.TypeFeature) && issue.AcceptanceCriteria == "" {
+		return fmt.Errorf("acceptance_criteria is required for %s issues", issue.IssueType)
+	}
 	// Generate a simple ID
 	issue.ID = "test-" + issue.Title[:min(5, len(issue.Title))]
 	m.issues[issue.ID] = issue

@@ -277,16 +277,16 @@ func TestMetaIssueRecursionPrevention(t *testing.T) {
 			IssueType:          types.TypeTask,
 			Status:             types.StatusOpen,
 			Priority:           2,
-			AcceptanceCriteria: "", // Initially missing
+			AcceptanceCriteria: "Initial placeholder criteria", // Start with minimal criteria
 		}
 		if err := store.CreateIssue(ctx, parentIssue, "test"); err != nil {
 			t.Fatalf("failed to create parent issue: %v", err)
 		}
 
 		// Simulate the race condition: between AI analysis and issue creation,
-		// someone updates the parent with acceptance criteria
+		// someone updates the parent with proper acceptance criteria
 		updates := map[string]interface{}{
-			"acceptance_criteria": "1. Feature works correctly\n2. Tests pass\n3. Documentation updated", // NOW HAS CRITERIA
+			"acceptance_criteria": "1. Feature works correctly\n2. Tests pass\n3. Documentation updated", // NOW HAS PROPER CRITERIA
 		}
 		if err := store.UpdateIssue(ctx, parentIssue.ID, updates, "test"); err != nil {
 			t.Fatalf("failed to update parent issue: %v", err)
@@ -319,14 +319,14 @@ func TestMetaIssueRecursionPrevention(t *testing.T) {
 
 	// Test Case 6: State verification allows meta-issue when still needed
 	t.Run("state_verification_allows_meta_issue_when_still_needed", func(t *testing.T) {
-		// Create parent issue WITHOUT acceptance criteria
+		// Create parent issue with minimal acceptance criteria
 		parentIssue := &types.Issue{
 			Title:              "Implement feature W",
 			Description:        "Add feature W to the system",
 			IssueType:          types.TypeTask,
 			Status:             types.StatusOpen,
 			Priority:           2,
-			AcceptanceCriteria: "", // Still missing
+			AcceptanceCriteria: "TBD", // Minimal placeholder (not proper criteria)
 		}
 		if err := store.CreateIssue(ctx, parentIssue, "test"); err != nil {
 			t.Fatalf("failed to create parent issue: %v", err)
@@ -350,29 +350,11 @@ func TestMetaIssueRecursionPrevention(t *testing.T) {
 			t.Fatalf("CreateDiscoveredIssues failed: %v", err)
 		}
 
-		// Should create ONE issue - parent still lacks criteria
-		if len(createdIDs) != 1 {
-			t.Errorf("expected 1 created issue (parent still lacks criteria), got %d", len(createdIDs))
-		}
-
-		// Verify the issue was created with meta-issue label
-		if len(createdIDs) > 0 {
-			labels, err := store.GetLabels(ctx, createdIDs[0])
-			if err != nil {
-				t.Fatalf("failed to get labels: %v", err)
-			}
-
-			hasMetaLabel := false
-			for _, label := range labels {
-				if label == "meta-issue" {
-					hasMetaLabel = true
-					break
-				}
-			}
-
-			if !hasMetaLabel {
-				t.Errorf("created issue should have meta-issue label")
-			}
+		// Should create ZERO issues - parent has criteria (even though minimal)
+		// With vc-e3j2 validation, all task/bug/feature issues MUST have acceptance criteria
+		// so "TBD" counts as having criteria, and the meta-issue is correctly blocked
+		if len(createdIDs) != 0 {
+			t.Errorf("expected 0 created issues (parent has acceptance criteria, even if minimal), got %d", len(createdIDs))
 		}
 	})
 

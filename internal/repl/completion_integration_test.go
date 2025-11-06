@@ -171,29 +171,31 @@ func TestIntegration_TabCompletionWithRealData(t *testing.T) {
 
 func createRealisticIssues(t *testing.T, ctx context.Context, store storage.Storage) {
 	t.Helper()
-	
+
 	issues := []struct {
-		title    string
-		issueType types.IssueType
-		priority int
+		title              string
+		issueType          types.IssueType
+		priority           int
+		acceptanceCriteria string
 	}{
-		{"Implement user authentication", types.TypeFeature, 1},
-		{"Fix login button alignment", types.TypeBug, 2},
-		{"Refactor database layer", types.TypeTask, 2},
-		{"Add API documentation", types.TypeChore, 3},
-		{"Performance optimization epic", types.TypeEpic, 1},
-		{"Fix memory leak in parser", types.TypeBug, 1},
-		{"Add dark mode support", types.TypeFeature, 2},
-		{"Update dependencies", types.TypeChore, 3},
+		{"Implement user authentication", types.TypeFeature, 1, "User can log in and log out"},
+		{"Fix login button alignment", types.TypeBug, 2, "Button is properly aligned"},
+		{"Refactor database layer", types.TypeTask, 2, "Database code is cleaner"},
+		{"Add API documentation", types.TypeChore, 3, ""},
+		{"Performance optimization epic", types.TypeEpic, 1, ""},
+		{"Fix memory leak in parser", types.TypeBug, 1, "Memory leak is resolved"},
+		{"Add dark mode support", types.TypeFeature, 2, "Dark mode toggle works"},
+		{"Update dependencies", types.TypeChore, 3, ""},
 	}
-	
+
 	for _, iss := range issues {
 		issue := &types.Issue{
-			Title:       iss.title,
-			Description: "Test issue for integration testing",
-			IssueType:   iss.issueType,
-			Status:      types.StatusOpen,
-			Priority:    iss.priority,
+			Title:              iss.title,
+			Description:        "Test issue for integration testing",
+			IssueType:          iss.issueType,
+			Status:             types.StatusOpen,
+			Priority:           iss.priority,
+			AcceptanceCriteria: iss.acceptanceCriteria,
 		}
 		if err := store.CreateIssue(ctx, issue, "test"); err != nil {
 			t.Fatalf("Failed to create test issue: %v", err)

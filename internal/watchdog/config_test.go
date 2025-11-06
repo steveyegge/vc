@@ -93,6 +93,13 @@ func TestLoadFromFile_ValidConfig(t *testing.T) {
 				SeverityLow:      3,
 			},
 		},
+		BackoffConfig: BackoffConfig{
+			Enabled:           true,
+			BaseInterval:      30 * time.Second,
+			MaxInterval:       10 * time.Minute,
+			BackoffMultiplier: 2.0,
+			TriggerThreshold:  3,
+		},
 		MaxHistorySize: 200,
 	}
 

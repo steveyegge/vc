@@ -121,14 +121,15 @@ func TestManager_Create(t *testing.T) {
 	// Create a test mission in the main database
 	ctx := context.Background()
 	mission := &types.Issue{
-		ID:          "vc-100",
-		IssueType:   types.TypeTask,
-		Status:      types.StatusOpen,
-		Priority:    1,
-		Title:       "Test Mission",
-		Description: "Test mission description",
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:                 "vc-100",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		Title:              "Test Mission",
+		Description:        "Test mission description",
+		AcceptanceCriteria: "Mission should be completed",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 	if err := mainDB.CreateIssue(ctx, mission, "test"); err != nil {
 		t.Fatalf("Failed to create test mission: %v", err)
@@ -225,13 +226,14 @@ func TestManager_GetAndList(t *testing.T) {
 	for i := 1; i <= 3; i++ {
 		missionID := fmt.Sprintf("vc-%d", 3000+i)
 		mission := &types.Issue{
-			ID:        missionID,
-			IssueType: types.TypeTask,
-			Status:    types.StatusOpen,
-			Priority:  1,
-			Title:     "Test Mission " + missionID,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
+			ID:                 missionID,
+			IssueType:          types.TypeTask,
+			Status:             types.StatusOpen,
+			Priority:           1,
+			Title:              "Test Mission " + missionID,
+			AcceptanceCriteria: "Mission should be completed",
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
 		}
 		if err := mainDB.CreateIssue(ctx, mission, "test"); err != nil {
 			t.Fatalf("Failed to create test mission: %v", err)
@@ -319,13 +321,14 @@ func TestManager_InspectState(t *testing.T) {
 
 	// Create test mission
 	mission := &types.Issue{
-		ID:        "vc-4001",
-		IssueType: types.TypeTask,
-		Status:    types.StatusOpen,
-		Priority:  1,
-		Title:     "Test Mission",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:                 "vc-4001",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		Title:              "Test Mission",
+		AcceptanceCriteria: "Mission should be completed",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 	if err := mainDB.CreateIssue(ctx, mission, "test"); err != nil {
 		t.Fatalf("Failed to create test mission: %v", err)
@@ -399,26 +402,28 @@ func TestManager_Cleanup(t *testing.T) {
 
 	// Create test missions for both subtests
 	mission1 := &types.Issue{
-		ID:        "vc-1001",
-		IssueType: types.TypeTask,
-		Status:    types.StatusOpen,
-		Priority:  1,
-		Title:     "Test Mission 1",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:                 "vc-1001",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		Title:              "Test Mission 1",
+		AcceptanceCriteria: "Mission 1 should be completed",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 	if err := mainDB.CreateIssue(ctx, mission1, "test"); err != nil {
 		t.Fatalf("Failed to create test mission 1: %v", err)
 	}
 
 	mission2 := &types.Issue{
-		ID:        "vc-1002",
-		IssueType: types.TypeTask,
-		Status:    types.StatusOpen,
-		Priority:  1,
-		Title:     "Test Mission 2",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:                 "vc-1002",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		Title:              "Test Mission 2",
+		AcceptanceCriteria: "Mission 2 should be completed",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 	if err := mainDB.CreateIssue(ctx, mission2, "test"); err != nil {
 		t.Fatalf("Failed to create test mission 2: %v", err)
@@ -523,13 +528,14 @@ func TestManager_CleanupAll(t *testing.T) {
 	for i := 1; i <= 3; i++ {
 		missionID := fmt.Sprintf("vc-%d", 2000+i)
 		mission := &types.Issue{
-			ID:        missionID,
-			IssueType: types.TypeTask,
-			Status:    types.StatusOpen,
-			Priority:  1,
-			Title:     "Test Mission " + missionID,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
+			ID:                 missionID,
+			IssueType:          types.TypeTask,
+			Status:             types.StatusOpen,
+			Priority:           1,
+			Title:              "Test Mission " + missionID,
+			AcceptanceCriteria: "Mission should be completed",
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
 		}
 		if err := mainDB.CreateIssue(ctx, mission, "test"); err != nil {
 			t.Fatalf("Failed to create test mission: %v", err)

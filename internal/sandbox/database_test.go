@@ -57,11 +57,12 @@ func TestInitSandboxDB(t *testing.T) {
 
 	// Verify that new issues created in sandbox use 'vc-' prefix
 	testIssue := &types.Issue{
-		Title:       "Test Issue",
-		Description: "Test that sandbox uses correct prefix",
-		Status:      types.StatusOpen,
-		Priority:    2,
-		IssueType:   types.TypeTask,
+		Title:              "Test Issue",
+		Description:        "Test that sandbox uses correct prefix",
+		Status:             types.StatusOpen,
+		Priority:           2,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Issue should be created with correct prefix",
 	}
 	if err := store.CreateIssue(ctx, testIssue, "test"); err != nil {
 		t.Fatalf("failed to create test issue: %v", err)
@@ -107,12 +108,13 @@ func TestCopyCoreIssues(t *testing.T) {
 
 	// Create a blocking dependency
 	blocker := &types.Issue{
-		ID:          "vc-101",
-		Title:       "Blocking Issue",
-		Description: "Blocks the mission",
-		Status:      types.StatusOpen,
-		Priority:    1,
-		IssueType:   types.TypeTask,
+		ID:                 "vc-101",
+		Title:              "Blocking Issue",
+		Description:        "Blocks the mission",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Blocker should be resolved",
 	}
 	if err := mainDB.CreateIssue(ctx, blocker, "test"); err != nil {
 		t.Fatalf("failed to create blocker: %v", err)
@@ -131,12 +133,13 @@ func TestCopyCoreIssues(t *testing.T) {
 
 	// Create a child issue
 	child := &types.Issue{
-		ID:          "vc-102",
-		Title:       "Child Task",
-		Description: "Child of mission",
-		Status:      types.StatusOpen,
-		Priority:    2,
-		IssueType:   types.TypeTask,
+		ID:                 "vc-102",
+		Title:              "Child Task",
+		Description:        "Child of mission",
+		Status:             types.StatusOpen,
+		Priority:           2,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Child task should be completed",
 	}
 	if err := mainDB.CreateIssue(ctx, child, "test"); err != nil {
 		t.Fatalf("failed to create child: %v", err)
@@ -242,20 +245,22 @@ func TestCopyCoreIssuesRecursive(t *testing.T) {
 		IssueType:   types.TypeEpic,
 	}
 	dep1 := &types.Issue{
-		ID:          "vc-201",
-		Title:       "Dependency 1",
-		Description: "First level dep",
-		Status:      types.StatusOpen,
-		Priority:    1,
-		IssueType:   types.TypeTask,
+		ID:                 "vc-201",
+		Title:              "Dependency 1",
+		Description:        "First level dep",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Dependency 1 should be resolved",
 	}
 	dep2 := &types.Issue{
-		ID:          "vc-202",
-		Title:       "Dependency 2",
-		Description: "Second level dep",
-		Status:      types.StatusOpen,
-		Priority:    1,
-		IssueType:   types.TypeTask,
+		ID:                 "vc-202",
+		Title:              "Dependency 2",
+		Description:        "Second level dep",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Dependency 2 should be resolved",
 	}
 
 	// Create issues
@@ -341,11 +346,12 @@ func TestMergeResults(t *testing.T) {
 
 	// Create a discovered issue in sandbox (doesn't exist in main)
 	discovered := &types.Issue{
-		Title:       "Discovered Issue",
-		Description: "Found during execution",
-		Status:      types.StatusOpen,
-		Priority:    2,
-		IssueType:   types.TypeTask,
+		Title:              "Discovered Issue",
+		Description:        "Found during execution",
+		Status:             types.StatusOpen,
+		Priority:           2,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Issue should be discovered and merged",
 	}
 	// Don't set ID - let the sandbox DB auto-generate it
 	if err := sandboxDB.CreateIssue(ctx, discovered, "agent"); err != nil {

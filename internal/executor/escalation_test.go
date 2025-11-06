@@ -240,11 +240,13 @@ func TestEscalateBaseline_CreatesEscalationIssue(t *testing.T) {
 	}
 
 	// Find the escalation issue (should have escalation label)
-	filter := types.WorkFilter{
-		Status: types.StatusOpen,
+	// Note: Can't use GetReadyWork because escalation issues have no-auto-claim label
+	statusOpen := types.StatusOpen
+	filter := types.IssueFilter{
+		Status: &statusOpen,
 		Limit:  100,
 	}
-	issues, err := store.GetReadyWork(ctx, filter)
+	issues, err := store.SearchIssues(ctx, "", filter)
 	if err != nil {
 		t.Fatalf("Failed to get issues: %v", err)
 	}
@@ -373,11 +375,13 @@ func TestShouldEscalate_Integration(t *testing.T) {
 	}
 
 	// Verify escalation issue was created
-	filter := types.WorkFilter{
-		Status: types.StatusOpen,
+	// Note: Can't use GetReadyWork because escalation issues have no-auto-claim label
+	statusOpen := types.StatusOpen
+	issueFilter := types.IssueFilter{
+		Status: &statusOpen,
 		Limit:  100,
 	}
-	issues, err := store.GetReadyWork(ctx, filter)
+	issues, err := store.SearchIssues(ctx, "", issueFilter)
 	if err != nil {
 		t.Fatalf("Failed to get issues: %v", err)
 	}
