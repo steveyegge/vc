@@ -253,12 +253,9 @@ func (s *VCStorage) GetMission(ctx context.Context, id string) (*types.Mission, 
 
 // CreateIssue creates an issue in Beads + VC extension table if needed
 func (s *VCStorage) CreateIssue(ctx context.Context, issue *types.Issue, actor string) error {
-	// Validate acceptance criteria for tasks and bugs (vc-ilf1)
-	if issue.IssueType == types.TypeTask || issue.IssueType == types.TypeBug {
-		trimmed := strings.TrimSpace(issue.AcceptanceCriteria)
-		if trimmed == "" {
-			return fmt.Errorf("acceptance_criteria is required for %s issues", issue.IssueType)
-		}
+	// Validate issue fields including acceptance_criteria requirements (vc-e3j2)
+	if err := issue.Validate(); err != nil {
+		return err
 	}
 
 	// Convert to Beads type

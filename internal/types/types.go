@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -49,6 +50,17 @@ func (i *Issue) Validate() error {
 	if i.EstimatedMinutes != nil && *i.EstimatedMinutes < 0 {
 		return fmt.Errorf("estimated_minutes cannot be negative")
 	}
+
+	// Validate acceptance criteria requirements based on issue type (vc-e3j2)
+	// Policy: task, bug, and feature types require acceptance criteria
+	// Epic and chore types do not require acceptance criteria
+	if i.IssueType == TypeTask || i.IssueType == TypeBug || i.IssueType == TypeFeature {
+		trimmed := strings.TrimSpace(i.AcceptanceCriteria)
+		if trimmed == "" {
+			return fmt.Errorf("acceptance_criteria is required for %s issues", i.IssueType)
+		}
+	}
+
 	return nil
 }
 
@@ -72,14 +84,21 @@ func (s Status) IsValid() bool {
 }
 
 // IssueType categorizes the kind of work
+//
+// Acceptance Criteria Policy (vc-e3j2):
+// - task, bug, feature: REQUIRE non-empty acceptance_criteria
+// - epic, chore: acceptance_criteria is OPTIONAL
+//
+// This policy ensures actionable work items have clear success criteria
+// while allowing high-level containers and maintenance work to be flexible.
 type IssueType string
 
 const (
-	TypeBug     IssueType = "bug"
-	TypeFeature IssueType = "feature"
-	TypeTask    IssueType = "task"
-	TypeEpic    IssueType = "epic"
-	TypeChore   IssueType = "chore"
+	TypeBug     IssueType = "bug"     // Requires acceptance_criteria
+	TypeFeature IssueType = "feature" // Requires acceptance_criteria
+	TypeTask    IssueType = "task"    // Requires acceptance_criteria
+	TypeEpic    IssueType = "epic"    // acceptance_criteria is optional
+	TypeChore   IssueType = "chore"   // acceptance_criteria is optional
 )
 
 // IsValid checks if the issue type value is valid
