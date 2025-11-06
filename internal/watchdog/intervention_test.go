@@ -463,8 +463,9 @@ func TestInterventionController_InterventionHistory(t *testing.T) {
 	}
 
 	// Manually add intervention results to history to test pruning
-	// Note: We don't actually call PauseAgent in a loop here because there's a known bug
-	// in SearchIssues with labels that causes hangs (see above debug test).
+	// Note: We don't actually call PauseAgent in a loop here because of a Beads library bug (bd-5ots)
+	// where SearchIssues calls GetLabels in an N+1 loop, causing context timeouts.
+	// createEscalationIssue uses SearchIssues with labels for deduplication, which triggers this bug.
 	// Instead, we directly add results to the history to test the max size pruning logic.
 	ic.mu.Lock()
 	for i := 1; i <= 5; i++ {

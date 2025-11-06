@@ -563,12 +563,14 @@ func (s *VCStorage) CloseIssue(ctx context.Context, id string, reason string, ac
 	return s.Storage.CloseIssue(ctx, id, reason, actor)
 }
 
-// SearchIssues searches issues in Beads
+// SearchIssues searches issues in Beads with optional label filtering (vc-fwx8)
 func (s *VCStorage) SearchIssues(ctx context.Context, query string, filter types.IssueFilter) ([]*types.Issue, error) {
 	// Convert VC filter to Beads filter
 	beadsFilter := beads.IssueFilter{
 		Priority: filter.Priority,
 		Assignee: filter.Assignee,
+		Labels:   filter.Labels, // vc-fwx8: Pass through labels to Beads (Beads supports this!)
+		Limit:    filter.Limit,
 	}
 
 	// Convert pointer fields if not nil
