@@ -612,3 +612,149 @@ func TestSaveToFile(t *testing.T) {
 		t.Error("Check interval not saved correctly")
 	}
 }
+
+// TestBackoffMechanism tests the exponential backoff functionality (vc-21pw)
+func TestBackoffMechanism(t *testing.T) {
+	cfg := DefaultWatchdogConfig()
+
+	// Verify initial state
+	if cfg.IsInBackoff() {
+		t.Error("Should not be in backoff initially")
+	}
+
+	baseInterval := cfg.BackoffConfig.BaseInterval
+	if cfg.GetCurrentCheckInterval() != baseInterval {
+		t.Errorf("Initial interval should be base interval %v, got %v", baseInterval, cfg.GetCurrentCheckInterval())
+	}
+
+	// Record consecutive interventions
+	for i := 0; i < cfg.BackoffConfig.TriggerThreshold-1; i++ {
+		cfg.RecordIntervention()
+		if cfg.IsInBackoff() {
+			t.Errorf("Should not enter backoff until threshold reached (iteration %d)", i)
+		}
+	}
+
+	// One more intervention should trigger backoff
+	cfg.RecordIntervention()
+	if !cfg.IsInBackoff() {
+		t.Error("Should be in backoff mode after reaching threshold")
+	}
+
+	// Check that interval has increased
+	currentInterval := cfg.GetCurrentCheckInterval()
+	expectedInterval := time.Duration(float64(baseInterval) * cfg.BackoffConfig.BackoffMultiplier)
+	if currentInterval != expectedInterval {
+		t.Errorf("Expected interval %v after first backoff, got %v", expectedInterval, currentInterval)
+	}
+
+	// Record more interventions to test exponential increase
+	prevInterval := currentInterval
+	cfg.RecordIntervention()
+	currentInterval = cfg.GetCurrentCheckInterval()
+	expectedInterval = time.Duration(float64(prevInterval) * cfg.BackoffConfig.BackoffMultiplier)
+	if currentInterval != expectedInterval {
+		t.Errorf("Expected exponential backoff to %v, got %v", expectedInterval, currentInterval)
+	}
+
+	// Test max interval cap
+	for i := 0; i < 20; i++ {
+		cfg.RecordIntervention()
+	}
+	currentInterval = cfg.GetCurrentCheckInterval()
+	if currentInterval > cfg.BackoffConfig.MaxInterval {
+		t.Errorf("Interval exceeded max: %v > %v", currentInterval, cfg.BackoffConfig.MaxInterval)
+	}
+
+	// Test reset on progress
+	cfg.RecordProgress()
+	if cfg.IsInBackoff() {
+		t.Error("Should exit backoff mode on progress")
+	}
+	if cfg.GetCurrentCheckInterval() != baseInterval {
+		t.Errorf("Interval should reset to base %v on progress, got %v", baseInterval, cfg.GetCurrentCheckInterval())
+	}
+
+	state := cfg.GetBackoffState()
+	if state.ConsecutiveInterventions != 0 {
+		t.Errorf("Consecutive interventions should reset to 0, got %d", state.ConsecutiveInterventions)
+	}
+}
+
+// TestBackoffDisabled tests that backoff doesn't activate when disabled (vc-21pw)
+func TestBackoffDisabled(t *testing.T) {
+	cfg := DefaultWatchdogConfig()
+	cfg.BackoffConfig.Enabled = false
+
+	baseInterval := cfg.BackoffConfig.BaseInterval
+
+	// Record many interventions
+	for i := 0; i < 10; i++ {
+		cfg.RecordIntervention()
+	}
+
+	// Should still be at base interval
+	if cfg.IsInBackoff() {
+		t.Error("Should not enter backoff when disabled")
+	}
+
+	if cfg.GetCurrentCheckInterval() != baseInterval {
+		t.Errorf("Interval should remain at base %v when backoff disabled, got %v", baseInterval, cfg.GetCurrentCheckInterval())
+	}
+}
+
+// TestBackoffEnvVars tests loading backoff config from environment variables (vc-21pw)
+func TestBackoffEnvVars(t *testing.T) {
+	// Save and restore original env vars
+	originalEnv := make(map[string]string)
+	envVars := []string{
+		"VC_WATCHDOG_BACKOFF_ENABLED",
+		"VC_WATCHDOG_BACKOFF_BASE_INTERVAL",
+		"VC_WATCHDOG_BACKOFF_MAX_INTERVAL",
+		"VC_WATCHDOG_BACKOFF_MULTIPLIER",
+		"VC_WATCHDOG_BACKOFF_THRESHOLD",
+	}
+
+	for _, key := range envVars {
+		originalEnv[key] = os.Getenv(key)
+	}
+
+	defer func() {
+		for key, val := range originalEnv {
+			if val == "" {
+				_ = os.Unsetenv(key)
+			} else {
+				_ = os.Setenv(key, val)
+			}
+		}
+	}()
+
+	// Set test env vars
+	_ = os.Setenv("VC_WATCHDOG_BACKOFF_ENABLED", "true")
+	_ = os.Setenv("VC_WATCHDOG_BACKOFF_BASE_INTERVAL", "1m")
+	_ = os.Setenv("VC_WATCHDOG_BACKOFF_MAX_INTERVAL", "15m")
+	_ = os.Setenv("VC_WATCHDOG_BACKOFF_MULTIPLIER", "3.0")
+	_ = os.Setenv("VC_WATCHDOG_BACKOFF_THRESHOLD", "5")
+
+	cfg := LoadFromEnv()
+
+	if !cfg.BackoffConfig.Enabled {
+		t.Error("Expected backoff enabled from env")
+	}
+
+	if cfg.BackoffConfig.BaseInterval != 1*time.Minute {
+		t.Errorf("Expected base interval 1m, got %v", cfg.BackoffConfig.BaseInterval)
+	}
+
+	if cfg.BackoffConfig.MaxInterval != 15*time.Minute {
+		t.Errorf("Expected max interval 15m, got %v", cfg.BackoffConfig.MaxInterval)
+	}
+
+	if cfg.BackoffConfig.BackoffMultiplier != 3.0 {
+		t.Errorf("Expected multiplier 3.0, got %f", cfg.BackoffConfig.BackoffMultiplier)
+	}
+
+	if cfg.BackoffConfig.TriggerThreshold != 5 {
+		t.Errorf("Expected threshold 5, got %d", cfg.BackoffConfig.TriggerThreshold)
+	}
+}

@@ -327,12 +327,12 @@ func IsProtectedBranch(branch string) bool {
 // ParseGitCommand extracts key information from a git command string
 // This is a helper to make safety evaluation easier
 type ParsedGitCommand struct {
-	Command    string   // The git subcommand (push, pull, commit, etc.)
-	Args       []string // Arguments to the command
-	HasForce   bool     // Whether command uses --force or --force-with-lease
-	TargetRef  string   // Branch/ref being operated on
-	IsWrite    bool     // Whether this is a write operation
-	IsDangerous bool    // Quick heuristic check for dangerous flags
+	Command     string   // The git subcommand (push, pull, commit, etc.)
+	Args        []string // Arguments to the command
+	HasForce    bool     // Whether command uses --force or --force-with-lease
+	TargetRef   string   // Branch/ref being operated on
+	IsWrite     bool     // Whether this is a write operation
+	IsDangerous bool     // Quick heuristic check for dangerous flags
 }
 
 // ParseCommand parses a git command string into structured information

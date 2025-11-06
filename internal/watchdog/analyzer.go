@@ -37,13 +37,13 @@ const (
 type RecommendedAction string
 
 const (
-	ActionStopExecution  RecommendedAction = "stop_execution"   // Halt the problematic issue execution
-	ActionRestartAgent   RecommendedAction = "restart_agent"    // Restart the agent
-	ActionMarkAsBlocked  RecommendedAction = "mark_as_blocked"  // Mark issue as blocked for human review
-	ActionInvestigate    RecommendedAction = "investigate"      // Flag for investigation
-	ActionMonitor        RecommendedAction = "monitor"          // Continue monitoring but no action yet
-	ActionNotifyHuman    RecommendedAction = "notify_human"     // Alert a human operator
-	ActionCheckpoint     RecommendedAction = "checkpoint"       // Request checkpoint and graceful termination
+	ActionStopExecution RecommendedAction = "stop_execution"  // Halt the problematic issue execution
+	ActionRestartAgent  RecommendedAction = "restart_agent"   // Restart the agent
+	ActionMarkAsBlocked RecommendedAction = "mark_as_blocked" // Mark issue as blocked for human review
+	ActionInvestigate   RecommendedAction = "investigate"     // Flag for investigation
+	ActionMonitor       RecommendedAction = "monitor"         // Continue monitoring but no action yet
+	ActionNotifyHuman   RecommendedAction = "notify_human"    // Alert a human operator
+	ActionCheckpoint    RecommendedAction = "checkpoint"      // Request checkpoint and graceful termination
 )
 
 // AnomalyReport represents the result of anomaly detection analysis
@@ -83,7 +83,7 @@ type Analyzer struct {
 	supervisor *ai.Supervisor
 	// TODO(vc-170): store will be used to query historical events for richer context
 	// Currently unused but required for future event-based anomaly correlation
-	store      storage.Storage
+	store storage.Storage
 }
 
 // AnalyzerConfig holds configuration for the analyzer
@@ -126,10 +126,10 @@ func (a *Analyzer) DetectAnomalies(ctx context.Context) (*AnomalyReport, error) 
 	// If no data, nothing to analyze
 	if len(telemetry) == 0 && currentExecution == nil {
 		return &AnomalyReport{
-			Detected:   false,
+			Detected:    false,
 			Description: "No telemetry data available for analysis",
-			Reasoning:  "Cannot detect anomalies without execution history",
-			Confidence: 1.0,
+			Reasoning:   "Cannot detect anomalies without execution history",
+			Confidence:  1.0,
 		}, nil
 	}
 

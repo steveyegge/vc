@@ -245,10 +245,10 @@ func TestContextDetectorExhaustionDetection(t *testing.T) {
 	detector := NewContextDetector(store)
 
 	tests := []struct {
-		output       string
+		output        string
 		shouldExhaust bool
 	}{
-		{"Context: 50000/200000 (25.0%)", false}, // Below threshold
+		{"Context: 50000/200000 (25.0%)", false},  // Below threshold
 		{"Context: 150000/200000 (75.0%)", false}, // Just below threshold
 		{"Context: 160000/200000 (80.0%)", true},  // At threshold
 		{"Context: 180000/200000 (90.0%)", true},  // Above threshold

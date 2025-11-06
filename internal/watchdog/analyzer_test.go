@@ -593,9 +593,9 @@ func TestAnomalyReport_ZFCCompliance(t *testing.T) {
 // containsIgnoreCase checks if haystack contains needle (case-insensitive)
 func containsIgnoreCase(haystack, needle string) bool {
 	return len(haystack) >= len(needle) &&
-		   (haystack == needle ||
-		    len(haystack) > 0 &&
-		    containsIgnoreCaseHelper(haystack, needle))
+		(haystack == needle ||
+			len(haystack) > 0 &&
+				containsIgnoreCaseHelper(haystack, needle))
 }
 
 func containsIgnoreCaseHelper(s, substr string) bool {

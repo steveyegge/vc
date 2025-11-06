@@ -14,9 +14,9 @@ import (
 type InterventionType string
 
 const (
-	InterventionPauseAgent       InterventionType = "pause_agent"
-	InterventionKillAgent        InterventionType = "kill_agent"
-	InterventionPauseExecutor    InterventionType = "pause_executor"
+	InterventionPauseAgent        InterventionType = "pause_agent"
+	InterventionKillAgent         InterventionType = "kill_agent"
+	InterventionPauseExecutor     InterventionType = "pause_executor"
 	InterventionRequestCheckpoint InterventionType = "request_checkpoint"
 )
 
@@ -55,13 +55,17 @@ type InterventionController struct {
 	// interventionHistory tracks recent interventions for reporting
 	interventionHistory []InterventionResult
 	maxHistorySize      int
+
+	// config is the watchdog configuration (for backoff tracking)
+	config *WatchdogConfig
 }
 
 // InterventionControllerConfig holds configuration for the intervention controller
 type InterventionControllerConfig struct {
 	Store              storage.Storage
 	ExecutorInstanceID string
-	MaxHistorySize     int // Maximum number of interventions to keep in memory (default: 100)
+	MaxHistorySize     int             // Maximum number of interventions to keep in memory (default: 100)
+	Config             *WatchdogConfig // Watchdog configuration (for backoff tracking)
 }
 
 // NewInterventionController creates a new intervention controller
@@ -83,6 +87,7 @@ func NewInterventionController(cfg *InterventionControllerConfig) (*Intervention
 		executorInstanceID:  cfg.ExecutorInstanceID,
 		interventionHistory: make([]InterventionResult, 0, maxHistorySize),
 		maxHistorySize:      maxHistorySize,
+		config:              cfg.Config,
 	}, nil
 }
 
@@ -150,6 +155,11 @@ func (ic *InterventionController) PauseAgent(ctx context.Context, report *Anomal
 	// Add to history
 	ic.addToHistoryLocked(result)
 
+	// Record intervention for backoff tracking (vc-21pw)
+	if ic.config != nil {
+		ic.config.RecordIntervention()
+	}
+
 	fmt.Printf("Watchdog: Paused agent for issue %s (escalation: %s)\n", ic.currentIssueID, escalationID)
 
 	return result, nil
@@ -198,6 +208,11 @@ func (ic *InterventionController) KillAgent(ctx context.Context, report *Anomaly
 	// Add to history
 	ic.addToHistoryLocked(result)
 
+	// Record intervention for backoff tracking (vc-21pw)
+	if ic.config != nil {
+		ic.config.RecordIntervention()
+	}
+
 	fmt.Printf("Watchdog: Killed agent for issue %s (escalation: %s)\n", ic.currentIssueID, escalationID)
 
 	return result, nil
@@ -243,6 +258,11 @@ func (ic *InterventionController) PauseExecutor(ctx context.Context, report *Ano
 	// Add to history
 	ic.addToHistoryLocked(result)
 
+	// Record intervention for backoff tracking (vc-21pw)
+	if ic.config != nil {
+		ic.config.RecordIntervention()
+	}
+
 	// NOTE: This does not actually pause the executor - just creates an escalation issue.
 	// The executor implementation needs to check for pause signals/escalations in its main loop.
 	// This is intentionally incomplete until the executor infrastructure is built.
@@ -258,6 +278,7 @@ func (ic *InterventionController) PauseExecutor(ctx context.Context, report *Ano
 //  1. Record current progress as issues
 //  2. Save checkpoint state for handoff
 //  3. Gracefully terminate
+//
 // The next worker can then pick up the checkpoint and continue
 func (ic *InterventionController) RequestCheckpoint(ctx context.Context, report *AnomalyReport) (*InterventionResult, error) {
 	ic.mu.Lock()
@@ -300,6 +321,11 @@ func (ic *InterventionController) RequestCheckpoint(ctx context.Context, report 
 
 	// Add to history
 	ic.addToHistoryLocked(result)
+
+	// Record intervention for backoff tracking (vc-21pw)
+	if ic.config != nil {
+		ic.config.RecordIntervention()
+	}
 
 	fmt.Printf("Watchdog: Requested checkpoint for issue %s (escalation: %s)\n", ic.currentIssueID, escalationID)
 

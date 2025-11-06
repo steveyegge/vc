@@ -19,15 +19,15 @@ type EventStorer interface {
 
 // ContextUsage represents a single context usage measurement
 type ContextUsage struct {
-	Timestamp      time.Time
-	UsagePercent   float64 // 0-100
-	TotalTokens    int     // Total context window size
-	UsedTokens     int     // Tokens currently used
-	RawMessage     string  // Original message from agent
-	AgentType      string  // "amp" or "claude-code"
-	IssueID        string
-	ExecutorID     string
-	AgentID        string
+	Timestamp    time.Time
+	UsagePercent float64 // 0-100
+	TotalTokens  int     // Total context window size
+	UsedTokens   int     // Tokens currently used
+	RawMessage   string  // Original message from agent
+	AgentType    string  // "amp" or "claude-code"
+	IssueID      string
+	ExecutorID   string
+	AgentID      string
 }
 
 // ContextMetrics tracks context usage over time and calculates burn rate
@@ -35,12 +35,12 @@ type ContextMetrics struct {
 	mu sync.RWMutex
 
 	// History of context measurements (bounded window)
-	history []ContextUsage
+	history    []ContextUsage
 	maxHistory int // Maximum measurements to keep (default: 100)
 
 	// Calculated metrics
 	currentUsagePercent float64
-	burnRate            float64 // Percent per minute
+	burnRate            float64   // Percent per minute
 	estimatedExhaustion time.Time // When context will hit 100%
 	isExhausting        bool      // True if approaching exhaustion threshold
 
@@ -58,9 +58,9 @@ type ContextDetector struct {
 	defaultContextWindow int // Default context window size when not detectable (default: 200000)
 
 	// Regex patterns for parsing agent output
-	ampPattern         *regexp.Regexp // amp shows: "Context: 45000/200000 (22.5%)"
-	claudeCodePattern  *regexp.Regexp // claude-code shows: "approaching auto-compaction limit"
-	claudeCodePercent  *regexp.Regexp // claude-code shows: "Token usage: 150000/200000"
+	ampPattern        *regexp.Regexp // amp shows: "Context: 45000/200000 (22.5%)"
+	claudeCodePattern *regexp.Regexp // claude-code shows: "approaching auto-compaction limit"
+	claudeCodePercent *regexp.Regexp // claude-code shows: "Token usage: 150000/200000"
 }
 
 // ContextDetectorConfig holds configuration for ContextDetector

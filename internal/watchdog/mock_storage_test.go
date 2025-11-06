@@ -67,7 +67,7 @@ func (m *mockStorage) GetDependents(ctx context.Context, issueID string) ([]*typ
 func (m *mockStorage) GetDependencyTree(ctx context.Context, issueID string, maxDepth int) ([]*types.TreeNode, error) {
 	return nil, nil
 }
-func (m *mockStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, error) { return nil, nil }
+func (m *mockStorage) DetectCycles(ctx context.Context) ([][]*types.Issue, error)       { return nil, nil }
 func (m *mockStorage) AddLabel(ctx context.Context, issueID, label, actor string) error { return nil }
 func (m *mockStorage) RemoveLabel(ctx context.Context, issueID, label, actor string) error {
 	return nil
@@ -107,7 +107,7 @@ func (m *mockStorage) RegisterInstance(ctx context.Context, instance *types.Exec
 	return nil
 }
 func (m *mockStorage) MarkInstanceStopped(ctx context.Context, instanceID string) error { return nil }
-func (m *mockStorage) UpdateHeartbeat(ctx context.Context, instanceID string) error { return nil }
+func (m *mockStorage) UpdateHeartbeat(ctx context.Context, instanceID string) error     { return nil }
 func (m *mockStorage) GetActiveInstances(ctx context.Context) ([]*types.ExecutorInstance, error) {
 	return nil, nil
 }
@@ -143,7 +143,7 @@ func (m *mockStorage) RecordExecutionAttempt(ctx context.Context, attempt *types
 	return nil
 }
 func (m *mockStorage) GetConfig(ctx context.Context, key string) (string, error) { return "", nil }
-func (m *mockStorage) SetConfig(ctx context.Context, key, value string) error   { return nil }
+func (m *mockStorage) SetConfig(ctx context.Context, key, value string) error    { return nil }
 func (m *mockStorage) CleanupEventsByAge(ctx context.Context, retentionDays, criticalRetentionDays, batchSize int) (int, error) {
 	return 0, nil
 }

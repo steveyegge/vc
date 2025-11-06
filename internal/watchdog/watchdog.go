@@ -16,9 +16,9 @@ type Watchdog struct {
 	mu sync.RWMutex
 
 	// Core components
-	monitor              *Monitor
-	analyzer             *Analyzer
-	contextDetector      *ContextDetector
+	monitor                *Monitor
+	analyzer               *Analyzer
+	contextDetector        *ContextDetector
 	interventionController *InterventionController
 
 	// Configuration
@@ -82,6 +82,7 @@ func NewWatchdog(deps *WatchdogDeps) (*Watchdog, error) {
 		Store:              deps.Store,
 		ExecutorInstanceID: deps.ExecutorInstanceID,
 		MaxHistorySize:     config.MaxHistorySize,
+		Config:             config, // Pass config for backoff tracking (vc-21pw)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create intervention controller: %w", err)
@@ -140,18 +141,20 @@ func (w *Watchdog) Stop() {
 
 // monitoringLoop is the main watchdog loop
 // It periodically checks for anomalies and intervenes if needed
+// Uses dynamic interval based on backoff state (vc-21pw)
 func (w *Watchdog) monitoringLoop() {
 	defer w.wg.Done()
 
-	ticker := time.NewTicker(w.config.GetCheckInterval())
-	defer ticker.Stop()
+	// Use a timer instead of ticker so we can reset the interval dynamically
+	timer := time.NewTimer(w.config.GetCurrentCheckInterval())
+	defer timer.Stop()
 
 	for {
 		select {
 		case <-w.ctx.Done():
 			return
 
-		case <-ticker.C:
+		case <-timer.C:
 			// Check for context exhaustion first (highest priority)
 			if err := w.checkContextExhaustion(); err != nil {
 				fmt.Printf("Watchdog: context exhaustion check failed: %v\n", err)
@@ -161,6 +164,10 @@ func (w *Watchdog) monitoringLoop() {
 			if err := w.checkAnomalies(); err != nil {
 				fmt.Printf("Watchdog: anomaly detection failed: %v\n", err)
 			}
+
+			// Reset timer with current interval (may have changed due to backoff)
+			currentInterval := w.config.GetCurrentCheckInterval()
+			timer.Reset(currentInterval)
 		}
 	}
 }
@@ -177,10 +184,10 @@ func (w *Watchdog) checkContextExhaustion() error {
 
 	// Create an anomaly report for context exhaustion
 	report := &AnomalyReport{
-		Detected:     true,
-		AnomalyType:  AnomalyContextExhaustion,
-		Severity:     SeverityHigh,
-		Description:  fmt.Sprintf("Context usage at %.1f%%, approaching exhaustion limit", metrics.CurrentUsagePercent),
+		Detected:          true,
+		AnomalyType:       AnomalyContextExhaustion,
+		Severity:          SeverityHigh,
+		Description:       fmt.Sprintf("Context usage at %.1f%%, approaching exhaustion limit", metrics.CurrentUsagePercent),
 		RecommendedAction: ActionCheckpoint,
 		Reasoning: fmt.Sprintf("Context usage has reached %.1f%% (threshold: 80%%). "+
 			"Burn rate: %.2f%%/min. "+
@@ -189,7 +196,7 @@ func (w *Watchdog) checkContextExhaustion() error {
 			metrics.CurrentUsagePercent,
 			metrics.BurnRate,
 			metrics.EstimatedExhaustion.Format("15:04:05")),
-		Confidence: metrics.CurrentUsagePercent / 100.0, // Use usage % as confidence
+		Confidence:     metrics.CurrentUsagePercent / 100.0, // Use usage % as confidence
 		AffectedIssues: []string{w.interventionController.GetCurrentIssueID()},
 		Metrics: map[string]interface{}{
 			"usage_percent":        metrics.CurrentUsagePercent,

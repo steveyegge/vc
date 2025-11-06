@@ -15,7 +15,7 @@ func TestInterventionController_PauseAgent(t *testing.T) {
 
 	// Setup in-memory storage
 	store, err := storage.NewStorage(ctx, &storage.Config{
-		Path:    ":memory:",
+		Path: ":memory:",
 	})
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
@@ -157,7 +157,7 @@ func TestInterventionController_KillAgent(t *testing.T) {
 
 	// Setup in-memory storage
 	store, err := storage.NewStorage(ctx, &storage.Config{
-		Path:    ":memory:",
+		Path: ":memory:",
 	})
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
@@ -250,7 +250,7 @@ func TestInterventionController_Intervene(t *testing.T) {
 
 	// Setup storage
 	store, err := storage.NewStorage(ctx, &storage.Config{
-		Path:    ":memory:",
+		Path: ":memory:",
 	})
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
@@ -366,7 +366,7 @@ func TestInterventionController_NoActiveAgent(t *testing.T) {
 	ctx := context.Background()
 
 	store, err := storage.NewStorage(ctx, &storage.Config{
-		Path:    ":memory:",
+		Path: ":memory:",
 	})
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
@@ -407,7 +407,7 @@ func TestInterventionController_ClearAgentContext(t *testing.T) {
 	ctx := context.Background()
 
 	store, err := storage.NewStorage(ctx, &storage.Config{
-		Path:    ":memory:",
+		Path: ":memory:",
 	})
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
@@ -445,7 +445,7 @@ func TestInterventionController_InterventionHistory(t *testing.T) {
 	ctx := context.Background()
 
 	store, err := storage.NewStorage(ctx, &storage.Config{
-		Path:    ":memory:",
+		Path: ":memory:",
 	})
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
@@ -536,7 +536,7 @@ func TestRepeatedDetectionIntervention(t *testing.T) {
 	ctx := context.Background()
 
 	store, err := storage.NewStorage(ctx, &storage.Config{
-		Path:    ":memory:",
+		Path: ":memory:",
 	})
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)

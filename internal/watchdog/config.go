@@ -17,6 +17,44 @@ type DetectionState struct {
 	LastDetectedAt   time.Time // Most recent detection time
 }
 
+// BackoffConfig controls exponential backoff behavior for anomaly storms (vc-21pw)
+type BackoffConfig struct {
+	// Enabled controls whether backoff is active
+	// Default: true
+	Enabled bool `json:"enabled"`
+
+	// BaseInterval is the starting check interval
+	// Default: 30 seconds
+	BaseInterval time.Duration `json:"base_interval"`
+
+	// MaxInterval is the maximum backoff interval
+	// Default: 10 minutes
+	MaxInterval time.Duration `json:"max_interval"`
+
+	// BackoffMultiplier is the factor to increase interval by
+	// Default: 2.0 (exponential backoff)
+	BackoffMultiplier float64 `json:"backoff_multiplier"`
+
+	// TriggerThreshold is how many consecutive interventions trigger backoff
+	// Default: 3
+	TriggerThreshold int `json:"trigger_threshold"`
+}
+
+// BackoffState tracks the current backoff state (vc-21pw)
+type BackoffState struct {
+	// CurrentInterval is the current effective check interval
+	CurrentInterval time.Duration
+
+	// ConsecutiveInterventions counts interventions without successful progress
+	ConsecutiveInterventions int
+
+	// LastInterventionTime tracks when the last intervention occurred
+	LastInterventionTime time.Time
+
+	// IsBackedOff indicates if we're currently in backoff mode
+	IsBackedOff bool
+}
+
 // WatchdogConfig holds the complete watchdog configuration
 // This includes settings for monitoring, anomaly detection, and intervention policies
 type WatchdogConfig struct {
@@ -38,6 +76,9 @@ type WatchdogConfig struct {
 	// Intervention policies
 	InterventionConfig InterventionConfig `json:"intervention_config"`
 
+	// Backoff configuration for anomaly storms (vc-21pw)
+	BackoffConfig BackoffConfig `json:"backoff_config"`
+
 	// MaxHistorySize is the maximum number of interventions to keep in memory
 	// Default: 100
 	MaxHistorySize int `json:"max_history_size"`
@@ -45,6 +86,9 @@ type WatchdogConfig struct {
 	// detectionStates tracks consecutive detections per anomaly type
 	// This supports accumulation-based intervention logic (vc-227)
 	detectionStates map[AnomalyType]*DetectionState
+
+	// backoffState tracks current backoff state (vc-21pw)
+	backoffState *BackoffState
 
 	mu sync.RWMutex // Protects runtime reconfiguration and detection state
 }
@@ -96,10 +140,12 @@ type InterventionConfig struct {
 // - Only intervene on high/critical severity
 // - Auto-kill enabled for dangerous situations
 // - Limited retries (3) before escalation
+// - Exponential backoff to prevent anomaly storms (vc-21pw)
 func DefaultWatchdogConfig() *WatchdogConfig {
+	baseInterval := 30 * time.Second
 	return &WatchdogConfig{
 		Enabled:             true,
-		CheckInterval:       30 * time.Second,
+		CheckInterval:       baseInterval,
 		TelemetryWindowSize: 100,
 		AIConfig: AIConfig{
 			MinConfidenceThreshold: 0.75,
@@ -117,8 +163,20 @@ func DefaultWatchdogConfig() *WatchdogConfig {
 				SeverityLow:      3, // P3
 			},
 		},
+		BackoffConfig: BackoffConfig{
+			Enabled:           true,
+			BaseInterval:      baseInterval,
+			MaxInterval:       10 * time.Minute,
+			BackoffMultiplier: 2.0,
+			TriggerThreshold:  3,
+		},
 		MaxHistorySize:  100,
 		detectionStates: make(map[AnomalyType]*DetectionState),
+		backoffState: &BackoffState{
+			CurrentInterval:          baseInterval,
+			ConsecutiveInterventions: 0,
+			IsBackedOff:              false,
+		},
 	}
 }
 
@@ -209,6 +267,35 @@ func LoadFromEnv() *WatchdogConfig {
 		cfg.InterventionConfig.EscalateOnCritical = parseBool(val)
 	}
 
+	// Backoff config (vc-21pw)
+	if val := os.Getenv("VC_WATCHDOG_BACKOFF_ENABLED"); val != "" {
+		cfg.BackoffConfig.Enabled = parseBool(val)
+	}
+
+	if val := os.Getenv("VC_WATCHDOG_BACKOFF_BASE_INTERVAL"); val != "" {
+		if duration, err := time.ParseDuration(val); err == nil {
+			cfg.BackoffConfig.BaseInterval = duration
+		}
+	}
+
+	if val := os.Getenv("VC_WATCHDOG_BACKOFF_MAX_INTERVAL"); val != "" {
+		if duration, err := time.ParseDuration(val); err == nil {
+			cfg.BackoffConfig.MaxInterval = duration
+		}
+	}
+
+	if val := os.Getenv("VC_WATCHDOG_BACKOFF_MULTIPLIER"); val != "" {
+		if multiplier, err := strconv.ParseFloat(val, 64); err == nil {
+			cfg.BackoffConfig.BackoffMultiplier = multiplier
+		}
+	}
+
+	if val := os.Getenv("VC_WATCHDOG_BACKOFF_THRESHOLD"); val != "" {
+		if threshold, err := strconv.Atoi(val); err == nil && threshold > 0 {
+			cfg.BackoffConfig.TriggerThreshold = threshold
+		}
+	}
+
 	// Validate after loading from env
 	if err := cfg.validate(); err != nil {
 		fmt.Printf("Warning: invalid watchdog config from environment: %v\n", err)
@@ -296,6 +383,32 @@ func (c *WatchdogConfig) validate() error {
 		return fmt.Errorf("max_history_size too large (maximum 10000), got %d", c.MaxHistorySize)
 	}
 
+	// Backoff config validation (vc-21pw)
+	if c.BackoffConfig.BaseInterval <= 0 {
+		return fmt.Errorf("backoff base_interval must be positive, got %v", c.BackoffConfig.BaseInterval)
+	}
+	if c.BackoffConfig.MaxInterval <= 0 {
+		return fmt.Errorf("backoff max_interval must be positive, got %v", c.BackoffConfig.MaxInterval)
+	}
+	if c.BackoffConfig.MaxInterval < c.BackoffConfig.BaseInterval {
+		return fmt.Errorf("backoff max_interval (%v) must be >= base_interval (%v)", c.BackoffConfig.MaxInterval, c.BackoffConfig.BaseInterval)
+	}
+	if c.BackoffConfig.BackoffMultiplier < 1.0 {
+		return fmt.Errorf("backoff multiplier must be >= 1.0, got %f", c.BackoffConfig.BackoffMultiplier)
+	}
+	if c.BackoffConfig.TriggerThreshold <= 0 {
+		return fmt.Errorf("backoff trigger_threshold must be positive, got %d", c.BackoffConfig.TriggerThreshold)
+	}
+
+	// Initialize backoff state if nil
+	if c.backoffState == nil {
+		c.backoffState = &BackoffState{
+			CurrentInterval:          c.CheckInterval,
+			ConsecutiveInterventions: 0,
+			IsBackedOff:              false,
+		}
+	}
+
 	return nil
 }
 
@@ -320,6 +433,17 @@ func (c *WatchdogConfig) Clone() *WatchdogConfig {
 		}
 	}
 
+	// Copy backoff state
+	var backoffState *BackoffState
+	if c.backoffState != nil {
+		backoffState = &BackoffState{
+			CurrentInterval:          c.backoffState.CurrentInterval,
+			ConsecutiveInterventions: c.backoffState.ConsecutiveInterventions,
+			LastInterventionTime:     c.backoffState.LastInterventionTime,
+			IsBackedOff:              c.backoffState.IsBackedOff,
+		}
+	}
+
 	return &WatchdogConfig{
 		Enabled:             c.Enabled,
 		CheckInterval:       c.CheckInterval,
@@ -335,8 +459,16 @@ func (c *WatchdogConfig) Clone() *WatchdogConfig {
 			EscalateOnCritical: c.InterventionConfig.EscalateOnCritical,
 			EscalationPriority: escPriority,
 		},
+		BackoffConfig: BackoffConfig{
+			Enabled:           c.BackoffConfig.Enabled,
+			BaseInterval:      c.BackoffConfig.BaseInterval,
+			MaxInterval:       c.BackoffConfig.MaxInterval,
+			BackoffMultiplier: c.BackoffConfig.BackoffMultiplier,
+			TriggerThreshold:  c.BackoffConfig.TriggerThreshold,
+		},
 		MaxHistorySize:  c.MaxHistorySize,
 		detectionStates: detectionStates,
+		backoffState:    backoffState,
 	}
 }
 
@@ -511,4 +643,107 @@ func (c *WatchdogConfig) SaveToFile(path string) error {
 	}
 
 	return nil
+}
+
+// RecordIntervention records an intervention and updates backoff state (vc-21pw)
+// This should be called after each intervention to track consecutive interventions
+func (c *WatchdogConfig) RecordIntervention() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.BackoffConfig.Enabled {
+		return
+	}
+
+	c.backoffState.ConsecutiveInterventions++
+	c.backoffState.LastInterventionTime = time.Now()
+
+	// Check if we should enter backoff mode
+	if c.backoffState.ConsecutiveInterventions >= c.BackoffConfig.TriggerThreshold {
+		c.applyBackoffLocked()
+	}
+}
+
+// RecordProgress records successful progress and resets backoff state (vc-21pw)
+// This should be called when an agent completes successfully
+func (c *WatchdogConfig) RecordProgress() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.BackoffConfig.Enabled {
+		return
+	}
+
+	// Reset backoff state on successful progress
+	c.backoffState.ConsecutiveInterventions = 0
+	c.backoffState.IsBackedOff = false
+	c.backoffState.CurrentInterval = c.BackoffConfig.BaseInterval
+	c.CheckInterval = c.BackoffConfig.BaseInterval
+}
+
+// applyBackoffLocked applies exponential backoff to the check interval
+// MUST be called with c.mu held (write lock)
+func (c *WatchdogConfig) applyBackoffLocked() {
+	if !c.BackoffConfig.Enabled {
+		return
+	}
+
+	// Calculate new interval with exponential backoff
+	newInterval := time.Duration(float64(c.backoffState.CurrentInterval) * c.BackoffConfig.BackoffMultiplier)
+
+	// Cap at max interval
+	if newInterval > c.BackoffConfig.MaxInterval {
+		newInterval = c.BackoffConfig.MaxInterval
+	}
+
+	c.backoffState.CurrentInterval = newInterval
+	c.backoffState.IsBackedOff = true
+	c.CheckInterval = newInterval
+
+	fmt.Printf("Watchdog: Backoff triggered - increasing check interval to %v (consecutive interventions: %d)\n",
+		newInterval, c.backoffState.ConsecutiveInterventions)
+}
+
+// GetCurrentCheckInterval returns the current effective check interval
+// This may differ from CheckInterval if backoff is active
+func (c *WatchdogConfig) GetCurrentCheckInterval() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.backoffState == nil {
+		return c.CheckInterval
+	}
+	return c.backoffState.CurrentInterval
+}
+
+// IsInBackoff returns whether the watchdog is currently in backoff mode
+func (c *WatchdogConfig) IsInBackoff() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.backoffState == nil {
+		return false
+	}
+	return c.backoffState.IsBackedOff
+}
+
+// GetBackoffState returns a copy of the current backoff state for inspection
+func (c *WatchdogConfig) GetBackoffState() BackoffState {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.backoffState == nil {
+		return BackoffState{
+			CurrentInterval:          c.CheckInterval,
+			ConsecutiveInterventions: 0,
+			IsBackedOff:              false,
+		}
+	}
+
+	return BackoffState{
+		CurrentInterval:          c.backoffState.CurrentInterval,
+		ConsecutiveInterventions: c.backoffState.ConsecutiveInterventions,
+		LastInterventionTime:     c.backoffState.LastInterventionTime,
+		IsBackedOff:              c.backoffState.IsBackedOff,
+	}
 }
