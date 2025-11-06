@@ -68,6 +68,7 @@ type Executor struct {
 	messageGen       *git.MessageGenerator      // Commit message generator (vc-136)
 	qaWorker         *QualityGateWorker         // QA worker for quality gate execution (vc-254)
 	costTracker      *cost.Tracker              // Cost budget tracker (vc-e3s7)
+	loopDetector     *LoopDetector              // Loop detector for unproductive patterns (vc-0vfg)
 	config           *Config
 	instanceID       string
 	hostname         string
@@ -247,6 +248,9 @@ type Config struct {
 	SelfHealingMaxDuration     time.Duration // Maximum duration before escalating (same as MaxEscalationDuration, default: 24h)
 	SelfHealingRecheckInterval time.Duration // How often to recheck in self-healing mode (default: 5m)
 	SelfHealingVerboseLogging  bool          // Enable verbose logging for self-healing decisions (default: true)
+
+	// Loop detector configuration (vc-0vfg)
+	LoopDetectorConfig *LoopDetectorConfig // Loop detector configuration (default: sensible defaults, nil = use defaults)
 }
 
 // DefaultConfig returns default executor configuration
@@ -639,6 +643,23 @@ func New(cfg *Config) (*Executor, error) {
 		}
 	}
 
+	// Initialize loop detector if AI supervision is enabled (vc-0vfg)
+	// Loop detector requires AI supervisor to analyze activity patterns
+	if e.enableAISupervision && e.supervisor != nil {
+		loopDetectorConfig := cfg.LoopDetectorConfig
+		if loopDetectorConfig == nil {
+			loopDetectorConfig = DefaultLoopDetectorConfig()
+		}
+
+		loopDetector := NewLoopDetector(loopDetectorConfig, cfg.Store, e.supervisor, e.instanceID)
+		e.loopDetector = loopDetector
+
+		if loopDetectorConfig.Enabled {
+			fmt.Printf("✓ Loop detector enabled (check_interval=%v, lookback=%v, min_confidence=%.2f)\n",
+				loopDetectorConfig.CheckInterval, loopDetectorConfig.LookbackWindow, loopDetectorConfig.MinConfidenceThreshold)
+		}
+	}
+
 	return e, nil
 }
 
@@ -714,6 +735,11 @@ func (e *Executor) Start(ctx context.Context) error {
 	// Start the event cleanup loop
 	go e.eventCleanupLoop(ctx)
 
+	// Start the loop detector if enabled (vc-0vfg)
+	if e.loopDetector != nil {
+		e.loopDetector.Start(ctx)
+	}
+
 	return nil
 }
 
@@ -767,6 +793,11 @@ func (e *Executor) Stop(ctx context.Context) error {
 
 	// Stop event cleanup goroutine
 	close(e.eventCleanupStopCh)
+
+	// Stop loop detector if it's running (vc-0vfg)
+	if e.loopDetector != nil {
+		e.loopDetector.Stop()
+	}
 
 	// Wait for event loop, heartbeat, watchdog, cleanup, and event cleanup to finish concurrently (vc-m4od, vc-113, vc-122, vc-195)
 	// This prevents sequential timeouts if one takes longer than expected
