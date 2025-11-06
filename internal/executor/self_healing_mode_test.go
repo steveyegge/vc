@@ -593,3 +593,103 @@ func TestSelfHealingMode_ModeString(t *testing.T) {
 		})
 	}
 }
+
+// TestSelfHealingMode_DeadlockEscapeHatch tests the deadlock detection and escape hatch (vc-ipoj)
+func TestSelfHealingMode_DeadlockEscapeHatch(t *testing.T) {
+	ctx := context.Background()
+
+	// Create in-memory storage
+	storageCfg := storage.DefaultConfig()
+	storageCfg.Path = ":memory:"
+	store, err := storage.NewStorage(ctx, storageCfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer store.Close()
+
+	// Create executor with short deadlock timeout for testing
+	cfg := DefaultConfig()
+	cfg.Store = store
+	cfg.SelfHealingDeadlockTimeout = 100 * time.Millisecond // Short timeout for test
+	cfg.MaxEscalationAttempts = 100                         // High to prevent per-issue escalation
+	cfg.MaxEscalationDuration = 24 * time.Hour
+	cfg.EnableAISupervision = false    // Disable AI to avoid HTTP calls
+	cfg.EnableQualityGates = false     // Disable quality gates for simpler test
+	cfg.EnableSandboxes = false        // Disable sandboxes for simpler test
+	cfg.EnableHealthMonitoring = false // Disable health monitoring
+	exec, err := New(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create executor: %v", err)
+	}
+
+	// Test 1: Progress tracking initialized on transition to self-healing
+	exec.transitionToSelfHealing(ctx)
+
+	// Verify initialization
+	exec.selfHealingProgressMutex.RLock()
+	if exec.selfHealingLastProgress.IsZero() {
+		t.Error("selfHealingLastProgress should be initialized on transition")
+	}
+	if exec.selfHealingNoWorkCount != 0 {
+		t.Error("selfHealingNoWorkCount should be 0 on transition")
+	}
+	if exec.selfHealingDeadlockIssue != "" {
+		t.Error("selfHealingDeadlockIssue should be empty on transition")
+	}
+	exec.selfHealingProgressMutex.RUnlock()
+
+	// Test 2: Before timeout, should not detect deadlock
+	if exec.isSelfHealingDeadlocked() {
+		t.Error("Should not detect deadlock before timeout")
+	}
+
+	// Test 3: After making progress, counter resets
+	exec.recordSelfHealingProgress()
+	exec.selfHealingProgressMutex.RLock()
+	if exec.selfHealingNoWorkCount != 0 {
+		t.Error("selfHealingNoWorkCount should reset to 0 after progress")
+	}
+	exec.selfHealingProgressMutex.RUnlock()
+
+	// Test 4: Increment no-work counter
+	exec.recordSelfHealingNoWork()
+	exec.recordSelfHealingNoWork()
+	exec.recordSelfHealingNoWork()
+	exec.selfHealingProgressMutex.RLock()
+	if exec.selfHealingNoWorkCount != 3 {
+		t.Errorf("Expected noWorkCount=3, got %d", exec.selfHealingNoWorkCount)
+	}
+	exec.selfHealingProgressMutex.RUnlock()
+
+	// Test 5: Simulate time passing by setting lastProgress to past
+	exec.selfHealingProgressMutex.Lock()
+	exec.selfHealingLastProgress = time.Now().Add(-200 * time.Millisecond)
+	exec.selfHealingProgressMutex.Unlock()
+
+	// Should now detect deadlock
+	if !exec.isSelfHealingDeadlocked() {
+		t.Error("Should detect deadlock after timeout with no progress")
+	}
+
+	// Test 6: After setting deadlock issue ID, should not detect deadlock again
+	exec.selfHealingProgressMutex.Lock()
+	exec.selfHealingDeadlockIssue = "vc-test-deadlock"
+	exec.selfHealingProgressMutex.Unlock()
+
+	if exec.isSelfHealingDeadlocked() {
+		t.Error("Should not detect deadlock again after escalation issue created")
+	}
+
+	// Test 7: Deadlock timeout configuration
+	// Verify the deadlock timeout is configurable
+	if exec.config.SelfHealingDeadlockTimeout != 100*time.Millisecond {
+		t.Errorf("Expected deadlock timeout of 100ms, got %v", exec.config.SelfHealingDeadlockTimeout)
+	}
+
+	// Test 8: Deadlock timeout of 0 disables detection
+	exec.config.SelfHealingDeadlockTimeout = 0
+	// Even with lastProgress in the past, should not detect deadlock if timeout is 0
+	if exec.isSelfHealingDeadlocked() {
+		t.Error("Should not detect deadlock when timeout is set to 0 (disabled)")
+	}
+}

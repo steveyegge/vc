@@ -32,20 +32,38 @@ func (e *Executor) GetReadyWork(ctx context.Context) (*types.Issue, error) {
 	case ModeSelfHealing:
 		// Try fallback chain
 		if work := e.findBaselineIssues(ctx); work != nil {
+			e.recordSelfHealingProgress()
 			return work, nil
 		}
 
 		if work := e.investigateBlockedBaseline(ctx); work != nil {
+			e.recordSelfHealingProgress()
 			return work, nil
 		}
 
 		if work := e.findDiscoveredBlockers(ctx); work != nil {
+			e.recordSelfHealingProgress()
 			return work, nil
 		}
 
-		// No work found - check escalation
+		// No work found - increment counter and check for deadlock (vc-ipoj)
+		e.recordSelfHealingNoWork()
+
+		// Check if we're deadlocked (all baselines blocked indefinitely)
+		if e.isSelfHealingDeadlocked() {
+			// Create diagnostic issue and exit self-healing mode
+			if err := e.escalateSelfHealingDeadlock(ctx); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to escalate deadlock: %v\n", err)
+			}
+			// Exit self-healing mode and allow regular work
+			e.transitionToEscalated(ctx, "Self-healing deadlock: all baselines blocked indefinitely")
+			return e.getNormalWork(ctx)
+		}
+
+		// Log diagnostics periodically
 		e.logBlockageDiagnostics(ctx)
 
+		// Check per-issue escalation thresholds (attempts/duration)
 		if e.shouldEscalate(ctx) {
 			reason := "Self-healing mode exhausted all fallback options without making progress"
 			e.transitionToEscalated(ctx, reason)
@@ -446,6 +464,166 @@ func (e *Executor) shouldEscalate(ctx context.Context) bool {
 	}
 
 	return false
+}
+
+// recordSelfHealingProgress records that we successfully found work in self-healing mode (vc-ipoj).
+// This resets the deadlock counter and timer.
+func (e *Executor) recordSelfHealingProgress() {
+	e.selfHealingProgressMutex.Lock()
+	defer e.selfHealingProgressMutex.Unlock()
+	e.selfHealingLastProgress = time.Now()
+	e.selfHealingNoWorkCount = 0
+}
+
+// recordSelfHealingNoWork records that we found no work in self-healing mode (vc-ipoj).
+// This increments the deadlock counter.
+func (e *Executor) recordSelfHealingNoWork() {
+	e.selfHealingProgressMutex.Lock()
+	defer e.selfHealingProgressMutex.Unlock()
+	e.selfHealingNoWorkCount++
+}
+
+// isSelfHealingDeadlocked checks if self-healing mode has been stuck with no progress (vc-ipoj).
+// Returns true if:
+// 1. We've had zero progress (no claims/completions) for longer than the deadlock timeout
+// 2. We haven't already created a deadlock escalation issue
+func (e *Executor) isSelfHealingDeadlocked() bool {
+	e.selfHealingProgressMutex.RLock()
+	defer e.selfHealingProgressMutex.RUnlock()
+
+	// Already escalated for deadlock
+	if e.selfHealingDeadlockIssue != "" {
+		return false
+	}
+
+	// Check timeout
+	timeout := e.config.SelfHealingDeadlockTimeout
+	if timeout == 0 {
+		return false // Deadlock detection disabled
+	}
+
+	timeSinceProgress := time.Since(e.selfHealingLastProgress)
+	return timeSinceProgress >= timeout
+}
+
+// escalateSelfHealingDeadlock creates a diagnostic issue for self-healing deadlock (vc-ipoj).
+// This is called when all baseline issues are blocked and we can't make progress.
+func (e *Executor) escalateSelfHealingDeadlock(ctx context.Context) error {
+	e.selfHealingProgressMutex.Lock()
+	timeSinceProgress := time.Since(e.selfHealingLastProgress)
+	noWorkCount := e.selfHealingNoWorkCount
+	e.selfHealingProgressMutex.Unlock()
+
+	fmt.Fprintf(os.Stderr, "\n🚨 SELF-HEALING DEADLOCK DETECTED\n")
+	fmt.Fprintf(os.Stderr, "   Time since last progress: %v\n", timeSinceProgress.Round(time.Second))
+	fmt.Fprintf(os.Stderr, "   Consecutive no-work iterations: %d\n", noWorkCount)
+
+	// Get baseline issues for diagnostics
+	baselineIssues, err := e.store.GetIssuesByLabel(ctx, "baseline-failure")
+	if err != nil {
+		return fmt.Errorf("failed to get baseline issues: %w", err)
+	}
+
+	// Build detailed diagnostics
+	diagnostics := "## Deadlock Analysis\n\n"
+	diagnostics += fmt.Sprintf("Self-healing mode has made **zero progress** for %v (threshold: %v).\n\n",
+		timeSinceProgress.Round(time.Minute), e.config.SelfHealingDeadlockTimeout)
+	diagnostics += fmt.Sprintf("- **Consecutive no-work iterations**: %d\n", noWorkCount)
+	diagnostics += fmt.Sprintf("- **Last progress**: %s\n", e.selfHealingLastProgress.Format(time.RFC3339))
+	diagnostics += fmt.Sprintf("- **Current time**: %s\n\n", time.Now().Format(time.RFC3339))
+
+	diagnostics += "## Baseline Issues\n\n"
+	openCount := 0
+	blockedCount := 0
+	for _, issue := range baselineIssues {
+		if issue.Status == types.StatusOpen {
+			openCount++
+			diagnostics += fmt.Sprintf("### %s: %s\n", issue.ID, issue.Title)
+			diagnostics += fmt.Sprintf("- **Status**: %s\n", issue.Status)
+			diagnostics += fmt.Sprintf("- **Priority**: P%d\n", issue.Priority)
+
+			// Check if blocked
+			depRecords, _ := e.store.GetDependencyRecords(ctx, issue.ID)
+			isBlocked := false
+			for _, dep := range depRecords {
+				if dep.Type != "discovered-from" {
+					parent, _ := e.store.GetIssue(ctx, dep.DependsOnID)
+					if parent != nil && parent.Status != types.StatusClosed {
+						isBlocked = true
+						blockedCount++
+						diagnostics += fmt.Sprintf("- **Blocked by**: %s (%s)\n", parent.ID, parent.Title)
+						break
+					}
+				}
+			}
+			if !isBlocked {
+				diagnostics += "- **Blocked**: No (but may have other issues)\n"
+			}
+			diagnostics += "\n"
+		}
+	}
+	diagnostics += fmt.Sprintf("**Summary**: %d baseline issues total, %d open, %d blocked\n\n", len(baselineIssues), openCount, blockedCount)
+
+	diagnostics += "## What Happened\n\n"
+	diagnostics += "The VC executor entered self-healing mode to fix baseline quality gate failures, but all baseline issues are blocked by dependencies that cannot be resolved. "
+	diagnostics += "This creates a deadlock where the executor cannot make progress.\n\n"
+
+	diagnostics += "## Next Steps\n\n"
+	diagnostics += "1. Review the blocked baseline issues above\n"
+	diagnostics += "2. Manually resolve the blocking dependencies or remove circular dependencies\n"
+	diagnostics += "3. Verify quality gates pass after fixing blockers\n"
+	diagnostics += "4. Close this escalation issue once the deadlock is resolved\n"
+	diagnostics += "5. The executor has exited self-healing mode and will continue with regular work\n"
+
+	// Create escalation issue
+	escalationIssue := &types.Issue{
+		Title:       "ESCALATED: Self-healing deadlock - all baselines blocked",
+		IssueType:   types.TypeTask,
+		Priority:    0, // P0 - highest priority
+		Status:      types.StatusOpen,
+		Description: diagnostics,
+	}
+
+	if err := e.store.CreateIssue(ctx, escalationIssue, "executor-deadlock"); err != nil {
+		return fmt.Errorf("failed to create deadlock escalation issue: %w", err)
+	}
+
+	fmt.Printf("✓ Created deadlock escalation issue: %s\n", escalationIssue.ID)
+
+	// Add labels
+	if err := e.store.AddLabel(ctx, escalationIssue.ID, "no-auto-claim", "executor-deadlock"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to add no-auto-claim label: %v\n", err)
+	}
+	if err := e.store.AddLabel(ctx, escalationIssue.ID, "escalation", "executor-deadlock"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to add escalation label: %v\n", err)
+	}
+	if err := e.store.AddLabel(ctx, escalationIssue.ID, "baseline-stuck", "executor-deadlock"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to add baseline-stuck label: %v\n", err)
+	}
+
+	// Record that we created the escalation issue
+	e.selfHealingProgressMutex.Lock()
+	e.selfHealingDeadlockIssue = escalationIssue.ID
+	e.selfHealingProgressMutex.Unlock()
+
+	// Emit activity feed event
+	e.logEvent(ctx, events.EventTypeExecutorSelfHealingMode, events.SeverityCritical, "SYSTEM",
+		"Self-healing deadlock: all baselines blocked indefinitely",
+		map[string]interface{}{
+			"event_subtype":              "self_healing_deadlock",
+			"escalation_issue":           escalationIssue.ID,
+			"time_since_progress_mins":   int(timeSinceProgress.Minutes()),
+			"no_work_count":              noWorkCount,
+			"baseline_count":             len(baselineIssues),
+			"baseline_open_count":        openCount,
+			"baseline_blocked_count":     blockedCount,
+			"deadlock_timeout":           e.config.SelfHealingDeadlockTimeout.String(),
+		})
+
+	fmt.Printf("\n🚨 Deadlock escalation complete. Exiting self-healing mode.\n")
+	fmt.Printf("   Escalation issue: %s\n\n", escalationIssue.ID)
+
+	return nil
 }
 
 // getNormalWork retrieves regular ready work (not in self-healing mode).

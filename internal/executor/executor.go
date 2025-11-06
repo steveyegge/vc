@@ -115,6 +115,12 @@ type Executor struct {
 	// Escalation tracking (vc-h8b8)
 	escalationTrackers map[string]*escalationTracker // Maps baseline issue ID to escalation state
 	escalationMutex    sync.RWMutex                  // Protects escalationTrackers map
+
+	// Self-healing progress tracking (vc-ipoj)
+	selfHealingLastProgress   time.Time // Last time we made progress (claimed or completed baseline work)
+	selfHealingProgressMutex  sync.RWMutex
+	selfHealingNoWorkCount    int       // Consecutive iterations with no work found
+	selfHealingDeadlockIssue  string    // ID of escalation issue created for deadlock (empty if none)
 }
 
 // getSelfHealingMode returns the current self-healing mode state (thread-safe)
@@ -170,6 +176,13 @@ func (e *Executor) transitionToSelfHealing(ctx context.Context) {
 	e.selfHealingMode = ModeSelfHealing
 	e.modeChangedAt = time.Now()
 	e.modeMutex.Unlock()
+
+	// Initialize self-healing progress tracking (vc-ipoj)
+	e.selfHealingProgressMutex.Lock()
+	e.selfHealingLastProgress = time.Now()
+	e.selfHealingNoWorkCount = 0
+	e.selfHealingDeadlockIssue = ""
+	e.selfHealingProgressMutex.Unlock()
 
 	// Log transition
 	fmt.Printf("⚠️  State transition: %s → SELF_HEALING (baseline failed, attempting fix)\n", oldMode)
@@ -248,6 +261,7 @@ type Config struct {
 	SelfHealingMaxDuration     time.Duration // Maximum duration before escalating (same as MaxEscalationDuration, default: 24h)
 	SelfHealingRecheckInterval time.Duration // How often to recheck in self-healing mode (default: 5m)
 	SelfHealingVerboseLogging  bool          // Enable verbose logging for self-healing decisions (default: true)
+	SelfHealingDeadlockTimeout time.Duration // Timeout for detecting deadlocked baselines (default: 30m, vc-ipoj)
 
 	// Loop detector configuration (vc-0vfg)
 	LoopDetectorConfig *LoopDetectorConfig // Loop detector configuration (default: sensible defaults, nil = use defaults)
@@ -286,6 +300,7 @@ func DefaultConfig() *Config {
 		SelfHealingMaxDuration:     getEnvDuration("VC_SELF_HEALING_MAX_DURATION", 24*time.Hour),
 		SelfHealingRecheckInterval: getEnvDuration("VC_SELF_HEALING_RECHECK_INTERVAL", 5*time.Minute),
 		SelfHealingVerboseLogging:  getEnvBool("VC_SELF_HEALING_VERBOSE_LOGGING", true),
+		SelfHealingDeadlockTimeout: getEnvDuration("VC_SELF_HEALING_DEADLOCK_TIMEOUT", 30*time.Minute),
 	}
 }
 
