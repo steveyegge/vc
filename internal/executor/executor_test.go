@@ -595,3 +595,204 @@ func TestExecutorShutdownCleansOldInstances(t *testing.T) {
 	t.Logf("✓ Cleanup correctly deleted %d old instances and kept %d most recent",
 		initialCount+1-expectedRemaining, expectedRemaining)
 }
+
+// TestReleaseIssueIdempotentBehavior tests the idempotent behavior of ReleaseIssue (vc-z2pj)
+// ReleaseIssue should return nil (not error) when:
+// - Issue was never claimed
+// - Issue is released multiple times
+// - Issue execution state was already cleaned up by CloseIssue
+func TestReleaseIssueIdempotentBehavior(t *testing.T) {
+	// Setup storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = t.TempDir() + "/test.db"
+
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create executor
+	execCfg := DefaultConfig()
+	execCfg.Store = store
+	execCfg.EnableAISupervision = false
+
+	executor, err := New(execCfg)
+	if err != nil {
+		t.Fatalf("Failed to create executor: %v", err)
+	}
+
+	// Register the executor instance manually (since we're not calling Start())
+	instance := &types.ExecutorInstance{
+		InstanceID:    executor.instanceID,
+		Hostname:      executor.hostname,
+		PID:           executor.pid,
+		Status:        types.ExecutorStatusRunning,
+		StartedAt:     time.Now(),
+		LastHeartbeat: time.Now(),
+		Version:       executor.version,
+		Metadata:      "{}",
+	}
+	if err := store.RegisterInstance(ctx, instance); err != nil {
+		t.Fatalf("Failed to register executor: %v", err)
+	}
+
+	// Test 1: ReleaseIssue on an issue that was never claimed (should return nil, not error)
+	t.Run("never_claimed", func(t *testing.T) {
+		issue := &types.Issue{
+			Title:              "Never Claimed Issue",
+			Description:        "This issue was never claimed",
+			IssueType:          types.TypeTask,
+			Status:             types.StatusOpen,
+			Priority:           1,
+			AcceptanceCriteria: "Should release cleanly",
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
+		}
+
+		if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+			t.Fatalf("Failed to create issue: %v", err)
+		}
+
+		// Verify no execution state exists
+		state, err := store.GetExecutionState(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to get execution state: %v", err)
+		}
+		if state != nil {
+			t.Error("Expected no execution state for never-claimed issue")
+		}
+
+		// Release should return nil (idempotent behavior)
+		if err := store.ReleaseIssue(ctx, issue.ID); err != nil {
+			t.Errorf("ReleaseIssue should return nil for never-claimed issue, got error: %v", err)
+		}
+	})
+
+	// Test 2: ReleaseIssue called twice on the same issue (second call should return nil)
+	t.Run("double_release", func(t *testing.T) {
+		issue := &types.Issue{
+			Title:              "Double Release Test",
+			Description:        "Test releasing twice",
+			IssueType:          types.TypeTask,
+			Status:             types.StatusOpen,
+			Priority:           1,
+			AcceptanceCriteria: "Should release cleanly twice",
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
+		}
+
+		if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+			t.Fatalf("Failed to create issue: %v", err)
+		}
+
+		// Claim the issue
+		if err := store.ClaimIssue(ctx, issue.ID, executor.instanceID); err != nil {
+			t.Fatalf("Failed to claim issue: %v", err)
+		}
+
+		// Verify execution state exists
+		state, err := store.GetExecutionState(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to get execution state: %v", err)
+		}
+		if state == nil {
+			t.Fatal("Expected execution state after claiming")
+		}
+
+		// First release - should succeed
+		if err := store.ReleaseIssue(ctx, issue.ID); err != nil {
+			t.Fatalf("First ReleaseIssue failed: %v", err)
+		}
+
+		// Verify execution state is deleted
+		state, err = store.GetExecutionState(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to get execution state after release: %v", err)
+		}
+		if state != nil {
+			t.Error("Expected execution state to be deleted after release")
+		}
+
+		// Second release - should return nil (idempotent)
+		if err := store.ReleaseIssue(ctx, issue.ID); err != nil {
+			t.Errorf("Second ReleaseIssue should return nil (idempotent), got error: %v", err)
+		}
+
+		// Third release for good measure - should still return nil
+		if err := store.ReleaseIssue(ctx, issue.ID); err != nil {
+			t.Errorf("Third ReleaseIssue should return nil (idempotent), got error: %v", err)
+		}
+	})
+
+	// Test 3: ReleaseIssue after CloseIssue (which also cleans up execution state)
+	t.Run("after_close_issue", func(t *testing.T) {
+		issue := &types.Issue{
+			Title:              "Close Then Release Test",
+			Description:        "Test releasing after CloseIssue",
+			IssueType:          types.TypeTask,
+			Status:             types.StatusOpen,
+			Priority:           1,
+			AcceptanceCriteria: "Should handle cleanup gracefully",
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
+		}
+
+		if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+			t.Fatalf("Failed to create issue: %v", err)
+		}
+
+		// Claim the issue
+		if err := store.ClaimIssue(ctx, issue.ID, executor.instanceID); err != nil {
+			t.Fatalf("Failed to claim issue: %v", err)
+		}
+
+		// Transition through proper states to reach completed
+		// claimed -> assessing -> executing -> analyzing -> gates -> committing -> completed
+		states := []types.ExecutionState{
+			types.ExecutionStateAssessing,
+			types.ExecutionStateExecuting,
+			types.ExecutionStateAnalyzing,
+			types.ExecutionStateGates,
+			types.ExecutionStateCommitting,
+			types.ExecutionStateCompleted,
+		}
+		for _, state := range states {
+			if err := store.UpdateExecutionState(ctx, issue.ID, state); err != nil {
+				t.Fatalf("Failed to update execution state to %s: %v", state, err)
+			}
+		}
+
+		// Close the issue (this cleans up execution state)
+		if err := store.CloseIssue(ctx, issue.ID, "completed", "test"); err != nil {
+			t.Fatalf("Failed to close issue: %v", err)
+		}
+
+		// Verify execution state is cleaned up by CloseIssue
+		state, err := store.GetExecutionState(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to get execution state after close: %v", err)
+		}
+		if state != nil {
+			t.Error("Expected execution state to be cleaned up by CloseIssue")
+		}
+
+		// Now call ReleaseIssue - should return nil (idempotent)
+		// This simulates cleanup flows that might call both CloseIssue and ReleaseIssue
+		if err := store.ReleaseIssue(ctx, issue.ID); err != nil {
+			t.Errorf("ReleaseIssue after CloseIssue should return nil (idempotent), got error: %v", err)
+		}
+	})
+
+	// Test 4: ReleaseIssue on non-existent issue (edge case)
+	t.Run("non_existent_issue", func(t *testing.T) {
+		nonExistentID := "vc-nonexistent"
+
+		// ReleaseIssue should return nil for non-existent issue
+		// (no execution state to release)
+		if err := store.ReleaseIssue(ctx, nonExistentID); err != nil {
+			t.Errorf("ReleaseIssue on non-existent issue should return nil, got error: %v", err)
+		}
+	})
+}
