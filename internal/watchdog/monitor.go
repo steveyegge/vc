@@ -184,6 +184,12 @@ func (m *Monitor) EndExecution(success, gatesPassed bool) {
 // GetTelemetry returns a deep copy of the telemetry history
 // This is safe for concurrent access
 // vc-b5db: Updated to include new metrics fields
+//
+// Performance (vc-gtr5): Benchmarked at realistic scale:
+//   - 100 entries, 50 events: ~288µs, ~547KB allocation
+//   - 100 entries, 100 events: ~318µs, ~611KB allocation
+//   - 50 entries, 25 events: ~125µs, ~245KB allocation
+// Safe for periodic use but avoid tight loops
 func (m *Monitor) GetTelemetry() []*ExecutionTelemetry {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -214,6 +220,9 @@ func (m *Monitor) GetTelemetry() []*ExecutionTelemetry {
 
 // GetCurrentExecution returns the currently executing issue (if any)
 // vc-b5db: Updated to include new metrics fields
+//
+// Performance (vc-gtr5): Benchmarked at ~2.4µs with ~5.5KB allocation per call
+// Lightweight enough for frequent polling
 func (m *Monitor) GetCurrentExecution() *ExecutionTelemetry {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -262,6 +271,9 @@ func (m *Monitor) GetRecentExecutions(n int) []*ExecutionTelemetry {
 
 // GetExecutionsByIssue returns all telemetry for a specific issue ID
 // vc-b5db: Updated to include new metrics fields
+//
+// Performance (vc-gtr5): Benchmarked filtering 100 entries (25% match) at ~35µs, ~62KB allocation
+// Efficient for occasional queries
 func (m *Monitor) GetExecutionsByIssue(issueID string) []*ExecutionTelemetry {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
