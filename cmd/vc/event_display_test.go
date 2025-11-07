@@ -1014,3 +1014,240 @@ func TestFormatDurationMs(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildDisplayMessage tests the new single-line display format (vc-9lvs)
+func TestBuildDisplayMessage(t *testing.T) {
+	tests := []struct {
+		name     string
+		event    *events.AgentEvent
+		expected string
+	}{
+		{
+			name: "agent_tool_use with file",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeAgentToolUse,
+				Message: "tool:Read internal/executor/agent.go",
+				Data: map[string]interface{}{
+					"tool_name":   "Read",
+					"target_file": "internal/executor/agent.go",
+				},
+			},
+			expected: "tool:Read internal/executor/agent.go",
+		},
+		{
+			name: "agent_tool_use with bash command",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeAgentToolUse,
+				Message: "tool:Bash 'go test ./...'",
+				Data: map[string]interface{}{
+					"tool_name": "Bash",
+					"command":   "go test ./...",
+				},
+			},
+			expected: "tool:Bash 'go test ./...'",
+		},
+		{
+			name: "agent_tool_use with long bash command (truncated)",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeAgentToolUse,
+				Message: "tool:Bash command",
+				Data: map[string]interface{}{
+					"tool_name": "Bash",
+					"command":   "go test ./internal/executor -v -count=1 -timeout=30s -run TestAgentSpawn",
+				},
+			},
+			expected: "tool:Bash 'go test ./internal/executor -v -count=1 -timeout=30s -run...'",
+		},
+		{
+			name: "assessment_completed",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeAssessmentCompleted,
+				Message: "AI assessment completed",
+				Data: map[string]interface{}{
+					"confidence":  0.92,
+					"step_count":  7,
+					"risk_count":  3,
+				},
+			},
+			expected: "Assessment complete: 92% confidence, 7 steps, 3 risks",
+		},
+		{
+			name: "analysis_completed with issues",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeAnalysisCompleted,
+				Message: "Analysis complete",
+				Data: map[string]interface{}{
+					"issues_discovered": 2,
+					"confidence":        0.88,
+					"duration_ms":       1200,
+				},
+			},
+			expected: "Analysis complete: 2 issues discovered (88% confidence)",
+		},
+		{
+			name: "analysis_completed no issues",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeAnalysisCompleted,
+				Message: "Analysis complete",
+				Data: map[string]interface{}{
+					"issues_discovered": 0,
+					"confidence":        0.95,
+					"duration_ms":       800,
+				},
+			},
+			expected: "Analysis complete: no issues discovered (95% confidence)",
+		},
+		{
+			name: "agent_completed",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeAgentCompleted,
+				Message: "Agent completed",
+				Data: map[string]interface{}{
+					"duration_ms":    12500,
+					"tools_used":     15,
+					"files_modified": 3,
+				},
+			},
+			expected: "Agent completed: 15 tools, 3 files modified, 12.5s",
+		},
+		{
+			name: "quality_gates_passed",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeQualityGatePass,
+				Message: "Quality gates passed",
+				Data: map[string]interface{}{
+					"duration_ms": 8400,
+				},
+			},
+			expected: "Quality gates passed (8.4s)",
+		},
+		{
+			name: "quality_gate_failed",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeQualityGateFail,
+				Message: "Quality gate failed",
+				Data: map[string]interface{}{
+					"failing_gate": "test",
+				},
+			},
+			expected: "Quality gate failed: test",
+		},
+		{
+			name: "test_run passed",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeTestRun,
+				Message: "Test passed",
+				Data: map[string]interface{}{
+					"passed":      true,
+					"test_name":   "TestAgentSpawn",
+					"duration_ms": 150,
+				},
+			},
+			expected: "Test ✓ passed: TestAgentSpawn (150ms)",
+		},
+		{
+			name: "test_run failed",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeTestRun,
+				Message: "Test failed",
+				Data: map[string]interface{}{
+					"passed":      false,
+					"test_name":   "TestCircuitBreaker",
+					"duration_ms": 200,
+				},
+			},
+			expected: "Test ✗ failed: TestCircuitBreaker (200ms)",
+		},
+		{
+			name: "git_operation success",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeGitOperation,
+				Message: "Git command executed",
+				Data: map[string]interface{}{
+					"command": "commit",
+					"args":    "-m 'Fix bug in agent.go'",
+					"success": true,
+				},
+			},
+			expected: "Git ✓: commit -m 'Fix bug in agent.go'",
+		},
+		{
+			name: "deduplication_batch_completed",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeDeduplicationBatchCompleted,
+				Message: "Deduplication completed",
+				Data: map[string]interface{}{
+					"unique_count":    5,
+					"duplicate_count": 2,
+				},
+			},
+			expected: "Deduplication: 5 unique, 2 duplicates",
+		},
+		{
+			name: "baseline_test_fix success",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeBaselineTestFixCompleted,
+				Message: "Baseline fix completed",
+				Data: map[string]interface{}{
+					"success":     true,
+					"fix_type":    "flaky",
+					"tests_fixed": 3,
+				},
+			},
+			expected: "Baseline fix ✓: flaky (3 tests)",
+		},
+		{
+			name: "sandbox_creation success",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeSandboxCreationCompleted,
+				Message: "Sandbox created",
+				Data: map[string]interface{}{
+					"branch_name": "mission/vc-123",
+					"success":     true,
+				},
+			},
+			expected: "Sandbox created: mission/vc-123",
+		},
+		{
+			name: "mission_created",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeMissionCreated,
+				Message: "Mission created",
+				Data: map[string]interface{}{
+					"phase_count": 4,
+				},
+			},
+			expected: "Mission created: 4 phases",
+		},
+		{
+			name: "epic_completed",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeEpicCompleted,
+				Message: "Epic completed",
+				Data: map[string]interface{}{
+					"epic_title":          "Implement agent progress tracking",
+					"children_completed":  12,
+				},
+			},
+			expected: "Epic completed: Implement agent progress tracking (12 children)",
+		},
+		{
+			name: "default event (fallback)",
+			event: &events.AgentEvent{
+				Type:    events.EventTypeIssueClaimed,
+				Message: "Issue claimed for processing",
+				Data:    map[string]interface{}{},
+			},
+			expected: "Issue claimed for processing",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildDisplayMessage(tt.event)
+			if got != tt.expected {
+				t.Errorf("buildDisplayMessage() = %q, expected %q", got, tt.expected)
+			}
+		})
+	}
+}

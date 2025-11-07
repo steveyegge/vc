@@ -7,7 +7,7 @@ import (
 	"github.com/steveyegge/vc/internal/events"
 )
 
-// displayActivityEvent formats and prints a single event with consistent two-line format
+// displayActivityEvent formats and prints a single event with single-line format (vc-9lvs)
 func displayActivityEvent(event *events.AgentEvent) {
 	// Filter out noisy system events that aren't interesting for monitoring
 	if shouldSkipEvent(event) {
@@ -25,31 +25,135 @@ func displayActivityEvent(event *events.AgentEvent) {
 	issueColor := color.New(color.FgGreen)
 	issueID := issueColor.Sprint(event.IssueID)
 
-	// Color the event type
-	typeColor := color.New(color.FgMagenta)
-	eventType := typeColor.Sprint(event.Type)
+	// Build human-friendly display message (vc-9lvs)
+	displayMsg := buildDisplayMessage(event)
 
-	// Line 1: emoji + [timestamp] + issueID + event_type: message
-	// Truncate message to fit mobile width (~80 chars total)
-	maxMessageLen := 60 - len(event.IssueID) - len(string(event.Type))
-	message := truncateString(event.Message, maxMessageLen)
-
-	fmt.Printf("%s [%s] %s %s: %s\n",
+	// Single line: emoji + [timestamp] + issueID + display_message
+	fmt.Printf("%s [%s] %s %s\n",
 		emoji,
 		timestamp,
 		issueID,
-		eventType,
-		severityColor.Sprint(message),
+		severityColor.Sprint(displayMsg),
 	)
+}
 
-	// Line 2: metadata fields (3-5 key fields, pipe-separated)
-	metadata := extractEventMetadata(event)
-	if len(metadata) > 0 {
-		gray := color.New(color.FgHiBlack)
-		fmt.Printf("  %s\n", gray.Sprint(metadata))
-	} else {
-		// Empty line to maintain two-line format
-		fmt.Println()
+// buildDisplayMessage creates an information-dense, human-friendly display message (vc-9lvs)
+func buildDisplayMessage(event *events.AgentEvent) string {
+	switch event.Type {
+	case events.EventTypeAgentToolUse:
+		// Parse tool use data from the event
+		toolName := getStringField(event.Data, "tool_name", "unknown")
+		targetFile := getStringField(event.Data, "target_file", "")
+		command := getStringField(event.Data, "command", "")
+
+		// Build context-rich message
+		if targetFile != "" {
+			// For file operations, show: tool:ToolName path/to/file
+			return fmt.Sprintf("tool:%s %s", toolName, targetFile)
+		} else if command != "" {
+			// For bash commands, show: tool:Bash 'command' (truncated to 60 chars)
+			truncCmd := truncateString(command, 60)
+			return fmt.Sprintf("tool:%s '%s'", toolName, truncCmd)
+		}
+		// Fallback to just tool name
+		return fmt.Sprintf("tool:%s", toolName)
+
+	case events.EventTypeAssessmentCompleted:
+		confidence := fmt.Sprintf("%.0f%%", getConfidenceField(event.Data, 0)*100)
+		steps := getIntField(event.Data, "step_count")
+		risks := getIntField(event.Data, "risk_count")
+		return fmt.Sprintf("Assessment complete: %s confidence, %d steps, %d risks", confidence, steps, risks)
+
+	case events.EventTypeAnalysisCompleted:
+		issuesDiscovered := getIntField(event.Data, "issues_discovered")
+		confidence := fmt.Sprintf("%.0f%%", getConfidenceField(event.Data, 0)*100)
+		if issuesDiscovered > 0 {
+			return fmt.Sprintf("Analysis complete: %d issues discovered (%s confidence)", issuesDiscovered, confidence)
+		}
+		return fmt.Sprintf("Analysis complete: no issues discovered (%s confidence)", confidence)
+
+	case events.EventTypeAgentCompleted:
+		duration := formatDurationMs(getIntField(event.Data, "duration_ms"))
+		toolsUsed := getIntField(event.Data, "tools_used")
+		filesModified := getIntField(event.Data, "files_modified")
+		return fmt.Sprintf("Agent completed: %d tools, %d files modified, %s", toolsUsed, filesModified, duration)
+
+	case events.EventTypeQualityGatesCompleted, events.EventTypeQualityGatePass:
+		duration := formatDurationMs(getIntField(event.Data, "duration_ms"))
+		return fmt.Sprintf("Quality gates passed (%s)", duration)
+
+	case events.EventTypeQualityGateFail:
+		failingGate := getStringField(event.Data, "failing_gate", "unknown")
+		return fmt.Sprintf("Quality gate failed: %s", failingGate)
+
+	case events.EventTypeTestRun:
+		passed := getBoolField(event.Data, "passed", false)
+		testName := getStringField(event.Data, "test_name", "")
+		duration := formatDurationMs(getIntField(event.Data, "duration_ms"))
+		status := "✗ failed"
+		if passed {
+			status = "✓ passed"
+		}
+		if testName != "" {
+			return fmt.Sprintf("Test %s: %s (%s)", status, truncateString(testName, 40), duration)
+		}
+		return fmt.Sprintf("Test %s (%s)", status, duration)
+
+	case events.EventTypeGitOperation:
+		command := getStringField(event.Data, "command", "git")
+		args := getStringField(event.Data, "args", "")
+		success := getBoolField(event.Data, "success", true)
+		status := "✓"
+		if !success {
+			status = "✗"
+		}
+		if args != "" {
+			return fmt.Sprintf("Git %s: %s %s", status, command, truncateString(args, 50))
+		}
+		return fmt.Sprintf("Git %s: %s", status, command)
+
+	case events.EventTypeDeduplicationBatchCompleted:
+		unique := getIntField(event.Data, "unique_count")
+		duplicates := getIntField(event.Data, "duplicate_count")
+		return fmt.Sprintf("Deduplication: %d unique, %d duplicates", unique, duplicates)
+
+	case events.EventTypeBaselineTestFixCompleted:
+		success := getBoolField(event.Data, "success", false)
+		fixType := getStringField(event.Data, "fix_type", "unknown")
+		testsFixed := getIntField(event.Data, "tests_fixed")
+		if success {
+			return fmt.Sprintf("Baseline fix ✓: %s (%d tests)", fixType, testsFixed)
+		}
+		return fmt.Sprintf("Baseline fix ✗: %s", fixType)
+
+	case events.EventTypeSandboxCreationCompleted:
+		branchName := getStringField(event.Data, "branch_name", "")
+		success := getBoolField(event.Data, "success", true)
+		if success {
+			return fmt.Sprintf("Sandbox created: %s", branchName)
+		}
+		return "Sandbox creation failed"
+
+	case events.EventTypeSandboxCleanupCompleted:
+		branchName := getStringField(event.Data, "branch_name", "")
+		success := getBoolField(event.Data, "success", true)
+		if success {
+			return fmt.Sprintf("Sandbox cleaned up: %s", branchName)
+		}
+		return "Sandbox cleanup failed"
+
+	case events.EventTypeMissionCreated:
+		phaseCount := getIntField(event.Data, "phase_count")
+		return fmt.Sprintf("Mission created: %d phases", phaseCount)
+
+	case events.EventTypeEpicCompleted:
+		epicTitle := truncateString(getStringField(event.Data, "epic_title", ""), 50)
+		childrenDone := getIntField(event.Data, "children_completed")
+		return fmt.Sprintf("Epic completed: %s (%d children)", epicTitle, childrenDone)
+
+	default:
+		// For all other events, use the message as-is but truncate to 80 chars
+		return truncateString(event.Message, 80)
 	}
 }
 
