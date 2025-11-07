@@ -210,6 +210,9 @@ func (m *MockStorage) GetReadyBlockers(ctx context.Context, limit int) ([]*types
 func (m *MockStorage) GetReadyBaselineIssues(ctx context.Context, limit int) ([]*types.Issue, error) {
 	return nil, nil
 }
+func (m *MockStorage) GetReadyDependentsOfBlockedBaselines(ctx context.Context, limit int) ([]*types.Issue, map[string]string, error) {
+	return nil, nil, nil
+}
 func (m *MockStorage) IsEpicComplete(ctx context.Context, epicID string) (bool, error) { return false, nil }
 func (m *MockStorage) GetMissionForTask(ctx context.Context, taskID string) (*types.MissionContext, error) {
 	return nil, errors.New("not implemented in mock")
@@ -247,6 +250,9 @@ func (m *MockStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*e
 	return nil, nil
 }
 func (m *MockStorage) GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error) {
+	return nil, nil
+}
+func (m *MockStorage) GetExecutionHistoryPaginated(ctx context.Context, issueID string, limit, offset int) ([]*types.ExecutionAttempt, error) {
 	return nil, nil
 }
 func (m *MockStorage) RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error {

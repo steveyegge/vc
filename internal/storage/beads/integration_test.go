@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -4880,4 +4881,159 @@ func TestAcceptanceCriteriaWorkflowEnforcement(t *testing.T) {
 			t.Error("Acceptance criteria should be preserved after claim")
 		}
 	})
+}
+
+// TestJSONLRoundTripAcceptanceCriteria verifies that acceptance_criteria survives JSONL export/import cycle (vc-ht3e)
+// This catches JSONL escaping bugs, Beads library serialization issues, and field name mismatches
+// TODO(vc-vizo): Currently skipped due to bd import duplicate detection issue
+func TestJSONLRoundTripAcceptanceCriteria(t *testing.T) {
+	t.Skip("TODO(vc-vizo): bd import returns '0 created, 0 updated' - needs fix for duplicate detection")
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	// Test cases with various challenging acceptance_criteria values
+	testCases := []struct {
+		name               string
+		acceptanceCriteria string
+	}{
+		{
+			name:               "simple text",
+			acceptanceCriteria: "All tests pass successfully",
+		},
+		{
+			name:               "special characters",
+			acceptanceCriteria: "Test with special chars: \n\t\"quotes\", 'apostrophes', & ampersands, <brackets>, {braces}, [arrays]",
+		},
+		{
+			name:               "unicode characters",
+			acceptanceCriteria: "Unicode test: 你好世界 🎉 émojis and symbols ✓ ✗ → ← ↑ ↓",
+		},
+		{
+			name:               "long multiline text",
+			acceptanceCriteria: `This is a long acceptance criteria with multiple lines:
+1. First criterion that spans multiple words and has specific requirements
+2. Second criterion with details about expected behavior and edge cases
+3. Third criterion including references to specific files like /path/to/file.go
+4. Fourth criterion with code examples: if err != nil { return err }
+5. Fifth criterion with URLs: https://example.com/docs
+Final notes and additional context for the acceptance criteria.`,
+		},
+		{
+			name:               "JSON-like content",
+			acceptanceCriteria: `{"status": "success", "count": 42, "items": ["a", "b", "c"]}`,
+		},
+		{
+			name:               "backslashes and escapes",
+			acceptanceCriteria: `Test backslashes: \n \t \r \\\ path\to\file`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create first database
+			dbPath1 := filepath.Join(tmpDir, fmt.Sprintf("test1_%s.db", strings.ReplaceAll(tc.name, " ", "_")))
+			jsonlPath := filepath.Join(tmpDir, fmt.Sprintf("export_%s.jsonl", strings.ReplaceAll(tc.name, " ", "_")))
+
+			// Create storage and issue
+			store1, err := NewVCStorage(ctx, dbPath1)
+			if err != nil {
+				t.Fatalf("Failed to create first storage: %v", err)
+			}
+
+			issue := &types.Issue{
+				Title:              fmt.Sprintf("Test issue for %s", tc.name),
+				Description:        "Test description",
+				Status:             types.StatusOpen,
+				Priority:           2,
+				IssueType:          types.TypeTask,
+				AcceptanceCriteria: tc.acceptanceCriteria,
+			}
+
+			err = store1.CreateIssue(ctx, issue, "test-user")
+			if err != nil {
+				t.Fatalf("Failed to create issue: %v", err)
+			}
+
+			// Export to JSONL using bd export command
+			// Close storage before running bd export (avoid lock conflicts)
+			store1.Close()
+
+			// Run: bd export -o jsonl_path (using BEADS_DB_PATH env var to specify database)
+			exportCmd := exec.Command("bd", "export", "-o", jsonlPath)
+			exportCmd.Env = append(os.Environ(), fmt.Sprintf("BEADS_DB_PATH=%s", dbPath1))
+			exportOutput, err := exportCmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("bd export failed: %v\nOutput: %s", err, exportOutput)
+			}
+			t.Logf("Export output: %s", exportOutput)
+
+			// Verify JSONL file exists and is not empty
+			fi, err := os.Stat(jsonlPath)
+			if err != nil {
+				t.Fatalf("JSONL file not created: %v", err)
+			}
+			if fi.Size() == 0 {
+				t.Fatal("JSONL file is empty")
+			}
+
+			t.Logf("Exported to JSONL: %s (%d bytes)", jsonlPath, fi.Size())
+
+			// Create second database and import using bd import command
+			dbPath2 := filepath.Join(tmpDir, fmt.Sprintf("test2_%s.db", strings.ReplaceAll(tc.name, " ", "_")))
+
+			// Run: bd import jsonl_path (using BEADS_DB_PATH env var to specify database)
+			// bd uses BEADS_DB_PATH, not VC_DB_PATH
+			importCmd := exec.Command("bd", "import", jsonlPath)
+			importCmd.Env = append(os.Environ(), fmt.Sprintf("BEADS_DB_PATH=%s", dbPath2))
+			importOutput, err := importCmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("bd import failed: %v\nOutput: %s", err, importOutput)
+			}
+			t.Logf("Import output: %s", importOutput)
+
+			// Open second storage to verify import
+			store2, err := NewVCStorage(ctx, dbPath2)
+			if err != nil {
+				t.Fatalf("Failed to create second storage: %v", err)
+			}
+			defer store2.Close()
+
+			// Search for the imported issue by title (IDs may change during import)
+			searchResults, err := store2.SearchIssues(ctx, issue.Title, types.IssueFilter{})
+			if err != nil {
+				t.Fatalf("Failed to search for imported issue: %v", err)
+			}
+			if len(searchResults) == 0 {
+				t.Fatalf("Imported issue not found (searched for title: %q)", issue.Title)
+			}
+
+			// Find the exact match by title
+			var importedIssue *types.Issue
+			for _, result := range searchResults {
+				if result.Title == issue.Title {
+					importedIssue = result
+					break
+				}
+			}
+			if importedIssue == nil {
+				t.Fatalf("Exact title match not found for: %q", issue.Title)
+			}
+
+			// Verify acceptance_criteria is preserved exactly
+			if importedIssue.AcceptanceCriteria != tc.acceptanceCriteria {
+				t.Errorf("Acceptance criteria mismatch after JSONL round-trip\nOriginal: %q\nImported: %q",
+					tc.acceptanceCriteria, importedIssue.AcceptanceCriteria)
+			}
+
+			// Verify other fields are also preserved
+			if importedIssue.Title != issue.Title {
+				t.Errorf("Title mismatch: expected %q, got %q", issue.Title, importedIssue.Title)
+			}
+			if importedIssue.IssueType != issue.IssueType {
+				t.Errorf("IssueType mismatch: expected %q, got %q", issue.IssueType, importedIssue.IssueType)
+			}
+
+			t.Logf("✓ Acceptance criteria preserved correctly for: %s", tc.name)
+		})
+	}
 }

@@ -62,7 +62,8 @@ type Storage interface {
 	GetReadyWork(ctx context.Context, filter types.WorkFilter) ([]*types.Issue, error)
 	GetBlockedIssues(ctx context.Context) ([]*types.BlockedIssue, error)
 	GetReadyBlockers(ctx context.Context, limit int) ([]*types.Issue, error)
-	GetReadyBaselineIssues(ctx context.Context, limit int) ([]*types.Issue, error) // vc-1nks: SQL-optimized baseline issue selection
+	GetReadyBaselineIssues(ctx context.Context, limit int) ([]*types.Issue, error)                               // vc-1nks: SQL-optimized baseline issue selection
+	GetReadyDependentsOfBlockedBaselines(ctx context.Context, limit int) ([]*types.Issue, map[string]string, error) // vc-1nks: SQL-optimized dependent selection
 
 	// Epic Completion (vc-232)
 	IsEpicComplete(ctx context.Context, epicID string) (bool, error)
@@ -113,7 +114,16 @@ type Storage interface {
 	RecordWatchdogIntervention(ctx context.Context, issueID string) error // vc-165b: Track intervention for backoff
 
 	// Execution History
+	// GetExecutionHistory retrieves all execution history for an issue (no pagination).
+	// Deprecated: Use GetExecutionHistoryPaginated for issues with many attempts.
 	GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error)
+
+	// GetExecutionHistoryPaginated retrieves execution history with pagination (vc-59).
+	// limit: maximum number of results (required, must be > 0)
+	// offset: number of results to skip (0 = start from beginning)
+	// Returns attempts in chronological order (oldest first).
+	GetExecutionHistoryPaginated(ctx context.Context, issueID string, limit, offset int) ([]*types.ExecutionAttempt, error)
+
 	RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error
 
 	// Config

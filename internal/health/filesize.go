@@ -365,9 +365,8 @@ type justifiedFile struct {
 func (m *FileSizeMonitor) evaluateOutliers(ctx context.Context, outliers []fileSize, dist Distribution) (*outlierEvaluation, error) {
 	prompt := m.buildPrompt(outliers, dist)
 
-	// Call AI supervisor
-	// Note: Using model="" and maxTokens=0 means use supervisor's defaults
-	response, err := m.Supervisor.CallAI(ctx, prompt, "file_size_evaluation", "", 4096)
+	// Call AI supervisor (vc-35: using Haiku for cost efficiency)
+	response, err := m.Supervisor.CallAI(ctx, prompt, "file_size_evaluation", "claude-3-5-haiku-20241022", 4096)
 	if err != nil {
 		return nil, fmt.Errorf("AI call failed: %w", err)
 	}

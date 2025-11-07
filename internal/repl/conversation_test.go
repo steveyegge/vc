@@ -48,6 +48,9 @@ func (m *mockStorage) GetReadyBlockers(ctx context.Context, limit int) ([]*types
 func (m *mockStorage) GetReadyBaselineIssues(ctx context.Context, limit int) ([]*types.Issue, error) {
 	return nil, nil
 }
+func (m *mockStorage) GetReadyDependentsOfBlockedBaselines(ctx context.Context, limit int) ([]*types.Issue, map[string]string, error) {
+	return nil, nil, nil
+}
 func (m *mockStorage) IsEpicComplete(ctx context.Context, epicID string) (bool, error) {
 	return false, nil
 }
@@ -119,6 +122,10 @@ func (m *mockStorage) GetDependencyRecords(ctx context.Context, issueID string) 
 }
 
 func (m *mockStorage) GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error) {
+	return nil, nil
+}
+
+func (m *mockStorage) GetExecutionHistoryPaginated(ctx context.Context, issueID string, limit, offset int) ([]*types.ExecutionAttempt, error) {
 	return nil, nil
 }
 
