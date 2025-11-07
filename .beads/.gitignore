@@ -18,4 +18,3 @@ bd.db
 !*.jsonl
 !metadata.json
 !config.json
-!config.yaml
