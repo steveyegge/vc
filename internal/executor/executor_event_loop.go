@@ -254,11 +254,9 @@ func (e *Executor) getNextReadyBlocker(ctx context.Context) (*types.Issue, error
 func (e *Executor) processNextIssue(ctx context.Context) (error, bool) {
 	// vc-196: Run preflight quality gates check before claiming work
 	if e.preFlightChecker != nil {
-		// vc-47e0: When in self-healing mode, invalidate cache to force fresh baseline check
-		// This allows the executor to detect when baseline issues are fixed without restart
-		if e.getSelfHealingMode() != ModeHealthy {
-			e.preFlightChecker.InvalidateAllCache()
-		}
+		// vc-onch: Don't invalidate cache on every poll - this causes thrashing
+		// Cache invalidation is now handled by checkSteadyState() on state changes
+		// (git commit changes). This allows steady state detection to work properly.
 
 		allPassed, commitHash, err := e.preFlightChecker.CheckBaseline(ctx, e.instanceID)
 		if err != nil {

@@ -1063,6 +1063,12 @@ func (e *Executor) checkSteadyState(ctx context.Context, foundWork bool) (bool, 
 		fmt.Printf("State change detected: git commit changed (%s → %s), resetting poll interval\n",
 			safePrefix(e.lastGitCommit, 7), safePrefix(currentCommit, 7))
 		stateChanged = true
+
+		// vc-onch: Invalidate preflight cache on git commit change
+		// This allows executor to detect when baseline issues are fixed
+		if e.preFlightChecker != nil {
+			e.preFlightChecker.InvalidateAllCache()
+		}
 	}
 
 	// Update tracked state
