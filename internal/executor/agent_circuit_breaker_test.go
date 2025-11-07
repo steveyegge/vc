@@ -113,15 +113,14 @@ func TestCircuitBreakerNoDeadlock(t *testing.T) {
 					},
 				}
 
-				rawJSON, err := json.Marshal(msg)
+				_, err := json.Marshal(msg)
 				if err != nil {
 					t.Errorf("Failed to marshal JSON: %v", err)
 					return
 				}
-				rawLine := string(rawJSON)
 
 				// Convert to event - this will trigger checkCircuitBreaker
-				event := agent.convertJSONToEvent(msg, rawLine)
+				event := agent.convertJSONToEvent(msg)
 
 				// Check if circuit breaker was triggered (lock-free atomic read)
 				if agent.loopDetected.Load() {
@@ -255,13 +254,12 @@ func TestCircuitBreakerTerminatesAgent(t *testing.T) {
 			},
 		}
 
-		rawJSON, err := json.Marshal(msg)
+		_, err := json.Marshal(msg)
 		if err != nil {
 			t.Fatalf("Failed to marshal JSON: %v", err)
 		}
-		rawLine := string(rawJSON)
 
-		event := agent.convertJSONToEvent(msg, rawLine)
+		event := agent.convertJSONToEvent(msg)
 
 		// After exceeding the limit, event should be nil and loopDetected should be true
 		if i > maxSameFileReads {
@@ -385,8 +383,8 @@ func TestCircuitBreakerRaceDetector(t *testing.T) {
 					StopReason: "tool_use",
 				},
 			}
-			rawJSON, _ := json.Marshal(msg)
-			agent.convertJSONToEvent(msg, string(rawJSON))
+			_, _ = json.Marshal(msg)
+			agent.convertJSONToEvent(msg)
 			time.Sleep(1 * time.Millisecond)
 		}
 	}()

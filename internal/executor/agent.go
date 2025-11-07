@@ -561,7 +561,7 @@ func (a *Agent) parseAndStoreEvents(line string) {
 		var msg AgentMessage
 		if err := json.Unmarshal([]byte(line), &msg); err == nil {
 			// Successfully parsed JSON - convert to agent event
-			if event := a.convertJSONToEvent(msg, line); event != nil {
+			if event := a.convertJSONToEvent(msg); event != nil {
 				extractedEvents = append(extractedEvents, event)
 			}
 			// Don't fall through to regex parsing - we have structured data
@@ -592,7 +592,7 @@ func (a *Agent) parseAndStoreEvents(line string) {
 	}
 }
 
-// convertJSONToEvent converts an Amp JSON message to AgentEvents (vc-107, vc-29, vc-30)
+// convertJSONToEvent converts an Amp JSON message to AgentEvents (vc-107, vc-29, vc-30, vc-9lvs)
 // This replaces regex-based parsing with structured event processing.
 //
 // Important: Amp --stream-json uses a NESTED structure where tool_use items are inside
@@ -600,7 +600,7 @@ func (a *Agent) parseAndStoreEvents(line string) {
 // from the nested content array and converts them to AgentEvents.
 //
 // Set VC_DEBUG_EVENTS=1 to enable debug logging of JSON event parsing.
-func (a *Agent) convertJSONToEvent(msg AgentMessage, rawLine string) *events.AgentEvent {
+func (a *Agent) convertJSONToEvent(msg AgentMessage) *events.AgentEvent {
 	// Only process "assistant" messages - these contain tool use in nested content array
 	if msg.Type != "assistant" {
 		// Debug log non-assistant events if debugging is enabled
@@ -657,24 +657,6 @@ func (a *Agent) convertJSONToEvent(msg AgentMessage, rawLine string) *events.Age
 			}
 		}
 
-		// Create agent_tool_use event from structured JSON
-		event := &events.AgentEvent{
-			ID:         uuid.New().String(),
-			Type:       events.EventTypeAgentToolUse,
-			Timestamp:  time.Now(),
-			IssueID:    a.config.Issue.ID,
-			ExecutorID: a.config.ExecutorID,
-			AgentID:    a.config.AgentID,
-			Severity:   events.SeverityInfo,
-			Message:    rawLine,
-			SourceLine: a.parser.LineNumber,
-		}
-
-		// Extract tool usage data from Amp's actual JSON format (vc-107)
-		toolData := events.AgentToolUseData{
-			ToolName: toolName,
-		}
-
 		// Extract parameters from the input map
 		var targetFile, command, pattern string
 		if content.Input != nil {
@@ -690,6 +672,46 @@ func (a *Agent) convertJSONToEvent(msg AgentMessage, rawLine string) *events.Age
 			if patternVal, ok := content.Input["pattern"].(string); ok {
 				pattern = patternVal
 			}
+		}
+
+		// Build human-readable message for the event (vc-9lvs)
+		// Use title case for tool name (capitalize first letter)
+		toolNameDisplay := toolName
+		if len(toolName) > 0 {
+			toolNameDisplay = string(toolName[0]-32) + toolName[1:]
+			// Only capitalize if first char is lowercase letter
+			if toolName[0] < 'a' || toolName[0] > 'z' {
+				toolNameDisplay = toolName // Keep as-is if not lowercase letter
+			}
+		}
+
+		var humanMessage string
+		if targetFile != "" {
+			humanMessage = fmt.Sprintf("tool:%s %s", toolNameDisplay, targetFile)
+		} else if command != "" {
+			humanMessage = fmt.Sprintf("tool:%s '%s'", toolNameDisplay, command)
+		} else if pattern != "" {
+			humanMessage = fmt.Sprintf("tool:%s '%s'", toolNameDisplay, pattern)
+		} else {
+			humanMessage = fmt.Sprintf("tool:%s", toolNameDisplay)
+		}
+
+		// Create agent_tool_use event from structured JSON
+		event := &events.AgentEvent{
+			ID:         uuid.New().String(),
+			Type:       events.EventTypeAgentToolUse,
+			Timestamp:  time.Now(),
+			IssueID:    a.config.Issue.ID,
+			ExecutorID: a.config.ExecutorID,
+			AgentID:    a.config.AgentID,
+			Severity:   events.SeverityInfo,
+			Message:    humanMessage,
+			SourceLine: a.parser.LineNumber,
+		}
+
+		// Extract tool usage data from Amp's actual JSON format (vc-107)
+		toolData := events.AgentToolUseData{
+			ToolName: toolName,
 		}
 
 		toolData.TargetFile = targetFile

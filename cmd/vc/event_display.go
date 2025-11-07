@@ -143,27 +143,26 @@ func extractEventMetadata(event *events.AgentEvent) string {
 
 	switch event.Type {
 	case events.EventTypeAgentToolUse:
-		// tool_use: tool_name | args | status
-		toolName := getStringField(event.Data, "tool_name", "unknown")
-		args := ""
-		switch toolName {
-		case "Read", "read":
-			args = truncateString(getStringField(event.Data, "path", ""), 30)
-		case "edit_file", "Edit":
-			args = truncateString(getStringField(event.Data, "path", ""), 30)
-		case "Bash", "bash":
-			args = truncateString(getStringField(event.Data, "command", ""), 30)
-		case "Grep", "grep":
-			args = truncateString(getStringField(event.Data, "pattern", ""), 30)
-		default:
-			// Generic: try to find any useful arg
-			if target, ok := event.Data["target_file"].(string); ok {
-				args = truncateString(target, 30)
-			} else if cmd, ok := event.Data["command"].(string); ok {
-				args = truncateString(cmd, 30)
+		// tool_use: Extract structured data (vc-9lvs)
+		// The AgentToolUseData struct has: tool_name, tool_description, target_file, command
+		toolDesc := getStringField(event.Data, "tool_description", "")
+		if toolDesc != "" {
+			// Use the pre-formatted description if available
+			fields = []string{truncateString(toolDesc, 60)}
+		} else {
+			// Fallback: build from individual fields
+			toolName := getStringField(event.Data, "tool_name", "unknown")
+			targetFile := getStringField(event.Data, "target_file", "")
+			command := getStringField(event.Data, "command", "")
+
+			if targetFile != "" {
+				fields = []string{toolName, truncateString(targetFile, 50)}
+			} else if command != "" {
+				fields = []string{toolName, truncateString(command, 50)}
+			} else {
+				fields = []string{toolName}
 			}
 		}
-		fields = []string{toolName, args}
 
 	case events.EventTypeAssessmentCompleted:
 		// assessment: confidence | steps | risks

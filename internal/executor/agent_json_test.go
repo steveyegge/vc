@@ -72,14 +72,13 @@ func TestConvertJSONToEventActualAmpFormat(t *testing.T) {
 			},
 		}
 
-		rawJSON, err := json.Marshal(msg)
+		_, err := json.Marshal(msg)
 		if err != nil {
 			t.Fatalf("Failed to marshal JSON: %v", err)
 		}
-		rawLine := string(rawJSON)
 
 		// Convert to event
-		event := agent.convertJSONToEvent(msg, rawLine)
+		event := agent.convertJSONToEvent(msg)
 
 		// Verify event was created
 		if event == nil {
@@ -123,8 +122,8 @@ func TestConvertJSONToEventActualAmpFormat(t *testing.T) {
 			},
 		}
 
-		rawJSON, _ := json.Marshal(msg)
-		event := agent.convertJSONToEvent(msg, string(rawJSON))
+		_, _ = json.Marshal(msg)
+		event := agent.convertJSONToEvent(msg)
 
 		if event == nil {
 			t.Fatal("Expected event for edit_file")
@@ -158,8 +157,8 @@ func TestConvertJSONToEventActualAmpFormat(t *testing.T) {
 			},
 		}
 
-		rawJSON, _ := json.Marshal(msg)
-		event := agent.convertJSONToEvent(msg, string(rawJSON))
+		_, _ = json.Marshal(msg)
+		event := agent.convertJSONToEvent(msg)
 
 		if event == nil {
 			t.Fatal("Expected event for Bash tool")
@@ -187,8 +186,8 @@ func TestConvertJSONToEventActualAmpFormat(t *testing.T) {
 			Tools:     []string{"Read", "Bash", "edit_file"},
 		}
 
-		rawJSON, _ := json.Marshal(msg)
-		event := agent.convertJSONToEvent(msg, string(rawJSON))
+		_, _ = json.Marshal(msg)
+		event := agent.convertJSONToEvent(msg)
 
 		// System events should NOT create agent_tool_use events
 		if event != nil {
@@ -206,8 +205,8 @@ func TestConvertJSONToEventActualAmpFormat(t *testing.T) {
 			Result:     "Task completed successfully",
 		}
 
-		rawJSON, _ := json.Marshal(msg)
-		event := agent.convertJSONToEvent(msg, string(rawJSON))
+		_, _ = json.Marshal(msg)
+		event := agent.convertJSONToEvent(msg)
 
 		// Result events should NOT create agent_tool_use events
 		if event != nil {
@@ -229,8 +228,8 @@ func TestConvertJSONToEventActualAmpFormat(t *testing.T) {
 			},
 		}
 
-		rawJSON, _ := json.Marshal(msg)
-		event := agent.convertJSONToEvent(msg, string(rawJSON))
+		_, _ = json.Marshal(msg)
+		event := agent.convertJSONToEvent(msg)
 
 		// No tool_use in content array - should return nil
 		if event != nil {
@@ -255,8 +254,8 @@ func TestConvertJSONToEventActualAmpFormat(t *testing.T) {
 			},
 		}
 
-		rawJSON, _ := json.Marshal(msg)
-		event := agent.convertJSONToEvent(msg, string(rawJSON))
+		_, _ = json.Marshal(msg)
+		event := agent.convertJSONToEvent(msg)
 
 		if event == nil {
 			t.Fatal("Expected event for create_file")
