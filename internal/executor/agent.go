@@ -406,11 +406,32 @@ func (a *Agent) captureOutput() {
 			// Flush batch when full
 			if len(batch) >= batchSize {
 				a.mu.Lock()
-				if len(a.result.Output) < maxOutputLines {
-					a.result.Output = append(a.result.Output, batch...)
+				// Check if we can fit the batch
+				outputLen := len(a.result.Output)
+				if outputLen < maxOutputLines {
+					// Append what fits
+					remaining := maxOutputLines - outputLen
+					if len(batch) <= remaining {
+						a.result.Output = append(a.result.Output, batch...)
+					} else {
+						a.result.Output = append(a.result.Output, batch[:remaining]...)
+					}
 				}
-				if a.config.StreamJSON && len(a.result.ParsedJSON) < maxOutputLines {
-					a.result.ParsedJSON = append(a.result.ParsedJSON, batchedJSON...)
+				// Add truncation marker if we just hit the limit
+				if len(a.result.Output) == maxOutputLines && outputLen < maxOutputLines {
+					a.result.Output = append(a.result.Output, "[... output truncated: limit reached ...]")
+				}
+
+				if a.config.StreamJSON {
+					jsonLen := len(a.result.ParsedJSON)
+					if jsonLen < maxOutputLines {
+						remaining := maxOutputLines - jsonLen
+						if len(batchedJSON) <= remaining {
+							a.result.ParsedJSON = append(a.result.ParsedJSON, batchedJSON...)
+						} else {
+							a.result.ParsedJSON = append(a.result.ParsedJSON, batchedJSON[:remaining]...)
+						}
+					}
 				}
 				a.mu.Unlock()
 
@@ -428,14 +449,31 @@ func (a *Agent) captureOutput() {
 		// Flush remaining lines
 		if len(batch) > 0 {
 			a.mu.Lock()
-			if len(a.result.Output) < maxOutputLines {
-				a.result.Output = append(a.result.Output, batch...)
-			} else if len(a.result.Output) == maxOutputLines {
-				// Add truncation marker once
+			outputLen := len(a.result.Output)
+			if outputLen < maxOutputLines {
+				// Append what fits
+				remaining := maxOutputLines - outputLen
+				if len(batch) <= remaining {
+					a.result.Output = append(a.result.Output, batch...)
+				} else {
+					a.result.Output = append(a.result.Output, batch[:remaining]...)
+				}
+			}
+			// Add truncation marker if we just hit the limit
+			if len(a.result.Output) == maxOutputLines && outputLen < maxOutputLines {
 				a.result.Output = append(a.result.Output, "[... output truncated: limit reached ...]")
 			}
-			if a.config.StreamJSON && len(a.result.ParsedJSON) < maxOutputLines {
-				a.result.ParsedJSON = append(a.result.ParsedJSON, batchedJSON...)
+
+			if a.config.StreamJSON {
+				jsonLen := len(a.result.ParsedJSON)
+				if jsonLen < maxOutputLines {
+					remaining := maxOutputLines - jsonLen
+					if len(batchedJSON) <= remaining {
+						a.result.ParsedJSON = append(a.result.ParsedJSON, batchedJSON...)
+					} else {
+						a.result.ParsedJSON = append(a.result.ParsedJSON, batchedJSON[:remaining]...)
+					}
+				}
 			}
 			a.mu.Unlock()
 		}
@@ -460,8 +498,19 @@ func (a *Agent) captureOutput() {
 			// Flush batch when full
 			if len(batch) >= batchSize {
 				a.mu.Lock()
-				if len(a.result.Errors) < maxOutputLines {
-					a.result.Errors = append(a.result.Errors, batch...)
+				errLen := len(a.result.Errors)
+				if errLen < maxOutputLines {
+					// Append what fits
+					remaining := maxOutputLines - errLen
+					if len(batch) <= remaining {
+						a.result.Errors = append(a.result.Errors, batch...)
+					} else {
+						a.result.Errors = append(a.result.Errors, batch[:remaining]...)
+					}
+				}
+				// Add truncation marker if we just hit the limit
+				if len(a.result.Errors) == maxOutputLines && errLen < maxOutputLines {
+					a.result.Errors = append(a.result.Errors, "[... error output truncated: limit reached ...]")
 				}
 				a.mu.Unlock()
 
@@ -478,10 +527,18 @@ func (a *Agent) captureOutput() {
 		// Flush remaining lines
 		if len(batch) > 0 {
 			a.mu.Lock()
-			if len(a.result.Errors) < maxOutputLines {
-				a.result.Errors = append(a.result.Errors, batch...)
-			} else if len(a.result.Errors) == maxOutputLines {
-				// Add truncation marker once
+			errLen := len(a.result.Errors)
+			if errLen < maxOutputLines {
+				// Append what fits
+				remaining := maxOutputLines - errLen
+				if len(batch) <= remaining {
+					a.result.Errors = append(a.result.Errors, batch...)
+				} else {
+					a.result.Errors = append(a.result.Errors, batch[:remaining]...)
+				}
+			}
+			// Add truncation marker if we just hit the limit
+			if len(a.result.Errors) == maxOutputLines && errLen < maxOutputLines {
 				a.result.Errors = append(a.result.Errors, "[... error output truncated: limit reached ...]")
 			}
 			a.mu.Unlock()

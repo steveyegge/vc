@@ -298,6 +298,79 @@ func (a *instrumentedAgent) captureOutputInstrumented() {
 	wg.Wait()
 }
 
+// TestOutputTruncation verifies that output is properly truncated at maxOutputLines
+func TestOutputTruncation(t *testing.T) {
+	// Test with more lines than maxOutputLines to trigger truncation
+	lineCount := maxOutputLines + 100
+	stdoutReader, stdoutWriter := io.Pipe()
+	stderrReader, stderrWriter := io.Pipe()
+
+	agent := &Agent{
+		config: AgentConfig{
+			Type:       AgentTypeAmp,
+			WorkingDir: "/tmp/test",
+			Issue:      &types.Issue{ID: "vc-test", Title: "Test"},
+			StreamJSON: false,
+		},
+		stdout: stdoutReader,
+		stderr: stderrReader,
+		result: AgentResult{},
+	}
+
+	var wg sync.WaitGroup
+
+	// Start capture
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		agent.captureOutput()
+	}()
+
+	// Write more lines than maxOutputLines
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		defer stdoutWriter.Close()
+		for i := 0; i < lineCount; i++ {
+			fmt.Fprintf(stdoutWriter, "stdout-%d\n", i)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		defer stderrWriter.Close()
+		for i := 0; i < lineCount; i++ {
+			fmt.Fprintf(stderrWriter, "stderr-%d\n", i)
+		}
+	}()
+
+	wg.Wait()
+
+	// Verify stdout truncation
+	if len(agent.result.Output) != maxOutputLines+1 { // +1 for truncation marker
+		t.Errorf("Expected %d output lines (including marker), got %d", maxOutputLines+1, len(agent.result.Output))
+	}
+
+	// Verify truncation marker is present
+	lastLine := agent.result.Output[len(agent.result.Output)-1]
+	if lastLine != "[... output truncated: limit reached ...]" {
+		t.Errorf("Expected truncation marker, got: %s", lastLine)
+	}
+
+	// Verify stderr truncation
+	if len(agent.result.Errors) != maxOutputLines+1 { // +1 for truncation marker
+		t.Errorf("Expected %d error lines (including marker), got %d", maxOutputLines+1, len(agent.result.Errors))
+	}
+
+	lastErrLine := agent.result.Errors[len(agent.result.Errors)-1]
+	if lastErrLine != "[... error output truncated: limit reached ...]" {
+		t.Errorf("Expected error truncation marker, got: %s", lastErrLine)
+	}
+
+	t.Logf("Successfully verified truncation: %d stdout lines, %d stderr lines (including markers)",
+		len(agent.result.Output), len(agent.result.Errors))
+}
+
 // TestOutputOrdering verifies that output ordering is maintained under high frequency
 func TestOutputOrdering(t *testing.T) {
 	stdoutReader, stdoutWriter := io.Pipe()
