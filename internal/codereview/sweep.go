@@ -346,12 +346,18 @@ File discovered issues with detailed reasoning and suggestions.`,
 	}
 
 	// Create the issue using Beads
+	// vc-dk3z: Set acceptance criteria for task issues
+	acceptanceCriteria := `- Reviewed target files for code quality issues
+- Filed discovered issues with detailed reasoning
+- Completed sweep according to scope criteria`
+
 	issue := &types.Issue{
-		Title:       title,
-		Description: description,
-		IssueType:   types.TypeTask,
-		Priority:    priority,
-		Status:      types.StatusOpen,
+		Title:              title,
+		Description:        description,
+		IssueType:          types.TypeTask,
+		Priority:           priority,
+		Status:             types.StatusOpen,
+		AcceptanceCriteria: acceptanceCriteria,
 	}
 
 	// Create the issue

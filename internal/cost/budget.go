@@ -344,7 +344,8 @@ func (t *Tracker) logUsageEvent(ctx context.Context, issueID string, inputTokens
 		totalTokens, cost, t.state.HourlyTokensUsed, t.state.HourlyCostUsed, status.String())
 
 	// Log as comment to the issue (best-effort)
-	// Ignore errors - this is best-effort logging, not critical to execution
+	// Intentionally ignoring error - cost tracking comments are informational only
+	// and should not fail the execution if comment creation fails
 	_ = t.store.AddComment(ctx, issueID, "cost-tracker", message)
 }
 

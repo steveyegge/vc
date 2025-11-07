@@ -294,7 +294,7 @@ IMPORTANT: Base your analysis on the DATA provided, not on hardcoded thresholds.
 			prompt.WriteString("\nBACKOFF STATE:\n")
 			prompt.WriteString(fmt.Sprintf("  Consecutive Interventions: %d\n", backoffState.ConsecutiveInterventions))
 			prompt.WriteString(fmt.Sprintf("  Current Check Interval: %v\n", backoffState.CurrentInterval))
-			prompt.WriteString(fmt.Sprintf("  Is Backed Off: %v\n", backoffState.IsBackedOff))
+			prompt.WriteString(fmt.Sprintf("  Is Backed Off: %t\n", backoffState.IsBackedOff))
 			if !backoffState.LastInterventionTime.IsZero() {
 				timeSince := now.Sub(backoffState.LastInterventionTime)
 				prompt.WriteString(fmt.Sprintf("  Last Intervention: %s (%v ago)\n",

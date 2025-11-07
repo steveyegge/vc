@@ -40,13 +40,19 @@ _This issue was automatically created by AI code review analysis._`,
 		safeShortHash(commitHash))
 
 	// Create the code review issue
+	// vc-dk3z: Set acceptance criteria for task issues
+	acceptanceCriteria := `- Code review completed
+- Review comments added to issue
+- All concerns addressed or documented`
+
 	reviewIssue := &types.Issue{
-		Title:       title,
-		Description: description,
-		IssueType:   types.TypeTask,
-		Status:      types.StatusOpen,
-		Priority:    1, // P1 - high priority
-		Assignee:    "ai-supervisor",
+		Title:              title,
+		Description:        description,
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1, // P1 - high priority
+		Assignee:           "ai-supervisor",
+		AcceptanceCriteria: acceptanceCriteria,
 	}
 
 	err := rp.store.CreateIssue(ctx, reviewIssue, "ai-supervisor")
@@ -129,13 +135,21 @@ _This issue was automatically created by AI code quality analysis (vc-216)._`,
 		}
 
 		// Create the quality fix issue
+		// vc-dk3z: Set acceptance criteria from AI-provided criteria, or generate default
+		acceptanceCriteria := qualityIssue.AcceptanceCriteria
+		if acceptanceCriteria == "" && issueType == types.TypeTask {
+			// Generate default acceptance criteria for quality issues if not provided by AI
+			acceptanceCriteria = "- Code quality issue fixed\n- Tests updated if needed\n- All quality gates passing"
+		}
+
 		fixIssue := &types.Issue{
-			Title:       title,
-			Description: description,
-			IssueType:   issueType,
-			Status:      types.StatusOpen,
-			Priority:    priority,
-			Assignee:    "ai-supervisor",
+			Title:              title,
+			Description:        description,
+			IssueType:          issueType,
+			Status:             types.StatusOpen,
+			Priority:           priority,
+			Assignee:           "ai-supervisor",
+			AcceptanceCriteria: acceptanceCriteria,
 		}
 
 		err := rp.store.CreateIssue(ctx, fixIssue, "ai-supervisor")
@@ -232,13 +246,21 @@ _This issue was automatically created by AI test coverage analysis._`,
 		}
 
 		// Create the test improvement issue
+		// vc-dk3z: Set acceptance criteria from AI-provided criteria, or generate default
+		acceptanceCriteria := testIssue.AcceptanceCriteria
+		if acceptanceCriteria == "" && issueType == types.TypeTask {
+			// Generate default acceptance criteria for test issues if not provided by AI
+			acceptanceCriteria = "- Tests written for uncovered functionality\n- Test coverage verified\n- All tests passing"
+		}
+
 		newIssue := &types.Issue{
-			Title:       title,
-			Description: description,
-			IssueType:   issueType,
-			Status:      types.StatusOpen,
-			Priority:    priority,
-			Assignee:    "ai-supervisor",
+			Title:              title,
+			Description:        description,
+			IssueType:          issueType,
+			Status:             types.StatusOpen,
+			Priority:           priority,
+			Assignee:           "ai-supervisor",
+			AcceptanceCriteria: acceptanceCriteria,
 		}
 
 		err := rp.store.CreateIssue(ctx, newIssue, "ai-supervisor")

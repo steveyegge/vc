@@ -1211,9 +1211,11 @@ func (s *VCStorage) CleanupEventsByIssueLimit(ctx context.Context, perIssueLimit
 	totalDeleted := 0
 
 	// Find issues exceeding the limit
+	// vc-3i6e: Filter out NULL issue_id (system-level events) to prevent scan errors
 	query := `
 		SELECT issue_id, COUNT(*) as event_count
 		FROM vc_agent_events
+		WHERE issue_id IS NOT NULL
 		GROUP BY issue_id
 		HAVING event_count > ?
 	`
