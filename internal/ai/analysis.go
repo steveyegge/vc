@@ -123,7 +123,7 @@ Acceptance Criteria: %s
 
 Agent Execution Status: %s
 
-Agent Output (last 8000 chars):
+Agent Output (smart truncation to 8000 chars - preserves start, middle sample, and end):
 %s
 
 CRITICAL: Your primary job is to verify the agent did the RIGHT work, not just ANY work.
@@ -196,7 +196,7 @@ RULES:
 1. Set "completed": false if the agent worked on the WRONG task (even if the work was good)
 2. Set "completed": false if ANY acceptance criterion was not met
 3. Be SPECIFIC in quality_issues - don't say "add tests", say "add unit tests for function X"
-4. If agent output was truncated, note this in the summary
+4. Look for truncation markers in output - critical info is preserved but context may be incomplete
 
 IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (`+"`"+`). Just the JSON object.`,
 		issue.ID, issue.Title, issue.Description, issue.AcceptanceCriteria,

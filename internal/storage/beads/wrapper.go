@@ -120,10 +120,18 @@ func createVCExtensionTables(ctx context.Context, conn *sql.Conn) error {
 
 // migrateAgentEventsTable adds missing columns to existing vc_agent_events tables
 // Uses a scoped connection (*sql.Conn) for DDL operations as recommended by Beads
+// Wraps all operations in a transaction for atomicity (vc-zi68)
 func migrateAgentEventsTable(ctx context.Context, conn *sql.Conn) error {
+	// Begin transaction for atomic migration
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin migration transaction: %w", err)
+	}
+	defer tx.Rollback() // Safe to call even after commit
+
 	// Check if executor_id column exists
 	var hasExecutorID bool
-	err := conn.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		SELECT COUNT(*) > 0
 		FROM pragma_table_info('vc_agent_events')
 		WHERE name = 'executor_id'
@@ -134,7 +142,7 @@ func migrateAgentEventsTable(ctx context.Context, conn *sql.Conn) error {
 
 	if !hasExecutorID {
 		// Add executor_id column
-		_, err = conn.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			ALTER TABLE vc_agent_events ADD COLUMN executor_id TEXT
 		`)
 		if err != nil {
@@ -142,7 +150,7 @@ func migrateAgentEventsTable(ctx context.Context, conn *sql.Conn) error {
 		}
 
 		// Create index
-		_, err = conn.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			CREATE INDEX IF NOT EXISTS idx_vc_agent_events_executor ON vc_agent_events(executor_id)
 		`)
 		if err != nil {
@@ -152,7 +160,7 @@ func migrateAgentEventsTable(ctx context.Context, conn *sql.Conn) error {
 
 	// Check if agent_id column exists
 	var hasAgentID bool
-	err = conn.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		SELECT COUNT(*) > 0
 		FROM pragma_table_info('vc_agent_events')
 		WHERE name = 'agent_id'
@@ -163,7 +171,7 @@ func migrateAgentEventsTable(ctx context.Context, conn *sql.Conn) error {
 
 	if !hasAgentID {
 		// Add agent_id column
-		_, err = conn.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			ALTER TABLE vc_agent_events ADD COLUMN agent_id TEXT
 		`)
 		if err != nil {
@@ -173,7 +181,7 @@ func migrateAgentEventsTable(ctx context.Context, conn *sql.Conn) error {
 
 	// Check if source_line column exists
 	var hasSourceLine bool
-	err = conn.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		SELECT COUNT(*) > 0
 		FROM pragma_table_info('vc_agent_events')
 		WHERE name = 'source_line'
@@ -184,7 +192,7 @@ func migrateAgentEventsTable(ctx context.Context, conn *sql.Conn) error {
 
 	if !hasSourceLine {
 		// Add source_line column
-		_, err = conn.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			ALTER TABLE vc_agent_events ADD COLUMN source_line INTEGER DEFAULT 0
 		`)
 		if err != nil {
@@ -192,15 +200,28 @@ func migrateAgentEventsTable(ctx context.Context, conn *sql.Conn) error {
 		}
 	}
 
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit migration transaction: %w", err)
+	}
+
 	return nil
 }
 
 // migrateExecutionStateTable adds intervention tracking columns to vc_issue_execution_state (vc-165b)
 // Uses a scoped connection (*sql.Conn) for DDL operations as recommended by Beads
+// Wraps all operations in a transaction for atomicity (vc-zi68)
 func migrateExecutionStateTable(ctx context.Context, conn *sql.Conn) error {
+	// Begin transaction for atomic migration
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin migration transaction: %w", err)
+	}
+	defer tx.Rollback() // Safe to call even after commit
+
 	// Check if intervention_count column exists
 	var hasInterventionCount bool
-	err := conn.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		SELECT COUNT(*) > 0
 		FROM pragma_table_info('vc_issue_execution_state')
 		WHERE name = 'intervention_count'
@@ -211,7 +232,7 @@ func migrateExecutionStateTable(ctx context.Context, conn *sql.Conn) error {
 
 	if !hasInterventionCount {
 		// Add intervention_count column
-		_, err = conn.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			ALTER TABLE vc_issue_execution_state ADD COLUMN intervention_count INTEGER DEFAULT 0
 		`)
 		if err != nil {
@@ -221,7 +242,7 @@ func migrateExecutionStateTable(ctx context.Context, conn *sql.Conn) error {
 
 	// Check if last_intervention_time column exists
 	var hasLastInterventionTime bool
-	err = conn.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		SELECT COUNT(*) > 0
 		FROM pragma_table_info('vc_issue_execution_state')
 		WHERE name = 'last_intervention_time'
@@ -232,7 +253,7 @@ func migrateExecutionStateTable(ctx context.Context, conn *sql.Conn) error {
 
 	if !hasLastInterventionTime {
 		// Add last_intervention_time column
-		_, err = conn.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			ALTER TABLE vc_issue_execution_state ADD COLUMN last_intervention_time DATETIME
 		`)
 		if err != nil {
@@ -240,12 +261,17 @@ func migrateExecutionStateTable(ctx context.Context, conn *sql.Conn) error {
 		}
 
 		// Create index for efficient backoff queries
-		_, err = conn.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			CREATE INDEX IF NOT EXISTS idx_vc_execution_intervention ON vc_issue_execution_state(intervention_count, last_intervention_time)
 		`)
 		if err != nil {
 			return fmt.Errorf("failed to create intervention index: %w", err)
 		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit migration transaction: %w", err)
 	}
 
 	return nil

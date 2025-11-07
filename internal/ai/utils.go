@@ -238,12 +238,43 @@ func join(strs []string, sep string) string {
 	return result
 }
 
-// truncateString truncates a string to maxLen characters
+// truncateString implements smart truncation that preserves context from
+// beginning, middle, and end of the output.
+//
+// Strategy for maxLen=8000:
+// - First 1000 chars (context: what the agent started with)
+// - Middle 2000 chars (sample of the work being done)
+// - Last 5000 chars (results, errors, conclusions)
+//
+// This ensures critical information (which often appears at the end, like
+// test failures or error messages) is always included while still providing
+// context about what the agent was doing.
 func truncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	return s[len(s)-maxLen:]
+
+	// Calculate chunk sizes proportionally
+	firstChunk := maxLen / 8     // ~12.5% for context
+	middleChunk := maxLen / 4    // ~25% for work sample
+	lastChunk := maxLen - firstChunk - middleChunk - 100 // Rest for results (minus markers)
+
+	// Extract chunks
+	first := s[:firstChunk]
+
+	// Middle chunk from 40% mark (skip early context, get into the work)
+	middleStart := len(s) * 2 / 5
+	middleEnd := middleStart + middleChunk
+	if middleEnd > len(s) {
+		middleEnd = len(s)
+	}
+	middle := s[middleStart:middleEnd]
+
+	last := s[len(s)-lastChunk:]
+
+	// Add truncation markers
+	return first + "\n\n[... truncated " + fmt.Sprint(len(s)-maxLen) + " chars ...]\n\n" +
+		middle + "\n\n[... truncated, showing final output ...]\n\n" + last
 }
 
 // safeTruncateString truncates a string to maxLen bytes while preserving UTF-8 encoding

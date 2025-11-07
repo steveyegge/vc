@@ -600,45 +600,122 @@ func TestCreateDiscoveredIssues_PartialFailure(t *testing.T) {
 // TestTruncateString tests the truncation utility
 func TestTruncateString(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  string
-		maxLen int
-		want   string
+		name    string
+		input   string
+		maxLen  int
+		checkFn func(t *testing.T, result string, input string)
 	}{
 		{
 			name:   "string shorter than max",
 			input:  "short",
 			maxLen: 10,
-			want:   "short",
+			checkFn: func(t *testing.T, result, input string) {
+				if result != input {
+					t.Errorf("expected unchanged string %q, got %q", input, result)
+				}
+			},
 		},
 		{
 			name:   "string exactly max length",
 			input:  "exact",
 			maxLen: 5,
-			want:   "exact",
+			checkFn: func(t *testing.T, result, input string) {
+				if result != input {
+					t.Errorf("expected unchanged string %q, got %q", input, result)
+				}
+			},
 		},
 		{
-			name:   "string longer than max - takes last N chars",
-			input:  "This is a long string",
-			maxLen: 10,
-			want:   "ong string",
+			name:   "smart truncation preserves start, middle, and end",
+			input:  generateTestOutput(10000), // Generate 10k chars with markers
+			maxLen: 8000,
+			checkFn: func(t *testing.T, result, input string) {
+				// Length should be approximately maxLen (within 100 chars for truncation markers)
+				if len(result) < 7900 || len(result) > 8100 {
+					t.Errorf("expected length near 8000, got %d", len(result))
+				}
+				// Should contain truncation markers
+				if !strings.Contains(result, "[... truncated") {
+					t.Error("expected truncation markers")
+				}
+				// Should preserve beginning (START marker should be there)
+				if !strings.Contains(result, "START:") {
+					t.Error("expected START marker from beginning")
+				}
+				// Should preserve end (END marker should be there)
+				if !strings.Contains(result, "END:") {
+					t.Error("expected END marker from end")
+				}
+				// Middle section should also be preserved
+				if !strings.Contains(result, "MIDDLE:") {
+					t.Error("expected MIDDLE marker from middle section")
+				}
+			},
+		},
+		{
+			name:   "critical errors at end are preserved",
+			input:  strings.Repeat("x", 9000) + "\nERROR: Test failed!\nFAILURE: Critical issue!",
+			maxLen: 8000,
+			checkFn: func(t *testing.T, result, input string) {
+				// Critical error at end should be preserved (in last 5000 chars)
+				if !strings.Contains(result, "ERROR: Test failed!") {
+					t.Error("expected error message from end to be preserved")
+				}
+				if !strings.Contains(result, "FAILURE: Critical issue!") {
+					t.Error("expected failure message from end to be preserved")
+				}
+			},
 		},
 		{
 			name:   "empty string",
 			input:  "",
 			maxLen: 10,
-			want:   "",
+			checkFn: func(t *testing.T, result, input string) {
+				if result != "" {
+					t.Errorf("expected empty string, got %q", result)
+				}
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := truncateString(tt.input, tt.maxLen)
-			if got != tt.want {
-				t.Errorf("truncateString() = %q, want %q", got, tt.want)
-			}
+			tt.checkFn(t, got, tt.input)
 		})
 	}
+}
+
+// generateTestOutput creates a test string with identifiable markers at different positions
+func generateTestOutput(length int) string {
+	var sb strings.Builder
+
+	// Start section
+	sb.WriteString("START: This is the beginning of the output\n")
+
+	// Fill with content until we reach middle
+	for sb.Len() < length*2/5 {
+		sb.WriteString("...filler content...\n")
+	}
+
+	// Middle section
+	sb.WriteString("MIDDLE: This is somewhere in the middle\n")
+
+	// More filler
+	for sb.Len() < length-200 {
+		sb.WriteString("...more filler...\n")
+	}
+
+	// End section
+	sb.WriteString("END: This is the final output\n")
+	sb.WriteString("RESULT: Everything completed successfully\n")
+
+	// Pad to exact length if needed
+	for sb.Len() < length {
+		sb.WriteString("x")
+	}
+
+	return sb.String()[:length]
 }
 
 // TestPriorityMapping tests all priority mappings

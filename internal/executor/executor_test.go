@@ -796,3 +796,233 @@ func TestReleaseIssueIdempotentBehavior(t *testing.T) {
 		}
 	})
 }
+
+// TestConfigValidation tests configuration validation (vc-q5ve)
+func TestConfigValidation(t *testing.T) {
+	// Create a minimal valid storage for tests
+	cfg := storage.DefaultConfig()
+	cfg.Path = ":memory:"
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer store.Close()
+
+	tests := []struct {
+		name      string
+		config    *Config
+		wantError bool
+		errMsg    string
+	}{
+		{
+			name:      "nil store should fail",
+			config:    &Config{Store: nil},
+			wantError: true,
+			errMsg:    "storage is required",
+		},
+		{
+			name: "EnableAutoPR without EnableAutoCommit should fail",
+			config: &Config{
+				Store:            store,
+				EnableAutoPR:     true,
+				EnableAutoCommit: false,
+			},
+			wantError: true,
+			errMsg:    "EnableAutoPR requires EnableAutoCommit",
+		},
+		{
+			name: "EnableQualityGateWorker without EnableQualityGates should fail",
+			config: &Config{
+				Store:                   store,
+				EnableQualityGateWorker: true,
+				EnableQualityGates:      false,
+			},
+			wantError: true,
+			errMsg:    "EnableQualityGateWorker requires EnableQualityGates",
+		},
+		{
+			name: "EnableHealthMonitoring without EnableAISupervision should fail",
+			config: &Config{
+				Store:                  store,
+				EnableHealthMonitoring: true,
+				EnableAISupervision:    false,
+			},
+			wantError: true,
+			errMsg:    "EnableHealthMonitoring requires EnableAISupervision",
+		},
+		{
+			name: "negative PollInterval should fail",
+			config: &Config{
+				Store:        store,
+				PollInterval: -1 * time.Second,
+			},
+			wantError: true,
+			errMsg:    "PollInterval must be non-negative",
+		},
+		{
+			name: "negative HeartbeatPeriod should fail",
+			config: &Config{
+				Store:           store,
+				HeartbeatPeriod: -1 * time.Second,
+			},
+			wantError: true,
+			errMsg:    "HeartbeatPeriod must be non-negative",
+		},
+		{
+			name: "negative SelfHealingMaxAttempts should fail",
+			config: &Config{
+				Store:                  store,
+				SelfHealingMaxAttempts: -1,
+			},
+			wantError: true,
+			errMsg:    "SelfHealingMaxAttempts must be non-negative",
+		},
+		{
+			name: "negative SandboxRetentionCount should fail",
+			config: &Config{
+				Store:                 store,
+				SandboxRetentionCount: -1,
+			},
+			wantError: true,
+			errMsg:    "SandboxRetentionCount must be non-negative",
+		},
+		{
+			name: "valid minimal config should pass",
+			config: &Config{
+				Store: store,
+			},
+			wantError: false,
+		},
+		{
+			name: "valid config with all features enabled should pass",
+			config: &Config{
+				Store:                   store,
+				EnableAISupervision:     true,
+				EnableQualityGates:      true,
+				EnableAutoCommit:        true,
+				EnableAutoPR:            true,
+				EnableSandboxes:         true,
+				EnableQualityGateWorker: true,
+				EnableHealthMonitoring:  true,
+				PollInterval:            5 * time.Second,
+				HeartbeatPeriod:         30 * time.Second,
+				CleanupInterval:         5 * time.Minute,
+				StaleThreshold:          5 * time.Minute,
+			},
+			wantError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if tt.wantError {
+				if err == nil {
+					t.Errorf("expected error containing %q, got nil", tt.errMsg)
+				} else if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("expected error containing %q, got %q", tt.errMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("expected no error, got %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestDegradedModes tests executor behavior with degraded configurations (vc-q5ve)
+func TestDegradedModes(t *testing.T) {
+	cfg := storage.DefaultConfig()
+	cfg.Path = ":memory:"
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer store.Close()
+
+	tests := []struct {
+		name          string
+		config        *Config
+		checkFn       func(t *testing.T, e *Executor)
+		expectInitErr bool
+	}{
+		{
+			name: "no AI supervision mode",
+			config: &Config{
+				Store:               store,
+				EnableAISupervision: false,
+			},
+			checkFn: func(t *testing.T, e *Executor) {
+				if e.supervisor != nil {
+					t.Error("expected supervisor to be nil in no-AI mode")
+				}
+				if e.deduplicator != nil {
+					t.Error("expected deduplicator to be nil in no-AI mode")
+				}
+				if e.loopDetector != nil {
+					t.Error("expected loopDetector to be nil in no-AI mode")
+				}
+			},
+		},
+		{
+			name: "no quality gates mode",
+			config: &Config{
+				Store:              store,
+				EnableQualityGates: false,
+			},
+			checkFn: func(t *testing.T, e *Executor) {
+				if e.preFlightChecker != nil {
+					t.Error("expected preFlightChecker to be nil in no-quality-gates mode")
+				}
+				if e.qaWorker != nil {
+					t.Error("expected qaWorker to be nil in no-quality-gates mode")
+				}
+			},
+		},
+		{
+			name: "no sandboxes mode",
+			config: &Config{
+				Store:           store,
+				EnableSandboxes: false,
+			},
+			checkFn: func(t *testing.T, e *Executor) {
+				if e.sandboxMgr != nil {
+					t.Error("expected sandboxMgr to be nil in no-sandboxes mode")
+				}
+			},
+		},
+		{
+			name: "no health monitoring mode",
+			config: &Config{
+				Store:                  store,
+				EnableHealthMonitoring: false,
+			},
+			checkFn: func(t *testing.T, e *Executor) {
+				if e.healthRegistry != nil {
+					t.Error("expected healthRegistry to be nil when health monitoring disabled")
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			executor, err := New(tt.config)
+			if tt.expectInitErr {
+				if err == nil {
+					t.Error("expected initialization error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Failed to create executor: %v", err)
+			}
+			if tt.checkFn != nil {
+				tt.checkFn(t, executor)
+			}
+		})
+	}
+}

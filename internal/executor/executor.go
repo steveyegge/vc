@@ -224,6 +224,45 @@ func (e *Executor) transitionToEscalated(ctx context.Context, reason string) {
 }
 
 // Config holds executor configuration
+//
+// Supported Degraded Modes (vc-q5ve):
+// The executor supports several degraded operating modes when optional components fail to initialize:
+//
+// 1. No AI Supervision (EnableAISupervision=false or init failure):
+//    - Issues are claimed and executed without assessment/analysis
+//    - No loop detection
+//    - No health monitoring
+//    - No auto-commit message generation
+//    - No deduplication
+//
+// 2. No Quality Gates (EnableQualityGates=false):
+//    - No preflight checks
+//    - No quality gate enforcement
+//    - No QA worker
+//
+// 3. No Sandboxes (EnableSandboxes=false or init failure):
+//    - Work executes directly in parent repo (less isolation)
+//    - No sandbox cleanup
+//    - Higher risk of repo contamination
+//
+// 4. No Git Operations (git init failure):
+//    - No auto-commit
+//    - No auto-PR
+//    - Test coverage analysis disabled
+//    - Code quality analysis disabled
+//
+// 5. No Cost Tracking (cost config disabled or init failure):
+//    - Budget enforcement disabled
+//    - AI calls proceed without cost checks
+//
+// Minimum Viable Configuration:
+// - Store must be non-nil
+// - All timing values (PollInterval, HeartbeatPeriod, etc.) must be non-negative
+// - Dependent features must have their requirements enabled (see Validate())
+//
+// The executor will log warnings when optional components fail but will continue
+// with reduced functionality. Use Validate() to check for configuration errors
+// before calling New().
 type Config struct {
 	Store                   storage.Storage
 	Version                 string
@@ -267,6 +306,65 @@ type Config struct {
 	LoopDetectorConfig *LoopDetectorConfig // Loop detector configuration (default: sensible defaults, nil = use defaults)
 }
 
+// Validate checks the configuration for invalid combinations (vc-q5ve)
+// Returns an error if the configuration is invalid or unsupported
+func (c *Config) Validate() error {
+	// Minimum required configuration: Store must be present
+	if c.Store == nil {
+		return fmt.Errorf("storage is required")
+	}
+
+	// Auto-PR requires auto-commit (vc-389e)
+	if c.EnableAutoPR && !c.EnableAutoCommit {
+		return fmt.Errorf("EnableAutoPR requires EnableAutoCommit to be enabled")
+	}
+
+	// Quality gate worker requires quality gates
+	if c.EnableQualityGateWorker && !c.EnableQualityGates {
+		return fmt.Errorf("EnableQualityGateWorker requires EnableQualityGates to be enabled")
+	}
+
+	// Health monitoring requires AI supervision (monitors use AI for analysis)
+	if c.EnableHealthMonitoring && !c.EnableAISupervision {
+		return fmt.Errorf("EnableHealthMonitoring requires EnableAISupervision to be enabled")
+	}
+
+	// Auto-commit requires git operations (implicit, will fail during init, but we can validate)
+	// This is a soft requirement - we'll just log a warning during initialization
+
+	// Validate timing configurations
+	if c.PollInterval < 0 {
+		return fmt.Errorf("PollInterval must be non-negative, got %v", c.PollInterval)
+	}
+	if c.HeartbeatPeriod < 0 {
+		return fmt.Errorf("HeartbeatPeriod must be non-negative, got %v", c.HeartbeatPeriod)
+	}
+	if c.CleanupInterval < 0 {
+		return fmt.Errorf("CleanupInterval must be non-negative, got %v", c.CleanupInterval)
+	}
+	if c.StaleThreshold < 0 {
+		return fmt.Errorf("StaleThreshold must be non-negative, got %v", c.StaleThreshold)
+	}
+
+	// Validate self-healing configuration
+	if c.SelfHealingMaxAttempts < 0 {
+		return fmt.Errorf("SelfHealingMaxAttempts must be non-negative, got %d", c.SelfHealingMaxAttempts)
+	}
+	if c.SelfHealingMaxDuration < 0 {
+		return fmt.Errorf("SelfHealingMaxDuration must be non-negative, got %v", c.SelfHealingMaxDuration)
+	}
+	if c.SelfHealingRecheckInterval < 0 {
+		return fmt.Errorf("SelfHealingRecheckInterval must be non-negative, got %v", c.SelfHealingRecheckInterval)
+	}
+
+	// Sandbox retention count must be non-negative
+	if c.SandboxRetentionCount < 0 {
+		return fmt.Errorf("SandboxRetentionCount must be non-negative, got %d", c.SandboxRetentionCount)
+	}
+
+	return nil
+}
+
 // DefaultConfig returns default executor configuration
 func DefaultConfig() *Config {
 	return &Config{
@@ -306,8 +404,9 @@ func DefaultConfig() *Config {
 
 // New creates a new executor instance
 func New(cfg *Config) (*Executor, error) {
-	if cfg.Store == nil {
-		return nil, fmt.Errorf("storage is required")
+	// Validate configuration before initialization (vc-q5ve)
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	hostname, err := os.Hostname()
