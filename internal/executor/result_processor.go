@@ -43,6 +43,7 @@ func NewResultsProcessor(cfg *ResultsProcessorConfig) (*ResultsProcessor, error)
 		sandbox:            cfg.Sandbox,
 		sandboxManager:     cfg.SandboxManager,
 		executor:           cfg.Executor,
+		watchdogConfig:     cfg.WatchdogConfig,
 	}, nil
 }
 
@@ -897,6 +898,12 @@ SkipGates:
 		fmt.Fprintf(os.Stderr, "warning: failed to close issue: %v\n", err)
 		} else {
 		fmt.Printf("\n✓ Issue %s closed: %s\n", issue.ID, closeReason)
+
+				// vc-an5o: Record progress to reset watchdog backoff after successful completion
+				if rp.watchdogConfig != nil {
+					rp.watchdogConfig.RecordProgress()
+					fmt.Printf("✓ Watchdog: Progress recorded, backoff reset to base interval\n")
+				}
 
 				// vc-230: Emit baseline_test_fix_completed event if this was a baseline issue
 				// vc-261: Use IsBaselineIssue() and get fix_type from diagnosis (not string matching)

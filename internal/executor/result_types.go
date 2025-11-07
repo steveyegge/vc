@@ -6,6 +6,7 @@ import (
 	"github.com/steveyegge/vc/internal/git"
 	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/storage"
+	"github.com/steveyegge/vc/internal/watchdog"
 )
 
 // Code review decision thresholds
@@ -30,6 +31,7 @@ type ResultsProcessor struct {
 	sandbox            *sandbox.Sandbox   // The sandbox being used (can be nil if sandboxing is disabled)
 	sandboxManager     sandbox.Manager    // Sandbox manager for cleanup operations (can be nil if sandboxing is disabled)
 	executor           *Executor          // Reference to parent executor for code review checks (can be nil for REPL)
+	watchdogConfig     *watchdog.WatchdogConfig // Watchdog config for backoff reset (vc-an5o, can be nil)
 }
 
 // ResultsProcessorConfig holds configuration for the results processor
@@ -47,6 +49,7 @@ type ResultsProcessorConfig struct {
 	Sandbox            *sandbox.Sandbox // The sandbox being used (can be nil if sandboxing is disabled)
 	SandboxManager     sandbox.Manager  // Sandbox manager for cleanup operations (can be nil if sandboxing is disabled)
 	Executor           *Executor        // Reference to parent executor for code review checks (can be nil for REPL)
+	WatchdogConfig     *watchdog.WatchdogConfig // Watchdog config for backoff reset (vc-an5o, can be nil)
 }
 
 // ProcessingResult contains the outcome of processing agent results

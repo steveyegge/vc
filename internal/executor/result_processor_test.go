@@ -9,6 +9,7 @@ import (
 	"github.com/steveyegge/vc/internal/labels"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
+	"github.com/steveyegge/vc/internal/watchdog"
 )
 
 // TestMissionSkipsInlineGates verifies that missions (epics with subtype=mission)
@@ -260,5 +261,218 @@ func TestRegularTaskRunsInlineGates(t *testing.T) {
 	// 4. Task should be completed (unlike missions which stay open)
 	if !result.Completed {
 		t.Error("Expected regular task to be completed, but it was not")
+	}
+}
+
+// TestWatchdogBackoffResetOnSuccess verifies that RecordProgress() is called
+// after successful issue closure, resetting the watchdog backoff interval (vc-an5o)
+func TestWatchdogBackoffResetOnSuccess(t *testing.T) {
+	// Setup storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = t.TempDir() + "/test.db"
+
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a task issue
+	task := &types.Issue{
+		Title:              "Test Task for Backoff Reset",
+		Description:        "This task tests backoff reset",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusInProgress,
+		Priority:           1,
+		AcceptanceCriteria: "Task should complete and reset backoff",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+
+	if err := store.CreateIssue(ctx, task, "test"); err != nil {
+		t.Fatalf("Failed to create task: %v", err)
+	}
+
+	// Create watchdog config with backoff enabled
+	watchdogCfg := watchdog.DefaultWatchdogConfig()
+	watchdogCfg.BackoffConfig.Enabled = true
+	watchdogCfg.BackoffConfig.BaseInterval = 30 * time.Second
+	watchdogCfg.BackoffConfig.MaxInterval = 10 * time.Minute
+
+	// Simulate AI-recommended backoff (vc-ysqs: AI decides when to back off)
+	// Record some interventions first (for state tracking)
+	watchdogCfg.RecordIntervention()
+	watchdogCfg.RecordIntervention()
+	watchdogCfg.RecordIntervention()
+
+	// Apply AI-recommended backoff
+	aiBackoffInterval := 2 * time.Minute
+	watchdogCfg.ApplyAIBackoff(aiBackoffInterval, "AI detected stuck pattern, increasing interval")
+
+	// Verify we're in backoff mode
+	if !watchdogCfg.IsInBackoff() {
+		t.Fatal("Expected watchdog to be in backoff mode after AI backoff")
+	}
+	initialInterval := watchdogCfg.GetCurrentCheckInterval()
+	if initialInterval <= watchdogCfg.BackoffConfig.BaseInterval {
+		t.Fatalf("Expected backoff interval > base interval, got %v", initialInterval)
+	}
+
+	// Create results processor with watchdog config
+	rpCfg := &ResultsProcessorConfig{
+		Store:              store,
+		EnableQualityGates: false, // Disable gates for simplicity
+		WorkingDir:         "/tmp/test",
+		Actor:              "test-executor",
+		WatchdogConfig:     watchdogCfg, // Pass watchdog config (vc-an5o)
+	}
+
+	rp, err := NewResultsProcessor(rpCfg)
+	if err != nil {
+		t.Fatalf("Failed to create results processor: %v", err)
+	}
+
+	// Create successful agent result
+	agentResult := &AgentResult{
+		Success:  true,
+		ExitCode: 0,
+		Duration: time.Second,
+		Output:   []string{"Task work complete"},
+	}
+
+	// Process the agent result - this should call RecordProgress()
+	result, err := rp.ProcessAgentResult(ctx, task, agentResult)
+	if err != nil {
+		t.Fatalf("ProcessAgentResult failed: %v", err)
+	}
+
+	// Verify the issue was completed
+	if !result.Completed {
+		t.Error("Expected task to be completed")
+	}
+
+	// THE KEY VERIFICATION (vc-an5o):
+	// After successful completion, RecordProgress() should have been called,
+	// which resets backoff state
+	if watchdogCfg.IsInBackoff() {
+		t.Error("Expected watchdog to exit backoff mode after successful completion")
+	}
+
+	currentInterval := watchdogCfg.GetCurrentCheckInterval()
+	if currentInterval != watchdogCfg.BackoffConfig.BaseInterval {
+		t.Errorf("Expected interval to reset to base %v, got %v",
+			watchdogCfg.BackoffConfig.BaseInterval, currentInterval)
+	}
+
+	state := watchdogCfg.GetBackoffState()
+	if state.ConsecutiveInterventions != 0 {
+		t.Errorf("Expected consecutive interventions to reset to 0, got %d",
+			state.ConsecutiveInterventions)
+	}
+}
+
+// TestWatchdogBackoffNotResetOnFailure verifies that backoff is NOT reset
+// when an issue fails (agent exits with error)
+func TestWatchdogBackoffNotResetOnFailure(t *testing.T) {
+	// Setup storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = t.TempDir() + "/test.db"
+
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a task issue
+	task := &types.Issue{
+		Title:              "Test Task for Backoff No-Reset",
+		Description:        "This task tests that backoff is not reset on failure",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusInProgress,
+		Priority:           1,
+		AcceptanceCriteria: "Task should fail without resetting backoff",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+
+	if err := store.CreateIssue(ctx, task, "test"); err != nil {
+		t.Fatalf("Failed to create task: %v", err)
+	}
+
+	// Create watchdog config with backoff enabled
+	watchdogCfg := watchdog.DefaultWatchdogConfig()
+	watchdogCfg.BackoffConfig.Enabled = true
+	watchdogCfg.BackoffConfig.BaseInterval = 30 * time.Second
+	watchdogCfg.BackoffConfig.MaxInterval = 10 * time.Minute
+
+	// Simulate AI-recommended backoff (vc-ysqs: AI decides when to back off)
+	// Record some interventions first (for state tracking)
+	watchdogCfg.RecordIntervention()
+	watchdogCfg.RecordIntervention()
+	watchdogCfg.RecordIntervention()
+
+	// Apply AI-recommended backoff
+	aiBackoffInterval := 2 * time.Minute
+	watchdogCfg.ApplyAIBackoff(aiBackoffInterval, "AI detected stuck pattern, increasing interval")
+
+	// Verify we're in backoff mode
+	if !watchdogCfg.IsInBackoff() {
+		t.Fatal("Expected watchdog to be in backoff mode after AI backoff")
+	}
+	initialInterval := watchdogCfg.GetCurrentCheckInterval()
+	interventionsBefore := watchdogCfg.GetBackoffState().ConsecutiveInterventions
+
+	// Create results processor with watchdog config
+	rpCfg := &ResultsProcessorConfig{
+		Store:              store,
+		EnableQualityGates: false,
+		WorkingDir:         "/tmp/test",
+		Actor:              "test-executor",
+		WatchdogConfig:     watchdogCfg,
+	}
+
+	rp, err := NewResultsProcessor(rpCfg)
+	if err != nil {
+		t.Fatalf("Failed to create results processor: %v", err)
+	}
+
+	// Create FAILED agent result
+	agentResult := &AgentResult{
+		Success:  false, // Failure
+		ExitCode: 1,
+		Duration: time.Second,
+		Output:   []string{"Task failed with error"},
+	}
+
+	// Process the agent result - this should NOT call RecordProgress()
+	result, err := rp.ProcessAgentResult(ctx, task, agentResult)
+	if err != nil {
+		t.Fatalf("ProcessAgentResult failed: %v", err)
+	}
+
+	// Verify the issue was NOT completed
+	if result.Completed {
+		t.Error("Expected task NOT to be completed on failure")
+	}
+
+	// THE KEY VERIFICATION:
+	// After failure, RecordProgress() should NOT have been called,
+	// so backoff state should remain unchanged
+	if !watchdogCfg.IsInBackoff() {
+		t.Error("Expected watchdog to remain in backoff mode after failure")
+	}
+
+	currentInterval := watchdogCfg.GetCurrentCheckInterval()
+	if currentInterval != initialInterval {
+		t.Errorf("Expected interval to remain at %v, got %v", initialInterval, currentInterval)
+	}
+
+	interventionsAfter := watchdogCfg.GetBackoffState().ConsecutiveInterventions
+	if interventionsAfter != interventionsBefore {
+		t.Errorf("Expected consecutive interventions to remain at %d, got %d",
+			interventionsBefore, interventionsAfter)
 	}
 }

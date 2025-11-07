@@ -315,6 +315,7 @@ func (c *ConversationHandler) executeIssue(ctx context.Context, issue *types.Iss
 		EnableQualityGates: true,
 		WorkingDir:         ".",
 		Actor:              instanceID,
+		WatchdogConfig:     nil, // REPL doesn't use watchdog (vc-an5o)
 	})
 	if err != nil {
 		c.releaseIssueWithError(ctx, issue.ID, instanceID, fmt.Sprintf("Failed to create results processor: %v", err))
