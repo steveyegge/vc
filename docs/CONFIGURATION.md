@@ -150,6 +150,20 @@ export VC_DEBUG_PROMPTS=1
 export VC_DEBUG_EVENTS=1
 ```
 
+**Debug Status Changes (vc-n4lx):**
+```bash
+# Log all issue status changes with old/new status and actor
+# Useful for debugging unexpected status changes (e.g., baseline issues becoming blocked)
+export VC_DEBUG_STATUS=1
+```
+
+Example output:
+```
+[VC_DEBUG_STATUS] 2025-11-06T21:15:32Z: Status change for vc-baseline-test: open → blocked (actor: preflight)
+[VC_DEBUG_STATUS] 2025-11-06T21:20:45Z: Status change for vc-baseline-test: blocked → open (actor: preflight-self-healing, reason: Self-healing reopened)
+[VC_DEBUG_STATUS] 2025-11-06T21:25:10Z: Status change for vc-abc: in_progress → closed (actor: executor, reason: Completed: gates passed)
+```
+
 ---
 
 ## 🔑 AI Supervision Configuration

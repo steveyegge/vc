@@ -537,6 +537,21 @@ func (s *VCStorage) UpdateMission(ctx context.Context, id string, updates map[st
 
 // UpdateIssue updates issue fields in Beads
 func (s *VCStorage) UpdateIssue(ctx context.Context, id string, updates map[string]interface{}, actor string) error {
+	// vc-n4lx: Log status changes for observability (enabled via VC_DEBUG_STATUS)
+	// This helps debug unexpected status changes (e.g., baseline issues becoming blocked)
+	if newStatus, hasStatus := updates["status"]; hasStatus && os.Getenv("VC_DEBUG_STATUS") != "" {
+		// Get current issue to see old status
+		oldIssue, err := s.GetIssue(ctx, id)
+		if err == nil && oldIssue != nil {
+			fmt.Fprintf(os.Stderr, "[VC_DEBUG_STATUS] %s: Status change for %s: %s → %s (actor: %s)\n",
+				time.Now().Format(time.RFC3339),
+				id,
+				oldIssue.Status,
+				newStatus,
+				actor)
+		}
+	}
+
 	// Delegate to Beads (it handles all core issue fields)
 	return s.Storage.UpdateIssue(ctx, id, updates, actor)
 }
@@ -544,6 +559,20 @@ func (s *VCStorage) UpdateIssue(ctx context.Context, id string, updates map[stri
 // CloseIssue closes an issue in Beads
 // vc-4820: Also clears execution state to prevent orphaned claims
 func (s *VCStorage) CloseIssue(ctx context.Context, id string, reason string, actor string) error {
+	// vc-n4lx: Log status changes for observability (enabled via VC_DEBUG_STATUS)
+	if os.Getenv("VC_DEBUG_STATUS") != "" {
+		// Get current issue to see old status
+		oldIssue, err := s.GetIssue(ctx, id)
+		if err == nil && oldIssue != nil {
+			fmt.Fprintf(os.Stderr, "[VC_DEBUG_STATUS] %s: Status change for %s: %s → closed (actor: %s, reason: %s)\n",
+				time.Now().Format(time.RFC3339),
+				id,
+				oldIssue.Status,
+				actor,
+				reason)
+		}
+	}
+
 	// First, clean up execution state if it exists (vc-4820)
 	// This prevents leaving orphaned execution state when closing issues manually
 	_, err := s.db.ExecContext(ctx, `

@@ -41,6 +41,10 @@ This ensures you're always using the latest stable version from the homebrew tap
   ```bash
   export VC_DEBUG_EVENTS=1  # Enable debug logging for agent progress events
   ```
+- **`VC_DEBUG_STATUS`**: Log all issue status changes with old/new status and actor (vc-n4lx)
+  ```bash
+  export VC_DEBUG_STATUS=1  # Track status changes for debugging (e.g., baseline issues)
+  ```
 
 See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for all configuration options.
 
