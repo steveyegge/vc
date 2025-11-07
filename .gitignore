@@ -39,3 +39,4 @@ logs/
 .beads/.exclusive-lock
 .beads/cost_state.json
 .beads/beads.*
+.beads/*.sock*
