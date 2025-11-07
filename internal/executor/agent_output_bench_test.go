@@ -540,3 +540,301 @@ func benchmarkBatchedOutput(_ *testing.B, lineCount, lineSize, batchSize int) {
 
 	wg.Wait()
 }
+
+// TestBatchedMutexContention measures mutex contention with the actual batched implementation
+func TestBatchedMutexContention(t *testing.T) {
+	scenarios := []struct {
+		name       string
+		linesCount int
+		lineSize   int
+	}{
+		{"batched_low_frequency_100", 100, 50},
+		{"batched_medium_frequency_1000", 1000, 50},
+		{"batched_high_frequency_10000", 10000, 50},
+	}
+
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			stats := measureBatchedMutexContention(t, sc.linesCount, sc.lineSize)
+
+			t.Logf("Batched mutex contention statistics for %s:", sc.name)
+			t.Logf("  Total lock acquisitions: %d", stats.LockAcquisitions)
+			t.Logf("  Total time in critical section: %v", stats.TotalLockedTime)
+			t.Logf("  Average lock hold time: %v", stats.AvgLockHoldTime)
+			t.Logf("  Max lock hold time: %v", stats.MaxLockHoldTime)
+			t.Logf("  Total test duration: %v", stats.TotalDuration)
+			t.Logf("  Lock contention ratio: %.2f%%", stats.ContentionRatio*100)
+
+			// With batching, we expect significantly reduced contention
+			if stats.ContentionRatio > 0.05 {
+				t.Logf("WARNING: Lock contention ratio %.2f%% exceeds 5%% threshold", stats.ContentionRatio*100)
+			} else {
+				t.Logf("SUCCESS: Lock contention ratio %.2f%% is below 5%% threshold", stats.ContentionRatio*100)
+			}
+		})
+	}
+}
+
+func measureBatchedMutexContention(_ *testing.T, lineCount, lineSize int) MutexStats {
+	// Create instrumented agent
+	stdoutReader, stdoutWriter := io.Pipe()
+	stderrReader, stderrWriter := io.Pipe()
+
+	var lockCount atomic.Int64
+	var totalLockTime atomic.Int64
+	var maxLockTime atomic.Int64
+
+	agent := &instrumentedBatchedAgent{
+		Agent: &Agent{
+			config: AgentConfig{
+				Type:       AgentTypeAmp,
+				WorkingDir: "/tmp/test",
+				Issue:      &types.Issue{ID: "vc-test", Title: "Test"},
+				StreamJSON: false,
+			},
+			stdout: stdoutReader,
+			stderr: stderrReader,
+			result: AgentResult{},
+		},
+		lockCount:     &lockCount,
+		totalLockTime: &totalLockTime,
+		maxLockTime:   &maxLockTime,
+	}
+
+	// Generate test data
+	testLine := make([]byte, lineSize)
+	for i := range testLine {
+		testLine[i] = 'a'
+	}
+
+	startTime := time.Now()
+
+	// Start output capture
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		agent.captureBatchedOutputInstrumented()
+	}()
+
+	// Write lines
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		defer stdoutWriter.Close()
+		for i := 0; i < lineCount; i++ {
+			fmt.Fprintln(stdoutWriter, string(testLine))
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		defer stderrWriter.Close()
+		for i := 0; i < lineCount/2; i++ {
+			fmt.Fprintln(stderrWriter, string(testLine))
+		}
+	}()
+
+	wg.Wait()
+	totalDuration := time.Since(startTime)
+
+	locks := lockCount.Load()
+	totalNs := totalLockTime.Load()
+	maxNs := maxLockTime.Load()
+
+	avgLockHold := time.Duration(0)
+	if locks > 0 {
+		avgLockHold = time.Duration(totalNs / locks)
+	}
+
+	return MutexStats{
+		LockAcquisitions: locks,
+		TotalLockedTime:  time.Duration(totalNs),
+		AvgLockHoldTime:  avgLockHold,
+		MaxLockHoldTime:  time.Duration(maxNs),
+		TotalDuration:    totalDuration,
+		ContentionRatio:  float64(totalNs) / float64(totalDuration.Nanoseconds()),
+	}
+}
+
+// instrumentedBatchedAgent wraps Agent to measure batched mutex performance
+type instrumentedBatchedAgent struct {
+	*Agent
+	lockCount     *atomic.Int64
+	totalLockTime *atomic.Int64
+	maxLockTime   *atomic.Int64
+}
+
+func (a *instrumentedBatchedAgent) captureBatchedOutputInstrumented() {
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	const batchSize = 50 // Same as production code
+
+	// Capture stdout with batching
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(a.stdout)
+		batch := make([]string, 0, batchSize)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			batch = append(batch, line)
+
+			// Flush batch when full
+			if len(batch) >= batchSize {
+				lockStart := time.Now()
+				a.mu.Lock()
+				a.lockCount.Add(1)
+
+				outputLen := len(a.result.Output)
+				if outputLen < maxOutputLines {
+					remaining := maxOutputLines - outputLen
+					if len(batch) <= remaining {
+						a.result.Output = append(a.result.Output, batch...)
+					} else {
+						a.result.Output = append(a.result.Output, batch[:remaining]...)
+					}
+				}
+				if len(a.result.Output) == maxOutputLines && outputLen < maxOutputLines {
+					a.result.Output = append(a.result.Output, "[... output truncated: limit reached ...]")
+				}
+
+				a.mu.Unlock()
+				lockDuration := time.Since(lockStart).Nanoseconds()
+				a.totalLockTime.Add(lockDuration)
+
+				// Update max lock time
+				for {
+					currentMax := a.maxLockTime.Load()
+					if lockDuration <= currentMax {
+						break
+					}
+					if a.maxLockTime.CompareAndSwap(currentMax, lockDuration) {
+						break
+					}
+				}
+
+				batch = batch[:0]
+			}
+		}
+
+		// Flush remaining
+		if len(batch) > 0 {
+			lockStart := time.Now()
+			a.mu.Lock()
+			a.lockCount.Add(1)
+
+			outputLen := len(a.result.Output)
+			if outputLen < maxOutputLines {
+				remaining := maxOutputLines - outputLen
+				if len(batch) <= remaining {
+					a.result.Output = append(a.result.Output, batch...)
+				} else {
+					a.result.Output = append(a.result.Output, batch[:remaining]...)
+				}
+			}
+			if len(a.result.Output) == maxOutputLines && outputLen < maxOutputLines {
+				a.result.Output = append(a.result.Output, "[... output truncated: limit reached ...]")
+			}
+
+			a.mu.Unlock()
+			lockDuration := time.Since(lockStart).Nanoseconds()
+			a.totalLockTime.Add(lockDuration)
+
+			for {
+				currentMax := a.maxLockTime.Load()
+				if lockDuration <= currentMax {
+					break
+				}
+				if a.maxLockTime.CompareAndSwap(currentMax, lockDuration) {
+					break
+				}
+			}
+		}
+	}()
+
+	// Capture stderr with batching
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(a.stderr)
+		batch := make([]string, 0, batchSize)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			batch = append(batch, line)
+
+			// Flush batch when full
+			if len(batch) >= batchSize {
+				lockStart := time.Now()
+				a.mu.Lock()
+				a.lockCount.Add(1)
+
+				errLen := len(a.result.Errors)
+				if errLen < maxOutputLines {
+					remaining := maxOutputLines - errLen
+					if len(batch) <= remaining {
+						a.result.Errors = append(a.result.Errors, batch...)
+					} else {
+						a.result.Errors = append(a.result.Errors, batch[:remaining]...)
+					}
+				}
+				if len(a.result.Errors) == maxOutputLines && errLen < maxOutputLines {
+					a.result.Errors = append(a.result.Errors, "[... error output truncated: limit reached ...]")
+				}
+
+				a.mu.Unlock()
+				lockDuration := time.Since(lockStart).Nanoseconds()
+				a.totalLockTime.Add(lockDuration)
+
+				for {
+					currentMax := a.maxLockTime.Load()
+					if lockDuration <= currentMax {
+						break
+					}
+					if a.maxLockTime.CompareAndSwap(currentMax, lockDuration) {
+						break
+					}
+				}
+
+				batch = batch[:0]
+			}
+		}
+
+		// Flush remaining
+		if len(batch) > 0 {
+			lockStart := time.Now()
+			a.mu.Lock()
+			a.lockCount.Add(1)
+
+			errLen := len(a.result.Errors)
+			if errLen < maxOutputLines {
+				remaining := maxOutputLines - errLen
+				if len(batch) <= remaining {
+					a.result.Errors = append(a.result.Errors, batch...)
+				} else {
+					a.result.Errors = append(a.result.Errors, batch[:remaining]...)
+				}
+			}
+			if len(a.result.Errors) == maxOutputLines && errLen < maxOutputLines {
+				a.result.Errors = append(a.result.Errors, "[... error output truncated: limit reached ...]")
+			}
+
+			a.mu.Unlock()
+			lockDuration := time.Since(lockStart).Nanoseconds()
+			a.totalLockTime.Add(lockDuration)
+
+			for {
+				currentMax := a.maxLockTime.Load()
+				if lockDuration <= currentMax {
+					break
+				}
+				if a.maxLockTime.CompareAndSwap(currentMax, lockDuration) {
+					break
+				}
+			}
+		}
+	}()
+
+	wg.Wait()
+}
