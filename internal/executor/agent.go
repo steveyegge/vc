@@ -380,12 +380,9 @@ func (a *Agent) captureOutput() {
 	go func() {
 		defer wg.Done()
 		scanner := bufio.NewScanner(a.stdout)
-		const batchSize = 10                     // Batch up to 10 lines
-		const flushTimeout = 50 * time.Millisecond // Or flush after 50ms
+		const batchSize = 10 // Batch up to 10 lines before acquiring mutex
 
 		batch := make([]string, 0, batchSize)
-		flushTimer := time.NewTimer(flushTimeout)
-		defer flushTimer.Stop()
 
 		flushBatch := func() {
 			if len(batch) == 0 {
@@ -422,7 +419,6 @@ func (a *Agent) captureOutput() {
 			}
 
 			batch = batch[:0] // Clear batch
-			flushTimer.Reset(flushTimeout)
 		}
 
 		for scanner.Scan() {
@@ -443,12 +439,9 @@ func (a *Agent) captureOutput() {
 	go func() {
 		defer wg.Done()
 		scanner := bufio.NewScanner(a.stderr)
-		const batchSize = 10
-		const flushTimeout = 50 * time.Millisecond
+		const batchSize = 10 // Batch up to 10 lines before acquiring mutex
 
 		batch := make([]string, 0, batchSize)
-		flushTimer := time.NewTimer(flushTimeout)
-		defer flushTimer.Stop()
 
 		flushBatch := func() {
 			if len(batch) == 0 {
@@ -477,7 +470,6 @@ func (a *Agent) captureOutput() {
 			}
 
 			batch = batch[:0] // Clear batch
-			flushTimer.Reset(flushTimeout)
 		}
 
 		for scanner.Scan() {

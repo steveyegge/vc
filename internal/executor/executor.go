@@ -1061,7 +1061,7 @@ func (e *Executor) checkSteadyState(ctx context.Context, foundWork bool) (bool, 
 	stateChanged := false
 	if e.lastGitCommit != "" && e.lastGitCommit != currentCommit {
 		fmt.Printf("State change detected: git commit changed (%s → %s), resetting poll interval\n",
-			e.lastGitCommit[:7], currentCommit[:7])
+			safePrefix(e.lastGitCommit, 7), safePrefix(currentCommit, 7))
 		stateChanged = true
 	}
 
@@ -1143,6 +1143,15 @@ func (e *Executor) getCurrentPollInterval() time.Duration {
 	e.steadyStateMutex.RLock()
 	defer e.steadyStateMutex.RUnlock()
 	return e.currentPollInterval
+}
+
+// safePrefix returns the first n characters of s, or the entire string if shorter than n.
+// Used for safely slicing git commit hashes that might be shorter than expected.
+func safePrefix(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }
 
 // getEnvInt retrieves an integer from an environment variable, or returns the default value
