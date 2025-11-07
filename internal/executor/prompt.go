@@ -149,6 +149,24 @@ This task has been attempted {{len .PreviousAttempts}} time(s) before:
 ## Where We Left Off
 {{.ResumeHint}}
 {{end}}
+{{if .HasIncompleteAttempts -}}
+
+## ⚠️ CRITICAL: INCOMPLETE WORK PATTERN DETECTED
+
+**WARNING**: Previous attempt(s) succeeded without errors BUT did not complete all acceptance criteria.
+
+**Common Issue**: The agent READ files and ANALYZED the code but did NOT MAKE THE REQUIRED CODE CHANGES.
+
+**What you MUST do differently this time**:
+1. **DO NOT just read and analyze** - You must EDIT/WRITE files to implement the solution
+2. **Make actual code modifications** - Use Edit/Write tools to change the codebase
+3. **Verify all acceptance criteria** - Each criterion must be met with actual code changes
+4. **If you only read files** - You have failed the task (this is a RETRY, not initial exploration)
+
+**This is attempt #{{.IncompleteAttemptCount}}** - If you fail to make code changes again, this task will be escalated to human review.
+
+**DO NOT PROCEED** unless you are confident you can make the necessary code modifications to complete ALL acceptance criteria.
+{{end}}
 {{end}}
 {{if .QualityGateStatus -}}
 {{if not .QualityGateStatus.AllPassed -}}
@@ -433,14 +451,31 @@ func (pb *PromptBuilder) BuildPrompt(ctx *PromptContext) (string, error) {
 	// vc-261: Use IsBaselineIssue() helper instead of duplicated map
 	isBaselineIssue := IsBaselineIssue(ctx.Issue.ID)
 
+	// vc-1ows: Detect incomplete attempts (agent succeeded but didn't complete work)
+	// Count attempts where Success=true to infer incomplete attempts
+	hasIncompleteAttempts := false
+	incompleteAttemptCount := 0
+	if ctx.PreviousAttempts != nil {
+		for _, attempt := range ctx.PreviousAttempts {
+			if attempt.Success != nil && *attempt.Success {
+				incompleteAttemptCount++
+			}
+		}
+		hasIncompleteAttempts = incompleteAttemptCount > 0
+	}
+
 	// Create a wrapper struct that exposes sandbox fields if available
 	templateData := struct {
 		*PromptContext
-		Sandbox         *sandboxData
-		IsBaselineIssue bool
+		Sandbox                *sandboxData
+		IsBaselineIssue        bool
+		HasIncompleteAttempts  bool
+		IncompleteAttemptCount int
 	}{
-		PromptContext:   ctx,
-		IsBaselineIssue: isBaselineIssue,
+		PromptContext:          ctx,
+		IsBaselineIssue:        isBaselineIssue,
+		HasIncompleteAttempts:  hasIncompleteAttempts,
+		IncompleteAttemptCount: incompleteAttemptCount,
 	}
 
 	// Extract sandbox data if available

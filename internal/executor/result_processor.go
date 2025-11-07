@@ -882,7 +882,13 @@ SkipGates:
 		shouldClose := true
 		if analysis != nil && !analysis.Completed {
 			shouldClose = false
-			fmt.Printf("\nAI analysis indicates issue is not fully complete - leaving open\n")
+			fmt.Printf("\nAI analysis indicates issue is not fully complete - handling incomplete work\n")
+
+			// vc-1ows: Handle incomplete work (agent didn't complete the task)
+			// Check execution history to determine retry strategy
+			if err := rp.handleIncompleteWork(ctx, issue, analysis); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to handle incomplete work: %v\n", err)
+			}
 		}
 
 		result.Completed = shouldClose
@@ -1328,4 +1334,131 @@ func (rp *ResultsProcessor) logProgressEvent(ctx context.Context, severity event
 		// Log error but don't fail execution
 		fmt.Fprintf(os.Stderr, "warning: failed to store quality gates progress event: %v\n", err)
 	}
+}
+
+// handleIncompleteWork handles the case when AI analysis reports the task is incomplete (vc-1ows).
+// This can happen when the agent reads files but doesn't make required edits, or only partially
+// completes the work. The function checks execution history to determine retry strategy:
+// - If attempts < maxIncompleteRetries: Leave as open for retry with enhanced context
+// - If attempts >= maxIncompleteRetries: Escalate with needs-human-review label
+func (rp *ResultsProcessor) handleIncompleteWork(ctx context.Context, issue *types.Issue, analysis *ai.Analysis) error {
+	const maxIncompleteRetries = 1 // Allow 1 retry before escalation
+
+	// Get execution history to count incomplete attempts
+	history, err := rp.store.GetExecutionHistoryPaginated(ctx, issue.ID, 100, 0)
+	if err != nil {
+		return fmt.Errorf("failed to get execution history: %w", err)
+	}
+
+	// Count how many times this issue has been attempted with incomplete results
+	// An incomplete attempt is one where:
+	// - Agent succeeded (exit code 0)
+	// - But AI analysis reported completed=false
+	incompleteAttempts := 0
+	for _, attempt := range history {
+		// Check if this was a successful execution with incomplete results
+		// We infer this from: success=true but no closed_at in issue (still open)
+		if attempt.Success != nil && *attempt.Success {
+			incompleteAttempts++
+		}
+	}
+
+	fmt.Printf("\nIncomplete work detected: attempt #%d (max retries: %d)\n", incompleteAttempts, maxIncompleteRetries)
+
+	if incompleteAttempts <= maxIncompleteRetries {
+		// Still within retry limit - add comment and leave as open for retry
+		retryComment := fmt.Sprintf(`**Incomplete Work Detected (Attempt #%d)**
+
+The AI supervisor determined that this task was not fully completed in the previous execution.
+
+**Analysis Summary**: %s
+
+**What was found**:
+- Agent execution succeeded (no errors)
+- Quality gates passed
+- However, the work does not meet all acceptance criteria
+
+**Next Steps**:
+The executor will retry this task. The next agent will receive enhanced instructions emphasizing that code changes must be made to complete the acceptance criteria.
+
+**Acceptance Criteria** (must ALL be met):
+%s
+
+If this issue continues to have incomplete attempts after %d total tries, it will be escalated for human review.`,
+			incompleteAttempts, analysis.Summary, issue.AcceptanceCriteria, maxIncompleteRetries+1)
+
+		if err := rp.store.AddComment(ctx, issue.ID, "ai-supervisor", retryComment); err != nil {
+			return fmt.Errorf("failed to add retry comment: %w", err)
+		}
+
+		fmt.Printf("✓ Added retry comment - issue will be retried with enhanced prompt\n")
+
+		// Emit event for observability
+		rp.logEvent(ctx, events.EventTypeProgress, events.SeverityWarning, issue.ID,
+			fmt.Sprintf("Incomplete work detected - scheduling retry (attempt #%d)", incompleteAttempts),
+			map[string]interface{}{
+				"incomplete_attempts": incompleteAttempts,
+				"max_retries":         maxIncompleteRetries,
+				"analysis_summary":    analysis.Summary,
+			})
+
+	} else {
+		// Exceeded retry limit - escalate with needs-human-review label
+		escalationComment := fmt.Sprintf(`**Incomplete Work Escalated**
+
+This task has been attempted %d times but the agent has not been able to fully complete it.
+
+**Analysis from latest attempt**: %s
+
+**Pattern Detected**:
+The agent appears to be reading files and analyzing the code, but not making the necessary code modifications to complete the task.
+
+**Acceptance Criteria** (not all met):
+%s
+
+**Action Required**:
+This issue needs human intervention to either:
+1. Break down the task into smaller, more focused subtasks
+2. Clarify the acceptance criteria
+3. Complete the work manually
+
+The issue has been marked with the 'needs-human-review' label to prevent further automatic retries.`,
+			incompleteAttempts, analysis.Summary, issue.AcceptanceCriteria)
+
+		if err := rp.store.AddComment(ctx, issue.ID, "ai-supervisor", escalationComment); err != nil {
+			return fmt.Errorf("failed to add escalation comment: %w", err)
+		}
+
+		// Add needs-human-review label
+		if err := rp.store.AddLabel(ctx, issue.ID, "needs-human-review", rp.actor); err != nil {
+			return fmt.Errorf("failed to add needs-human-review label: %w", err)
+		}
+
+		// Update to blocked status
+		updates := map[string]interface{}{
+			"status": string(types.StatusBlocked),
+		}
+
+		// Log status change for audit trail
+		rp.store.LogStatusChangeFromUpdates(ctx, issue.ID, updates, rp.actor,
+			"incomplete work escalated after multiple attempts")
+
+		if err := rp.store.UpdateIssue(ctx, issue.ID, updates, rp.actor); err != nil {
+			return fmt.Errorf("failed to update issue to blocked: %w", err)
+		}
+
+		fmt.Printf("🚨 Incomplete work escalated - marked as blocked with needs-human-review label\n")
+
+		// Emit escalation event
+		rp.logEvent(ctx, events.EventTypeProgress, events.SeverityError, issue.ID,
+			fmt.Sprintf("Incomplete work escalated after %d attempts", incompleteAttempts),
+			map[string]interface{}{
+				"incomplete_attempts": incompleteAttempts,
+				"max_retries":         maxIncompleteRetries,
+				"analysis_summary":    analysis.Summary,
+				"escalated":           true,
+			})
+	}
+
+	return nil
 }
