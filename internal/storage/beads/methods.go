@@ -537,6 +537,21 @@ func (s *VCStorage) UpdateMission(ctx context.Context, id string, updates map[st
 
 // UpdateIssue updates issue fields in Beads
 func (s *VCStorage) UpdateIssue(ctx context.Context, id string, updates map[string]interface{}, actor string) error {
+	// vc-n4lx: Log status changes for observability (enabled via VC_DEBUG_STATUS)
+	// This helps debug unexpected status changes (e.g., baseline issues becoming blocked)
+	if newStatus, hasStatus := updates["status"]; hasStatus && os.Getenv("VC_DEBUG_STATUS") != "" {
+		// Get current issue to see old status
+		oldIssue, err := s.GetIssue(ctx, id)
+		if err == nil && oldIssue != nil {
+			fmt.Fprintf(os.Stderr, "[VC_DEBUG_STATUS] %s: Status change for %s: %s → %s (actor: %s)\n",
+				time.Now().Format(time.RFC3339),
+				id,
+				oldIssue.Status,
+				newStatus,
+				actor)
+		}
+	}
+
 	// Delegate to Beads (it handles all core issue fields)
 	return s.Storage.UpdateIssue(ctx, id, updates, actor)
 }
@@ -544,6 +559,20 @@ func (s *VCStorage) UpdateIssue(ctx context.Context, id string, updates map[stri
 // CloseIssue closes an issue in Beads
 // vc-4820: Also clears execution state to prevent orphaned claims
 func (s *VCStorage) CloseIssue(ctx context.Context, id string, reason string, actor string) error {
+	// vc-n4lx: Log status changes for observability (enabled via VC_DEBUG_STATUS)
+	if os.Getenv("VC_DEBUG_STATUS") != "" {
+		// Get current issue to see old status
+		oldIssue, err := s.GetIssue(ctx, id)
+		if err == nil && oldIssue != nil {
+			fmt.Fprintf(os.Stderr, "[VC_DEBUG_STATUS] %s: Status change for %s: %s → closed (actor: %s, reason: %s)\n",
+				time.Now().Format(time.RFC3339),
+				id,
+				oldIssue.Status,
+				actor,
+				reason)
+		}
+	}
+
 	// First, clean up execution state if it exists (vc-4820)
 	// This prevents leaving orphaned execution state when closing issues manually
 	_, err := s.db.ExecContext(ctx, `
@@ -999,6 +1028,94 @@ func (s *VCStorage) GetReadyBlockers(ctx context.Context, limit int) ([]*types.I
 	rows, err := s.db.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query ready blockers: %w", err)
+	}
+	defer rows.Close()
+
+	var issues []*types.Issue
+	for rows.Next() {
+		var issue types.Issue
+		var closedAt sql.NullTime
+		var assignee sql.NullString
+		var estimatedMinutes sql.NullInt64
+
+		err := rows.Scan(
+			&issue.ID,
+			&issue.Title,
+			&issue.Description,
+			&issue.Design,
+			&issue.AcceptanceCriteria,
+			&issue.Notes,
+			&issue.Status,
+			&issue.Priority,
+			&issue.IssueType,
+			&assignee,
+			&estimatedMinutes,
+			&issue.CreatedAt,
+			&issue.UpdatedAt,
+			&closedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan issue: %w", err)
+		}
+
+		// Handle nullable fields
+		if closedAt.Valid {
+			issue.ClosedAt = &closedAt.Time
+		}
+		if assignee.Valid {
+			issue.Assignee = assignee.String
+		}
+		if estimatedMinutes.Valid {
+			val := int(estimatedMinutes.Int64)
+			issue.EstimatedMinutes = &val
+		}
+
+		issues = append(issues, &issue)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	return issues, nil
+}
+
+// GetReadyBaselineIssues retrieves baseline-failure issues that are ready to execute
+// This is an optimized query that filters for label='baseline-failure' AND status='open'
+// and checks for open blocking dependencies in a single SQL query (vc-1nks)
+func (s *VCStorage) GetReadyBaselineIssues(ctx context.Context, limit int) ([]*types.Issue, error) {
+	// Optimized single SQL query that:
+	// 1. Filters for issues with baseline-failure label
+	// 2. Filters for status='open'
+	// 3. Filters out epics (baseline issues should not be epics)
+	// 4. LEFT JOINs to check for open blocking dependencies
+	// 5. Returns only issues with NO open blockers (ready to execute)
+	// 6. Orders by priority (lower = higher priority)
+	query := `
+		SELECT DISTINCT i.id, i.title, i.description, i.design, i.acceptance_criteria,
+		       i.notes, i.status, i.priority, i.issue_type, i.assignee,
+		       i.estimated_minutes, i.created_at, i.updated_at, i.closed_at
+		FROM issues i
+		INNER JOIN labels l ON i.id = l.issue_id
+		WHERE l.label = 'baseline-failure'
+		  AND i.status = 'open'
+		  AND i.issue_type != 'epic'
+		  AND NOT EXISTS (
+		    -- Check if this issue has any open blocking dependencies
+		    -- Only check type='blocks', not related/parent-child/discovered-from
+		    SELECT 1 FROM dependencies d
+		    INNER JOIN issues dep_issue ON d.depends_on_id = dep_issue.id
+		    WHERE d.issue_id = i.id
+		      AND d.type = 'blocks'
+		      AND dep_issue.status != 'closed'
+		  )
+		ORDER BY i.priority ASC
+		LIMIT ?
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query ready baseline issues: %w", err)
 	}
 	defer rows.Close()
 

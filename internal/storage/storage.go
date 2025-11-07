@@ -62,6 +62,7 @@ type Storage interface {
 	GetReadyWork(ctx context.Context, filter types.WorkFilter) ([]*types.Issue, error)
 	GetBlockedIssues(ctx context.Context) ([]*types.BlockedIssue, error)
 	GetReadyBlockers(ctx context.Context, limit int) ([]*types.Issue, error)
+	GetReadyBaselineIssues(ctx context.Context, limit int) ([]*types.Issue, error) // vc-1nks: SQL-optimized baseline issue selection
 
 	// Epic Completion (vc-232)
 	IsEpicComplete(ctx context.Context, epicID string) (bool, error)

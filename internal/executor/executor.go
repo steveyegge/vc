@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -121,6 +123,13 @@ type Executor struct {
 	selfHealingProgressMutex  sync.RWMutex
 	selfHealingNoWorkCount    int       // Consecutive iterations with no work found
 	selfHealingDeadlockIssue  string    // ID of escalation issue created for deadlock (empty if none)
+
+	// Steady state polling (vc-onch)
+	basePollInterval    time.Duration // Original poll interval (5s)
+	currentPollInterval time.Duration // Dynamic poll interval (increases in steady state)
+	steadyStateCount    int           // Consecutive polls in steady state
+	lastGitCommit       string        // Last seen git commit hash
+	steadyStateMutex    sync.RWMutex  // Protects steady state fields
 }
 
 // getSelfHealingMode returns the current self-healing mode state (thread-safe)
@@ -493,6 +502,10 @@ func New(cfg *Config) (*Executor, error) {
 		modeChangedAt:   time.Now(),
 		// Initialize escalation tracking (vc-h8b8)
 		escalationTrackers: make(map[string]*escalationTracker),
+		// Initialize steady state polling (vc-onch)
+		basePollInterval:    cfg.PollInterval,
+		currentPollInterval: cfg.PollInterval,
+		steadyStateCount:    0,
 	}
 
 	// Initialize cost tracker first (vc-e3s7)
@@ -1024,6 +1037,120 @@ func (e *Executor) MarkInstanceStoppedOnExit(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// checkSteadyState detects if the executor is in a steady state (no work, baseline failing).
+// Returns true if we should increase poll interval.
+// vc-onch: Reduce preflight thrashing when no work available
+func (e *Executor) checkSteadyState(_ context.Context, foundWork bool) (bool, error) {
+	e.steadyStateMutex.Lock()
+	defer e.steadyStateMutex.Unlock()
+
+	// Get current git commit using same approach as preflight checker
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = e.workingDir
+	output, err := cmd.Output()
+	if err != nil {
+		// If we can't get git commit, reset to avoid false steady state
+		e.resetSteadyStateUnlocked()
+		return false, nil // Don't fail the loop, just skip steady state detection
+	}
+	currentCommit := strings.TrimSpace(string(output))
+
+	// Check for state changes that invalidate steady state
+	stateChanged := false
+	if e.lastGitCommit != "" && e.lastGitCommit != currentCommit {
+		fmt.Printf("State change detected: git commit changed (%s → %s), resetting poll interval\n",
+			safePrefix(e.lastGitCommit, 7), safePrefix(currentCommit, 7))
+		stateChanged = true
+
+		// vc-onch: Invalidate preflight cache on git commit change
+		// This allows executor to detect when baseline issues are fixed
+		if e.preFlightChecker != nil {
+			e.preFlightChecker.InvalidateAllCache()
+		}
+	}
+
+	// Update tracked state
+	e.lastGitCommit = currentCommit
+
+	// If state changed or work was found, reset steady state
+	if stateChanged || foundWork {
+		e.resetSteadyStateUnlocked()
+		return false, nil
+	}
+
+	// Check if we're in a state that qualifies for steady state:
+	// 1. In self-healing mode (baseline failed)
+	// 2. No work found
+	// 3. Preflight checker has cached results (baseline checked and cached)
+	inSelfHealing := e.getSelfHealingMode() != ModeHealthy
+	hasCachedBaseline := e.preFlightChecker != nil && e.preFlightChecker.HasAnyCachedResults()
+
+	if inSelfHealing && !foundWork && hasCachedBaseline {
+		e.steadyStateCount++
+
+		// Consider it steady state after 10 consecutive identical polls
+		if e.steadyStateCount >= 10 {
+			return true, nil
+		}
+	} else {
+		// Not in qualifying state, reset counter
+		e.steadyStateCount = 0
+	}
+
+	return false, nil
+}
+
+// resetSteadyStateUnlocked resets steady state (assumes lock is held)
+func (e *Executor) resetSteadyStateUnlocked() {
+	if e.currentPollInterval != e.basePollInterval {
+		fmt.Printf("Resetting poll interval: %v → %v\n", e.currentPollInterval, e.basePollInterval)
+	}
+	e.currentPollInterval = e.basePollInterval
+	e.steadyStateCount = 0
+}
+
+// increasePollInterval increases the poll interval using exponential backoff
+// vc-onch: 5s → 10s → 30s → 60s → 300s (max)
+func (e *Executor) increasePollInterval() {
+	e.steadyStateMutex.Lock()
+	defer e.steadyStateMutex.Unlock()
+
+	oldInterval := e.currentPollInterval
+
+	// Exponential backoff schedule
+	switch {
+	case e.currentPollInterval < 10*time.Second:
+		e.currentPollInterval = 10 * time.Second
+	case e.currentPollInterval < 30*time.Second:
+		e.currentPollInterval = 30 * time.Second
+	case e.currentPollInterval < 60*time.Second:
+		e.currentPollInterval = 60 * time.Second
+	case e.currentPollInterval < 300*time.Second:
+		e.currentPollInterval = 300 * time.Second
+	default:
+		// Already at max, no change
+		return
+	}
+
+	fmt.Printf("Entering steady state: increasing poll interval %v → %v\n", oldInterval, e.currentPollInterval)
+}
+
+// getCurrentPollInterval returns the current dynamic poll interval (thread-safe)
+func (e *Executor) getCurrentPollInterval() time.Duration {
+	e.steadyStateMutex.RLock()
+	defer e.steadyStateMutex.RUnlock()
+	return e.currentPollInterval
+}
+
+// safePrefix returns the first n characters of s, or the entire string if shorter than n.
+// Used for safely slicing git commit hashes that might be shorter than expected.
+func safePrefix(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }
 
 // getEnvInt retrieves an integer from an environment variable, or returns the default value

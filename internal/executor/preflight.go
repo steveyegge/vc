@@ -310,6 +310,15 @@ func (p *PreFlightChecker) InvalidateAllCache() {
 	p.cache = make(map[string]*cachedBaseline)
 }
 
+// HasAnyCachedResults checks if there are any cached baseline results in memory (vc-onch)
+// Used for steady state detection - if we have cached results, we know the baseline has been checked
+func (p *PreFlightChecker) HasAnyCachedResults() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	return len(p.cache) > 0
+}
+
 // GetCachedResults retrieves gate results from the cached baseline for a commit hash
 // Returns nil if no cached baseline exists or if the baseline has expired
 func (p *PreFlightChecker) GetCachedResults(ctx context.Context, commitHash string) ([]*gates.Result, error) {
