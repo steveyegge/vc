@@ -1042,7 +1042,7 @@ func (e *Executor) MarkInstanceStoppedOnExit(ctx context.Context) error {
 // checkSteadyState detects if the executor is in a steady state (no work, baseline failing).
 // Returns true if we should increase poll interval.
 // vc-onch: Reduce preflight thrashing when no work available
-func (e *Executor) checkSteadyState(ctx context.Context, foundWork bool) (bool, error) {
+func (e *Executor) checkSteadyState(_ context.Context, foundWork bool) (bool, error) {
 	e.steadyStateMutex.Lock()
 	defer e.steadyStateMutex.Unlock()
 
@@ -1100,13 +1100,6 @@ func (e *Executor) checkSteadyState(ctx context.Context, foundWork bool) (bool, 
 	}
 
 	return false, nil
-}
-
-// resetSteadyState resets poll interval to base and clears steady state tracking
-func (e *Executor) resetSteadyState() {
-	e.steadyStateMutex.Lock()
-	defer e.steadyStateMutex.Unlock()
-	e.resetSteadyStateUnlocked()
 }
 
 // resetSteadyStateUnlocked resets steady state (assumes lock is held)
