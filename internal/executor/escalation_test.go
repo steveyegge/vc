@@ -58,7 +58,7 @@ func TestEscalationTracker_AttemptTracking(t *testing.T) {
 	}
 
 	// Test 3: Check escalation threshold (should trigger on attempts)
-	escalatedIssueID, reason := exec.checkEscalationThresholds(ctx)
+	escalatedIssueID, reason := exec.checkEscalationThresholds()
 	if escalatedIssueID != issueID {
 		t.Errorf("checkEscalationThresholds issueID = %s, want %s", escalatedIssueID, issueID)
 	}
@@ -111,7 +111,7 @@ func TestEscalationTracker_DurationThreshold(t *testing.T) {
 	exec.escalationMutex.Unlock()
 
 	// Check escalation threshold (should trigger on duration)
-	escalatedIssueID, reason := exec.checkEscalationThresholds(ctx)
+	escalatedIssueID, reason := exec.checkEscalationThresholds()
 	if escalatedIssueID != issueID {
 		t.Errorf("checkEscalationThresholds issueID = %s, want %s", escalatedIssueID, issueID)
 	}

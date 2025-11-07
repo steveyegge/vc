@@ -552,12 +552,8 @@ func (p *PreFlightChecker) parseAndDeduplicateTestFailures(ctx context.Context, 
 		signature := ComputeFailureSignature(failure)
 
 		// Check if an issue with this signature already exists
-		// We search for issues with matching title patterns as a simple dedup mechanism
-		// (More sophisticated: could store signature in issue metadata/labels)
-		childTitle := fmt.Sprintf("Test failure: %s", failure.Test)
-
-		// Query for existing open issues with similar title
-		existingChildID, err := p.findExistingTestFailureIssue(ctx, childTitle, signature)
+		// We search for issues with matching signature labels for deduplication
+		existingChildID, err := p.findExistingTestFailureIssue(ctx, signature)
 		if err != nil {
 			fmt.Printf("   warning: failed to check for existing test failure issue: %v\n", err)
 			// Continue anyway - better to create potential duplicate than skip
@@ -590,7 +586,7 @@ func (p *PreFlightChecker) parseAndDeduplicateTestFailures(ctx context.Context, 
 }
 
 // findExistingTestFailureIssue searches for an existing test failure issue with the same signature
-func (p *PreFlightChecker) findExistingTestFailureIssue(ctx context.Context, titlePattern, signature string) (string, error) {
+func (p *PreFlightChecker) findExistingTestFailureIssue(ctx context.Context, signature string) (string, error) {
 	// Query open issues to find matching test failure
 	// We use the signature label for reliable matching
 	filter := types.WorkFilter{

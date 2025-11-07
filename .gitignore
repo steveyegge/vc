@@ -37,3 +37,4 @@ logs/
 .beads/daemon.pid
 .beads/daemon.lock
 .beads/.exclusive-lock
+.beads/cost_state.json

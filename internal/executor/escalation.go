@@ -66,7 +66,7 @@ func (e *Executor) incrementAttempt(issueID string) {
 // checkEscalationThresholds checks if any baseline issue has exceeded escalation thresholds.
 // Returns the issue ID and reason if escalation is needed, or empty strings if not.
 // This checks BOTH attempt count and duration thresholds.
-func (e *Executor) checkEscalationThresholds(ctx context.Context) (string, string) {
+func (e *Executor) checkEscalationThresholds() (string, string) {
 	e.escalationMutex.RLock()
 	defer e.escalationMutex.RUnlock()
 

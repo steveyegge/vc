@@ -167,16 +167,16 @@ func extractEventMetadata(event *events.AgentEvent) string {
 
 	case events.EventTypeAssessmentCompleted:
 		// assessment: confidence | steps | risks
-		confidence := fmt.Sprintf("%.0f%%", getFloatField(event.Data, "confidence", 0)*100)
-		steps := fmt.Sprintf("%d steps", getIntField(event.Data, "step_count", 0))
-		risks := fmt.Sprintf("%d risks", getIntField(event.Data, "risk_count", 0))
+		confidence := fmt.Sprintf("%.0f%%", getConfidenceField(event.Data, 0)*100)
+		steps := fmt.Sprintf("%d steps", getIntField(event.Data, "step_count"))
+		risks := fmt.Sprintf("%d risks", getIntField(event.Data, "risk_count"))
 		fields = []string{confidence, steps, risks}
 
 	case events.EventTypeQualityGatesCompleted, events.EventTypeQualityGateFail, events.EventTypeQualityGatePass:
 		// quality_gates: result | failing_gate | duration
 		result := getStringField(event.Data, "result", "unknown")
 		failingGate := getStringField(event.Data, "failing_gate", "none")
-		duration := formatDurationMs(getIntField(event.Data, "duration_ms", 0))
+		duration := formatDurationMs(getIntField(event.Data, "duration_ms"))
 		fields = []string{result, failingGate, duration}
 
 	case events.EventTypeIssueClaimed:
@@ -188,16 +188,16 @@ func extractEventMetadata(event *events.AgentEvent) string {
 
 	case events.EventTypeAgentCompleted:
 		// agent_completed: duration | tools_used | files_modified
-		duration := formatDurationMs(getIntField(event.Data, "duration_ms", 0))
-		toolsUsed := fmt.Sprintf("%d tools", getIntField(event.Data, "tools_used", 0))
-		filesModified := fmt.Sprintf("%d files", getIntField(event.Data, "files_modified", 0))
+		duration := formatDurationMs(getIntField(event.Data, "duration_ms"))
+		toolsUsed := fmt.Sprintf("%d tools", getIntField(event.Data, "tools_used"))
+		filesModified := fmt.Sprintf("%d files", getIntField(event.Data, "files_modified"))
 		fields = []string{duration, toolsUsed, filesModified}
 
 	case events.EventTypeAnalysisCompleted:
 		// analysis: issues_discovered | confidence | duration
-		issuesDiscovered := fmt.Sprintf("%d issues", getIntField(event.Data, "issues_discovered", 0))
-		confidence := fmt.Sprintf("%.0f%%", getFloatField(event.Data, "confidence", 0)*100)
-		duration := formatDurationMs(getIntField(event.Data, "duration_ms", 0))
+		issuesDiscovered := fmt.Sprintf("%d issues", getIntField(event.Data, "issues_discovered"))
+		confidence := fmt.Sprintf("%.0f%%", getConfidenceField(event.Data, 0)*100)
+		duration := formatDurationMs(getIntField(event.Data, "duration_ms"))
 		fields = []string{issuesDiscovered, confidence, duration}
 
 	case events.EventTypeTestRun:
@@ -206,7 +206,7 @@ func extractEventMetadata(event *events.AgentEvent) string {
 		if !getBoolField(event.Data, "passed", false) {
 			passed = "✗ failed"
 		}
-		duration := formatDurationMs(getIntField(event.Data, "duration_ms", 0))
+		duration := formatDurationMs(getIntField(event.Data, "duration_ms"))
 		testName := truncateString(getStringField(event.Data, "test_name", ""), 25)
 		fields = []string{passed, duration, testName}
 
@@ -222,10 +222,10 @@ func extractEventMetadata(event *events.AgentEvent) string {
 
 	case events.EventTypeDeduplicationBatchCompleted:
 		// deduplication: unique | duplicates | comparisons | duration
-		unique := fmt.Sprintf("%d unique", getIntField(event.Data, "unique_count", 0))
-		duplicates := fmt.Sprintf("%d dupes", getIntField(event.Data, "duplicate_count", 0))
-		comparisons := fmt.Sprintf("%d comps", getIntField(event.Data, "comparisons_made", 0))
-		duration := formatDurationMs(getIntField(event.Data, "processing_time_ms", 0))
+		unique := fmt.Sprintf("%d unique", getIntField(event.Data, "unique_count"))
+		duplicates := fmt.Sprintf("%d dupes", getIntField(event.Data, "duplicate_count"))
+		comparisons := fmt.Sprintf("%d comps", getIntField(event.Data, "comparisons_made"))
+		duration := formatDurationMs(getIntField(event.Data, "processing_time_ms"))
 		fields = []string{unique, duplicates, comparisons, duration}
 
 	case events.EventTypeDeduplicationDecision:
@@ -234,7 +234,7 @@ func extractEventMetadata(event *events.AgentEvent) string {
 		if getBoolField(event.Data, "is_duplicate", false) {
 			isDupe = "duplicate"
 		}
-		confidence := fmt.Sprintf("%.0f%%", getFloatField(event.Data, "confidence", 0)*100)
+		confidence := fmt.Sprintf("%.0f%%", getConfidenceField(event.Data, 0)*100)
 		dupeOf := truncateString(getStringField(event.Data, "duplicate_of", "n/a"), 15)
 		fields = []string{isDupe, confidence, dupeOf}
 
@@ -245,14 +245,14 @@ func extractEventMetadata(event *events.AgentEvent) string {
 		if !getBoolField(event.Data, "success", false) {
 			success = "✗"
 		}
-		testsFixed := fmt.Sprintf("%d tests", getIntField(event.Data, "tests_fixed", 0))
-		duration := formatDurationMs(getIntField(event.Data, "processing_time_ms", 0))
+		testsFixed := fmt.Sprintf("%d tests", getIntField(event.Data, "tests_fixed"))
+		duration := formatDurationMs(getIntField(event.Data, "processing_time_ms"))
 		fields = []string{fixType, success, testsFixed, duration}
 
 	case events.EventTypeTestFailureDiagnosis:
 		// test_failure_diagnosis: failure_type | confidence | root_cause
 		failureType := getStringField(event.Data, "failure_type", "unknown")
-		confidence := fmt.Sprintf("%.0f%%", getFloatField(event.Data, "confidence", 0)*100)
+		confidence := fmt.Sprintf("%.0f%%", getConfidenceField(event.Data, 0)*100)
 		rootCause := truncateString(getStringField(event.Data, "root_cause", ""), 30)
 		fields = []string{failureType, confidence, rootCause}
 
@@ -265,7 +265,7 @@ func extractEventMetadata(event *events.AgentEvent) string {
 	case events.EventTypeSandboxCreationCompleted, events.EventTypeSandboxCleanupCompleted:
 		// sandbox: branch_name | duration | success
 		branchName := truncateString(getStringField(event.Data, "branch_name", ""), 25)
-		duration := formatDurationMs(getIntField(event.Data, "duration_ms", 0))
+		duration := formatDurationMs(getIntField(event.Data, "duration_ms"))
 		success := "✓"
 		if !getBoolField(event.Data, "success", true) {
 			success = "✗"
@@ -274,7 +274,7 @@ func extractEventMetadata(event *events.AgentEvent) string {
 
 	case events.EventTypeMissionCreated:
 		// mission_created: phase_count | approval_required | actor
-		phaseCount := fmt.Sprintf("%d phases", getIntField(event.Data, "phase_count", 0))
+		phaseCount := fmt.Sprintf("%d phases", getIntField(event.Data, "phase_count"))
 		approvalReq := "no approval"
 		if getBoolField(event.Data, "approval_required", false) {
 			approvalReq = "approval needed"
@@ -284,9 +284,9 @@ func extractEventMetadata(event *events.AgentEvent) string {
 
 	case events.EventTypeEpicCompleted:
 		// epic_completed: children_completed | completion_method | confidence
-		childrenDone := fmt.Sprintf("%d children", getIntField(event.Data, "children_completed", 0))
+		childrenDone := fmt.Sprintf("%d children", getIntField(event.Data, "children_completed"))
 		method := getStringField(event.Data, "completion_method", "unknown")
-		confidence := fmt.Sprintf("%.0f%%", getFloatField(event.Data, "confidence", 0)*100)
+		confidence := fmt.Sprintf("%.0f%%", getConfidenceField(event.Data, 0)*100)
 		fields = []string{childrenDone, method, confidence}
 
 	default:
@@ -294,10 +294,10 @@ func extractEventMetadata(event *events.AgentEvent) string {
 		if err, ok := event.Data["error"].(string); ok {
 			fields = append(fields, truncateString(err, 50))
 		}
-		if duration := getIntField(event.Data, "duration_ms", 0); duration > 0 {
+		if duration := getIntField(event.Data, "duration_ms"); duration > 0 {
 			fields = append(fields, formatDurationMs(duration))
 		}
-		if confidence := getFloatField(event.Data, "confidence", -1); confidence >= 0 {
+		if confidence := getConfidenceField(event.Data, -1); confidence >= 0 {
 			fields = append(fields, fmt.Sprintf("%.0f%%", confidence*100))
 		}
 	}
@@ -320,21 +320,21 @@ func getStringField(data map[string]interface{}, key, defaultValue string) strin
 	return defaultValue
 }
 
-func getIntField(data map[string]interface{}, key string, defaultValue int) int {
+func getIntField(data map[string]interface{}, key string) int {
 	if val, ok := data[key].(int); ok {
 		return val
 	}
 	if val, ok := data[key].(float64); ok {
 		return int(val)
 	}
-	return defaultValue
+	return 0
 }
 
-func getFloatField(data map[string]interface{}, key string, defaultValue float64) float64 {
-	if val, ok := data[key].(float64); ok {
+func getConfidenceField(data map[string]interface{}, defaultValue float64) float64 {
+	if val, ok := data["confidence"].(float64); ok {
 		return val
 	}
-	if val, ok := data[key].(int); ok {
+	if val, ok := data["confidence"].(int); ok {
 		return float64(val)
 	}
 	return defaultValue

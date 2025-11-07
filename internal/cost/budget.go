@@ -147,7 +147,7 @@ func (t *Tracker) RecordUsage(ctx context.Context, issueID string, inputTokens, 
 	t.logUsageEvent(ctx, issueID, inputTokens, outputTokens, cost, status)
 
 	// Emit alerts if needed
-	t.emitAlertsIfNeeded(ctx, status)
+	t.emitAlertsIfNeeded(status)
 
 	return status, nil
 }
@@ -349,7 +349,7 @@ func (t *Tracker) logUsageEvent(ctx context.Context, issueID string, inputTokens
 }
 
 // emitAlertsIfNeeded emits alerts if budget thresholds are crossed
-func (t *Tracker) emitAlertsIfNeeded(ctx context.Context, status BudgetStatus) {
+func (t *Tracker) emitAlertsIfNeeded(status BudgetStatus) {
 	now := time.Now()
 
 	switch status {

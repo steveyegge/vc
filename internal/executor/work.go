@@ -449,7 +449,7 @@ func (e *Executor) logBlockageDiagnostics(ctx context.Context) {
 // This is now per-baseline-issue tracking rather than overall self-healing mode duration (vc-h8b8).
 func (e *Executor) shouldEscalate(ctx context.Context) bool {
 	// Check if any baseline issue has exceeded thresholds
-	issueID, reason := e.checkEscalationThresholds(ctx)
+	issueID, reason := e.checkEscalationThresholds()
 	if issueID != "" {
 		fmt.Printf("⚠️  Escalation threshold exceeded: %s\n", reason)
 
