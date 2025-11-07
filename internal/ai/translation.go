@@ -1,3 +1,36 @@
+// Package ai provides AI supervision and translation services for the VC executor.
+//
+// # Meta-Issue Recursion Prevention
+//
+// This package implements a defense-in-depth approach to prevent infinite recursion
+// when AI analysis creates "meta-issues" (issues about missing issue metadata).
+// The strategy consists of 5 layers of protection (vc-4vot):
+//
+//  1. Circuit Breaker (maxBlockersBeforeEscalation = 5)
+//     If more than 5 blocker issues are discovered at once, create a single
+//     escalation issue instead. This catches runaway recursion early.
+//
+//  2. Circular Meta-Issue Detection
+//     Prevent meta-issues about meta-issues. If parent has "meta-issue" label AND
+//     child would have "meta-issue" label, skip creation.
+//     Example: vc-hpcl → vc-9yhu (meta) → vc-qo2u (meta) is blocked at vc-qo2u.
+//
+//  3. Meta-Issue Acceptance Criteria (vc-4vot)
+//     Meta-issues MUST have acceptance criteria. Without criteria, the meta-issue
+//     itself triggers another meta-issue about missing criteria (infinite recursion).
+//
+//  4. Blocker Depth Limit (maxBlockerDepth = 2)
+//     Maximum 2 levels of discovered:blocker chains. Prevents blocker → blocker →
+//     blocker → ... chains that clog the tracker and indicate the task needs
+//     decomposition rather than more blockers.
+//
+//  5. State Verification (vc-o87x)
+//     Before creating a meta-issue, re-fetch parent from database to verify the
+//     problem still exists. Prevents creating obsolete meta-issues when parent
+//     was updated between analysis time and creation time.
+//
+// These layers work together to ensure convergence: even if one layer fails,
+// the others catch the recursion before it becomes a problem.
 package ai
 
 import (
@@ -23,6 +56,24 @@ type DiscoveredIssue struct {
 
 // No heuristic pattern matching - we'll rely on AI to set labels
 
+const (
+	// maxBlockersBeforeEscalation is the circuit breaker threshold for discovered blocker issues.
+	// If more than this many blockers are discovered at once, we create a single escalation issue
+	// instead to prevent infinite recursion and tracker congestion (vc-4vot).
+	//
+	// Rationale: 5 blockers suggests a systemic problem that needs human review rather than
+	// allowing the AI to continue spawning issues. This prevents runaway recursion.
+	maxBlockersBeforeEscalation = 5
+
+	// maxBlockerDepth is the maximum depth of discovered:blocker dependency chains allowed.
+	// This prevents blocker → blocker → blocker → ... chains that clog the tracker (vc-4vot).
+	//
+	// Rationale: 2 levels of blockers (e.g., task → blocker → blocker) is sufficient for
+	// most real workflows. Deeper chains suggest the task needs decomposition rather than
+	// more blockers. Depth 0 = root task, 1 = first blocker, 2 = blocker of blocker.
+	maxBlockerDepth = 2
+)
+
 // getBlockerDepth calculates the depth of discovered:blocker issues in the dependency chain
 // Returns the depth (0 = root task, 1 = first blocker, 2 = blocker of blocker, etc.)
 func (s *Supervisor) getBlockerDepth(ctx context.Context, parentIssue *types.Issue) (int, error) {
@@ -31,7 +82,10 @@ func (s *Supervisor) getBlockerDepth(ctx context.Context, parentIssue *types.Iss
 	maxDepth := 10 // Safety limit to prevent infinite loops
 
 	for depth < maxDepth {
-		// Check if this issue has discovered:blocker label
+		// Check if this issue has discovered:blocker label.
+		// Why check the label? Because only issues created by AI analysis have this label.
+		// Regular issues don't count toward blocker depth (they're part of the original task tree).
+		// This ensures we only limit AI-discovered blocker chains, not human-created dependencies.
 		hasBlockerLabel := false
 		labels, err := s.store.GetLabels(ctx, currentID)
 		if err != nil {
@@ -88,9 +142,19 @@ func hasLabel(labels []string, label string) bool {
 	return false
 }
 
-// isCircularMetaIssue checks if creating this meta-issue would create a circular dependency
-// Example: vc-hpcl needs criteria → vc-9yhu adds criteria to vc-hpcl → vc-qo2u adds criteria to vc-9yhu
-// vc-4vot: Uses labels set by AI, not heuristic pattern matching
+// isCircularMetaIssue detects circular meta-issue patterns to prevent infinite recursion.
+//
+// A circular meta-issue occurs when a meta-issue itself needs a meta-issue:
+//
+//	vc-hpcl (regular task, missing criteria)
+//	  → vc-9yhu (meta-issue: "Add criteria to vc-hpcl", but also missing criteria)
+//	    → vc-qo2u (meta-issue: "Add criteria to vc-9yhu") ← BLOCKED HERE
+//
+// This function checks if both parent AND discovered issue have the "meta-issue" label.
+// If so, it's a meta-issue about a meta-issue, which would trigger infinite recursion.
+//
+// Note (vc-4vot): This relies on AI-set labels, not heuristic pattern matching. The AI
+// is instructed to add "meta-issue" label when creating issues about missing metadata.
 func (s *Supervisor) isCircularMetaIssue(ctx context.Context, parentIssue *types.Issue, discoveredIssue DiscoveredIssue) (bool, error) {
 	// Check if parent has meta-issue label
 	parentLabels, err := s.store.GetLabels(ctx, parentIssue.ID)
@@ -199,7 +263,7 @@ func (s *Supervisor) CreateDiscoveredIssues(ctx context.Context, parentIssue *ty
 	var createdIDs []string
 	var skipped []string
 
-	// vc-4vot: Circuit breaker - if more than 5 discovered blockers, something is wrong
+	// vc-4vot: Circuit breaker - if more than maxBlockersBeforeEscalation discovered blockers, something is wrong
 	blockerCount := 0
 	for _, disc := range discovered {
 		if disc.DiscoveryType == "blocker" {
@@ -207,7 +271,7 @@ func (s *Supervisor) CreateDiscoveredIssues(ctx context.Context, parentIssue *ty
 		}
 	}
 
-	if blockerCount > 5 {
+	if blockerCount > maxBlockersBeforeEscalation {
 		fmt.Fprintf(os.Stderr, "⚠️  WARNING: Excessive blocker discovery detected (%d blockers)\n", blockerCount)
 		fmt.Fprintf(os.Stderr, "   This may indicate infinite recursion. Escalating to human review.\n")
 
@@ -277,15 +341,15 @@ func (s *Supervisor) CreateDiscoveredIssues(ctx context.Context, parentIssue *ty
 			fmt.Printf("ℹ️  Meta-issue detected with criteria: %s\n", disc.Title)
 		}
 
-		// vc-4vot: Check blocker depth limit - max 2 levels of discovered blockers
+		// vc-4vot: Check blocker depth limit - max maxBlockerDepth levels of discovered blockers
 		if disc.DiscoveryType == "blocker" {
 			depth, err := s.getBlockerDepth(ctx, parentIssue)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to check blocker depth: %v (allowing issue)\n", err)
 				// Continue creating the issue - err on the side of progress
-			} else if depth >= 2 {
+			} else if depth >= maxBlockerDepth {
 				fmt.Fprintf(os.Stderr, "⚠️  Skipping blocker at depth %d: %s\n", depth+1, disc.Title)
-				fmt.Fprintf(os.Stderr, "   Maximum blocker depth is 2 (current parent is at depth %d)\n", depth)
+				fmt.Fprintf(os.Stderr, "   Maximum blocker depth is %d (current parent is at depth %d)\n", maxBlockerDepth, depth)
 				skipped = append(skipped, disc.Title)
 				continue
 			}

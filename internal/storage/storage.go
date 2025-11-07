@@ -113,7 +113,16 @@ type Storage interface {
 	RecordWatchdogIntervention(ctx context.Context, issueID string) error // vc-165b: Track intervention for backoff
 
 	// Execution History
+	// GetExecutionHistory retrieves all execution history for an issue (no pagination).
+	// Deprecated: Use GetExecutionHistoryPaginated for issues with many attempts.
 	GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error)
+
+	// GetExecutionHistoryPaginated retrieves execution history with pagination (vc-59).
+	// limit: maximum number of results (required, must be > 0)
+	// offset: number of results to skip (0 = start from beginning)
+	// Returns attempts in chronological order (oldest first).
+	GetExecutionHistoryPaginated(ctx context.Context, issueID string, limit, offset int) ([]*types.ExecutionAttempt, error)
+
 	RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error
 
 	// Config

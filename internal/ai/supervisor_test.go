@@ -223,6 +223,9 @@ func (m *mockStorage) Close() error {
 func (m *mockStorage) GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error) {
 	return nil, nil
 }
+func (m *mockStorage) GetExecutionHistoryPaginated(ctx context.Context, issueID string, limit, offset int) ([]*types.ExecutionAttempt, error) {
+	return nil, nil
+}
 func (m *mockStorage) RecordExecutionAttempt(ctx context.Context, attempt *types.ExecutionAttempt) error {
 	return nil
 }

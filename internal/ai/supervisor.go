@@ -12,6 +12,21 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
+// AI Model Constants (vc-35: Tiered AI Model Strategy)
+//
+// VC uses a tiered approach to AI model selection based on task complexity:
+// - Sonnet 4.5: Complex tasks requiring deep reasoning (assessment, analysis, planning)
+// - Haiku: Simple tasks like file size checks, commit messages, cruft detection
+//
+// Cost savings: Haiku is ~80% cheaper than Sonnet for simple operations.
+const (
+	// ModelSonnet is the high-end model for complex reasoning tasks
+	ModelSonnet = "claude-sonnet-4-5-20250929"
+
+	// ModelHaiku is the cost-efficient model for simple tasks
+	ModelHaiku = "claude-3-5-haiku-20241022"
+)
+
 // Supervisor handles AI-powered assessment and analysis of issues
 // It also implements the MissionPlanner interface for mission orchestration
 //
@@ -74,7 +89,7 @@ func NewSupervisor(cfg *Config) (*Supervisor, error) {
 
 	model := cfg.Model
 	if model == "" {
-		model = "claude-sonnet-4-5-20250929"
+		model = ModelSonnet
 	}
 
 	// Use default retry config if not specified

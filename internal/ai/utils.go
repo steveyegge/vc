@@ -103,10 +103,10 @@ func (s *Supervisor) CallAI(ctx context.Context, prompt string, operation string
 		}
 	}
 
-	// Log the call
+	// Log the call (vc-35: include model for cost tracking)
 	duration := time.Since(startTime)
-	fmt.Printf("AI %s call: input=%d tokens, output=%d tokens, duration=%v\n",
-		operation, response.Usage.InputTokens, response.Usage.OutputTokens, duration)
+	fmt.Printf("AI %s call: input=%d tokens, output=%d tokens, duration=%v, model=%s\n",
+		operation, response.Usage.InputTokens, response.Usage.OutputTokens, duration, model)
 
 	return responseText, nil
 }

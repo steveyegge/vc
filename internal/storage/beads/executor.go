@@ -789,14 +789,29 @@ func (s *VCStorage) RecordExecutionAttempt(ctx context.Context, attempt *types.E
 	return nil
 }
 
-// GetExecutionHistory retrieves execution history for an issue
+// GetExecutionHistory retrieves execution history for an issue (no pagination).
+// Deprecated: Use GetExecutionHistoryPaginated for issues with many attempts (vc-59).
 func (s *VCStorage) GetExecutionHistory(ctx context.Context, issueID string) ([]*types.ExecutionAttempt, error) {
+	// Default limit to prevent OOM on issues with thousands of attempts
+	return s.GetExecutionHistoryPaginated(ctx, issueID, 1000, 0)
+}
+
+// GetExecutionHistoryPaginated retrieves execution history with pagination (vc-59)
+func (s *VCStorage) GetExecutionHistoryPaginated(ctx context.Context, issueID string, limit, offset int) ([]*types.ExecutionAttempt, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be > 0, got %d", limit)
+	}
+	if offset < 0 {
+		return nil, fmt.Errorf("offset must be >= 0, got %d", offset)
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, issue_id, executor_instance_id, attempt_number, started_at, completed_at, success, exit_code, summary, output_sample, error_sample
 		FROM vc_execution_history
 		WHERE issue_id = ?
 		ORDER BY started_at ASC
-	`, issueID)
+		LIMIT ? OFFSET ?
+	`, issueID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query execution history: %w", err)
 	}
