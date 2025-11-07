@@ -84,61 +84,35 @@ func (e *Executor) GetReadyWork(ctx context.Context) (*types.Issue, error) {
 
 // findBaselineIssues finds open baseline-failure issues that are ready to execute.
 // Returns the first ready baseline issue, or nil if none are ready.
+// vc-1nks: Now uses optimized SQL query to reduce N+1 query problem
 func (e *Executor) findBaselineIssues(ctx context.Context) *types.Issue {
-	baselineIssues, err := e.store.GetIssuesByLabel(ctx, "baseline-failure")
+	// Use optimized storage method that does filtering in SQL (vc-1nks)
+	// This replaces the old approach of fetching all baseline issues then checking dependencies one by one
+	// Performance: O(1) query instead of O(N) queries where N = number of baseline issues
+	baselineIssues, err := e.store.GetReadyBaselineIssues(ctx, 1)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to get baseline issues: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to get ready baseline issues: %v\n", err)
 		return nil
 	}
 
-	for _, issue := range baselineIssues {
-		if issue.Status == types.StatusOpen {
-			// Check if it has blocking dependencies
-			depRecords, err := e.store.GetDependencyRecords(ctx, issue.ID)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to get dependency records for %s: %v\n", issue.ID, err)
-				continue
-			}
-
-			// Check if any dependencies are blocking (not closed)
-			hasBlockingDeps := false
-			for _, dep := range depRecords {
-				// Skip metadata dependencies
-				if dep.Type == "discovered-from" {
-					continue
-				}
-
-				parent, err := e.store.GetIssue(ctx, dep.DependsOnID)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: failed to get parent %s: %v\n", dep.DependsOnID, err)
-					hasBlockingDeps = true
-					break
-				}
-				if parent.Status != types.StatusClosed {
-					hasBlockingDeps = true
-					break
-				}
-			}
-
-			if !hasBlockingDeps {
-				fmt.Printf("Found ready baseline issue: %s - %s\n", issue.ID, issue.Title)
-
-				// Track escalation attempt for this baseline issue (vc-h8b8)
-				e.incrementAttempt(issue.ID)
-
-				e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, issue.ID,
-					fmt.Sprintf("Self-healing: found ready baseline issue %s", issue.ID),
-					map[string]interface{}{
-						"event_subtype": "baseline_issue_selected",
-						"issue_id":      issue.ID,
-						"mode":          "SELF_HEALING",
-					})
-				return issue
-			}
-		}
+	if len(baselineIssues) == 0 {
+		return nil
 	}
 
-	return nil
+	issue := baselineIssues[0]
+	fmt.Printf("Found ready baseline issue: %s - %s\n", issue.ID, issue.Title)
+
+	// Track escalation attempt for this baseline issue (vc-h8b8)
+	e.incrementAttempt(issue.ID)
+
+	e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, issue.ID,
+		fmt.Sprintf("Self-healing: found ready baseline issue %s", issue.ID),
+		map[string]interface{}{
+			"event_subtype": "baseline_issue_selected",
+			"issue_id":      issue.ID,
+			"mode":          "SELF_HEALING",
+		})
+	return issue
 }
 
 // investigateBlockedBaseline checks if baseline-failure issues are blocked.
@@ -323,57 +297,31 @@ func (e *Executor) logBlockageReasons(ctx context.Context, baseline *types.Issue
 
 // findDiscoveredBlockers finds discovered:blocker issues that are ready to execute.
 // Returns the first ready blocker, or nil if none are ready.
+// vc-1nks: Now uses optimized SQL query (same as vc-156)
 func (e *Executor) findDiscoveredBlockers(ctx context.Context) *types.Issue {
-	blockerIssues, err := e.store.GetIssuesByLabel(ctx, "discovered:blocker")
+	// Use optimized storage method that does filtering in SQL (vc-156, vc-1nks)
+	// This replaces the old approach of fetching all blocker issues then checking dependencies one by one
+	// Performance: O(1) query instead of O(N) queries where N = number of blocker issues
+	blockerIssues, err := e.store.GetReadyBlockers(ctx, 1)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to get discovered blocker issues: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to get ready blocker issues: %v\n", err)
 		return nil
 	}
 
-	for _, issue := range blockerIssues {
-		if issue.Status == types.StatusOpen {
-			// Check if it has blocking dependencies
-			depRecords, err := e.store.GetDependencyRecords(ctx, issue.ID)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to get dependency records for %s: %v\n", issue.ID, err)
-				continue
-			}
-
-			// Check if any dependencies are blocking (not closed)
-			hasBlockingDeps := false
-			for _, dep := range depRecords {
-				// Skip metadata dependencies
-				if dep.Type == "discovered-from" {
-					continue
-				}
-
-				parent, err := e.store.GetIssue(ctx, dep.DependsOnID)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: failed to get parent %s: %v\n", dep.DependsOnID, err)
-					hasBlockingDeps = true
-					break
-				}
-				if parent.Status != types.StatusClosed {
-					hasBlockingDeps = true
-					break
-				}
-			}
-
-			if !hasBlockingDeps {
-				fmt.Printf("Found ready discovered blocker: %s - %s\n", issue.ID, issue.Title)
-				e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, issue.ID,
-					fmt.Sprintf("Self-healing: found ready discovered blocker %s", issue.ID),
-					map[string]interface{}{
-						"event_subtype": "discovered_blocker_selected",
-						"issue_id":      issue.ID,
-						"mode":          "SELF_HEALING",
-					})
-				return issue
-			}
-		}
+	if len(blockerIssues) == 0 {
+		return nil
 	}
 
-	return nil
+	issue := blockerIssues[0]
+	fmt.Printf("Found ready discovered blocker: %s - %s\n", issue.ID, issue.Title)
+	e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, issue.ID,
+		fmt.Sprintf("Self-healing: found ready discovered blocker %s", issue.ID),
+		map[string]interface{}{
+			"event_subtype": "discovered_blocker_selected",
+			"issue_id":      issue.ID,
+			"mode":          "SELF_HEALING",
+		})
+	return issue
 }
 
 // logBlockageDiagnostics logs diagnostic information when self-healing mode can't find work.

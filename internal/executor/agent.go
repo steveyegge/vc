@@ -371,72 +371,127 @@ func (a *Agent) Kill() error {
 
 // captureOutput reads stdout/stderr and stores in result
 // If event parsing is enabled, it also parses lines into structured events and stores them
+// vc-4asf: Uses batched output collection to reduce mutex contention
 func (a *Agent) captureOutput() {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Capture stdout
+	// Capture stdout with batching
 	go func() {
 		defer wg.Done()
 		scanner := bufio.NewScanner(a.stdout)
-		for scanner.Scan() {
-			line := scanner.Text()
-			a.mu.Lock()
+		const batchSize = 10                     // Batch up to 10 lines
+		const flushTimeout = 50 * time.Millisecond // Or flush after 50ms
 
-			// Only append if we haven't reached the limit
-			if len(a.result.Output) < maxOutputLines {
-				a.result.Output = append(a.result.Output, line)
-				// Print inside mutex to ensure ordering matches captured output
-				fmt.Println(line)
-			} else if len(a.result.Output) == maxOutputLines {
-				// Add truncation marker once
-				a.result.Output = append(a.result.Output, "[... output truncated: limit reached ...]")
+		batch := make([]string, 0, batchSize)
+		flushTimer := time.NewTimer(flushTimeout)
+		defer flushTimer.Stop()
+
+		flushBatch := func() {
+			if len(batch) == 0 {
+				return
 			}
 
-			// Parse JSON if streaming JSON mode
-			if a.config.StreamJSON && len(a.result.ParsedJSON) < maxOutputLines {
-				var msg AgentMessage
-				if err := json.Unmarshal([]byte(line), &msg); err == nil {
-					a.result.ParsedJSON = append(a.result.ParsedJSON, msg)
+			a.mu.Lock()
+			for _, line := range batch {
+				// Only append if we haven't reached the limit
+				if len(a.result.Output) < maxOutputLines {
+					a.result.Output = append(a.result.Output, line)
+					// Print inside mutex to ensure ordering matches captured output
+					fmt.Println(line)
+				} else if len(a.result.Output) == maxOutputLines {
+					// Add truncation marker once
+					a.result.Output = append(a.result.Output, "[... output truncated: limit reached ...]")
+				}
+
+				// Parse JSON if streaming JSON mode
+				if a.config.StreamJSON && len(a.result.ParsedJSON) < maxOutputLines {
+					var msg AgentMessage
+					if err := json.Unmarshal([]byte(line), &msg); err == nil {
+						a.result.ParsedJSON = append(a.result.ParsedJSON, msg)
+					}
+				}
+			}
+			a.mu.Unlock()
+
+			// Parse lines for events if parser is enabled (outside mutex)
+			if a.parser != nil && a.config.Store != nil {
+				for _, line := range batch {
+					a.parseAndStoreEvents(line)
 				}
 			}
 
-			a.mu.Unlock()
+			batch = batch[:0] // Clear batch
+			flushTimer.Reset(flushTimeout)
+		}
 
-			// Parse line for events if parser is enabled
-			// Must be called OUTSIDE mutex to avoid deadlock with checkCircuitBreaker
-			if a.parser != nil && a.config.Store != nil {
-				a.parseAndStoreEvents(line)
+		for scanner.Scan() {
+			line := scanner.Text()
+			batch = append(batch, line)
+
+			// Flush when batch is full
+			if len(batch) >= batchSize {
+				flushBatch()
 			}
 		}
+
+		// Flush remaining lines
+		flushBatch()
 	}()
 
-	// Capture stderr
+	// Capture stderr with batching
 	go func() {
 		defer wg.Done()
 		scanner := bufio.NewScanner(a.stderr)
-		for scanner.Scan() {
-			line := scanner.Text()
-			a.mu.Lock()
+		const batchSize = 10
+		const flushTimeout = 50 * time.Millisecond
 
-			// Only append if we haven't reached the limit
-			if len(a.result.Errors) < maxOutputLines {
-				a.result.Errors = append(a.result.Errors, line)
-				// Print inside mutex to ensure ordering matches captured output
-				fmt.Fprintln(os.Stderr, line)
-			} else if len(a.result.Errors) == maxOutputLines {
-				// Add truncation marker once
-				a.result.Errors = append(a.result.Errors, "[... error output truncated: limit reached ...]")
+		batch := make([]string, 0, batchSize)
+		flushTimer := time.NewTimer(flushTimeout)
+		defer flushTimer.Stop()
+
+		flushBatch := func() {
+			if len(batch) == 0 {
+				return
 			}
 
+			a.mu.Lock()
+			for _, line := range batch {
+				// Only append if we haven't reached the limit
+				if len(a.result.Errors) < maxOutputLines {
+					a.result.Errors = append(a.result.Errors, line)
+					// Print inside mutex to ensure ordering matches captured output
+					fmt.Fprintln(os.Stderr, line)
+				} else if len(a.result.Errors) == maxOutputLines {
+					// Add truncation marker once
+					a.result.Errors = append(a.result.Errors, "[... error output truncated: limit reached ...]")
+				}
+			}
 			a.mu.Unlock()
 
-			// Parse stderr for events too (errors, warnings, etc.)
-			// Must be called OUTSIDE mutex to avoid deadlock with checkCircuitBreaker
+			// Parse stderr for events too (errors, warnings, etc.) (outside mutex)
 			if a.parser != nil && a.config.Store != nil {
-				a.parseAndStoreEvents(line)
+				for _, line := range batch {
+					a.parseAndStoreEvents(line)
+				}
+			}
+
+			batch = batch[:0] // Clear batch
+			flushTimer.Reset(flushTimeout)
+		}
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			batch = append(batch, line)
+
+			// Flush when batch is full
+			if len(batch) >= batchSize {
+				flushBatch()
 			}
 		}
+
+		// Flush remaining lines
+		flushBatch()
 	}()
 
 	wg.Wait()

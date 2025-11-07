@@ -11,11 +11,13 @@ import (
 )
 
 // eventLoop is the main event loop that processes issues
+// vc-onch: Implements dynamic polling with exponential backoff in steady state
 func (e *Executor) eventLoop(ctx context.Context) {
 	defer close(e.doneCh)
 
-	ticker := time.NewTicker(e.pollInterval)
-	defer ticker.Stop()
+	// Use time.After instead of Ticker for dynamic intervals
+	// This allows us to change the interval on each iteration
+	nextPoll := time.After(e.getCurrentPollInterval())
 
 	for {
 		select {
@@ -23,19 +25,27 @@ func (e *Executor) eventLoop(ctx context.Context) {
 			return
 		case <-e.stopCh:
 			return
-		case <-ticker.C:
+		case <-nextPoll:
+			// Track if work was found in this iteration
+			foundWork := false
+
 			// Check budget before processing work (vc-e3s7)
 			// If budget exceeded, pause and skip this cycle
 			if !e.checkBudgetBeforeWork(ctx) {
+				// Budget exceeded, but still check steady state
+				e.checkAndUpdateSteadyState(ctx, false)
+				nextPoll = time.After(e.getCurrentPollInterval())
 				continue // Skip this cycle, wait for budget to reset
 			}
 
 			// Process one code work issue (regular tasks)
 			// Note: Heartbeat updates now happen in dedicated heartbeatLoop() goroutine (vc-m4od)
-			if err := e.processNextIssue(ctx); err != nil {
+			err, workFound := e.processNextIssue(ctx)
+			if err != nil {
 				// Log error but continue
 				fmt.Fprintf(os.Stderr, "error processing issue: %v\n", err)
 			}
+			foundWork = foundWork || workFound
 
 			// Process one QA work issue (quality gates for missions) (vc-254)
 			if e.enableQualityGateWorker && e.qaWorker != nil {
@@ -52,7 +62,28 @@ func (e *Executor) eventLoop(ctx context.Context) {
 					fmt.Fprintf(os.Stderr, "error running health monitors: %v\n", err)
 				}
 			}
+
+			// Check steady state and adjust poll interval (vc-onch)
+			e.checkAndUpdateSteadyState(ctx, foundWork)
+
+			// Set up next poll with potentially updated interval
+			nextPoll = time.After(e.getCurrentPollInterval())
 		}
+	}
+}
+
+// checkAndUpdateSteadyState checks if we're in steady state and adjusts poll interval
+// vc-onch: Steady state detection and exponential backoff
+func (e *Executor) checkAndUpdateSteadyState(ctx context.Context, foundWork bool) {
+	inSteadyState, err := e.checkSteadyState(ctx, foundWork)
+	if err != nil {
+		// Log error but don't fail the loop
+		fmt.Fprintf(os.Stderr, "error checking steady state: %v\n", err)
+		return
+	}
+
+	if inSteadyState {
+		e.increasePollInterval()
 	}
 }
 
@@ -219,7 +250,8 @@ func (e *Executor) getNextReadyBlocker(ctx context.Context) (*types.Issue, error
 // See vc-160 for monitoring work starvation, and vc-161 for prioritization policy docs.
 //
 // vc-a6ko: Refactored to use GetReadyWork() with smart fallback chain for self-healing mode
-func (e *Executor) processNextIssue(ctx context.Context) error {
+// vc-onch: Returns (error, foundWork bool) to support steady state detection
+func (e *Executor) processNextIssue(ctx context.Context) (error, bool) {
 	// vc-196: Run preflight quality gates check before claiming work
 	if e.preFlightChecker != nil {
 		// vc-47e0: When in self-healing mode, invalidate cache to force fresh baseline check
@@ -232,7 +264,7 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Preflight check failed: %v\n", err)
 			// Continue polling but don't claim work
-			return nil
+			return nil, false
 		}
 
 		if !allPassed {
@@ -246,12 +278,12 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Failed to get cached gate results: %v\n", err)
 					// Continue anyway - we'll try again next poll
-					return nil
+					return nil, false
 				}
 				if results == nil {
 					fmt.Fprintf(os.Stderr, "No cached gate results available for commit %s\n", commitHash)
 					// Continue anyway - we'll try again next poll
-					return nil
+					return nil, false
 				}
 
 				// Enter self-healing mode - only claim baseline issues until fixed
@@ -296,21 +328,21 @@ func (e *Executor) processNextIssue(ctx context.Context) error {
 	// Get next ready work using smart selection
 	issue, err := e.GetReadyWork(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get ready work: %w", err)
+		return fmt.Errorf("failed to get ready work: %w", err), false
 	}
 
 	// No work available
 	if issue == nil {
-		return nil
+		return nil, false
 	}
 
 	// Attempt to claim the issue
 	if err := e.store.ClaimIssue(ctx, issue.ID, e.instanceID); err != nil {
 		// Issue may have been claimed by another executor
 		// This is expected in multi-executor scenarios
-		return nil
+		return nil, false
 	}
 
 	// Successfully claimed - now execute it
-	return e.executeIssue(ctx, issue)
+	return e.executeIssue(ctx, issue), true
 }
