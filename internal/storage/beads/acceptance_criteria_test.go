@@ -286,6 +286,223 @@ func TestUpdateIssuePreservesAcceptanceCriteria(t *testing.T) {
 	}
 }
 
+// TestAcceptanceCriteriaJSONSerialization validates that acceptance_criteria
+// is correctly serialized to and deserialized from JSON (vc-47rx)
+func TestAcceptanceCriteriaJSONSerialization(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Create VC storage
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	t.Run("acceptance_criteria serializes correctly", func(t *testing.T) {
+		// Create issue with acceptance criteria
+		issue := &types.Issue{
+			Title:              "Test JSON serialization",
+			Description:        "Test description",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: "Test criteria with special chars: \n- Item 1\n- Item 2\n",
+		}
+
+		err := store.CreateIssue(ctx, issue, "test")
+		if err != nil {
+			t.Fatalf("Failed to create issue: %v", err)
+		}
+
+		// Retrieve and verify
+		retrieved, err := store.GetIssue(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve issue: %v", err)
+		}
+
+		if retrieved.AcceptanceCriteria != issue.AcceptanceCriteria {
+			t.Errorf("AcceptanceCriteria not preserved through storage.\nExpected: %q\nGot: %q",
+				issue.AcceptanceCriteria, retrieved.AcceptanceCriteria)
+		}
+	})
+
+	t.Run("empty acceptance_criteria omitted from JSON", func(t *testing.T) {
+		// Epic with empty acceptance_criteria (allowed)
+		issue := &types.Issue{
+			Title:              "Test epic",
+			Description:        "Epic description",
+			Status:             types.StatusOpen,
+			Priority:           0,
+			IssueType:          types.TypeEpic,
+			AcceptanceCriteria: "", // Empty is OK for epics
+		}
+
+		err := store.CreateIssue(ctx, issue, "test")
+		if err != nil {
+			t.Fatalf("Failed to create issue: %v", err)
+		}
+
+		// Retrieve and verify empty string is preserved
+		retrieved, err := store.GetIssue(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve issue: %v", err)
+		}
+
+		if retrieved.AcceptanceCriteria != "" {
+			t.Errorf("Expected empty acceptance_criteria, got: %q", retrieved.AcceptanceCriteria)
+		}
+	})
+
+	t.Run("acceptance_criteria with unicode characters", func(t *testing.T) {
+		issue := &types.Issue{
+			Title:       "Test unicode",
+			Description: "Test description",
+			Status:      types.StatusOpen,
+			Priority:    2,
+			IssueType:   types.TypeTask,
+			AcceptanceCriteria: "Test criteria with unicode: ✓ Pass ✗ Fail 🎯 Goal\n" +
+				"Multiple languages: 日本語 中文 한글",
+		}
+
+		err := store.CreateIssue(ctx, issue, "test")
+		if err != nil {
+			t.Fatalf("Failed to create issue: %v", err)
+		}
+
+		retrieved, err := store.GetIssue(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve issue: %v", err)
+		}
+
+		if retrieved.AcceptanceCriteria != issue.AcceptanceCriteria {
+			t.Errorf("Unicode acceptance_criteria not preserved.\nExpected: %q\nGot: %q",
+				issue.AcceptanceCriteria, retrieved.AcceptanceCriteria)
+		}
+	})
+}
+
+// TestAcceptanceCriteriaLengthValidation validates that acceptance_criteria
+// has reasonable length limits (vc-47rx)
+func TestAcceptanceCriteriaLengthValidation(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Create VC storage
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	t.Run("short acceptance_criteria should succeed", func(t *testing.T) {
+		issue := &types.Issue{
+			Title:              "Test short criteria",
+			Description:        "Test description",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: "Pass",
+		}
+
+		err := store.CreateIssue(ctx, issue, "test")
+		if err != nil {
+			t.Fatalf("Expected success with short acceptance_criteria, got: %v", err)
+		}
+	})
+
+	t.Run("medium length acceptance_criteria should succeed", func(t *testing.T) {
+		// ~500 characters - typical acceptance criteria
+		criteria := strings.Repeat("- Acceptance criterion item\n", 15)
+		issue := &types.Issue{
+			Title:              "Test medium criteria",
+			Description:        "Test description",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: criteria,
+		}
+
+		err := store.CreateIssue(ctx, issue, "test")
+		if err != nil {
+			t.Fatalf("Expected success with medium acceptance_criteria, got: %v", err)
+		}
+
+		// Verify it was stored correctly
+		retrieved, err := store.GetIssue(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve issue: %v", err)
+		}
+
+		if retrieved.AcceptanceCriteria != criteria {
+			t.Error("Medium length acceptance_criteria not preserved")
+		}
+	})
+
+	t.Run("large acceptance_criteria should succeed", func(t *testing.T) {
+		// ~5000 characters - large but reasonable
+		criteria := strings.Repeat("Detailed acceptance criterion with multiple requirements. ", 80)
+		issue := &types.Issue{
+			Title:              "Test large criteria",
+			Description:        "Test description",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: criteria,
+		}
+
+		err := store.CreateIssue(ctx, issue, "test")
+		if err != nil {
+			t.Fatalf("Expected success with large acceptance_criteria, got: %v", err)
+		}
+
+		// Verify it was stored correctly
+		retrieved, err := store.GetIssue(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve issue: %v", err)
+		}
+
+		if retrieved.AcceptanceCriteria != criteria {
+			t.Error("Large acceptance_criteria not preserved")
+		}
+	})
+
+	t.Run("very large acceptance_criteria should succeed", func(t *testing.T) {
+		// ~50000 characters - very large but still reasonable for complex acceptance criteria
+		criteria := strings.Repeat("- Test criterion with detailed explanation of expected behavior\n", 500)
+		issue := &types.Issue{
+			Title:              "Test very large criteria",
+			Description:        "Test description",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: criteria,
+		}
+
+		err := store.CreateIssue(ctx, issue, "test")
+		if err != nil {
+			t.Fatalf("Expected success with very large acceptance_criteria, got: %v", err)
+		}
+
+		// Verify it was stored correctly
+		retrieved, err := store.GetIssue(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve issue: %v", err)
+		}
+
+		if len(retrieved.AcceptanceCriteria) != len(criteria) {
+			t.Errorf("Very large acceptance_criteria length mismatch: expected %d, got %d",
+				len(criteria), len(retrieved.AcceptanceCriteria))
+		}
+	})
+}
+
 // TestExecutorRefusesIssueWithoutAcceptanceCriteria validates the vc-hpcl regression
 // (vc-kmgv). This test specifically reproduces the scenario where vc-hpcl was created
 // with empty acceptance criteria, making it impossible to validate completion.
