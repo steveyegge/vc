@@ -266,3 +266,142 @@ func TestEventCleanupGracefulShutdown(t *testing.T) {
 		t.Errorf("Shutdown took too long: %v (expected < 1s)", shutdownTime)
 	}
 }
+
+// TestEventCleanupWithNullIssueID tests that cleanup handles NULL issue_id values correctly (vc-3i6e)
+// This test verifies that the per-issue limit cleanup query filters out NULL issue_id rows
+// to prevent "converting NULL to string" SQL scan errors
+func TestEventCleanupWithNullIssueID(t *testing.T) {
+	ctx := context.Background()
+
+	// Create in-memory storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = t.TempDir() + "/test.db"
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create executor
+	execCfg := DefaultConfig()
+	execCfg.Store = store
+	execCfg.EnableAISupervision = false
+	execCfg.EnableQualityGates = false
+	execCfg.EnableQualityGateWorker = false
+	execCfg.EnableSandboxes = false
+
+	executor, err := New(execCfg)
+	if err != nil {
+		t.Fatalf("failed to create executor: %v", err)
+	}
+
+	// Create a test issue for regular events
+	testIssueID := "vc-test-null-cleanup"
+	testIssue := &types.Issue{
+		ID:                 testIssueID,
+		Title:              "Test issue for NULL cleanup",
+		Description:        "Test issue",
+		Status:             types.StatusOpen,
+		Priority:           2,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test completes successfully",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+	if err := store.CreateIssue(ctx, testIssue, "test"); err != nil {
+		t.Fatalf("failed to create test issue: %v", err)
+	}
+
+	// Create SYSTEM issue for system-level events
+	createSystemIssue(ctx, t, store)
+
+	// Create events with NULL issue_id (system-level events)
+	// These should NOT cause SQL scan errors during cleanup
+	for i := 0; i < 15; i++ {
+		event := &events.AgentEvent{
+			ID:         "system-event-" + string(rune(i)),
+			Type:       events.EventTypeProgress,
+			Timestamp:  time.Now(),
+			IssueID:    "", // Empty string -> NULL in database (vc-100)
+			ExecutorID: executor.instanceID,
+			AgentID:    "test-agent",
+			Severity:   events.SeverityInfo,
+			Message:    "System event",
+			Data:       map[string]interface{}{"test": true},
+			SourceLine: 0,
+		}
+		if err := store.StoreAgentEvent(ctx, event); err != nil {
+			t.Fatalf("failed to store system event: %v", err)
+		}
+	}
+
+	// Create events with valid issue_id that exceed per-issue limit
+	for i := 0; i < 12; i++ {
+		event := &events.AgentEvent{
+			ID:         "issue-event-" + string(rune(i)),
+			Type:       events.EventTypeProgress,
+			Timestamp:  time.Now(),
+			IssueID:    testIssueID,
+			ExecutorID: executor.instanceID,
+			AgentID:    "test-agent",
+			Severity:   events.SeverityInfo,
+			Message:    "Test event",
+			Data:       map[string]interface{}{"test": true},
+			SourceLine: 0,
+		}
+		if err := store.StoreAgentEvent(ctx, event); err != nil {
+			t.Fatalf("failed to store test event: %v", err)
+		}
+	}
+
+	// Verify initial counts
+	countsBefore, err := store.GetEventCounts(ctx)
+	if err != nil {
+		t.Fatalf("failed to get event counts: %v", err)
+	}
+	if countsBefore.TotalEvents != 27 {
+		t.Fatalf("expected 27 events before cleanup (15 system + 12 issue), got %d", countsBefore.TotalEvents)
+	}
+
+	// Run cleanup with per-issue limit of 5
+	// This should:
+	// 1. Skip NULL issue_id rows (no scan error)
+	// 2. Delete oldest events from testIssueID to get down to 5
+	retentionCfg := config.DefaultEventRetentionConfig()
+	retentionCfg.RetentionDays = 365       // Keep all by age
+	retentionCfg.PerIssueLimitEvents = 5   // Limit 5 per issue
+	retentionCfg.GlobalLimitEvents = 10000 // High global limit
+	retentionCfg.CleanupVacuum = false
+
+	err = executor.runEventCleanup(ctx, retentionCfg)
+	if err != nil {
+		t.Fatalf("cleanup failed (should not error on NULL issue_id): %v", err)
+	}
+
+	// Verify cleanup occurred correctly
+	countsAfter, err := store.GetEventCounts(ctx)
+	if err != nil {
+		t.Fatalf("failed to get event counts after cleanup: %v", err)
+	}
+
+	// Expected: 15 system events (unchanged) + 5 issue events (trimmed) + 1 cleanup event = 21
+	expectedTotal := 21
+	if countsAfter.TotalEvents != expectedTotal {
+		t.Errorf("expected %d events after cleanup (15 system + 5 issue + 1 cleanup), got %d",
+			expectedTotal, countsAfter.TotalEvents)
+	}
+
+	// Verify issue events were trimmed to limit
+	issueEvents, err := store.GetAgentEventsByIssue(ctx, testIssueID)
+	if err != nil {
+		t.Fatalf("failed to get issue events: %v", err)
+	}
+	if len(issueEvents) != 5 {
+		t.Errorf("expected 5 events for test issue after cleanup, got %d", len(issueEvents))
+	}
+
+	t.Logf("✓ Event cleanup with NULL issue_id test passed")
+	t.Logf("  - System events (NULL issue_id) preserved: 15")
+	t.Logf("  - Issue events trimmed to limit: %d (limit: 5)", len(issueEvents))
+	t.Logf("  - No SQL scan errors on NULL values")
+}
