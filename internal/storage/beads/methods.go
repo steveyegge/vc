@@ -1080,6 +1080,116 @@ func (s *VCStorage) GetReadyBlockers(ctx context.Context, limit int) ([]*types.I
 	return issues, nil
 }
 
+// GetReadyDependentsOfBlockedBaselines finds ready dependents (children) of blocked baseline issues
+// This is an optimized query for investigateBlockedBaseline() that replaces N+1 query pattern (vc-1nks)
+// Returns: list of ready dependent issues with their baseline parent ID in metadata
+func (s *VCStorage) GetReadyDependentsOfBlockedBaselines(ctx context.Context, limit int) ([]*types.Issue, map[string]string, error) {
+	// Complex query that:
+	// 1. Finds baseline-failure issues that are open AND blocked (have open blocking dependencies)
+	// 2. Finds their dependents (children via parent-child dependencies)
+	// 3. Filters for ready dependents (status=open, no open blocking dependencies, not epic)
+	// 4. Returns first N ready dependents with their baseline parent ID
+	query := `
+		SELECT DISTINCT
+		    dependent.id, dependent.title, dependent.description, dependent.design, dependent.acceptance_criteria,
+		    dependent.notes, dependent.status, dependent.priority, dependent.issue_type, dependent.assignee,
+		    dependent.estimated_minutes, dependent.created_at, dependent.updated_at, dependent.closed_at,
+		    baseline.id as baseline_id
+		FROM issues baseline
+		-- Get issues with baseline-failure label
+		INNER JOIN labels baseline_labels ON baseline.id = baseline_labels.issue_id
+		    AND baseline_labels.label = 'baseline-failure'
+		-- Verify baseline is blocked by checking for open blocking dependencies
+		-- This ensures we only process baselines that are actually blocked
+		INNER JOIN dependencies baseline_deps ON baseline.id = baseline_deps.issue_id
+		    AND baseline_deps.type = 'blocks'
+		INNER JOIN issues baseline_blocker ON baseline_deps.depends_on_id = baseline_blocker.id
+		    AND baseline_blocker.status != 'closed'
+		-- Get baseline's dependents (children that depend on baseline via parent-child)
+		INNER JOIN dependencies dep_link ON dep_link.depends_on_id = baseline.id
+		    AND dep_link.type = 'parent-child'
+		INNER JOIN issues dependent ON dependent.id = dep_link.issue_id
+		WHERE baseline.status = 'open'
+		    AND dependent.status = 'open'
+		    AND dependent.issue_type != 'epic'
+		    -- Dependent must have no open blocking dependencies (be ready)
+		    AND NOT EXISTS (
+		        SELECT 1 FROM dependencies dep_deps
+		        INNER JOIN issues dep_blocker ON dep_deps.depends_on_id = dep_blocker.id
+		        WHERE dep_deps.issue_id = dependent.id
+		            AND dep_deps.type = 'blocks'
+		            AND dep_blocker.status != 'closed'
+		    )
+		    -- Skip discovered-from metadata dependencies
+		    AND NOT EXISTS (
+		        SELECT 1 FROM dependencies meta_deps
+		        WHERE meta_deps.issue_id = dependent.id
+		            AND meta_deps.type = 'discovered-from'
+		    )
+		ORDER BY dependent.priority ASC, dependent.created_at ASC
+		LIMIT ?
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to query ready dependents of blocked baselines: %w", err)
+	}
+	defer rows.Close()
+
+	var issues []*types.Issue
+	baselineMap := make(map[string]string) // dependent_id -> baseline_id
+
+	for rows.Next() {
+		var issue types.Issue
+		var baselineID string
+		var closedAt sql.NullTime
+		var assignee sql.NullString
+		var estimatedMinutes sql.NullInt64
+
+		err := rows.Scan(
+			&issue.ID,
+			&issue.Title,
+			&issue.Description,
+			&issue.Design,
+			&issue.AcceptanceCriteria,
+			&issue.Notes,
+			&issue.Status,
+			&issue.Priority,
+			&issue.IssueType,
+			&assignee,
+			&estimatedMinutes,
+			&issue.CreatedAt,
+			&issue.UpdatedAt,
+			&closedAt,
+			&baselineID,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to scan dependent issue: %w", err)
+		}
+
+		// Handle nullable fields
+		if closedAt.Valid {
+			issue.ClosedAt = &closedAt.Time
+		}
+		if assignee.Valid {
+			issue.Assignee = assignee.String
+		}
+		if estimatedMinutes.Valid {
+			val := int(estimatedMinutes.Int64)
+			issue.EstimatedMinutes = &val
+		}
+
+		issues = append(issues, &issue)
+		baselineMap[issue.ID] = baselineID
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("error iterating dependent rows: %w", err)
+	}
+
+	return issues, baselineMap, nil
+}
+
 // GetReadyBaselineIssues retrieves baseline-failure issues that are ready to execute
 // This is an optimized query that filters for label='baseline-failure' AND status='open'
 // and checks for open blocking dependencies in a single SQL query (vc-1nks)

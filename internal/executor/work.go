@@ -119,180 +119,45 @@ func (e *Executor) findBaselineIssues(ctx context.Context) *types.Issue {
 // If a blocked baseline has ready dependents (children), returns the first ready dependent.
 // This allows working on child issues even when the parent baseline is blocked.
 // Returns nil if no dependents found or all are also blocked.
+// vc-1nks: Now uses optimized SQL query to reduce N+1 query problem
 func (e *Executor) investigateBlockedBaseline(ctx context.Context) *types.Issue {
-	baselineIssues, err := e.store.GetIssuesByLabel(ctx, "baseline-failure")
+	// Use optimized storage method that does all filtering in SQL (vc-1nks)
+	// This replaces the old approach of:
+	// 1. Fetching all baseline issues
+	// 2. Checking each one's dependencies (N queries)
+	// 3. Fetching dependents for each blocked baseline (N queries)
+	// 4. Checking if each dependent is ready (N*M queries)
+	// Performance: O(1) query instead of O(N + N + N*M) queries
+	dependents, baselineMap, err := e.store.GetReadyDependentsOfBlockedBaselines(ctx, 1)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to get baseline issues: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to get ready dependents of blocked baselines: %v\n", err)
 		return nil
 	}
 
-	// For each baseline issue
-	for _, baseline := range baselineIssues {
-		// Only investigate if baseline is open
-		if baseline.Status != types.StatusOpen {
-			continue
-		}
-
-		// Check if baseline is blocked by checking its dependencies
-		depRecords, err := e.store.GetDependencyRecords(ctx, baseline.ID)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to get dependency records for %s: %v\n", baseline.ID, err)
-			continue
-		}
-
-		// Check if any dependencies are blocking (not closed)
-		hasBlockingDeps := false
-		for _, dep := range depRecords {
-			// Skip metadata dependencies
-			if dep.Type == "discovered-from" {
-				continue
-			}
-
-			parent, err := e.store.GetIssue(ctx, dep.DependsOnID)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to get parent %s: %v\n", dep.DependsOnID, err)
-				hasBlockingDeps = true
-				break
-			}
-			if parent.Status != types.StatusClosed {
-				hasBlockingDeps = true
-				break
-			}
-		}
-
-		// If baseline is not blocked, skip it (handled by findBaselineIssues)
-		if !hasBlockingDeps {
-			continue
-		}
-
-		// Baseline is blocked - investigate dependents (children)
-		fmt.Printf("Baseline issue %s is blocked, investigating dependents\n", baseline.ID)
-		e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, baseline.ID,
-			fmt.Sprintf("Investigating dependents of blocked baseline %s", baseline.ID),
-			map[string]interface{}{
-				"event_subtype": "baseline_investigation",
-				"baseline_id":   baseline.ID,
-				"mode":          "SELF_HEALING",
-			})
-
-		// Get all dependents (issues that depend on this baseline)
-		dependents, err := e.store.GetDependents(ctx, baseline.ID)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to get dependents for %s: %v\n", baseline.ID, err)
-			continue
-		}
-
-		if len(dependents) == 0 {
-			fmt.Printf("  No dependents found for blocked baseline %s\n", baseline.ID)
-			continue
-		}
-
-		// Filter for ready dependents
-		var ready []*types.Issue
-		for _, dep := range dependents {
-			if e.isReady(ctx, dep) {
-				ready = append(ready, dep)
-			}
-		}
-
-		if len(ready) == 0 {
-			e.logBlockageReasons(ctx, baseline, dependents)
-			continue
-		}
-
-		// Found ready dependent - work on it
-		fmt.Printf("Found ready dependent of blocked baseline: %s - %s (child of %s)\n",
-			ready[0].ID, ready[0].Title, baseline.ID)
-
-		// Track escalation attempt for the parent baseline issue (vc-h8b8)
-		// We're working on a child to unblock the baseline, so this counts as an attempt
-		e.incrementAttempt(baseline.ID)
-
-		e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, ready[0].ID,
-			fmt.Sprintf("Self-healing: found ready dependent %s of blocked baseline %s", ready[0].ID, baseline.ID),
-			map[string]interface{}{
-				"event_subtype":  "baseline_dependent_selected",
-				"issue_id":       ready[0].ID,
-				"baseline_issue": baseline.ID,
-				"ready_count":    len(ready),
-				"mode":           "SELF_HEALING",
-			})
-		return ready[0]
+	if len(dependents) == 0 {
+		return nil
 	}
 
-	return nil
-}
+	dependent := dependents[0]
+	baselineID := baselineMap[dependent.ID]
 
-// isReady checks if an issue is ready to be worked on (open status, no blocking dependencies).
-func (e *Executor) isReady(ctx context.Context, issue *types.Issue) bool {
-	// Must be open
-	if issue.Status != types.StatusOpen {
-		return false
-	}
+	fmt.Printf("Baseline issue %s is blocked, found ready dependent: %s - %s\n",
+		baselineID, dependent.ID, dependent.Title)
 
-	// Check for blocking dependencies
-	depRecords, err := e.store.GetDependencyRecords(ctx, issue.ID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to get dependency records for %s: %v\n", issue.ID, err)
-		return false
-	}
+	// Track escalation attempt for the parent baseline issue (vc-h8b8)
+	// We're working on a child to unblock the baseline, so this counts as an attempt
+	e.incrementAttempt(baselineID)
 
-	// Check if any dependencies are blocking (not closed)
-	for _, dep := range depRecords {
-		// Skip metadata dependencies
-		if dep.Type == "discovered-from" {
-			continue
-		}
+	e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, dependent.ID,
+		fmt.Sprintf("Self-healing: found ready dependent %s of blocked baseline %s", dependent.ID, baselineID),
+		map[string]interface{}{
+			"event_subtype":  "baseline_dependent_selected",
+			"issue_id":       dependent.ID,
+			"baseline_issue": baselineID,
+			"mode":           "SELF_HEALING",
+		})
 
-		parent, err := e.store.GetIssue(ctx, dep.DependsOnID)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to get parent %s: %v\n", dep.DependsOnID, err)
-			return false
-		}
-		if parent.Status != types.StatusClosed {
-			return false
-		}
-	}
-
-	return true
-}
-
-// logBlockageReasons logs why dependents of a blocked baseline are themselves blocked.
-func (e *Executor) logBlockageReasons(ctx context.Context, baseline *types.Issue, dependents []*types.Issue) {
-	fmt.Printf("  Found %d dependents of blocked baseline %s, but none are ready:\n", len(dependents), baseline.ID)
-
-	for _, dep := range dependents {
-		if dep.Status != types.StatusOpen {
-			fmt.Printf("    - %s: status=%s\n", dep.ID, dep.Status)
-			continue
-		}
-
-		// Check why it's blocked
-		depRecords, err := e.store.GetDependencyRecords(ctx, dep.ID)
-		if err != nil {
-			fmt.Printf("    - %s: error getting dependencies: %v\n", dep.ID, err)
-			continue
-		}
-
-		blockedBy := []string{}
-		for _, depRec := range depRecords {
-			if depRec.Type == "discovered-from" {
-				continue
-			}
-			parent, err := e.store.GetIssue(ctx, depRec.DependsOnID)
-			if err != nil {
-				blockedBy = append(blockedBy, depRec.DependsOnID+"(error)")
-				continue
-			}
-			if parent.Status != types.StatusClosed {
-				blockedBy = append(blockedBy, parent.ID)
-			}
-		}
-
-		if len(blockedBy) > 0 {
-			fmt.Printf("    - %s: blocked by %v\n", dep.ID, blockedBy)
-		}
-	}
+	return dependent
 }
 
 // findDiscoveredBlockers finds discovered:blocker issues that are ready to execute.
