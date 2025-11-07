@@ -291,7 +291,7 @@ IMPORTANT: Base your analysis on the DATA provided, not on hardcoded thresholds.
 				}
 			}
 
-			prompt.WriteString(fmt.Sprintf("\nBACKOFF STATE:\n"))
+			prompt.WriteString("\nBACKOFF STATE:\n")
 			prompt.WriteString(fmt.Sprintf("  Consecutive Interventions: %d\n", backoffState.ConsecutiveInterventions))
 			prompt.WriteString(fmt.Sprintf("  Current Check Interval: %v\n", backoffState.CurrentInterval))
 			prompt.WriteString(fmt.Sprintf("  Is Backed Off: %v\n", backoffState.IsBackedOff))

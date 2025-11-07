@@ -50,7 +50,8 @@ var statusCmd = &cobra.Command{
 				statusIcon := "○"
 				statusText := inst.Status
 
-				if inst.Status == "running" {
+				switch inst.Status {
+				case "running":
 					runningCount++
 					statusColor = green
 					statusIcon = "●"
@@ -61,7 +62,7 @@ var statusCmd = &cobra.Command{
 						statusColor = color.New(color.FgYellow).SprintFunc()
 						statusIcon = "⚠"
 					}
-				} else if inst.Status == "stopped" {
+				case "stopped":
 					stoppedCount++
 					statusColor = gray
 					statusIcon = "○"
@@ -108,14 +109,18 @@ var statusCmd = &cobra.Command{
 				stats := tracker.GetStats()
 
 				// Status indicator
-				statusColor := green
-				statusIcon := "✓"
-				if stats.Status == cost.BudgetWarning {
+				var statusColor func(a ...interface{}) string
+				var statusIcon string
+				switch stats.Status {
+				case cost.BudgetWarning:
 					statusColor = color.New(color.FgYellow).SprintFunc()
 					statusIcon = "⚠️"
-				} else if stats.Status == cost.BudgetExceeded {
+				case cost.BudgetExceeded:
 					statusColor = red
 					statusIcon = "🚨"
+				default:
+					statusColor = green
+					statusIcon = "✓"
 				}
 
 				fmt.Printf("  %s Status: %s\n", statusIcon, statusColor(stats.Status.String()))

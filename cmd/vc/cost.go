@@ -39,14 +39,18 @@ var costCmd = &cobra.Command{
 		fmt.Println()
 
 		// Display budget status
-		statusColor := color.New(color.FgGreen)
-		statusIcon := "✓"
-		if stats.Status == cost.BudgetWarning {
+		var statusColor *color.Color
+		var statusIcon string
+		switch stats.Status {
+		case cost.BudgetWarning:
 			statusColor = color.New(color.FgYellow)
 			statusIcon = "⚠️"
-		} else if stats.Status == cost.BudgetExceeded {
+		case cost.BudgetExceeded:
 			statusColor = color.New(color.FgRed, color.Bold)
 			statusIcon = "🚨"
+		default:
+			statusColor = color.New(color.FgGreen)
+			statusIcon = "✓"
 		}
 
 		fmt.Printf("%s Budget Status: %s\n", statusIcon, statusColor.Sprint(stats.Status.String()))
