@@ -1402,7 +1402,7 @@ If this issue continues to have incomplete attempts after %d total tries, it wil
 				"analysis_summary":    analysis.Summary,
 			})
 
-		// Release execution state so executor can pick up issue for retry (vc-eqvh)
+		// Release execution state so the executor can pick up the issue for retry
 		if err := rp.releaseExecutionState(ctx, issue.ID); err != nil {
 			return fmt.Errorf("failed to release execution state for retry: %w", err)
 		}
@@ -1463,6 +1463,11 @@ The issue has been marked with the 'needs-human-review' label to prevent further
 				"analysis_summary":    analysis.Summary,
 				"escalated":           true,
 			})
+
+		// Release execution state - issue is now blocked and needs human review
+		if err := rp.releaseExecutionState(ctx, issue.ID); err != nil {
+			return fmt.Errorf("failed to release execution state after escalation: %w", err)
+		}
 	}
 
 	return nil
