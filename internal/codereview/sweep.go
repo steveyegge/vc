@@ -568,7 +568,7 @@ func (s *Sweeper) FileDiscoveredIssue(ctx context.Context, reviewIssueID string,
 	acceptanceCriteria := ""
 	if issueType == types.TypeTask {
 		// Generate acceptance criteria from the suggested fix
-		acceptanceCriteria = fmt.Sprintf("- Issue addressed as suggested\n- Code quality improved\n- All tests passing")
+		acceptanceCriteria = "- Issue addressed as suggested\n- Code quality improved\n- All tests passing"
 	}
 
 	issue := &types.Issue{
