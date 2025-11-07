@@ -35,7 +35,7 @@ func BenchmarkOutputCapture(b *testing.B) {
 	}
 }
 
-func benchmarkOutputCapture(b *testing.B, lineCount, lineSize int) {
+func benchmarkOutputCapture(_ *testing.B, lineCount, lineSize int) {
 	// Create fake stdout/stderr pipes
 	stdoutReader, stdoutWriter := io.Pipe()
 	stderrReader, stderrWriter := io.Pipe()
@@ -129,7 +129,7 @@ type MutexStats struct {
 	ContentionRatio  float64
 }
 
-func measureMutexContention(t *testing.T, lineCount, lineSize int) MutexStats {
+func measureMutexContention(_ *testing.T, lineCount, lineSize int) MutexStats {
 	// Create instrumented agent
 	stdoutReader, stdoutWriter := io.Pipe()
 	stderrReader, stderrWriter := io.Pipe()
@@ -240,9 +240,8 @@ func (a *instrumentedAgent) captureOutputInstrumented() {
 				a.result.Output = append(a.result.Output, "[... output truncated: limit reached ...]")
 			}
 
-			if a.config.StreamJSON && len(a.result.ParsedJSON) < maxOutputLines {
-				// Skip JSON parsing in benchmark
-			}
+			// Skip JSON parsing in benchmark for simplicity
+			_ = a.config.StreamJSON
 
 			a.mu.Unlock()
 			lockDuration := time.Since(lockStart).Nanoseconds()
@@ -467,7 +466,7 @@ func BenchmarkBatchedOutput(b *testing.B) {
 	}
 }
 
-func benchmarkBatchedOutput(b *testing.B, lineCount, lineSize, batchSize int) {
+func benchmarkBatchedOutput(_ *testing.B, lineCount, lineSize, batchSize int) {
 	var mu sync.Mutex
 	var output []string
 	var errors []string
