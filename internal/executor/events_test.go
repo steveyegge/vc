@@ -29,6 +29,7 @@ func TestEventLoggingOrderInErrorPaths(t *testing.T) {
 	execCfg.Store = store
 	execCfg.EnableAISupervision = false
 	execCfg.EnableQualityGates = false
+	execCfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
 
 	executor, err := New(execCfg)
 	if err != nil {

@@ -692,6 +692,7 @@ func TestExecutorSandboxIntegration(t *testing.T) {
 	execCfg.PollInterval = 100 * time.Millisecond
 	execCfg.EnableAISupervision = false // Disable AI for test
 	execCfg.EnableQualityGates = false  // Disable gates for test
+	execCfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
 
 	exec, err := New(execCfg)
 	if err != nil {

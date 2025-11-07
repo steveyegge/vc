@@ -29,6 +29,7 @@ func setupExecutorTest(t *testing.T) (context.Context, storage.Storage, *Executo
 	execCfg.Store = store
 	execCfg.EnableAISupervision = false
 	execCfg.EnableQualityGates = false
+	execCfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
 	execCfg.EnableSandboxes = false
 
 	exec, err := New(execCfg)

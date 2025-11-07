@@ -31,6 +31,7 @@ func TestShutdownWithoutActiveWork(t *testing.T) {
 	execCfg.Store = store
 	execCfg.EnableAISupervision = false
 	execCfg.EnableQualityGates = false
+	execCfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
 	execCfg.EnableSandboxes = false
 	execCfg.PollInterval = 100 * time.Millisecond
 
@@ -80,6 +81,7 @@ func TestShutdownTimeout(t *testing.T) {
 	execCfg.Store = store
 	execCfg.EnableAISupervision = false
 	execCfg.EnableQualityGates = false
+	execCfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
 	execCfg.EnableSandboxes = false
 	execCfg.PollInterval = 100 * time.Millisecond
 
@@ -132,6 +134,7 @@ func TestMarkInstanceStoppedOnExit(t *testing.T) {
 	execCfg.Store = store
 	execCfg.EnableAISupervision = false
 	execCfg.EnableQualityGates = false
+	execCfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
 	execCfg.EnableSandboxes = false
 	execCfg.PollInterval = 100 * time.Millisecond
 
@@ -281,6 +284,7 @@ func TestShutdownWaitsForQAWorkers(t *testing.T) {
 	execCfg.Store = store
 	execCfg.EnableAISupervision = false
 	execCfg.EnableQualityGates = false // Disable to prevent auto-creation
+	execCfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
 	execCfg.EnableQualityGateWorker = false
 	execCfg.EnableSandboxes = false
 	execCfg.PollInterval = 100 * time.Millisecond

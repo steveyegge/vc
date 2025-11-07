@@ -466,6 +466,7 @@ func TestExecutorPassesSandboxDirToResultsProcessor(t *testing.T) {
 	execCfg.PollInterval = 100 * time.Millisecond
 	execCfg.EnableAISupervision = false
 	execCfg.EnableQualityGates = false
+	execCfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
 
 	executor, err := New(execCfg)
 	if err != nil {
@@ -818,6 +819,7 @@ func TestExecutorMissionSandboxWorkflow(t *testing.T) {
 	execCfg.WorkingDir = parentRepo
 	execCfg.EnableAISupervision = false
 	execCfg.EnableQualityGates = false
+	execCfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
 
 	executor, err := New(execCfg)
 	if err != nil {

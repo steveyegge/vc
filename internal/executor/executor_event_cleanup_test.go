@@ -47,6 +47,7 @@ func TestEventCleanupMetricsLogging(t *testing.T) {
 	execCfg.Store = store
 	execCfg.EnableAISupervision = false // Disable AI to avoid API calls
 	execCfg.EnableQualityGates = false
+	execCfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
 	execCfg.EnableSandboxes = false
 
 	executor, err := New(execCfg)
@@ -235,6 +236,7 @@ func TestEventCleanupMetricsLoggingOnError(t *testing.T) {
 	execCfg.Store = store
 	execCfg.EnableAISupervision = false
 	execCfg.EnableQualityGates = false
+	execCfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
 	execCfg.EnableSandboxes = false
 
 	executor, err := New(execCfg)
@@ -276,6 +278,7 @@ func TestEventCleanupPartialFailure(t *testing.T) {
 	execCfg.Store = store
 	execCfg.EnableAISupervision = false
 	execCfg.EnableQualityGates = false
+	execCfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
 	execCfg.EnableSandboxes = false
 
 	executor, err := New(execCfg)
@@ -394,6 +397,7 @@ func TestLogCleanupEvent(t *testing.T) {
 	execCfg.Store = store
 	execCfg.EnableAISupervision = false
 	execCfg.EnableQualityGates = false
+	execCfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
 	execCfg.EnableSandboxes = false
 
 	executor, err := New(execCfg)
@@ -507,6 +511,7 @@ func TestEventCleanupSkipsWhenDisabled(t *testing.T) {
 	execCfg.Store = store
 	execCfg.EnableAISupervision = false
 	execCfg.EnableQualityGates = false
+	execCfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
 	execCfg.EnableSandboxes = false
 	execCfg.EventRetentionConfig = &retentionCfg
 

@@ -613,10 +613,11 @@ func TestSelfHealingMode_DeadlockEscapeHatch(t *testing.T) {
 	cfg.SelfHealingDeadlockTimeout = 100 * time.Millisecond // Short timeout for test
 	cfg.MaxEscalationAttempts = 100                         // High to prevent per-issue escalation
 	cfg.MaxEscalationDuration = 24 * time.Hour
-	cfg.EnableAISupervision = false    // Disable AI to avoid HTTP calls
-	cfg.EnableQualityGates = false     // Disable quality gates for simpler test
-	cfg.EnableSandboxes = false        // Disable sandboxes for simpler test
-	cfg.EnableHealthMonitoring = false // Disable health monitoring
+	cfg.EnableAISupervision = false     // Disable AI to avoid HTTP calls
+	cfg.EnableQualityGates = false      // Disable quality gates for simpler test
+	cfg.EnableQualityGateWorker = false // vc-q5ve: QA worker requires quality gates
+	cfg.EnableSandboxes = false         // Disable sandboxes for simpler test
+	cfg.EnableHealthMonitoring = false  // Disable health monitoring
 	exec, err := New(cfg)
 	if err != nil {
 		t.Fatalf("Failed to create executor: %v", err)
