@@ -60,8 +60,9 @@ func (rp *ResultsProcessor) deduplicateDiscoveredIssues(ctx context.Context, par
 	// Deduplicate
 	result, err := rp.deduplicator.DeduplicateBatch(ctx, candidates)
 	if err != nil {
-		// Fail-safe: on error, return all discovered issues
-		fmt.Fprintf(os.Stderr, "Warning: deduplication failed, creating all discovered issues: %v\n", err)
+		// vc-5sxl: Validation failures mean issues won't be created (they'll fail validation again downstream)
+		// For other errors, we return all issues as a fail-safe, but downstream validation may still reject them
+		fmt.Fprintf(os.Stderr, "Warning: deduplication failed, issues will NOT be created: %v\n", err)
 		// vc-151: Log failure
 		rp.logDeduplicationBatchCompleted(ctx, parentIssue.ID, nil, err)
 		return discovered, deduplication.DeduplicationStats{}
