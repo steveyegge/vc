@@ -209,7 +209,7 @@ func TestAcceptanceCriteriaValidation(t *testing.T) {
 	})
 
 	t.Run("task with very long acceptance_criteria should succeed", func(t *testing.T) {
-		// Create acceptance criteria with 5000 characters (reasonable upper limit)
+		// Create acceptance criteria with ~4200 characters (realistic length based on vc-4778: 1937 chars)
 		longCriteria := strings.Repeat("This is a detailed acceptance criterion. ", 100) // ~4200 chars
 
 		issue := &types.Issue{
@@ -266,12 +266,15 @@ func TestAcceptanceCriteriaValidation(t *testing.T) {
 			t.Fatalf("Failed to retrieve issue: %v", err)
 		}
 
-		if len(retrieved.AcceptanceCriteria) != len(extremelyLongCriteria) {
-			t.Errorf("Expected acceptance criteria length %d, got %d", len(extremelyLongCriteria), len(retrieved.AcceptanceCriteria))
+		if retrieved.AcceptanceCriteria != extremelyLongCriteria {
+			t.Errorf("Expected acceptance criteria to be preserved exactly, length mismatch: got %d, expected %d",
+				len(retrieved.AcceptanceCriteria), len(extremelyLongCriteria))
 		}
 	})
 
 	t.Run("feature type requires acceptance_criteria", func(t *testing.T) {
+		// Feature type follows same validation rules as task/bug (vc-47rx)
+		// This test complements the task/bug tests above
 		issue := &types.Issue{
 			Title:              "Test feature",
 			Description:        "Feature description",
@@ -289,25 +292,12 @@ func TestAcceptanceCriteriaValidation(t *testing.T) {
 		if !strings.Contains(err.Error(), "acceptance_criteria is required") {
 			t.Errorf("Expected error message about acceptance_criteria, got: %v", err)
 		}
-	})
 
-	t.Run("feature with valid acceptance_criteria should succeed", func(t *testing.T) {
-		issue := &types.Issue{
-			Title:              "Test feature with criteria",
-			Description:        "Feature description",
-			Status:             types.StatusOpen,
-			Priority:           2,
-			IssueType:          types.TypeFeature,
-			AcceptanceCriteria: "Feature is complete when X works",
-		}
-
-		err := store.CreateIssue(ctx, issue, "test")
+		// Now test that feature succeeds with valid criteria
+		issue.AcceptanceCriteria = "Feature is complete when X works"
+		err = store.CreateIssue(ctx, issue, "test")
 		if err != nil {
 			t.Fatalf("Expected success when creating feature with valid acceptance_criteria, got: %v", err)
-		}
-
-		if issue.ID == "" {
-			t.Fatal("Issue ID was not generated")
 		}
 
 		// Verify it was stored correctly
@@ -853,11 +843,22 @@ func TestAcceptanceCriteriaUpdateValidation(t *testing.T) {
 		err := store.UpdateIssue(ctx, issue.ID, updates, "test")
 		// Update should succeed - validation is only on create and claim
 		if err != nil {
-			t.Logf("UpdateIssue validation behavior: %v", err)
+			t.Fatalf("UpdateIssue should allow empty acceptance_criteria (validation only on create/claim), got: %v", err)
+		}
+
+		// Verify the empty value was stored
+		retrieved, err := store.GetIssue(ctx, issue.ID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve issue: %v", err)
+		}
+
+		if retrieved.AcceptanceCriteria != "" {
+			t.Errorf("Expected empty acceptance_criteria after update, got: %q", retrieved.AcceptanceCriteria)
 		}
 	})
 
 	t.Run("updating to long acceptance_criteria should succeed", func(t *testing.T) {
+		// Use ~7000 chars to test between realistic (4200) and extreme (10000) lengths
 		longCriteria := strings.Repeat("Long criteria ", 500) // ~7000 chars
 
 		updates := map[string]interface{}{
