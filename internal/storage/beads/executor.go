@@ -682,9 +682,14 @@ func (s *VCStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, actor, e
 	}
 
 	// Reopen issue in Beads
-	err = s.Storage.UpdateIssue(ctx, issueID, map[string]interface{}{
+	updates := map[string]interface{}{
 		"status": "open",
-	}, actor)
+	}
+	// Log status change for audit trail (vc-n4lx)
+	s.LogStatusChangeFromUpdates(ctx, issueID, updates, actor,
+		fmt.Sprintf("execution failed, reopening for retry: %s", errorComment))
+
+	err = s.Storage.UpdateIssue(ctx, issueID, updates, actor)
 
 	if err != nil {
 		return fmt.Errorf("failed to reopen issue: %w", err)

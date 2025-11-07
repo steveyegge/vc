@@ -290,6 +290,12 @@ var updateCmd = &cobra.Command{
 		}
 
 		ctx := context.Background()
+
+		// Log status change for audit trail if status is being updated (vc-n4lx)
+		if _, hasStatus := updates["status"]; hasStatus {
+			store.LogStatusChangeFromUpdates(ctx, args[0], updates, actor, "manual CLI update")
+		}
+
 		if err := store.UpdateIssue(ctx, args[0], updates, actor); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)

@@ -329,6 +329,10 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 			updates := map[string]interface{}{
 				"status": string(sandboxMission.Status),
 			}
+			// Log status change for audit trail (vc-n4lx)
+			mainDB.LogStatusChangeFromUpdates(ctx, missionID, updates, "sandbox-merge",
+				fmt.Sprintf("merging sandbox status: %s → %s", mainMission.Status, sandboxMission.Status))
+
 			if err := mainDB.UpdateIssue(ctx, missionID, updates, "sandbox-merge"); err != nil {
 				return fmt.Errorf("failed to update mission status: %w", err)
 			}
@@ -483,6 +487,10 @@ func mergeResults(ctx context.Context, sandboxDB, mainDB storage.Storage, missio
 			updates := map[string]interface{}{
 				"status": sandboxIssue.Status,
 			}
+			// Log status change for audit trail (vc-n4lx)
+			mainDB.LogStatusChangeFromUpdates(ctx, sandboxIssue.ID, updates, "sandbox-merge",
+				fmt.Sprintf("merging sandbox status: %s → %s", mainIssue.Status, sandboxIssue.Status))
+
 			if err := mainDB.UpdateIssue(ctx, sandboxIssue.ID, updates, "sandbox-merge"); err != nil {
 				return fmt.Errorf("failed to update issue %s status: %w", sandboxIssue.ID, err)
 			}

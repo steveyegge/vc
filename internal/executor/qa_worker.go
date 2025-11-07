@@ -303,9 +303,14 @@ func (w *QualityGateWorker) handleGatesPass(ctx context.Context, mission *types.
 	}
 
 	// Update mission status to open (ready for next stage)
-	if err := w.store.UpdateIssue(ctx, mission.ID, map[string]interface{}{
+	updates := map[string]interface{}{
 		"status": string(types.StatusOpen),
-	}, w.instanceID); err != nil {
+	}
+	// Log status change for audit trail (vc-n4lx)
+	w.store.LogStatusChangeFromUpdates(ctx, mission.ID, updates, w.instanceID,
+		"quality gates passed successfully")
+
+	if err := w.store.UpdateIssue(ctx, mission.ID, updates, w.instanceID); err != nil {
 		return fmt.Errorf("failed to update mission status: %w", err)
 	}
 
@@ -426,9 +431,15 @@ func (w *QualityGateWorker) handleGatesFail(ctx context.Context, mission *types.
 	// (Don't remove it - mission will be retried once blocking issues are resolved)
 
 	// Update mission status to blocked
-	if err := w.store.UpdateIssue(ctx, mission.ID, map[string]interface{}{
+	updates := map[string]interface{}{
 		"status": string(types.StatusBlocked),
-	}, w.instanceID); err != nil {
+	}
+	// Log status change for audit trail (vc-n4lx)
+	blockerList := strings.Join(createdIssues, ", ")
+	w.store.LogStatusChangeFromUpdates(ctx, mission.ID, updates, w.instanceID,
+		fmt.Sprintf("quality gates failed, created blockers: %s", blockerList))
+
+	if err := w.store.UpdateIssue(ctx, mission.ID, updates, w.instanceID); err != nil {
 		return fmt.Errorf("failed to update mission status: %w", err)
 	}
 
