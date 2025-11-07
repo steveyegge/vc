@@ -223,6 +223,15 @@ func (m *mockStorage) ReleaseIssue(ctx context.Context, issueID string) error {
 func (m *mockStorage) ReleaseIssueAndReopen(ctx context.Context, issueID, actor, errorComment string) error {
 	return nil
 }
+
+// Status change logging (vc-n4lx)
+func (m *mockStorage) LogStatusChange(ctx context.Context, issueID string, newStatus types.Status, actor, reason string) {
+	// No-op for tests
+}
+func (m *mockStorage) LogStatusChangeFromUpdates(ctx context.Context, issueID string, updates map[string]interface{}, actor, reason string) {
+	// No-op for tests
+}
+
 func (m *mockStorage) Close() error {
 	return nil
 }

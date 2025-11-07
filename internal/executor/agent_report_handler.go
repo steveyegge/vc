@@ -120,6 +120,12 @@ func (h *AgentReportHandler) handleBlocked(ctx context.Context, issue *types.Iss
 	updates := map[string]interface{}{
 		"status": string(types.StatusBlocked),
 	}
+
+	// Log status change for audit trail (vc-n4lx)
+	blockerList := strings.Join(createdIssues, ", ")
+	h.store.LogStatusChangeFromUpdates(ctx, issue.ID, updates, h.actor,
+		fmt.Sprintf("agent reported blockers: %s", blockerList))
+
 	if err := h.store.UpdateIssue(ctx, issue.ID, updates, h.actor); err != nil {
 		return false, fmt.Errorf("failed to update issue to blocked: %w", err)
 	}

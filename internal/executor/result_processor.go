@@ -563,6 +563,11 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 				updates := map[string]interface{}{
 					"status": string(types.StatusBlocked),
 				}
+
+				// Log status change for audit trail (vc-n4lx)
+				rp.store.LogStatusChangeFromUpdates(ctx, issue.ID, updates, rp.actor,
+					"quality gates failed after agent execution")
+
 				if err := rp.store.UpdateIssue(ctx, issue.ID, updates, rp.actor); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: failed to update issue to blocked: %v\n", err)
 				}
@@ -655,6 +660,11 @@ SkipGates:
 				updates := map[string]interface{}{
 					"status": string(types.StatusBlocked),
 				}
+
+				// Log status change for audit trail (vc-n4lx)
+				rp.store.LogStatusChangeFromUpdates(ctx, issue.ID, updates, rp.actor,
+					"human approval rejected - blocked for review")
+
 				if err := rp.store.UpdateIssue(ctx, issue.ID, updates, rp.actor); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: failed to update issue to blocked: %v\n", err)
 				}

@@ -94,6 +94,10 @@ type Storage interface {
 	SaveCheckpoint(ctx context.Context, issueID string, checkpointData interface{}) error
 	GetCheckpoint(ctx context.Context, issueID string) (string, error)
 
+	// Status Change Logging (vc-n4lx) - audit trail for status changes
+	LogStatusChange(ctx context.Context, issueID string, newStatus types.Status, actor, reason string)
+	LogStatusChangeFromUpdates(ctx context.Context, issueID string, updates map[string]interface{}, actor, reason string)
+
 	// Release functions - these handle execution state cleanup with different semantics:
 	// - ReleaseIssue: Low-level primitive that ONLY deletes execution state, does not change issue status
 	//   Use when you need fine-grained control or when status is managed separately (e.g., CloseIssue)

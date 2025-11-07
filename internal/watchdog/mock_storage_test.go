@@ -10,6 +10,12 @@ import (
 // mockStorage provides a mock storage implementation for testing
 type mockStorage struct{}
 
+// Status change logging (vc-n4lx)
+func (m *mockStorage) LogStatusChange(ctx context.Context, issueID string, newStatus types.Status, actor, reason string) {
+}
+func (m *mockStorage) LogStatusChangeFromUpdates(ctx context.Context, issueID string, updates map[string]interface{}, actor, reason string) {
+}
+
 func (m *mockStorage) Close() error { return nil }
 func (m *mockStorage) StoreAgentEvent(ctx context.Context, event *events.AgentEvent) error {
 	return nil

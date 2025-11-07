@@ -469,11 +469,16 @@ func (p *PreFlightChecker) createBaselineBlockingIssue(ctx context.Context, resu
 		}
 		newNotes := fmt.Sprintf("Gate failed again. Error: %s\n\nOutput:\n```\n%s\n```", errMsg, output)
 
-		// Reopen by updating status and notes
-		if err := p.storage.UpdateIssue(ctx, issueID, map[string]interface{}{
+		// Log status change for audit trail (vc-n4lx)
+		updates := map[string]interface{}{
 			"status": string(types.StatusOpen),
 			"notes":  newNotes,
-		}, "preflight-self-healing"); err != nil {
+		}
+		p.storage.LogStatusChangeFromUpdates(ctx, issueID, updates, "preflight-self-healing",
+			fmt.Sprintf("baseline gate failed, reopening for self-healing: %s", errMsg))
+
+		// Reopen by updating status and notes
+		if err := p.storage.UpdateIssue(ctx, issueID, updates, "preflight-self-healing"); err != nil {
 			return fmt.Errorf("failed to reopen baseline issue: %w", err)
 		}
 		return nil

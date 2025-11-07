@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/vc/internal/events"
+	"github.com/steveyegge/vc/internal/types"
 )
 
 // mockStorage implements the Storage interface for testing
@@ -68,6 +69,14 @@ func (m *mockStorage) StoreAgentEvent(ctx context.Context, event *events.AgentEv
 	}
 	m.events = append(m.events, event)
 	return nil
+}
+
+// Status change logging (vc-n4lx)
+func (m *mockStorage) LogStatusChange(ctx context.Context, issueID string, newStatus types.Status, actor, reason string) {
+	// No-op for tests
+}
+func (m *mockStorage) LogStatusChangeFromUpdates(ctx context.Context, issueID string, updates map[string]interface{}, actor, reason string) {
+	// No-op for tests
 }
 
 func TestTransitionState(t *testing.T) {

@@ -578,9 +578,15 @@ func (e *Executor) releaseIssueWithError(ctx context.Context, issueID, errMsg st
 			fmt.Fprintf(os.Stderr, "warning: failed to release issue %s: %v\n", issueID, err)
 		}
 
-		if err := e.store.UpdateIssue(ctx, issueID, map[string]interface{}{
+		updates := map[string]interface{}{
 			"status": string(types.StatusBlocked),
-		}, "executor"); err != nil {
+		}
+
+		// Log status change for audit trail (vc-n4lx)
+		e.store.LogStatusChangeFromUpdates(ctx, issueID, updates, "executor",
+			fmt.Sprintf("consecutive failures threshold reached: %s", blockReason))
+
+		if err := e.store.UpdateIssue(ctx, issueID, updates, "executor"); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to mark issue %s as blocked: %v\n", issueID, err)
 		}
 

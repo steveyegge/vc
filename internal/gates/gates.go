@@ -479,6 +479,12 @@ func (r *Runner) handleGateResultsFallback(ctx context.Context, originalIssue *t
 	updates := map[string]interface{}{
 		"status": string(types.StatusBlocked),
 	}
+
+	// Log status change for audit trail (vc-n4lx)
+	gateFailureList := strings.Join(createdIssues, ", ")
+	r.store.LogStatusChangeFromUpdates(ctx, originalIssue.ID, updates, "quality-gates",
+		fmt.Sprintf("quality gates failed, created blockers: %s", gateFailureList))
+
 	if err := r.store.UpdateIssue(ctx, originalIssue.ID, updates, "quality-gates"); err != nil {
 		return fmt.Errorf("failed to update issue to blocked: %w", err)
 	}
@@ -554,6 +560,11 @@ func (r *Runner) executeFixInPlace(ctx context.Context, originalIssue *types.Iss
 		updates := map[string]interface{}{
 			"status": string(types.StatusBlocked),
 		}
+
+		// Log status change for audit trail (vc-n4lx)
+		r.store.LogStatusChangeFromUpdates(ctx, originalIssue.ID, updates, "ai-supervisor",
+			"AI recovery strategy recommends blocking issue (fix-in-place)")
+
 		if err := r.store.UpdateIssue(ctx, originalIssue.ID, updates, "ai-supervisor"); err != nil {
 			return fmt.Errorf("failed to mark issue as blocked: %w", err)
 		}
@@ -706,6 +717,11 @@ func (r *Runner) executeEscalate(ctx context.Context, originalIssue *types.Issue
 		updates := map[string]interface{}{
 			"status": string(types.StatusBlocked),
 		}
+
+		// Log status change for audit trail (vc-n4lx)
+		r.store.LogStatusChangeFromUpdates(ctx, originalIssue.ID, updates, "ai-supervisor",
+			"AI recovery strategy recommends blocking and escalation to human")
+
 		if err := r.store.UpdateIssue(ctx, originalIssue.ID, updates, "ai-supervisor"); err != nil {
 			return fmt.Errorf("failed to mark issue as blocked: %w", err)
 		}

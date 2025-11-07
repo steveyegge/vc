@@ -277,6 +277,14 @@ func (m *MockStorage) VacuumDatabase(ctx context.Context) error {
 	return nil
 }
 
+// Status change logging (vc-n4lx)
+func (m *MockStorage) LogStatusChange(ctx context.Context, issueID string, newStatus types.Status, actor, reason string) {
+	// No-op for tests
+}
+func (m *MockStorage) LogStatusChangeFromUpdates(ctx context.Context, issueID string, updates map[string]interface{}, actor, reason string) {
+	// No-op for tests
+}
+
 func TestGenerateAndStorePlan_RequiresApproval(t *testing.T) {
 	ctx := context.Background()
 
