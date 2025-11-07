@@ -210,7 +210,7 @@ func buildHealthIssueDescription(monitor health.HealthMonitor, discovered health
 
 // getProjectRootFromStore determines the project root from the storage configuration.
 func getProjectRootFromStore(_ interface{}) (string, error) {
-	// For SQLite storage, the database path should be .beads/vc.db
+	// For SQLite storage, the database path should be .beads/beads.db
 	// The project root is the parent of .beads/
 	// This is a simplified implementation - in production, you'd want to
 	// query the storage for its path

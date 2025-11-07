@@ -67,8 +67,8 @@ func TestVC_DB_PATH_DefaultConfig(t *testing.T) {
 	// Test without env var
 	_ = os.Unsetenv("VC_DB_PATH")
 	cfg = DefaultConfig()
-	if cfg.Path != ".beads/vc.db" {
-		t.Errorf("DefaultConfig without VC_DB_PATH returned %s, expected .beads/vc.db", cfg.Path)
+	if cfg.Path != ".beads/beads.db" {
+		t.Errorf("DefaultConfig without VC_DB_PATH returned %s, expected .beads/beads.db", cfg.Path)
 	}
 }
 

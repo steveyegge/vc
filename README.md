@@ -50,7 +50,7 @@ Loop {
 
 **Phase**: Production (Dogfooding)
 
-**Tracker**: Beads v0.12.0 (SQLite) - see `.beads/vc.db`
+**Tracker**: Beads v0.12.0 (SQLite) - see `.beads/beads.db`
 
 **Progress**:
 - ✅ Bootstrap complete - All 5 phases done

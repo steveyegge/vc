@@ -154,7 +154,7 @@ func TestShouldExcludePath(t *testing.T) {
 		// Real-world examples from CruftDetector
 		{
 			name:     ".beads directory",
-			relPath:  ".beads/vc.db",
+			relPath:  ".beads/beads.db",
 			patterns: []string{".beads/"},
 			want:     true,
 		},
@@ -216,7 +216,7 @@ func TestShouldExcludePath_Patterns(t *testing.T) {
 		".git/config",
 		"testdata/fixtures.json",
 		"node_modules/package.json",
-		".beads/vc.db",
+		".beads/beads.db",
 		"foo_test.go",
 		"api.pb.go",
 		"types.gen.go",

@@ -127,18 +127,19 @@ type Storage interface {
 // Config holds database configuration
 type Config struct {
 	// Path is the SQLite database file path
-	// Default: ".beads/vc.db"
+	// Default: ".beads/beads.db"
 	// Special value ":memory:" creates an in-memory database (useful for tests)
 	Path string
 }
 
 // DefaultConfig returns a config with sensible defaults
 // vc-235: Check VC_DB_PATH environment variable first for test isolation
+// vc-rdmh: Changed from vc.db to canonical beads.db name
 func DefaultConfig() *Config {
 	// vc-235: Allow environment variable override for test isolation
 	path := os.Getenv("VC_DB_PATH")
 	if path == "" {
-		path = ".beads/vc.db"
+		path = ".beads/beads.db"
 	}
 	return &Config{
 		Path: path,
@@ -148,6 +149,7 @@ func DefaultConfig() *Config {
 // NewStorage creates a new Beads storage backend with VC extensions
 // vc-37: Migrated from internal SQLite to Beads library v0.12.0
 // vc-235: Respects VC_DB_PATH environment variable for test isolation
+// vc-rdmh: Uses canonical beads.db database name
 func NewStorage(ctx context.Context, cfg *Config) (Storage, error) {
 	if cfg == nil {
 		cfg = DefaultConfig()
@@ -158,7 +160,7 @@ func NewStorage(ctx context.Context, cfg *Config) (Storage, error) {
 		// vc-235: Check environment variable before falling back to default
 		cfg.Path = os.Getenv("VC_DB_PATH")
 		if cfg.Path == "" {
-			cfg.Path = ".beads/vc.db"
+			cfg.Path = ".beads/beads.db"
 		}
 	}
 

@@ -27,7 +27,7 @@ func TestRunExecutorFlagParsing(t *testing.T) {
 	}
 
 	// Create test database
-	testDbPath := filepath.Join(beadsDir, "vc.db")
+	testDbPath := filepath.Join(beadsDir, "beads.db")
 	ctx := context.Background()
 	testStore, err := beads.NewVCStorage(ctx, testDbPath)
 	if err != nil {

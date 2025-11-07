@@ -4,7 +4,7 @@
 // Architecture:
 // - Beads provides core issue tracking (issues, dependencies, labels, events)
 // - VC adds extension tables for workflow engine state (vc_mission_state, vc_agent_events)
-// - Both use the same SQLite database (.beads/vc.db)
+// - Both use the same SQLite database (.beads/beads.db)
 // - Foreign keys connect VC extension tables to Beads core tables
 //
 // This follows the IntelliJ/Android Studio model:

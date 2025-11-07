@@ -22,7 +22,7 @@ func setupTestDB(t *testing.T, repoPath string) (storage.Storage, func()) {
 		t.Fatalf("Failed to create .beads dir: %v", err)
 	}
 
-	dbPath := filepath.Join(beadsDir, "vc.db")
+	dbPath := filepath.Join(beadsDir, "beads.db")
 	cfg := &storage.Config{
 		Path: dbPath,
 	}

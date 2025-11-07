@@ -2,7 +2,7 @@
 
 ## 🎯 Starting a Session: "What's Next?"
 
-**VC uses Beads for issue tracking.** All work is tracked in the `.beads/vc.db` SQLite database.
+**VC uses Beads for issue tracking.** All work is tracked in the `.beads/beads.db` SQLite database.
 
 ### Environment Setup
 
@@ -179,7 +179,7 @@ Ensure all changes are committed and no untracked files remain:
 # Check git status
 git status
 
-# Verify no untracked files (except .beads/vc.db which is gitignored)
+# Verify no untracked files (except .beads/beads.db which is gitignored)
 # Verify no uncommitted changes
 # Verify no lingering stashes
 
@@ -289,7 +289,7 @@ bd dep tree vc-5
 ```
 vc/
 ├── .beads/
-│   ├── vc.db           # Issue tracker database (derived from JSONL)
+│   ├── beads.db        # Issue tracker database (derived from JSONL)
 │   └── issues.jsonl    # Source of truth (commit this to git)
 ├── docs/               # Detailed documentation
 │   ├── CONFIGURATION.md  # Environment variables and tuning
@@ -543,7 +543,7 @@ The SQLite backend automatically:
 If you want to pre-initialize a database, use the provided script:
 
 ```bash
-# Initialize SQLite database (default: .beads/vc.db)
+# Initialize SQLite database (default: .beads/beads.db)
 ./scripts/init-db.sh
 
 # Initialize SQLite at custom location
@@ -570,7 +570,7 @@ VC uses SQLite for simple, lightweight operation:
 ```go
 import "github.com/steveyegge/vc/internal/storage"
 
-// Default configuration (.beads/vc.db)
+// Default configuration (.beads/beads.db)
 cfg := storage.DefaultConfig()
 store, err := storage.NewStorage(ctx, cfg)
 
@@ -595,7 +595,7 @@ store, err := storage.NewStorage(ctx, cfg)
 - **Don't create one-off scripts** - Use `bd` commands
 - **Always export before committing** - Keep JSONL in sync with database changes
 - **bd daemon can coexist with VC** - VC uses exclusive lock protocol (vc-195, requires Beads v0.17.3+)
-- **Beads path is `.beads/vc.db`** - Not `.vc/vc.db` (README is outdated)
+- **Beads path is `.beads/beads.db`** - This is the canonical database name (vc-rdmh)
 - **Bootstrap first** - Don't jump ahead to advanced features
 - **Set `ANTHROPIC_API_KEY`** - Required for AI supervision features (assessment, analysis, discovered issues)
 - **Use standard dependency direction** - Always `(child, parent)`, never `(parent, child)` (see [docs/FEATURES.md](docs/FEATURES.md))
@@ -639,7 +639,7 @@ bd export -o .beads/issues.jsonl # Export database to JSONL (before commit)
 
 ## 🔄 Git Workflow & Source of Truth
 
-**CRITICAL**: The `.beads/issues.jsonl` file checked into git is the **source of truth**. The `.beads/vc.db` SQLite database is a **local cache** derived from the JSONL file.
+**CRITICAL**: The `.beads/issues.jsonl` file checked into git is the **source of truth**. The `.beads/beads.db` SQLite database is a **local cache** derived from the JSONL file.
 
 ### After pulling/rebasing:
 

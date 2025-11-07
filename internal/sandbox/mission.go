@@ -81,7 +81,7 @@ func reconstructSandbox(ctx context.Context, m Manager, mission *types.Mission) 
 
 	// Reconstruct sandbox object from metadata
 	sandboxID := fmt.Sprintf("mission-%s", mission.ID)
-	beadsDBPath := fmt.Sprintf("%s/.beads/vc.db", mission.SandboxPath)
+	beadsDBPath := fmt.Sprintf("%s/.beads/beads.db", mission.SandboxPath)
 
 	sandbox := &Sandbox{
 		ID:          sandboxID,

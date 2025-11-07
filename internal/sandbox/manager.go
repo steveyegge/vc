@@ -172,7 +172,7 @@ func (m *manager) Create(ctx context.Context, cfg SandboxConfig) (*Sandbox, erro
 	if m.config.MainDB != nil {
 		// Try to get the path from the storage config
 		// This is a bit of a hack, but we need it for metadata tracking
-		mainDBPath = filepath.Join(cfg.ParentRepo, ".beads", "vc.db")
+		mainDBPath = filepath.Join(cfg.ParentRepo, ".beads", "beads.db")
 	}
 
 	// Initialize sandbox database

@@ -17,7 +17,7 @@ import (
 //
 // Example:
 //   cd ~/src/vc && vc execute
-//   → Finds ~/src/vc/.beads/vc.db (not ~/src/beads/.beads/bd.db)
+//   → Finds ~/src/vc/.beads/beads.db (not ~/src/beads/.beads/bd.db)
 //
 // vc-235: Check VC_DB_PATH environment variable first to allow test isolation.
 // If VC_DB_PATH is set, use it directly without discovery.
@@ -178,7 +178,7 @@ func ValidateAlignment(dbPath, workingDir string) error {
 }
 
 // ValidateDatabaseFreshness checks if the database is in sync with the JSONL source of truth.
-// Returns an error if .beads/issues.jsonl is newer than .beads/vc.db, indicating the database
+// Returns an error if .beads/issues.jsonl is newer than .beads/beads.db, indicating the database
 // is stale and needs to be synced with 'bd import .beads/issues.jsonl'.
 //
 // This prevents bugs like vc-173 where the executor claimed closed issues because the database
