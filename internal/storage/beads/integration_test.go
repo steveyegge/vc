@@ -5037,3 +5037,554 @@ Final notes and additional context for the acceptance criteria.`,
 		})
 	}
 }
+
+// TestGetReadyBaselineIssues tests the SQL-optimized baseline issue selection (vc-1nks)
+// This test verifies that the query correctly filters for:
+// 1. Issues with baseline-failure label
+// 2. Status = open
+// 3. No open blocking dependencies
+// 4. Not epics
+// 5. Proper priority ordering
+func TestGetReadyBaselineIssues(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create baseline issues with different states
+	readyBaseline := &types.Issue{
+		Title:              "Ready baseline issue",
+		Status:             types.StatusOpen,
+		Priority:           2,
+		IssueType:          types.TypeBug,
+		AcceptanceCriteria: "Test acceptance criteria",
+	}
+	err = store.CreateIssue(ctx, readyBaseline, "test")
+	if err != nil {
+		t.Fatalf("Failed to create ready baseline: %v", err)
+	}
+	err = store.AddLabel(ctx, readyBaseline.ID, "baseline-failure", "test")
+	if err != nil {
+		t.Fatalf("Failed to add baseline-failure label: %v", err)
+	}
+
+	// Create a high-priority baseline (should be selected first)
+	highPriorityBaseline := &types.Issue{
+		Title:              "High priority baseline",
+		Status:             types.StatusOpen,
+		Priority:           0, // P0 - higher priority
+		IssueType:          types.TypeBug,
+		AcceptanceCriteria: "Test acceptance criteria",
+	}
+	err = store.CreateIssue(ctx, highPriorityBaseline, "test")
+	if err != nil {
+		t.Fatalf("Failed to create high priority baseline: %v", err)
+	}
+	err = store.AddLabel(ctx, highPriorityBaseline.ID, "baseline-failure", "test")
+	if err != nil {
+		t.Fatalf("Failed to add baseline-failure label: %v", err)
+	}
+
+	// Create a blocked baseline (has open blocking dependency)
+	blockedBaseline := &types.Issue{
+		Title:              "Blocked baseline issue",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeBug,
+		AcceptanceCriteria: "Test acceptance criteria",
+	}
+	err = store.CreateIssue(ctx, blockedBaseline, "test")
+	if err != nil {
+		t.Fatalf("Failed to create blocked baseline: %v", err)
+	}
+	err = store.AddLabel(ctx, blockedBaseline.ID, "baseline-failure", "test")
+	if err != nil {
+		t.Fatalf("Failed to add baseline-failure label: %v", err)
+	}
+
+	// Create a blocker issue
+	blocker := &types.Issue{
+		Title:              "Blocking issue",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
+	}
+	err = store.CreateIssue(ctx, blocker, "test")
+	if err != nil {
+		t.Fatalf("Failed to create blocker: %v", err)
+	}
+
+	// Add blocking dependency
+	err = store.AddDependency(ctx, &types.Dependency{
+		IssueID:     blockedBaseline.ID,
+		DependsOnID: blocker.ID,
+		Type:        types.DepBlocks,
+	}, "test")
+	if err != nil {
+		t.Fatalf("Failed to add blocking dependency: %v", err)
+	}
+
+	// Create a closed baseline (should not be selected)
+	closedBaseline := &types.Issue{
+		Title:              "Closed baseline issue",
+		Status:             types.StatusOpen, // Create as open first
+		Priority:           1,
+		IssueType:          types.TypeBug,
+		AcceptanceCriteria: "Test acceptance criteria",
+	}
+	err = store.CreateIssue(ctx, closedBaseline, "test")
+	if err != nil {
+		t.Fatalf("Failed to create closed baseline: %v", err)
+	}
+	err = store.AddLabel(ctx, closedBaseline.ID, "baseline-failure", "test")
+	if err != nil {
+		t.Fatalf("Failed to add baseline-failure label: %v", err)
+	}
+	// Close it properly
+	err = store.CloseIssue(ctx, closedBaseline.ID, "Test closed", "test")
+	if err != nil {
+		t.Fatalf("Failed to close baseline: %v", err)
+	}
+
+	// Create a baseline epic (should not be selected)
+	epicBaseline := &types.Issue{
+		Title:              "Epic baseline issue",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeEpic,
+		AcceptanceCriteria: "Test acceptance criteria",
+	}
+	err = store.CreateIssue(ctx, epicBaseline, "test")
+	if err != nil {
+		t.Fatalf("Failed to create epic baseline: %v", err)
+	}
+	err = store.AddLabel(ctx, epicBaseline.ID, "baseline-failure", "test")
+	if err != nil {
+		t.Fatalf("Failed to add baseline-failure label: %v", err)
+	}
+
+	t.Run("returns only ready baseline issues ordered by priority", func(t *testing.T) {
+		baselines, err := store.GetReadyBaselineIssues(ctx, 10)
+		if err != nil {
+			t.Fatalf("GetReadyBaselineIssues failed: %v", err)
+		}
+
+		// Should return 2 ready baselines: highPriorityBaseline (P0) and readyBaseline (P2)
+		// Should NOT return: blockedBaseline (has open blocker), closedBaseline (closed), epicBaseline (epic)
+		if len(baselines) != 2 {
+			t.Fatalf("Expected 2 ready baselines, got %d", len(baselines))
+		}
+
+		// First should be high priority (P0)
+		if baselines[0].ID != highPriorityBaseline.ID {
+			t.Errorf("Expected first baseline to be %s (P0), got %s (P%d)",
+				highPriorityBaseline.ID, baselines[0].ID, baselines[0].Priority)
+		}
+
+		// Second should be lower priority (P2)
+		if baselines[1].ID != readyBaseline.ID {
+			t.Errorf("Expected second baseline to be %s (P2), got %s (P%d)",
+				readyBaseline.ID, baselines[1].ID, baselines[1].Priority)
+		}
+
+		t.Logf("✓ Ready baselines correctly filtered and ordered by priority")
+	})
+
+	t.Run("respects limit parameter", func(t *testing.T) {
+		baselines, err := store.GetReadyBaselineIssues(ctx, 1)
+		if err != nil {
+			t.Fatalf("GetReadyBaselineIssues failed: %v", err)
+		}
+
+		if len(baselines) != 1 {
+			t.Fatalf("Expected 1 baseline (limit=1), got %d", len(baselines))
+		}
+
+		// Should return only the highest priority one
+		if baselines[0].ID != highPriorityBaseline.ID {
+			t.Errorf("Expected %s (P0), got %s (P%d)",
+				highPriorityBaseline.ID, baselines[0].ID, baselines[0].Priority)
+		}
+
+		t.Logf("✓ Limit parameter correctly enforced")
+	})
+
+	t.Run("baseline becomes ready when blocker closes", func(t *testing.T) {
+		// Close the blocker
+		err := store.CloseIssue(ctx, blocker.ID, "Test completed", "test")
+		if err != nil {
+			t.Fatalf("Failed to close blocker: %v", err)
+		}
+
+		baselines, err := store.GetReadyBaselineIssues(ctx, 10)
+		if err != nil {
+			t.Fatalf("GetReadyBaselineIssues failed: %v", err)
+		}
+
+		// Now should get 3 baselines (previously blocked one is now ready)
+		if len(baselines) != 3 {
+			t.Fatalf("Expected 3 ready baselines after blocker closed, got %d", len(baselines))
+		}
+
+		// Verify the previously blocked baseline is now in the list
+		found := false
+		for _, baseline := range baselines {
+			if baseline.ID == blockedBaseline.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Previously blocked baseline %s should now be ready", blockedBaseline.ID)
+		}
+
+		t.Logf("✓ Baseline correctly becomes ready when blocker closes")
+	})
+
+	t.Run("ignores discovered-from dependencies", func(t *testing.T) {
+		// Create a new baseline with only discovered-from dependency
+		discoveredBaseline := &types.Issue{
+			Title:              "Baseline with discovered-from",
+			Status:             types.StatusOpen,
+			Priority:           1,
+			IssueType:          types.TypeBug,
+			AcceptanceCriteria: "Test acceptance criteria",
+		}
+		err := store.CreateIssue(ctx, discoveredBaseline, "test")
+		if err != nil {
+			t.Fatalf("Failed to create discovered baseline: %v", err)
+		}
+		err = store.AddLabel(ctx, discoveredBaseline.ID, "baseline-failure", "test")
+		if err != nil {
+			t.Fatalf("Failed to add baseline-failure label: %v", err)
+		}
+
+		// Create a parent mission
+		mission := &types.Issue{
+			Title:              "Parent mission",
+			Status:             types.StatusOpen,
+			Priority:           1,
+			IssueType:          types.TypeEpic,
+			AcceptanceCriteria: "Test acceptance criteria",
+		}
+		err = store.CreateIssue(ctx, mission, "test")
+		if err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Add discovered-from dependency (should not block execution)
+		err = store.AddDependency(ctx, &types.Dependency{
+			IssueID:     discoveredBaseline.ID,
+			DependsOnID: mission.ID,
+			Type:        types.DepDiscoveredFrom,
+		}, "test")
+		if err != nil {
+			t.Fatalf("Failed to add discovered-from dependency: %v", err)
+		}
+
+		baselines, err := store.GetReadyBaselineIssues(ctx, 10)
+		if err != nil {
+			t.Fatalf("GetReadyBaselineIssues failed: %v", err)
+		}
+
+		// Baseline should be ready despite discovered-from dependency
+		found := false
+		for _, baseline := range baselines {
+			if baseline.ID == discoveredBaseline.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Baseline %s with discovered-from dependency should be ready", discoveredBaseline.ID)
+		}
+
+		t.Logf("✓ Baseline correctly ignores discovered-from dependencies")
+	})
+}
+
+// TestGetReadyDependentsOfBlockedBaselines tests the SQL-optimized dependent selection (vc-1nks)
+// This test verifies that the query correctly:
+// 1. Finds baseline-failure issues that are blocked
+// 2. Finds their ready dependents (children)
+// 3. Returns dependent with baseline parent ID mapping
+// 4. Filters out epics and non-ready dependents
+func TestGetReadyDependentsOfBlockedBaselines(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a blocked baseline issue
+	blockedBaseline := &types.Issue{
+		Title:              "Blocked baseline",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeBug,
+		AcceptanceCriteria: "Test acceptance criteria",
+	}
+	err = store.CreateIssue(ctx, blockedBaseline, "test")
+	if err != nil {
+		t.Fatalf("Failed to create blocked baseline: %v", err)
+	}
+	err = store.AddLabel(ctx, blockedBaseline.ID, "baseline-failure", "test")
+	if err != nil {
+		t.Fatalf("Failed to add baseline-failure label: %v", err)
+	}
+
+	// Create a blocker for the baseline
+	blocker := &types.Issue{
+		Title:              "Blocker issue",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
+	}
+	err = store.CreateIssue(ctx, blocker, "test")
+	if err != nil {
+		t.Fatalf("Failed to create blocker: %v", err)
+	}
+
+	// Block the baseline
+	err = store.AddDependency(ctx, &types.Dependency{
+		IssueID:     blockedBaseline.ID,
+		DependsOnID: blocker.ID,
+		Type:        types.DepBlocks,
+	}, "test")
+	if err != nil {
+		t.Fatalf("Failed to add blocking dependency: %v", err)
+	}
+
+	// Create a ready dependent (child) of the blocked baseline
+	readyDependent := &types.Issue{
+		Title:              "Ready dependent",
+		Status:             types.StatusOpen,
+		Priority:           2,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
+	}
+	err = store.CreateIssue(ctx, readyDependent, "test")
+	if err != nil {
+		t.Fatalf("Failed to create ready dependent: %v", err)
+	}
+
+	// Link as parent-child
+	err = store.AddDependency(ctx, &types.Dependency{
+		IssueID:     readyDependent.ID,
+		DependsOnID: blockedBaseline.ID,
+		Type:        types.DepParentChild,
+	}, "test")
+	if err != nil {
+		t.Fatalf("Failed to add parent-child dependency: %v", err)
+	}
+
+	// Create a blocked dependent (should not be returned)
+	blockedDependent := &types.Issue{
+		Title:              "Blocked dependent",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
+	}
+	err = store.CreateIssue(ctx, blockedDependent, "test")
+	if err != nil {
+		t.Fatalf("Failed to create blocked dependent: %v", err)
+	}
+
+	err = store.AddDependency(ctx, &types.Dependency{
+		IssueID:     blockedDependent.ID,
+		DependsOnID: blockedBaseline.ID,
+		Type:        types.DepParentChild,
+	}, "test")
+	if err != nil {
+		t.Fatalf("Failed to add parent-child dependency: %v", err)
+	}
+
+	// Block the dependent
+	dependentBlocker := &types.Issue{
+		Title:              "Dependent blocker",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
+	}
+	err = store.CreateIssue(ctx, dependentBlocker, "test")
+	if err != nil {
+		t.Fatalf("Failed to create dependent blocker: %v", err)
+	}
+
+	err = store.AddDependency(ctx, &types.Dependency{
+		IssueID:     blockedDependent.ID,
+		DependsOnID: dependentBlocker.ID,
+		Type:        types.DepBlocks,
+	}, "test")
+	if err != nil {
+		t.Fatalf("Failed to add dependent blocking dependency: %v", err)
+	}
+
+	// Create a closed dependent (should not be returned)
+	closedDependent := &types.Issue{
+		Title:              "Closed dependent",
+		Status:             types.StatusOpen, // Create as open first
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test acceptance criteria",
+	}
+	err = store.CreateIssue(ctx, closedDependent, "test")
+	if err != nil {
+		t.Fatalf("Failed to create closed dependent: %v", err)
+	}
+
+	err = store.AddDependency(ctx, &types.Dependency{
+		IssueID:     closedDependent.ID,
+		DependsOnID: blockedBaseline.ID,
+		Type:        types.DepParentChild,
+	}, "test")
+	if err != nil {
+		t.Fatalf("Failed to add parent-child dependency: %v", err)
+	}
+
+	// Close it properly
+	err = store.CloseIssue(ctx, closedDependent.ID, "Test closed", "test")
+	if err != nil {
+		t.Fatalf("Failed to close dependent: %v", err)
+	}
+
+	t.Run("returns ready dependents of blocked baselines", func(t *testing.T) {
+		dependents, baselineMap, err := store.GetReadyDependentsOfBlockedBaselines(ctx, 10)
+		if err != nil {
+			t.Fatalf("GetReadyDependentsOfBlockedBaselines failed: %v", err)
+		}
+
+		// Should return only the ready dependent
+		if len(dependents) != 1 {
+			t.Fatalf("Expected 1 ready dependent, got %d", len(dependents))
+		}
+
+		if dependents[0].ID != readyDependent.ID {
+			t.Errorf("Expected dependent %s, got %s", readyDependent.ID, dependents[0].ID)
+		}
+
+		// Verify baseline mapping
+		baselineID, ok := baselineMap[readyDependent.ID]
+		if !ok {
+			t.Fatalf("Baseline mapping missing for dependent %s", readyDependent.ID)
+		}
+		if baselineID != blockedBaseline.ID {
+			t.Errorf("Expected baseline %s, got %s", blockedBaseline.ID, baselineID)
+		}
+
+		t.Logf("✓ Ready dependent correctly identified with baseline mapping")
+	})
+
+	t.Run("respects limit parameter", func(t *testing.T) {
+		// Create another ready dependent
+		anotherDependent := &types.Issue{
+			Title:              "Another ready dependent",
+			Status:             types.StatusOpen,
+			Priority:           3,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
+		}
+		err := store.CreateIssue(ctx, anotherDependent, "test")
+		if err != nil {
+			t.Fatalf("Failed to create another dependent: %v", err)
+		}
+
+		err = store.AddDependency(ctx, &types.Dependency{
+			IssueID:     anotherDependent.ID,
+			DependsOnID: blockedBaseline.ID,
+			Type:        types.DepParentChild,
+		}, "test")
+		if err != nil {
+			t.Fatalf("Failed to add parent-child dependency: %v", err)
+		}
+
+		dependents, _, err := store.GetReadyDependentsOfBlockedBaselines(ctx, 1)
+		if err != nil {
+			t.Fatalf("GetReadyDependentsOfBlockedBaselines failed: %v", err)
+		}
+
+		if len(dependents) != 1 {
+			t.Fatalf("Expected 1 dependent (limit=1), got %d", len(dependents))
+		}
+
+		// Should return highest priority one (P2 vs P3)
+		if dependents[0].ID != readyDependent.ID {
+			t.Errorf("Expected %s (P2), got %s (P%d)",
+				readyDependent.ID, dependents[0].ID, dependents[0].Priority)
+		}
+
+		t.Logf("✓ Limit parameter correctly enforced with priority ordering")
+	})
+
+	t.Run("ignores unblocked baselines", func(t *testing.T) {
+		// Create a ready (unblocked) baseline
+		readyBaseline := &types.Issue{
+			Title:              "Ready baseline",
+			Status:             types.StatusOpen,
+			Priority:           1,
+			IssueType:          types.TypeBug,
+			AcceptanceCriteria: "Test acceptance criteria",
+		}
+		err := store.CreateIssue(ctx, readyBaseline, "test")
+		if err != nil {
+			t.Fatalf("Failed to create ready baseline: %v", err)
+		}
+		err = store.AddLabel(ctx, readyBaseline.ID, "baseline-failure", "test")
+		if err != nil {
+			t.Fatalf("Failed to add baseline-failure label: %v", err)
+		}
+
+		// Create a dependent of the ready baseline
+		dependentOfReady := &types.Issue{
+			Title:              "Dependent of ready baseline",
+			Status:             types.StatusOpen,
+			Priority:           1,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
+		}
+		err = store.CreateIssue(ctx, dependentOfReady, "test")
+		if err != nil {
+			t.Fatalf("Failed to create dependent of ready: %v", err)
+		}
+
+		err = store.AddDependency(ctx, &types.Dependency{
+			IssueID:     dependentOfReady.ID,
+			DependsOnID: readyBaseline.ID,
+			Type:        types.DepParentChild,
+		}, "test")
+		if err != nil {
+			t.Fatalf("Failed to add parent-child dependency: %v", err)
+		}
+
+		dependents, _, err := store.GetReadyDependentsOfBlockedBaselines(ctx, 10)
+		if err != nil {
+			t.Fatalf("GetReadyDependentsOfBlockedBaselines failed: %v", err)
+		}
+
+		// Should not return dependents of unblocked baselines
+		for _, dep := range dependents {
+			if dep.ID == dependentOfReady.ID {
+				t.Errorf("Should not return dependent %s of unblocked baseline", dep.ID)
+			}
+		}
+
+		t.Logf("✓ Correctly ignores dependents of unblocked baselines")
+	})
+
+	// Note: We don't test epic dependents because Beads validation prevents
+	// epics from being children in parent-child relationships. The SQL query
+	// filters them out anyway with "issue_type != 'epic'".
+}
