@@ -133,43 +133,57 @@ func runDiscovery(
 	if err != nil {
 		return fmt.Errorf("creating filesize monitor: %w", err)
 	}
-	healthRegistry.Register(fileSizeMonitor)
+	if err := healthRegistry.Register(fileSizeMonitor); err != nil {
+		return fmt.Errorf("registering filesize monitor: %w", err)
+	}
 
 	cruftDetector, err := health.NewCruftDetector(projectRoot, supervisor)
 	if err != nil {
 		return fmt.Errorf("creating cruft detector: %w", err)
 	}
-	healthRegistry.Register(cruftDetector)
+	if err := healthRegistry.Register(cruftDetector); err != nil {
+		return fmt.Errorf("registering cruft detector: %w", err)
+	}
 
 	duplicationDetector, err := health.NewDuplicationDetector(projectRoot, supervisor)
 	if err != nil {
 		return fmt.Errorf("creating duplication detector: %w", err)
 	}
-	healthRegistry.Register(duplicationDetector)
+	if err := healthRegistry.Register(duplicationDetector); err != nil {
+		return fmt.Errorf("registering duplication detector: %w", err)
+	}
 
 	zfcDetector, err := health.NewZFCDetector(projectRoot, supervisor)
 	if err != nil {
 		return fmt.Errorf("creating ZFC detector: %w", err)
 	}
-	healthRegistry.Register(zfcDetector)
+	if err := healthRegistry.Register(zfcDetector); err != nil {
+		return fmt.Errorf("registering ZFC detector: %w", err)
+	}
 
 	buildModernizer, err := health.NewBuildModernizer(projectRoot, supervisor)
 	if err != nil {
 		return fmt.Errorf("creating build modernizer: %w", err)
 	}
-	healthRegistry.Register(buildModernizer)
+	if err := healthRegistry.Register(buildModernizer); err != nil {
+		return fmt.Errorf("registering build modernizer: %w", err)
+	}
 
 	cicdReviewer, err := health.NewCICDReviewer(projectRoot, supervisor)
 	if err != nil {
 		return fmt.Errorf("creating CI/CD reviewer: %w", err)
 	}
-	healthRegistry.Register(cicdReviewer)
+	if err := healthRegistry.Register(cicdReviewer); err != nil {
+		return fmt.Errorf("registering CI/CD reviewer: %w", err)
+	}
 
 	dependencyAuditor, err := health.NewDependencyAuditor(projectRoot, supervisor)
 	if err != nil {
 		return fmt.Errorf("creating dependency auditor: %w", err)
 	}
-	healthRegistry.Register(dependencyAuditor)
+	if err := healthRegistry.Register(dependencyAuditor); err != nil {
+		return fmt.Errorf("registering dependency auditor: %w", err)
+	}
 
 	// Create worker registry
 	workerRegistry, err := discovery.DefaultRegistry(healthRegistry)
@@ -300,39 +314,67 @@ func listDiscoveryWorkers() {
 	}
 
 	// Register health monitors
-	fileSizeMonitor, _ := health.NewFileSizeMonitor(projectRoot, supervisor)
-	if fileSizeMonitor != nil {
-		healthRegistry.Register(fileSizeMonitor)
+	fileSizeMonitor, err := health.NewFileSizeMonitor(projectRoot, supervisor)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to create file size monitor: %v\n", err)
+	} else {
+		if err := healthRegistry.Register(fileSizeMonitor); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to register file size monitor: %v\n", err)
+		}
 	}
 
-	cruftDetector, _ := health.NewCruftDetector(projectRoot, supervisor)
-	if cruftDetector != nil {
-		healthRegistry.Register(cruftDetector)
+	cruftDetector, err := health.NewCruftDetector(projectRoot, supervisor)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to create cruft detector: %v\n", err)
+	} else {
+		if err := healthRegistry.Register(cruftDetector); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to register cruft detector: %v\n", err)
+		}
 	}
 
-	duplicationDetector, _ := health.NewDuplicationDetector(projectRoot, supervisor)
-	if duplicationDetector != nil {
-		healthRegistry.Register(duplicationDetector)
+	duplicationDetector, err := health.NewDuplicationDetector(projectRoot, supervisor)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to create duplication detector: %v\n", err)
+	} else {
+		if err := healthRegistry.Register(duplicationDetector); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to register duplication detector: %v\n", err)
+		}
 	}
 
-	zfcDetector, _ := health.NewZFCDetector(projectRoot, supervisor)
-	if zfcDetector != nil {
-		healthRegistry.Register(zfcDetector)
+	zfcDetector, err := health.NewZFCDetector(projectRoot, supervisor)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to create ZFC detector: %v\n", err)
+	} else {
+		if err := healthRegistry.Register(zfcDetector); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to register ZFC detector: %v\n", err)
+		}
 	}
 
-	buildModernizer, _ := health.NewBuildModernizer(projectRoot, supervisor)
-	if buildModernizer != nil {
-		healthRegistry.Register(buildModernizer)
+	buildModernizer, err := health.NewBuildModernizer(projectRoot, supervisor)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to create build modernizer: %v\n", err)
+	} else {
+		if err := healthRegistry.Register(buildModernizer); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to register build modernizer: %v\n", err)
+		}
 	}
 
-	cicdReviewer, _ := health.NewCICDReviewer(projectRoot, supervisor)
-	if cicdReviewer != nil {
-		healthRegistry.Register(cicdReviewer)
+	cicdReviewer, err := health.NewCICDReviewer(projectRoot, supervisor)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to create CI/CD reviewer: %v\n", err)
+	} else {
+		if err := healthRegistry.Register(cicdReviewer); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to register CI/CD reviewer: %v\n", err)
+		}
 	}
 
-	dependencyAuditor, _ := health.NewDependencyAuditor(projectRoot, supervisor)
-	if dependencyAuditor != nil {
-		healthRegistry.Register(dependencyAuditor)
+	dependencyAuditor, err := health.NewDependencyAuditor(projectRoot, supervisor)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to create dependency auditor: %v\n", err)
+	} else {
+		if err := healthRegistry.Register(dependencyAuditor); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to register dependency auditor: %v\n", err)
+		}
 	}
 
 	workerRegistry, err := discovery.DefaultRegistry(healthRegistry)

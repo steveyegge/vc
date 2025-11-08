@@ -364,10 +364,10 @@ func TestCICDReviewer_BuildIssues(t *testing.T) {
 	}
 
 	assert.True(t, descriptions["Add 2 missing quality gates to CI/CD pipeline"])
-	assert.True(t, descriptions["Optimize 1 slow CI/CD pipelines"])
-	assert.True(t, descriptions["Fix 1 security issues in CI/CD configs"])
-	assert.True(t, descriptions["Update 1 deprecated CI/CD actions"])
-	assert.True(t, descriptions["Add caching to 1 CI/CD steps"])
+	assert.True(t, descriptions["Optimize 1 slow CI/CD pipeline"])
+	assert.True(t, descriptions["Fix 1 security issue in CI/CD configs"])
+	assert.True(t, descriptions["Update 1 deprecated CI/CD action"])
+	assert.True(t, descriptions["Add caching to 1 CI/CD step"])
 }
 
 func TestCICDReviewer_Check_NoCICDFiles(t *testing.T) {

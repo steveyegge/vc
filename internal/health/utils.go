@@ -5,6 +5,14 @@ import (
 	"strings"
 )
 
+// pluralize returns the singular or plural form based on count (vc-4k1z).
+func pluralize(count int, singular, plural string) string {
+	if count == 1 {
+		return singular
+	}
+	return plural
+}
+
 // ShouldExcludePath checks if a path matches any exclude patterns.
 // Patterns can be:
 //   - Directory prefixes: "vendor/" matches "vendor/foo.go"

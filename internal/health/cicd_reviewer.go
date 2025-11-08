@@ -32,6 +32,9 @@ type CICDReviewer struct {
 	// ExcludePatterns for files/directories to skip
 	ExcludePatterns []string
 
+	// ModelName is the AI model to use for evaluations (vc-ykl0)
+	ModelName string
+
 	// AI supervisor for evaluating pipelines
 	Supervisor AISupervisor
 }
@@ -81,6 +84,7 @@ func NewCICDReviewer(rootPath string, supervisor AISupervisor) (*CICDReviewer, e
 			"node_modules/",
 			".beads/",
 		},
+		ModelName:  "claude-3-5-haiku-20241022", // Default to Haiku for cost efficiency (vc-ykl0)
 		Supervisor: supervisor,
 	}, nil
 }
@@ -189,7 +193,21 @@ func (r *CICDReviewer) scanCICDFiles(ctx context.Context) ([]cicdFile, error) {
 
 	// Check each platform's patterns
 	for platform, patterns := range r.CICDFilePatterns {
+		// Check for context cancellation (vc-szrl)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		for _, pattern := range patterns {
+			// Check for context cancellation (vc-szrl)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			default:
+			}
+
 			// Handle glob patterns in .github/workflows/*
 			if strings.Contains(pattern, "*") {
 				matches, err := r.findGlobMatches(ctx, pattern)
@@ -254,16 +272,14 @@ func (r *CICDReviewer) findGlobMatches(ctx context.Context, pattern string) ([]s
 		if matched {
 			relPath := filepath.Join(dir, entry.Name())
 
-			// Check if path matches any exclude pattern
-			excluded := false
-			for _, exclude := range r.ExcludePatterns {
-				if strings.Contains(relPath, exclude) {
-					excluded = true
-					break
-				}
+			// Get FileInfo for exclude checking
+			info, err := entry.Info()
+			if err != nil {
+				continue
 			}
 
-			if !excluded {
+			// Check if path should be excluded using proper path matching
+			if !ShouldExcludePath(relPath, info, r.ExcludePatterns) {
 				matches = append(matches, relPath)
 			}
 		}
@@ -378,8 +394,8 @@ type cicdBestPractice struct {
 func (r *CICDReviewer) evaluateCICD(ctx context.Context, files []cicdFileContent) (*cicdEvaluation, error) {
 	prompt := r.buildPrompt(files)
 
-	// Call AI supervisor using Haiku for cost efficiency
-	response, err := r.Supervisor.CallAI(ctx, prompt, "cicd_evaluation", "claude-3-5-haiku-20241022", 8192)
+	// Call AI supervisor (model configurable via ModelName field - vc-ykl0)
+	response, err := r.Supervisor.CallAI(ctx, prompt, "cicd_evaluation", r.ModelName, 8192)
 	if err != nil {
 		return nil, fmt.Errorf("AI call failed: %w", err)
 	}
@@ -425,7 +441,7 @@ func (r *CICDReviewer) buildPrompt(files []cicdFileContent) string {
 		sb.WriteString("\n```\n\n")
 	}
 
-	year := time.Now().Year()
+	year := time.Now().UTC().Year() // Use UTC for consistency (vc-7aye)
 	sb.WriteString(fmt.Sprintf("## Analysis Guidelines (%d)\n\n", year))
 
 	sb.WriteString("### 1. Missing Quality Gates\n")
@@ -453,6 +469,7 @@ func (r *CICDReviewer) buildPrompt(files []cicdFileContent) string {
 
 	sb.WriteString("### 4. Deprecated Actions/Images\n")
 	sb.WriteString("Look for:\n")
+	// NOTE(vc-xgc1): Version numbers below require periodic updates as EOL dates change
 	sb.WriteString("- **GitHub Actions**: Old versions (actions/checkout@v2, use v4)\n")
 	sb.WriteString("- **Docker images**: Old base images, deprecated versions\n")
 	sb.WriteString("- **Node versions**: EOL Node versions in CI\n")
@@ -545,10 +562,11 @@ func (r *CICDReviewer) buildIssues(eval *cicdEvaluation) []DiscoveredIssue {
 
 		severity := r.calculateQualityGateSeverity(eval.MissingQualityGates)
 
+		count := len(eval.MissingQualityGates)
 		issues = append(issues, DiscoveredIssue{
 			Category:    "cicd",
 			Severity:    severity,
-			Description: fmt.Sprintf("Add %d missing quality gates to CI/CD pipeline", len(eval.MissingQualityGates)),
+			Description: fmt.Sprintf("Add %d missing quality %s to CI/CD pipeline", count, pluralize(count, "gate", "gates")),
 			Evidence:    evidence,
 		})
 	}
@@ -560,10 +578,11 @@ func (r *CICDReviewer) buildIssues(eval *cicdEvaluation) []DiscoveredIssue {
 			"count":          len(eval.SlowPipelines),
 		}
 
+		count := len(eval.SlowPipelines)
 		issues = append(issues, DiscoveredIssue{
 			Category:    "cicd",
 			Severity:    "medium",
-			Description: fmt.Sprintf("Optimize %d slow CI/CD pipelines", len(eval.SlowPipelines)),
+			Description: fmt.Sprintf("Optimize %d slow CI/CD %s", count, pluralize(count, "pipeline", "pipelines")),
 			Evidence:    evidence,
 		})
 	}
@@ -577,10 +596,11 @@ func (r *CICDReviewer) buildIssues(eval *cicdEvaluation) []DiscoveredIssue {
 
 		severity := r.calculateSecuritySeverity(eval.SecurityIssues)
 
+		count := len(eval.SecurityIssues)
 		issues = append(issues, DiscoveredIssue{
 			Category:    "cicd",
 			Severity:    severity,
-			Description: fmt.Sprintf("Fix %d security issues in CI/CD configs", len(eval.SecurityIssues)),
+			Description: fmt.Sprintf("Fix %d security %s in CI/CD configs", count, pluralize(count, "issue", "issues")),
 			Evidence:    evidence,
 		})
 	}
@@ -592,10 +612,11 @@ func (r *CICDReviewer) buildIssues(eval *cicdEvaluation) []DiscoveredIssue {
 			"count":              len(eval.DeprecatedActions),
 		}
 
+		count := len(eval.DeprecatedActions)
 		issues = append(issues, DiscoveredIssue{
 			Category:    "cicd",
 			Severity:    "low",
-			Description: fmt.Sprintf("Update %d deprecated CI/CD actions", len(eval.DeprecatedActions)),
+			Description: fmt.Sprintf("Update %d deprecated CI/CD %s", count, pluralize(count, "action", "actions")),
 			Evidence:    evidence,
 		})
 	}
@@ -607,10 +628,11 @@ func (r *CICDReviewer) buildIssues(eval *cicdEvaluation) []DiscoveredIssue {
 			"count":           len(eval.MissingCaching),
 		}
 
+		count := len(eval.MissingCaching)
 		issues = append(issues, DiscoveredIssue{
 			Category:    "cicd",
 			Severity:    "medium",
-			Description: fmt.Sprintf("Add caching to %d CI/CD steps", len(eval.MissingCaching)),
+			Description: fmt.Sprintf("Add caching to %d CI/CD %s", count, pluralize(count, "step", "steps")),
 			Evidence:    evidence,
 		})
 	}

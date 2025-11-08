@@ -32,6 +32,9 @@ type BuildModernizer struct {
 	// ExcludePatterns for files/directories to skip
 	ExcludePatterns []string
 
+	// ModelName is the AI model to use for evaluations (vc-ykl0)
+	ModelName string
+
 	// AI supervisor for evaluating issues
 	Supervisor AISupervisor
 }
@@ -80,6 +83,7 @@ func NewBuildModernizer(rootPath string, supervisor AISupervisor) (*BuildModerni
 			"node_modules/",
 			".beads/",
 		},
+		ModelName:  "claude-3-5-haiku-20241022", // Default to Haiku for cost efficiency (vc-ykl0)
 		Supervisor: supervisor,
 	}, nil
 }
@@ -234,7 +238,11 @@ func (m *BuildModernizer) scanBuildFiles(ctx context.Context) ([]buildFile, erro
 		return nil
 	})
 
-	return files, err
+	if err != nil {
+		return nil, fmt.Errorf("walking directory tree: %w", err)
+	}
+
+	return files, nil
 }
 
 // detectFileType determines the type of build file based on filename.
@@ -361,8 +369,8 @@ type bestPractice struct {
 func (m *BuildModernizer) evaluateBuildFiles(ctx context.Context, files []buildFileContent) (*buildEvaluation, error) {
 	prompt := m.buildPrompt(files)
 
-	// Call AI supervisor using Haiku for cost efficiency
-	response, err := m.Supervisor.CallAI(ctx, prompt, "build_evaluation", "claude-3-5-haiku-20241022", 8192)
+	// Call AI supervisor (model configurable via ModelName field - vc-ykl0)
+	response, err := m.Supervisor.CallAI(ctx, prompt, "build_evaluation", m.ModelName, 8192)
 	if err != nil {
 		return nil, fmt.Errorf("AI call failed: %w", err)
 	}
@@ -408,11 +416,12 @@ func (m *BuildModernizer) buildPrompt(files []buildFileContent) string {
 		sb.WriteString("\n```\n\n")
 	}
 
-	year := time.Now().Year()
+	year := time.Now().UTC().Year() // Use UTC for consistency (vc-7aye)
 	sb.WriteString(fmt.Sprintf("## Analysis Guidelines (%d)\n\n", year))
 
 	sb.WriteString("### 1. Deprecated Patterns\n")
 	sb.WriteString("Look for:\n")
+	// NOTE(vc-xgc1): Version numbers below require periodic updates as EOL dates change
 	sb.WriteString("- **Go**: `go get` (deprecated, use `go install`), old Go versions (< 1.21)\n")
 	sb.WriteString("- **npm**: deprecated package.json scripts, missing `engines` field\n")
 	sb.WriteString("- **Make**: deprecated flags, old patterns\n")
@@ -498,10 +507,11 @@ func (m *BuildModernizer) buildIssues(eval *buildEvaluation) []DiscoveredIssue {
 		// Calculate severity based on impact
 		severity := m.calculateDeprecationSeverity(eval.DeprecatedPatterns)
 
+		count := len(eval.DeprecatedPatterns)
 		issues = append(issues, DiscoveredIssue{
 			Category:    "build",
 			Severity:    severity,
-			Description: fmt.Sprintf("Update %d deprecated build patterns", len(eval.DeprecatedPatterns)),
+			Description: fmt.Sprintf("Update %d deprecated build %s", count, pluralize(count, "pattern", "patterns")),
 			Evidence:    evidence,
 		})
 	}
@@ -513,10 +523,11 @@ func (m *BuildModernizer) buildIssues(eval *buildEvaluation) []DiscoveredIssue {
 			"count":                 len(eval.MissingOptimizations),
 		}
 
+		count := len(eval.MissingOptimizations)
 		issues = append(issues, DiscoveredIssue{
 			Category:    "build",
 			Severity:    "medium",
-			Description: fmt.Sprintf("Add %d build optimizations", len(eval.MissingOptimizations)),
+			Description: fmt.Sprintf("Add %d build %s", count, pluralize(count, "optimization", "optimizations")),
 			Evidence:    evidence,
 		})
 	}
@@ -531,10 +542,11 @@ func (m *BuildModernizer) buildIssues(eval *buildEvaluation) []DiscoveredIssue {
 		// Calculate severity based on issue type
 		severity := m.calculateVersionSeverity(eval.VersionIssues)
 
+		count := len(eval.VersionIssues)
 		issues = append(issues, DiscoveredIssue{
 			Category:    "build",
 			Severity:    severity,
-			Description: fmt.Sprintf("Fix %d tool version issues", len(eval.VersionIssues)),
+			Description: fmt.Sprintf("Fix %d tool version %s", count, pluralize(count, "issue", "issues")),
 			Evidence:    evidence,
 		})
 	}
