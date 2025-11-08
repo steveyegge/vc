@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -642,6 +643,10 @@ func New(cfg *Config) (*Executor, error) {
 		healthStatePath := cfg.HealthStatePath
 		if healthStatePath == "" {
 			healthStatePath = ".beads/health_state.json"
+		}
+		// Resolve relative to workingDir
+		if !filepath.IsAbs(healthStatePath) {
+			healthStatePath = filepath.Join(workingDir, healthStatePath)
 		}
 
 		// Create health registry
