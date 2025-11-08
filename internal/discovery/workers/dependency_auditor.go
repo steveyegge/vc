@@ -292,8 +292,17 @@ func (d *DependencyAuditor) isOutdated(current, latest string) bool {
 
 	// Same major, check minor version
 	// If minor is 2+ versions behind, consider outdated
-	// This is heuristic - could be made configurable
-	return true // For now, any version behind is flagged
+	currentMinor := semver.MajorMinor(current)
+	latestMinor := semver.MajorMinor(latest)
+
+	// Parse minor versions
+	// MajorMinor returns "v1.2" format, extract the minor part
+	var currentMinorNum, latestMinorNum int
+	fmt.Sscanf(currentMinor, "v%d.%d", new(int), &currentMinorNum)
+	fmt.Sscanf(latestMinor, "v%d.%d", new(int), &latestMinorNum)
+
+	// Flag if 2+ minor versions behind
+	return (latestMinorNum - currentMinorNum) >= 2
 }
 
 // Vulnerability represents a security vulnerability.

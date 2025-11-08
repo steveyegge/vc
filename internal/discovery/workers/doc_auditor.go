@@ -69,6 +69,7 @@ func (d *DocAuditor) Analyze(ctx context.Context, codebase health.CodebaseContex
 	startTime := time.Now()
 	issues := []discovery.DiscoveredIssue{}
 	filesAnalyzed := 0
+	reportedPackages := make(map[string]bool) // Track packages we've already reported
 
 	// Find project root (current working directory)
 	rootDir, err := os.Getwd()
@@ -82,6 +83,13 @@ func (d *DocAuditor) Analyze(ctx context.Context, codebase health.CodebaseContex
 
 	// Walk through Go source files
 	err = filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+		// Check for context cancellation every file
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if err != nil {
 			return nil // Skip inaccessible files
 		}
@@ -108,7 +116,7 @@ func (d *DocAuditor) Analyze(ctx context.Context, codebase health.CodebaseContex
 		filesAnalyzed++
 
 		// Parse Go file
-		fileIssues := d.analyzeGoFile(path, rootDir)
+		fileIssues := d.analyzeGoFile(path, rootDir, reportedPackages)
 		issues = append(issues, fileIssues...)
 
 		return nil
@@ -269,7 +277,7 @@ func (d *DocAuditor) analyzeREADME(rootDir string) []discovery.DiscoveredIssue {
 }
 
 // analyzeGoFile checks a single Go file for documentation issues.
-func (d *DocAuditor) analyzeGoFile(path string, rootDir string) []discovery.DiscoveredIssue {
+func (d *DocAuditor) analyzeGoFile(path string, rootDir string, reportedPackages map[string]bool) []discovery.DiscoveredIssue {
 	issues := []discovery.DiscoveredIssue{}
 
 	fset := token.NewFileSet()
@@ -280,27 +288,33 @@ func (d *DocAuditor) analyzeGoFile(path string, rootDir string) []discovery.Disc
 	}
 
 	relPath, _ := filepath.Rel(rootDir, path)
+	pkgDir := filepath.Dir(relPath)
 
-	// Check package documentation
+	// Check package documentation (only report once per package)
 	if node.Doc == nil || strings.TrimSpace(node.Doc.Text()) == "" {
 		// Only flag if this is not a _test.go file and not in a test directory
 		if !strings.Contains(relPath, "test") && !strings.HasSuffix(path, "_test.go") {
-			issues = append(issues, discovery.DiscoveredIssue{
-				Title:       fmt.Sprintf("Package %s missing documentation", node.Name.Name),
-				Description: fmt.Sprintf("Package %s in %s has no package-level documentation. Add a doc comment explaining the package's purpose.", node.Name.Name, relPath),
-				Category:    "documentation",
-				Type:        "task",
-				Priority:    2, // P2
-				Tags:        []string{"package-docs", "go"},
-				FilePath:    path,
-				LineStart:   1,
-				Evidence: map[string]interface{}{
-					"package_name": node.Name.Name,
-				},
-				DiscoveredBy: "doc_auditor",
-				DiscoveredAt: time.Now(),
-				Confidence:   0.8,
-			})
+			// Only report once per package
+			packageKey := fmt.Sprintf("%s:%s", pkgDir, node.Name.Name)
+			if !reportedPackages[packageKey] {
+				reportedPackages[packageKey] = true
+				issues = append(issues, discovery.DiscoveredIssue{
+					Title:       fmt.Sprintf("Package %s missing documentation", node.Name.Name),
+					Description: fmt.Sprintf("Package %s in %s has no package-level documentation. Add a doc comment explaining the package's purpose.", node.Name.Name, relPath),
+					Category:    "documentation",
+					Type:        "task",
+					Priority:    2, // P2
+					Tags:        []string{"package-docs", "go"},
+					FilePath:    path,
+					LineStart:   1,
+					Evidence: map[string]interface{}{
+						"package_name": node.Name.Name,
+					},
+					DiscoveredBy: "doc_auditor",
+					DiscoveredAt: time.Now(),
+					Confidence:   0.8,
+				})
+			}
 		}
 	}
 

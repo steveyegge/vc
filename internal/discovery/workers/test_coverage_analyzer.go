@@ -82,6 +82,13 @@ func (t *TestCoverageAnalyzer) Analyze(ctx context.Context, codebase health.Code
 
 	// First pass: collect all files
 	err = filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+		// Check for context cancellation every file
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if err != nil {
 			return nil
 		}
@@ -231,31 +238,31 @@ func (t *TestCoverageAnalyzer) analyzeTestFile(path string, rootDir string) []di
 	relPath, _ := filepath.Rel(rootDir, path)
 	testCount := 0
 	tableTestCount := 0
+	var currentTestFunc *ast.FuncDecl
 
-	// Analyze test functions
+	// Analyze test functions in a single pass
 	ast.Inspect(node, func(n ast.Node) bool {
-		funcDecl, ok := n.(*ast.FuncDecl)
-		if !ok {
-			return true
-		}
+		switch node := n.(type) {
+		case *ast.FuncDecl:
+			// Track if we're in a test function
+			if strings.HasPrefix(node.Name.Name, "Test") {
+				testCount++
+				currentTestFunc = node
+			} else {
+				currentTestFunc = nil
+			}
 
-		// Count test functions
-		if strings.HasPrefix(funcDecl.Name.Name, "Test") {
-			testCount++
-
-			// Check for table-driven tests (loop over test cases)
-			ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
-				if rangeStmt, ok := n.(*ast.RangeStmt); ok {
-					// Look for "tests" or "cases" variable
-					if ident, ok := rangeStmt.X.(*ast.Ident); ok {
-						if strings.Contains(strings.ToLower(ident.Name), "test") ||
-							strings.Contains(strings.ToLower(ident.Name), "case") {
-							tableTestCount++
-						}
+		case *ast.RangeStmt:
+			// Check for table-driven tests only within test functions
+			if currentTestFunc != nil {
+				// Look for "tests" or "cases" variable
+				if ident, ok := node.X.(*ast.Ident); ok {
+					if strings.Contains(strings.ToLower(ident.Name), "test") ||
+						strings.Contains(strings.ToLower(ident.Name), "case") {
+						tableTestCount++
 					}
 				}
-				return true
-			})
+			}
 		}
 
 		return true

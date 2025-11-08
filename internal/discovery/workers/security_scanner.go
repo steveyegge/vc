@@ -95,6 +95,13 @@ func (s *SecurityScanner) Analyze(ctx context.Context, codebase health.CodebaseC
 
 	// Walk through source files
 	err = filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+		// Check for context cancellation every file
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if err != nil {
 			return nil
 		}
