@@ -401,18 +401,36 @@ func (ic *InterventionController) Intervene(ctx context.Context, report *Anomaly
 		return nil, fmt.Errorf("no anomaly detected, intervention not needed")
 	}
 
+	// vc-f5ca: Check if there's an active agent before trying to intervene
+	// Watchdog should only monitor spawned agent execution, not executor infrastructure
+	ic.mu.Lock()
+	hasActiveAgent := ic.cancelFunc != nil
+	ic.mu.Unlock()
+
 	// The AnomalyReport already contains a RecommendedAction from the AI
 	// We follow that recommendation
 	switch report.RecommendedAction {
 	case ActionStopExecution:
 		// Stop execution = kill the agent
+		// vc-f5ca: Skip if no active agent (executor loop anomaly, not agent anomaly)
+		if !hasActiveAgent {
+			return ic.flagForInvestigation(ctx, report)
+		}
 		return ic.KillAgent(ctx, report)
 	case ActionRestartAgent:
 		// Restart = pause (kill) the agent, it will be restarted by the executor
+		// vc-f5ca: Skip if no active agent (executor loop anomaly, not agent anomaly)
+		if !hasActiveAgent {
+			return ic.flagForInvestigation(ctx, report)
+		}
 		return ic.PauseAgent(ctx, report)
 	case ActionMarkAsBlocked:
 		// Mark as blocked = pause agent and create escalation issue
 		// The escalation issue will be marked as blocked for human review
+		// vc-f5ca: Skip if no active agent (executor loop anomaly, not agent anomaly)
+		if !hasActiveAgent {
+			return ic.flagForInvestigation(ctx, report)
+		}
 		return ic.PauseAgent(ctx, report)
 	case ActionCheckpoint:
 		// Request checkpoint for context exhaustion
