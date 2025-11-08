@@ -320,6 +320,161 @@ AI supervision can be explicitly disabled via config: `EnableAISupervision: fals
 
 ---
 
+## 🔄 Quota Retry Configuration (vc-5b22)
+
+VC intelligently handles Anthropic API quota/rate limit errors (429 responses) by respecting the `retry-after` duration instead of immediately retrying with exponential backoff.
+
+### The Problem
+
+When the Anthropic API quota is exceeded, the response includes:
+- **HTTP 429** status code
+- **Retry-After header** or error message like "try again in 12 minutes"
+- Without intelligent handling, repeated retries waste attempts and burn through retries
+
+### Intelligent Quota Waiting
+
+VC classifies errors into types and handles each appropriately:
+
+**Error Types:**
+- **QUOTA** (429): Wait for `retry-after` duration, then retry
+- **TRANSIENT** (5xx): Use exponential backoff (immediate retry with delays)
+- **AUTH** (401/403): Don't retry (auth failures won't succeed)
+- **INVALID** (400/404): Don't retry (malformed requests won't succeed)
+- **UNKNOWN**: Use exponential backoff (conservative approach)
+
+### Environment Variables
+
+```bash
+# Maximum time to wait for quota reset (default: 15 minutes)
+# If retry-after exceeds this, fail fast instead of waiting indefinitely
+export VC_MAX_QUOTA_WAIT=15m
+
+# Examples:
+export VC_MAX_QUOTA_WAIT=30m   # Wait up to 30 minutes
+export VC_MAX_QUOTA_WAIT=5m    # Wait maximum 5 minutes
+export VC_MAX_QUOTA_WAIT=1h    # Wait up to 1 hour
+```
+
+### How It Works
+
+**When quota is exceeded (429 error):**
+
+1. **Parse retry-after duration** from:
+   - `Retry-After` HTTP header (seconds or HTTP-date)
+   - `X-RateLimit-Reset` header (Unix timestamp)
+   - Error message patterns: "try again in 12 minutes"
+
+2. **Check against MaxQuotaWait**:
+   - If `retry-after <= MaxQuotaWait`: Wait intelligently, then retry
+   - If `retry-after > MaxQuotaWait`: Fail fast with clear error message
+
+3. **During wait**:
+   - Log clear message showing wait time and reset time
+   - Respect context cancellation (allow graceful shutdown)
+   - Don't burn through retry attempts
+
+4. **After wait completes**:
+   - Retry immediately (quota should be reset)
+   - If still failing, use normal retry logic
+
+**Example output:**
+```
+⚠️  Quota exceeded: API rate limit hit
+    Retry after: 12m0s (at 14:30:00 UTC)
+    Attempt: 1/3
+    Waiting for quota reset...
+Quota wait completed, retrying assessment
+```
+
+### Circuit Breaker Integration
+
+Quota errors are **weighted more heavily** in the circuit breaker:
+- **Regular errors**: Count as 1 failure
+- **Quota errors**: Count as 3 failures (trip circuit faster)
+
+This prevents repeatedly hitting rate limits and gives the system time to recover.
+
+### Retry-After Parsing
+
+VC handles multiple retry-after formats:
+
+**HTTP Headers:**
+```
+Retry-After: 720                    # 720 seconds
+X-RateLimit-Reset: 1736348400       # Unix timestamp
+```
+
+**Error Messages:**
+```
+"rate limit exceeded, try again in 12 minutes"
+"quota exceeded, wait 720 seconds"
+"retry_after": 600
+```
+
+**Default Fallback:**
+If no retry-after information is found, VC conservatively waits **1 hour** (the typical quota reset window).
+
+### Tuning Guidelines
+
+**For overnight/unattended execution:**
+```bash
+# Allow longer waits for quota resets
+export VC_MAX_QUOTA_WAIT=1h
+```
+
+**For interactive development:**
+```bash
+# Fail fast on quota errors, don't wait
+export VC_MAX_QUOTA_WAIT=1m
+```
+
+**For production (recommended):**
+```bash
+# Default 15 minutes balances patience with responsiveness
+export VC_MAX_QUOTA_WAIT=15m
+```
+
+### Integration with Cost Budgeting
+
+Quota retry works alongside cost budgeting (vc-e3s7):
+- **Cost budgeting**: Proactive limit before hitting API quota
+- **Quota retry**: Reactive handling when quota is actually exceeded
+- **Together**: Complete quota management solution
+
+When both features are enabled:
+1. Cost budgeting prevents most quota errors (stay under limit)
+2. Quota retry handles edge cases (concurrent executions, budget estimation errors)
+3. System stays operational even under quota pressure
+
+### Related Features
+
+- **Cost Budgeting** (vc-e3s7): Proactive quota management via token limits
+- **Bootstrap Mode** (vc-b027): Fallback mode for quota crisis issues
+- **Quota Monitoring** (vc-7e21): Real-time burn rate tracking
+
+### Testing
+
+**Unit tests:**
+```bash
+go test -v ./internal/ai -run "TestClassifyError|TestParseRetryAfter"
+```
+
+**Manual testing:**
+```bash
+# Simulate quota error by reducing MaxQuotaWait to 1 second
+export VC_MAX_QUOTA_WAIT=1s
+# Run executor until quota is hit
+# Should fail fast with clear error message
+```
+
+**Verification:**
+- Quota errors show clear wait time and reset time
+- Wait duration respects `VC_MAX_QUOTA_WAIT`
+- Circuit breaker trips faster on quota errors
+- No wasted retry attempts during quota wait
+
+---
+
 ## 🎯 Blocker Priority Configuration
 
 **EnableBlockerPriority** (Default: true):

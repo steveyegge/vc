@@ -4,11 +4,42 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/anthropics/anthropic-sdk-go"
 )
+
+// ErrorType classifies errors for intelligent retry handling (vc-5b22)
+type ErrorType int
+
+const (
+	ErrorTransient ErrorType = iota // Network hiccup, server error (5xx) - retry with backoff
+	ErrorQuota                       // 429 quota/rate limit exceeded - wait for reset
+	ErrorInvalid                     // 400 bad request - don't retry
+	ErrorAuth                        // 401/403 auth error - don't retry
+	ErrorUnknown                     // Catch-all - retry with backoff
+)
+
+func (e ErrorType) String() string {
+	switch e {
+	case ErrorTransient:
+		return "TRANSIENT"
+	case ErrorQuota:
+		return "QUOTA"
+	case ErrorInvalid:
+		return "INVALID"
+	case ErrorAuth:
+		return "AUTH"
+	default:
+		return "UNKNOWN"
+	}
+}
 
 // RetryConfig holds retry configuration for API calls
 type RetryConfig struct {
@@ -26,6 +57,9 @@ type RetryConfig struct {
 
 	// Concurrency limit (vc-220)
 	MaxConcurrentCalls int // Maximum concurrent AI API calls (default: 3, 0 = unlimited)
+
+	// Quota retry settings (vc-5b22)
+	MaxQuotaWait time.Duration // Maximum time to wait for quota reset (default: 15 minutes)
 }
 
 // CircuitState represents the state of a circuit breaker
@@ -69,6 +103,14 @@ var ErrCircuitOpen = errors.New("circuit breaker is open")
 
 // DefaultRetryConfig returns the default retry configuration
 func DefaultRetryConfig() RetryConfig {
+	// Read MaxQuotaWait from environment (vc-5b22)
+	maxQuotaWait := 15 * time.Minute
+	if env := os.Getenv("VC_MAX_QUOTA_WAIT"); env != "" {
+		if d, err := time.ParseDuration(env); err == nil {
+			maxQuotaWait = d
+		}
+	}
+
 	return RetryConfig{
 		MaxRetries:            3,
 		InitialBackoff:        1 * time.Second,
@@ -80,6 +122,7 @@ func DefaultRetryConfig() RetryConfig {
 		SuccessThreshold:      2,
 		OpenTimeout:           30 * time.Second,
 		MaxConcurrentCalls:    3, // Limit concurrent AI calls to prevent rate limiting (vc-220)
+		MaxQuotaWait:          maxQuotaWait, // Maximum wait for quota reset (vc-5b22)
 	}
 }
 
@@ -146,14 +189,28 @@ func (cb *CircuitBreaker) RecordSuccess() {
 
 // RecordFailure records a failed request
 func (cb *CircuitBreaker) RecordFailure() {
+	cb.recordFailureWithType(ErrorUnknown)
+}
+
+// RecordFailureWithType records a failed request with error type classification (vc-5b22)
+// Quota errors are weighted more heavily to trip the circuit faster
+func (cb *CircuitBreaker) recordFailureWithType(errorType ErrorType) {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
 	cb.lastFailureTime = time.Now()
 
+	// Weight quota errors more heavily (vc-5b22)
+	// Quota errors count as 3 failures to trip circuit faster and prevent
+	// repeatedly hitting rate limits
+	failureIncrement := 1
+	if errorType == ErrorQuota {
+		failureIncrement = 3
+	}
+
 	switch cb.state {
 	case CircuitClosed:
-		cb.failureCount++
+		cb.failureCount += failureIncrement
 		if cb.failureCount >= cb.failureThreshold {
 			cb.transitionToOpen()
 		}
@@ -205,6 +262,179 @@ func (cb *CircuitBreaker) transitionToHalfOpen() {
 	cb.successCount = 0
 	cb.lastStateChange = time.Now()
 	fmt.Printf("Circuit breaker state transition: %s → %s (probing for recovery)\n", oldState, cb.state)
+}
+
+// classifyError determines the error type for intelligent retry handling (vc-5b22)
+// Returns the error type and suggested wait duration for quota errors
+func classifyError(err error) (ErrorType, time.Duration) {
+	if err == nil {
+		return ErrorUnknown, 0
+	}
+
+	// Try to unwrap as Anthropic SDK error
+	var apiErr *anthropic.Error
+	if errors.As(err, &apiErr) {
+		statusCode := apiErr.StatusCode
+
+		// 429 Rate Limit / Quota Exceeded
+		if statusCode == http.StatusTooManyRequests {
+			waitTime := parseRetryAfter(apiErr)
+			return ErrorQuota, waitTime
+		}
+
+		// 5xx Server Errors (transient)
+		if statusCode >= 500 && statusCode < 600 {
+			return ErrorTransient, 0
+		}
+
+		// 401/403 Auth Errors (non-retriable)
+		if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
+			return ErrorAuth, 0
+		}
+
+		// 400 Bad Request (non-retriable)
+		if statusCode == http.StatusBadRequest {
+			return ErrorInvalid, 0
+		}
+
+		// Other 4xx errors (non-retriable)
+		if statusCode >= 400 && statusCode < 500 {
+			return ErrorInvalid, 0
+		}
+	}
+
+	// Fallback: check error string for patterns
+	errStr := err.Error()
+
+	// Rate limit patterns
+	if strings.Contains(errStr, "429") || strings.Contains(errStr, "rate limit") ||
+		strings.Contains(errStr, "quota") {
+		waitTime := parseRetryAfterFromMessage(errStr)
+		return ErrorQuota, waitTime
+	}
+
+	// Server error patterns (5xx)
+	if strings.Contains(errStr, "500") || strings.Contains(errStr, "502") ||
+		strings.Contains(errStr, "503") || strings.Contains(errStr, "504") ||
+		strings.Contains(errStr, "internal server error") ||
+		strings.Contains(errStr, "bad gateway") ||
+		strings.Contains(errStr, "service unavailable") ||
+		strings.Contains(errStr, "gateway timeout") {
+		return ErrorTransient, 0
+	}
+
+	// Network/connection errors (transient)
+	if strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "connection reset") ||
+		strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "temporary failure") ||
+		strings.Contains(errStr, "network") ||
+		errors.Is(err, context.DeadlineExceeded) {
+		return ErrorTransient, 0
+	}
+
+	// Auth error patterns
+	if strings.Contains(errStr, "401") || strings.Contains(errStr, "403") ||
+		strings.Contains(errStr, "unauthorized") || strings.Contains(errStr, "forbidden") {
+		return ErrorAuth, 0
+	}
+
+	// Client error patterns (4xx)
+	if strings.Contains(errStr, "400") || strings.Contains(errStr, "404") ||
+		strings.Contains(errStr, "bad request") {
+		return ErrorInvalid, 0
+	}
+
+	// Default to unknown (will retry with backoff)
+	return ErrorUnknown, 0
+}
+
+// parseRetryAfter extracts the wait duration from a rate limit error (vc-5b22)
+// Checks both HTTP Retry-After header and error message
+func parseRetryAfter(apiErr *anthropic.Error) time.Duration {
+	// Option 1: Check Retry-After header
+	if apiErr.Response != nil {
+		if retryAfter := apiErr.Response.Header.Get("Retry-After"); retryAfter != "" {
+			// Retry-After can be either seconds (integer) or HTTP-date
+			if seconds, err := strconv.Atoi(retryAfter); err == nil {
+				return time.Duration(seconds) * time.Second
+			}
+			// TODO: Parse HTTP-date format if needed
+		}
+
+		// Option 2: Check X-RateLimit-Reset header (Unix timestamp)
+		if resetTime := apiErr.Response.Header.Get("X-RateLimit-Reset"); resetTime != "" {
+			if timestamp, err := strconv.ParseInt(resetTime, 10, 64); err == nil {
+				resetAt := time.Unix(timestamp, 0)
+				waitTime := time.Until(resetAt)
+				if waitTime > 0 {
+					return waitTime
+				}
+			}
+		}
+	}
+
+	// Option 3: Parse error message from raw JSON
+	if rawJSON := apiErr.RawJSON(); rawJSON != "" {
+		if wait := parseRetryAfterFromMessage(rawJSON); wait > 0 {
+			return wait
+		}
+	}
+
+	// Fallback: check error string (only if Request is not nil to avoid panic)
+	if apiErr.Request != nil {
+		if wait := parseRetryAfterFromMessage(apiErr.Error()); wait > 0 {
+			return wait
+		}
+	}
+
+	// Default: conservative wait (1 hour for quota errors)
+	// This is safe but may be longer than necessary
+	return 1 * time.Hour
+}
+
+// parseRetryAfterFromMessage extracts wait duration from error message text (vc-5b22)
+// Handles patterns like "try again in 12 minutes" or "wait 720 seconds"
+func parseRetryAfterFromMessage(msg string) time.Duration {
+	// Pattern: "try again in N (second|minute|hour)s?"
+	re := regexp.MustCompile(`(?i)try again in (\d+)\s*(second|minute|hour)s?`)
+	if matches := re.FindStringSubmatch(msg); len(matches) == 3 {
+		value, _ := strconv.Atoi(matches[1])
+		unit := strings.ToLower(matches[2])
+		switch unit {
+		case "second":
+			return time.Duration(value) * time.Second
+		case "minute":
+			return time.Duration(value) * time.Minute
+		case "hour":
+			return time.Duration(value) * time.Hour
+		}
+	}
+
+	// Pattern: "wait N (second|minute|hour)s?"
+	re = regexp.MustCompile(`(?i)wait (\d+)\s*(second|minute|hour)s?`)
+	if matches := re.FindStringSubmatch(msg); len(matches) == 3 {
+		value, _ := strconv.Atoi(matches[1])
+		unit := strings.ToLower(matches[2])
+		switch unit {
+		case "second":
+			return time.Duration(value) * time.Second
+		case "minute":
+			return time.Duration(value) * time.Minute
+		case "hour":
+			return time.Duration(value) * time.Hour
+		}
+	}
+
+	// Pattern: "retry_after": N or "retry-after: N" (seconds)
+	re = regexp.MustCompile(`(?i)retry[_-]?after["']?\s*:\s*(\d+)`)
+	if matches := re.FindStringSubmatch(msg); len(matches) == 2 {
+		if seconds, err := strconv.Atoi(matches[1]); err == nil {
+			return time.Duration(seconds) * time.Second
+		}
+	}
+
+	return 0
 }
 
 // retryWithBackoff executes an operation with retry and exponential backoff
@@ -262,42 +492,89 @@ func (s *Supervisor) retryWithBackoff(ctx context.Context, operation string, fn 
 
 		lastErr = err
 
-		// Record failure with circuit breaker if it's a retriable error
-		// Non-retriable errors (like auth failures) shouldn't count against circuit breaker
-		if s.circuitBreaker != nil && isRetriableError(err) {
-			s.circuitBreaker.RecordFailure()
-		}
+		// Classify error for intelligent retry handling (vc-5b22)
+		errorType, quotaWait := classifyError(err)
 
-		// Check if we should retry
-		if !isRetriableError(err) {
-			fmt.Fprintf(os.Stderr, "AI API %s failed with non-retriable error: %v\n", operation, err)
-			return err
-		}
-
-		// Don't retry if we've exhausted attempts
-		if attempt == s.retry.MaxRetries {
-			break
-		}
-
-		// Check if context is already canceled
-		if ctx.Err() != nil {
-			return fmt.Errorf("%s failed: context canceled: %w", operation, ctx.Err())
-		}
-
-		// Log the retry
-		fmt.Printf("AI API %s failed (attempt %d/%d), retrying in %v: %v\n",
-			operation, attempt+1, s.retry.MaxRetries+1, backoff, err)
-
-		// Sleep with exponential backoff
-		select {
-		case <-time.After(backoff):
-			// Calculate next backoff with exponential growth
-			backoff = time.Duration(float64(backoff) * s.retry.BackoffMultiplier)
-			if backoff > s.retry.MaxBackoff {
-				backoff = s.retry.MaxBackoff
+		// Record failure with circuit breaker, weighting quota errors more heavily
+		if s.circuitBreaker != nil {
+			if errorType == ErrorAuth || errorType == ErrorInvalid {
+				// Non-retriable errors don't count against circuit breaker
+			} else {
+				s.circuitBreaker.recordFailureWithType(errorType)
 			}
-		case <-ctx.Done():
-			return fmt.Errorf("%s failed: context canceled during backoff: %w", operation, ctx.Err())
+		}
+
+		// Check if we should retry based on error type
+		switch errorType {
+		case ErrorAuth, ErrorInvalid:
+			// Non-retriable errors - fail immediately
+			fmt.Fprintf(os.Stderr, "AI API %s failed with non-retriable error (%s): %v\n",
+				operation, errorType, err)
+			return err
+
+		case ErrorQuota:
+			// Quota exceeded - intelligent wait based on retry-after (vc-5b22)
+			if quotaWait > s.retry.MaxQuotaWait {
+				fmt.Fprintf(os.Stderr, "⚠️  Quota exceeded: retry-after (%v) exceeds max wait (%v)\n",
+					quotaWait, s.retry.MaxQuotaWait)
+				fmt.Fprintf(os.Stderr, "    Current attempt: %d/%d\n", attempt+1, s.retry.MaxRetries+1)
+				fmt.Fprintf(os.Stderr, "    Consider adjusting VC_MAX_QUOTA_WAIT or waiting manually\n")
+				return fmt.Errorf("%s failed: %w (quota wait %v exceeds max %v)",
+					operation, err, quotaWait, s.retry.MaxQuotaWait)
+			}
+
+			// Don't retry if we've exhausted attempts
+			if attempt == s.retry.MaxRetries {
+				break
+			}
+
+			// Check if context is already canceled
+			if ctx.Err() != nil {
+				return fmt.Errorf("%s failed: context canceled: %w", operation, ctx.Err())
+			}
+
+			// Wait for quota reset
+			resetAt := time.Now().Add(quotaWait)
+			fmt.Printf("⚠️  Quota exceeded: API rate limit hit\n")
+			fmt.Printf("    Retry after: %v (at %s)\n", quotaWait, resetAt.Format("15:04:05 MST"))
+			fmt.Printf("    Attempt: %d/%d\n", attempt+1, s.retry.MaxRetries+1)
+			fmt.Printf("    Waiting for quota reset...\n")
+
+			select {
+			case <-time.After(quotaWait):
+				fmt.Printf("Quota wait completed, retrying %s\n", operation)
+				continue // Retry immediately after wait
+			case <-ctx.Done():
+				return fmt.Errorf("%s failed: context canceled during quota wait: %w", operation, ctx.Err())
+			}
+
+		case ErrorTransient, ErrorUnknown:
+			// Transient errors - use exponential backoff
+			// Don't retry if we've exhausted attempts
+			if attempt == s.retry.MaxRetries {
+				break
+			}
+
+			// Check if context is already canceled
+			if ctx.Err() != nil {
+				return fmt.Errorf("%s failed: context canceled: %w", operation, ctx.Err())
+			}
+
+			// Log the retry
+			fmt.Printf("AI API %s failed (attempt %d/%d), retrying in %v: %v\n",
+				operation, attempt+1, s.retry.MaxRetries+1, backoff, err)
+
+			// Sleep with exponential backoff
+			select {
+			case <-time.After(backoff):
+				// Calculate next backoff with exponential growth
+				backoff = time.Duration(float64(backoff) * s.retry.BackoffMultiplier)
+				if backoff > s.retry.MaxBackoff {
+					backoff = s.retry.MaxBackoff
+				}
+			case <-ctx.Done():
+				return fmt.Errorf("%s failed: context canceled during backoff: %w", operation, ctx.Err())
+			}
 		}
 	}
 
@@ -305,51 +582,13 @@ func (s *Supervisor) retryWithBackoff(ctx context.Context, operation string, fn 
 }
 
 // isRetriableError determines if an error is retriable (transient)
+// Deprecated: Use classifyError instead for intelligent retry handling (vc-5b22)
+// This function is kept for backwards compatibility but now uses classifyError internally
 func isRetriableError(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	// Network errors and timeouts are retriable
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-
-	// Check for HTTP status codes indicating transient errors
-	// Anthropic SDK should wrap these, but we check the error string
-	errStr := err.Error()
-
-	// Rate limits (429) are retriable
-	if strings.Contains(errStr, "429") || strings.Contains(errStr, "rate limit") {
-		return true
-	}
-
-	// Server errors (5xx) are retriable
-	if strings.Contains(errStr, "500") || strings.Contains(errStr, "502") ||
-		strings.Contains(errStr, "503") || strings.Contains(errStr, "504") ||
-		strings.Contains(errStr, "internal server error") ||
-		strings.Contains(errStr, "bad gateway") ||
-		strings.Contains(errStr, "service unavailable") ||
-		strings.Contains(errStr, "gateway timeout") {
-		return true
-	}
-
-	// Network/connection errors are retriable
-	if strings.Contains(errStr, "connection refused") ||
-		strings.Contains(errStr, "connection reset") ||
-		strings.Contains(errStr, "timeout") ||
-		strings.Contains(errStr, "temporary failure") ||
-		strings.Contains(errStr, "network") {
-		return true
-	}
-
-	// 4xx client errors (except rate limits) are NOT retriable
-	// These indicate bad requests that won't succeed on retry
-	if strings.Contains(errStr, "400") || strings.Contains(errStr, "401") ||
-		strings.Contains(errStr, "403") || strings.Contains(errStr, "404") {
-		return false
-	}
-
-	// Default to not retrying unknown errors
-	return false
+	errorType, _ := classifyError(err)
+	return errorType != ErrorAuth && errorType != ErrorInvalid
 }
