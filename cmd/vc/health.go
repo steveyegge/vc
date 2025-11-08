@@ -22,6 +22,7 @@ var healthCmd = &cobra.Command{
 Health monitors use AI to detect issues like:
 - Oversized files that should be split
 - Cruft files (backups, temp files, etc.)
+- Gitignore violations (secrets, build artifacts, OS files in git)
 - ZFC violations (hardcoded thresholds, regex for semantic parsing, etc.)
 - Code duplication
 - High complexity
@@ -42,6 +43,7 @@ Examples:
   # Run specific monitor
   vc health check --monitor file-size
   vc health check --monitor cruft
+  vc health check --monitor gitignore
   vc health check --monitor zfc
   vc health check --monitor duplication
   vc health check --monitor complexity
@@ -182,7 +184,7 @@ Examples:
 }
 
 func init() {
-	healthCheckCmd.Flags().StringP("monitor", "m", "", "Run specific monitor (file-size, cruft, zfc, duplication, complexity)")
+	healthCheckCmd.Flags().StringP("monitor", "m", "", "Run specific monitor (file-size, cruft, gitignore, zfc, duplication, complexity)")
 	healthCheckCmd.Flags().Bool("dry-run", false, "Show issues without filing")
 	healthCheckCmd.Flags().BoolP("verbose", "v", false, "Verbose output")
 
@@ -201,6 +203,9 @@ func createMonitors(projectRoot string, supervisor *ai.Supervisor, monitorName s
 		},
 		"cruft": func() (health.HealthMonitor, error) {
 			return health.NewCruftDetector(projectRoot, supervisor)
+		},
+		"gitignore": func() (health.HealthMonitor, error) {
+			return health.NewGitignoreDetector(projectRoot, supervisor)
 		},
 		"zfc": func() (health.HealthMonitor, error) {
 			return health.NewZFCDetector(projectRoot, supervisor)
@@ -233,7 +238,7 @@ func createMonitors(projectRoot string, supervisor *ai.Supervisor, monitorName s
 	} else {
 		// Create all monitors
 		// Order matters: run cheaper checks first, expensive checks last
-		monitorOrder := []string{"file-size", "cruft", "zfc", "duplication", "complexity"}
+		monitorOrder := []string{"file-size", "cruft", "gitignore", "zfc", "duplication", "complexity"}
 
 		for _, name := range monitorOrder {
 			createFn := allMonitors[name]

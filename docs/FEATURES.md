@@ -530,3 +530,145 @@ The discovered:* taxonomy enables:
 3. **Debugging**: Understand what the AI supervisor is creating and why
 4. **Prioritization**: Apply blocker-first logic only to AI-discovered blockers
 5. **Trust**: Users can see what VC filed vs what humans filed
+
+---
+
+## 🏥 Code Health Monitors
+
+VC includes a suite of AI-powered code health monitors that proactively detect quality issues and technical debt. All monitors follow **Zero Framework Cognition (ZFC)** principles: they collect facts and patterns, then delegate judgment to AI.
+
+### Available Monitors
+
+#### 1. Gitignore Detector (vc-pf2o)
+
+**Purpose**: Identifies files tracked in git that should be in `.gitignore`.
+
+**Detection Categories**:
+- **Secrets** (HIGH severity): `.env` files, API keys, certificates, credentials
+- **Build Artifacts** (MEDIUM): Compiled binaries, `.o` files, `dist/` directories
+- **Dependencies** (MEDIUM): `node_modules/`, `vendor/`, downloaded packages  
+- **Editor Files** (MEDIUM): `.vscode/`, `.idea/`, swap files
+- **OS Files** (MEDIUM): `.DS_Store`, `Thumbs.db`, `desktop.ini`
+
+**How It Works**:
+1. Runs `git ls-files` to get all tracked files
+2. Matches files against common gitignore patterns
+3. AI categorizes violations vs legitimate files (e.g., `.env.example` is OK)
+4. Creates issues with remediation steps (`git rm --cached <file>`)
+5. Suggests `.gitignore` patterns to prevent recurrence
+
+**Philosophy**: "Source control should track source code and configuration, not build artifacts, dependencies, secrets, or environment-specific files."
+
+**Schedule**: Hybrid (12-24 hours, or every 10 issues)
+
+**Cost**: Moderate (3s, 1 AI call, full scan)
+
+**Code References**:
+- Implementation: `internal/health/gitignore_detector.go`
+- Tests: `internal/health/gitignore_detector_test.go`
+- Registration: `cmd/vc/health.go:205-207`
+
+**Usage**:
+```bash
+# Run gitignore detector only
+vc health check --monitor gitignore
+
+# Dry run (show issues without filing)
+vc health check --monitor gitignore --dry-run
+
+# Verbose output with reasoning
+vc health check --monitor gitignore --verbose
+```
+
+**Example Issues Created**:
+- **High Severity**: "URGENT: Remove 2 secret/credential file(s) from git history"
+  - Evidence: `.env`, `credentials.json`
+  - Action: Remove from git, add to `.gitignore`, rotate secrets
+  
+- **Medium Severity**: "Clean up 5 tracked file(s) that should be gitignored"
+  - Evidence: `.DS_Store`, `build/main.o`, `node_modules/...`
+  - Action: `git rm --cached`, add patterns to `.gitignore`
+
+#### 2. Other Health Monitors
+
+See other monitor implementations for similar ZFC-compliant health checks:
+- **File Size Monitor**: Detects oversized files that should be split
+- **Cruft Detector**: Finds backup files, temp files, old versions
+- **ZFC Detector**: Identifies hardcoded thresholds, regex-based parsing
+- **Duplication Detector**: Finds duplicate code blocks worth extracting
+- **Complexity Monitor**: Identifies high-complexity functions/files
+
+### Running Health Checks
+
+```bash
+# Run all health monitors
+vc health check
+
+# Run specific monitor
+vc health check --monitor <name>
+
+# Dry run (preview without filing issues)
+vc health check --dry-run
+
+# Verbose output (show AI reasoning)
+vc health check --verbose
+```
+
+### Integration with VC Workflow
+
+Health monitors integrate seamlessly with the VC workflow:
+
+1. **Scheduled Execution**: Monitors run based on their schedule (time-based, event-based, or hybrid)
+2. **AI Evaluation**: Each monitor uses AI to distinguish real problems from false positives
+3. **Issue Creation**: Discovered problems become tracked issues in `.beads/issues.jsonl`
+4. **Priority Assignment**: Severity maps to priority (high→P1, medium→P2, low→P3)
+5. **Label Tagging**: Issues tagged with `health`, category, and severity labels
+6. **Executor Claims**: Issues can be claimed by VC executor for automated fixing
+
+### Why ZFC Compliance Matters
+
+Traditional code quality tools use hardcoded rules and thresholds:
+- "Files over 500 lines are too big" ← Brittle
+- "Complexity > 10 is bad" ← Context-blind
+- "All duplicates must be extracted" ← Cargo-cult
+
+ZFC-compliant monitors:
+- **Collect facts**: "This file has 1200 lines and handles 5 different concerns"
+- **Provide context**: "Most files in this codebase are 100-300 lines"
+- **Defer judgment**: AI decides if splitting makes sense given the specific case
+- **Explain reasoning**: "This violates single responsibility and hinders testing"
+
+This produces far fewer false positives and more actionable issues.
+
+### Monitoring the Monitors
+
+Track health monitor effectiveness:
+```sql
+-- Recent health issues filed
+SELECT id, title, priority, created_at 
+FROM issues 
+WHERE actor = 'vc-health-monitor'
+ORDER BY created_at DESC 
+LIMIT 20;
+
+-- Health issues by category
+SELECT 
+    json_extract(labels.value, '$') as label,
+    COUNT(*) as count
+FROM issues, json_each(labels) as labels
+WHERE actor = 'vc-health-monitor'
+    AND json_extract(labels.value, '$') NOT IN ('health', 'severity:high', 'severity:medium', 'severity:low')
+GROUP BY label
+ORDER BY count DESC;
+```
+
+### Future Enhancements
+
+Planned health monitor improvements:
+- **Test Coverage Monitor**: Detect untested code paths
+- **Dependency Audit Monitor**: Check for outdated/vulnerable dependencies  
+- **Dead Code Monitor**: Find unused functions, imports, variables
+- **Documentation Monitor**: Detect missing/stale docs
+- **Performance Monitor**: Identify performance regressions
+
+---
