@@ -1,6 +1,8 @@
 package executor
 
 import (
+	"time"
+
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/deduplication"
 	"github.com/steveyegge/vc/internal/git"
@@ -32,6 +34,7 @@ type ResultsProcessor struct {
 	sandboxManager     sandbox.Manager    // Sandbox manager for cleanup operations (can be nil if sandboxing is disabled)
 	executor           *Executor          // Reference to parent executor for code review checks (can be nil for REPL)
 	watchdogConfig     *watchdog.WatchdogConfig // Watchdog config for backoff reset (vc-an5o, can be nil)
+	gatesTimeout       time.Duration      // Quality gates timeout (default: 5 minutes)
 }
 
 // ResultsProcessorConfig holds configuration for the results processor
@@ -50,6 +53,7 @@ type ResultsProcessorConfig struct {
 	SandboxManager     sandbox.Manager  // Sandbox manager for cleanup operations (can be nil if sandboxing is disabled)
 	Executor           *Executor        // Reference to parent executor for code review checks (can be nil for REPL)
 	WatchdogConfig     *watchdog.WatchdogConfig // Watchdog config for backoff reset (vc-an5o, can be nil)
+	GatesTimeout       time.Duration    // Quality gates timeout (default: 5 minutes if zero)
 }
 
 // ProcessingResult contains the outcome of processing agent results

@@ -281,6 +281,7 @@ type Config struct {
 	StaleThreshold          time.Duration                // How long before an instance is considered stale (default: 5 minutes)
 	EnableAISupervision     bool                         // Enable AI assessment and analysis (default: true)
 	EnableQualityGates      bool                         // Enable quality gates enforcement (default: true)
+	GatesTimeout            time.Duration                // Quality gates timeout (default: 5 minutes, env: VC_QUALITY_GATES_TIMEOUT, vc-xcfw)
 	EnableAutoCommit        bool                         // Enable automatic git commits after successful execution (default: false, vc-142)
 	EnableAutoPR            bool                         // Enable automatic PR creation after successful commit (default: false, requires EnableAutoCommit, vc-389e)
 	EnableSandboxes         bool                         // Enable sandbox isolation (default: true, vc-144)
@@ -386,6 +387,7 @@ func DefaultConfig() *Config {
 		InstanceCleanupKeep:     10,
 		EnableAISupervision:     true,
 		EnableQualityGates:      true,
+		GatesTimeout:            getEnvDuration("VC_QUALITY_GATES_TIMEOUT", 5*time.Minute), // Configurable timeout (vc-xcfw)
 		EnableSandboxes:         true, // Changed to true for safety (vc-144)
 		KeepSandboxOnFailure:    false,
 		KeepBranches:            false,

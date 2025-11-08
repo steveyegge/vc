@@ -29,6 +29,12 @@ func NewResultsProcessor(cfg *ResultsProcessorConfig) (*ResultsProcessor, error)
 		cfg.Actor = "unknown"
 	}
 
+	// Set default gates timeout if not specified (vc-xcfw)
+	gatesTimeout := cfg.GatesTimeout
+	if gatesTimeout == 0 {
+		gatesTimeout = 5 * time.Minute
+	}
+
 	return &ResultsProcessor{
 		store:              cfg.Store,
 		supervisor:         cfg.Supervisor,
@@ -44,6 +50,7 @@ func NewResultsProcessor(cfg *ResultsProcessorConfig) (*ResultsProcessor, error)
 		sandboxManager:     cfg.SandboxManager,
 		executor:           cfg.Executor,
 		watchdogConfig:     cfg.WatchdogConfig,
+		gatesTimeout:       gatesTimeout,
 	}, nil
 }
 
@@ -345,12 +352,12 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 					"error":   err.Error(),
 				})
 		} else {
-			// Create timeout context for quality gates (vc-245)
-			// 5 minutes should be enough for test/lint/build, but prevents indefinite hangs
-			gateCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+			// Create timeout context for quality gates (vc-245, vc-xcfw)
+			// Configurable timeout (default: 5 minutes) prevents indefinite hangs
+			gateCtx, cancel := context.WithTimeout(ctx, rp.gatesTimeout)
 			defer cancel()
 
-			fmt.Printf("Running quality gates (timeout: 5m)...\n")
+			fmt.Printf("Running quality gates (timeout: %v)...\n", rp.gatesTimeout)
 
 			// Run gates with timeout protection
 			var allPassed bool

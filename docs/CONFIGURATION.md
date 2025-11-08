@@ -136,6 +136,59 @@ See [docs/QUERIES.md](./QUERIES.md) for queries to monitor deduplication metrics
 
 ---
 
+## ⚙️ Quality Gates Configuration
+
+VC runs quality gates (test/lint/build) after successful agent execution to ensure code quality. Gate execution has a configurable timeout to prevent indefinite hangs.
+
+### Timeout Configuration
+
+**VC_QUALITY_GATES_TIMEOUT** - Maximum time allowed for all quality gates to complete (default: 5 minutes)
+
+```bash
+# Default timeout (5 minutes)
+export VC_QUALITY_GATES_TIMEOUT=5m
+
+# Longer timeout for large codebases
+export VC_QUALITY_GATES_TIMEOUT=10m
+
+# Shorter timeout for fast feedback in tests
+export VC_QUALITY_GATES_TIMEOUT=2m
+```
+
+**Format**: Duration string (e.g., "5m", "300s", "2m30s")
+
+**Valid range**: 1 second to 60 minutes
+
+**When to adjust**:
+- **Increase** if gates are timing out on large codebases
+- **Decrease** for faster feedback during development/testing
+- **Default (5m)** is appropriate for most projects
+
+**What happens on timeout**:
+- Gates execution is canceled
+- Issue is marked as blocked with timeout error
+- Partial gate results are logged for debugging
+- Agent work is not committed
+
+### Tuning Guidelines
+
+**For large codebases with slow tests**:
+```bash
+export VC_QUALITY_GATES_TIMEOUT=15m
+```
+
+**For fast iteration during development**:
+```bash
+export VC_QUALITY_GATES_TIMEOUT=3m
+```
+
+**For tests (faster feedback)**:
+```bash
+export VC_QUALITY_GATES_TIMEOUT=1m
+```
+
+---
+
 ## 🐛 Debug Environment Variables
 
 **Debug Prompts:**

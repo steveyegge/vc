@@ -471,6 +471,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		SandboxManager:     e.sandboxMgr, // Pass manager for auto-cleanup (vc-245)
 		Executor:           e,            // Pass executor reference for code review checks (vc-1)
 		WatchdogConfig:     e.watchdogConfig, // Watchdog config for backoff reset (vc-an5o)
+		GatesTimeout:       e.config.GatesTimeout, // Quality gates timeout (vc-xcfw)
 	})
 	if err != nil {
 		// Log results processing failure BEFORE releasing issue
