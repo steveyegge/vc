@@ -530,7 +530,12 @@ func (m *BuildModernizer) buildIssues(eval *buildEvaluation) []DiscoveredIssue {
 }
 
 // calculateDeprecationSeverity determines severity based on deprecation impacts.
+// Panics if called with an empty list (caller must check len > 0).
 func (m *BuildModernizer) calculateDeprecationSeverity(patterns []deprecatedPattern) string {
+	if len(patterns) == 0 {
+		panic("calculateDeprecationSeverity called with empty patterns list")
+	}
+
 	highCount := 0
 	for _, p := range patterns {
 		if p.Impact == "high" {
@@ -548,7 +553,12 @@ func (m *BuildModernizer) calculateDeprecationSeverity(patterns []deprecatedPatt
 }
 
 // calculateVersionSeverity determines severity based on version issue types.
+// Panics if called with an empty list (caller must check len > 0).
 func (m *BuildModernizer) calculateVersionSeverity(issues []versionIssue) string {
+	if len(issues) == 0 {
+		panic("calculateVersionSeverity called with empty issues list")
+	}
+
 	eolCount := 0
 	for _, issue := range issues {
 		if issue.Issue == "eol" {

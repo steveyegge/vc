@@ -202,11 +202,6 @@ func TestBuildModernizer_CalculateDeprecationSeverity(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "no patterns",
-			patterns: []deprecatedPattern{},
-			expected: "low",
-		},
-		{
 			name: "one low impact",
 			patterns: []deprecatedPattern{
 				{Impact: "low"},
@@ -257,11 +252,6 @@ func TestBuildModernizer_CalculateVersionSeverity(t *testing.T) {
 		issues   []versionIssue
 		expected string
 	}{
-		{
-			name:     "no issues",
-			issues:   []versionIssue{},
-			expected: "low",
-		},
 		{
 			name: "one outdated",
 			issues: []versionIssue{

@@ -592,7 +592,12 @@ func (r *CICDReviewer) buildIssues(eval *cicdEvaluation) []DiscoveredIssue {
 }
 
 // calculateQualityGateSeverity determines severity based on missing gates.
+// Panics if called with an empty list (caller must check len > 0).
 func (r *CICDReviewer) calculateQualityGateSeverity(gates []missingQualityGate) string {
+	if len(gates) == 0 {
+		panic("calculateQualityGateSeverity called with empty gates list")
+	}
+
 	highCount := 0
 	for _, gate := range gates {
 		if gate.Severity == "high" {
@@ -610,7 +615,13 @@ func (r *CICDReviewer) calculateQualityGateSeverity(gates []missingQualityGate) 
 }
 
 // calculateSecuritySeverity determines severity based on security issues.
+// Panics if called with an empty list (caller must check len > 0).
+// Security issues are at least medium severity when present.
 func (r *CICDReviewer) calculateSecuritySeverity(issues []securityIssue) string {
+	if len(issues) == 0 {
+		panic("calculateSecuritySeverity called with empty issues list")
+	}
+
 	highCount := 0
 	for _, issue := range issues {
 		if issue.Severity == "high" {

@@ -188,11 +188,6 @@ func TestCICDReviewer_CalculateQualityGateSeverity(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "no gates",
-			gates:    []missingQualityGate{},
-			expected: "low",
-		},
-		{
 			name: "one low severity",
 			gates: []missingQualityGate{
 				{Severity: "low"},
@@ -243,11 +238,6 @@ func TestCICDReviewer_CalculateSecuritySeverity(t *testing.T) {
 		issues   []securityIssue
 		expected string
 	}{
-		{
-			name:     "no issues",
-			issues:   []securityIssue{},
-			expected: "medium", // Security issues default to medium
-		},
 		{
 			name: "one low severity",
 			issues: []securityIssue{
