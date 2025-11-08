@@ -58,10 +58,9 @@ func (m SelfHealingMode) String() string {
 type Executor struct {
 	store            storage.Storage
 	supervisor       *ai.Supervisor
-	monitor          *watchdog.Monitor
-	analyzer         *watchdog.Analyzer
-	intervention     *watchdog.InterventionController
-	watchdogConfig   *watchdog.WatchdogConfig
+	watchdog         *watchdog.Watchdog    // Unified watchdog instance (vc-mq3c)
+	monitor          *watchdog.Monitor     // Standalone monitor when watchdog disabled (vc-mq3c)
+	watchdogConfig   *watchdog.WatchdogConfig // Watchdog config (needed by result processor)
 	sandboxMgr       sandbox.Manager
 	healthRegistry   *health.MonitorRegistry
 	preFlightChecker *PreFlightChecker          // Preflight quality gates checker (vc-196)
@@ -82,8 +81,6 @@ type Executor struct {
 	doneCh             chan struct{}
 	heartbeatStopCh    chan struct{} // Separate channel for heartbeat shutdown (vc-m4od)
 	heartbeatDoneCh    chan struct{} // Signals when heartbeat goroutine finished (vc-m4od)
-	watchdogStopCh     chan struct{} // Separate channel for watchdog shutdown
-	watchdogDoneCh     chan struct{} // Signals when watchdog goroutine finished
 	cleanupStopCh      chan struct{} // Separate channel for cleanup goroutine shutdown
 	cleanupDoneCh      chan struct{} // Signals when cleanup goroutine finished
 	eventCleanupStopCh chan struct{} // Separate channel for event cleanup shutdown
@@ -612,44 +609,31 @@ func New(cfg *Config) (*Executor, error) {
 		}
 	}
 
-	// Initialize watchdog system
-	e.monitor = watchdog.NewMonitor(watchdog.DefaultConfig())
-
-	// Use provided watchdog config or default
-	if cfg.WatchdogConfig == nil {
+	// Initialize unified watchdog system (vc-mq3c)
+	// Set up watchdog config first
+	e.watchdogConfig = cfg.WatchdogConfig
+	if e.watchdogConfig == nil {
 		e.watchdogConfig = watchdog.DefaultWatchdogConfig()
-	} else {
-		e.watchdogConfig = cfg.WatchdogConfig
 	}
 
-	// Initialize watchdog channels
-	e.watchdogStopCh = make(chan struct{})
-	e.watchdogDoneCh = make(chan struct{})
-
-	// Initialize analyzer if AI supervision is enabled
+	// Only create full watchdog if AI supervision is enabled (since it requires supervisor)
 	if e.enableAISupervision && e.supervisor != nil {
-		analyzer, err := watchdog.NewAnalyzer(&watchdog.AnalyzerConfig{
-			Monitor:    e.monitor,
-			Supervisor: e.supervisor,
-			Store:      cfg.Store,
+		wd, err := watchdog.NewWatchdog(&watchdog.WatchdogDeps{
+			Store:              cfg.Store,
+			Supervisor:         e.supervisor,
+			ExecutorInstanceID: e.instanceID,
+			Config:             e.watchdogConfig,
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to initialize watchdog analyzer: %v (watchdog disabled)\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: failed to initialize watchdog: %v (watchdog disabled)\n", err)
+			// Fall back to standalone monitor
+			e.monitor = watchdog.NewMonitor(watchdog.DefaultConfig())
 		} else {
-			e.analyzer = analyzer
+			e.watchdog = wd
 		}
-	}
-
-	// Initialize intervention controller
-	intervention, err := watchdog.NewInterventionController(&watchdog.InterventionControllerConfig{
-		Store:              cfg.Store,
-		ExecutorInstanceID: e.instanceID,
-		MaxHistorySize:     e.watchdogConfig.MaxHistorySize,
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to initialize intervention controller: %v (watchdog disabled)\n", err)
 	} else {
-		e.intervention = intervention
+		// AI supervision disabled - create standalone monitor for telemetry
+		e.monitor = watchdog.NewMonitor(watchdog.DefaultConfig())
 	}
 
 	// Initialize health monitoring if enabled
@@ -867,13 +851,11 @@ func (e *Executor) Start(ctx context.Context) error {
 	// Start the heartbeat loop (vc-m4od)
 	go e.heartbeatLoop(ctx)
 
-	// Start the watchdog loop if enabled and components are initialized
-	if e.watchdogConfig.IsEnabled() && e.analyzer != nil && e.intervention != nil {
-		go e.watchdogLoop(ctx)
-		fmt.Printf("Watchdog: Started monitoring (check_interval=%v, min_confidence=%.2f, min_severity=%s)\n",
-			e.watchdogConfig.GetCheckInterval(),
-			e.watchdogConfig.AIConfig.MinConfidenceThreshold,
-			e.watchdogConfig.AIConfig.MinSeverityLevel)
+	// Start the unified watchdog if initialized (vc-mq3c)
+	if e.watchdog != nil {
+		if err := e.watchdog.Start(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to start watchdog: %v\n", err)
+		}
 	}
 
 	// Start the cleanup loop
@@ -890,6 +872,15 @@ func (e *Executor) Start(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// getMonitor returns the telemetry monitor (vc-mq3c)
+// If watchdog is enabled, returns its monitor; otherwise returns standalone monitor
+func (e *Executor) getMonitor() *watchdog.Monitor {
+	if e.watchdog != nil {
+		return e.watchdog.GetMonitor()
+	}
+	return e.monitor
 }
 
 // heartbeatLoop sends periodic heartbeats independently of issue execution (vc-m4od)
@@ -932,9 +923,9 @@ func (e *Executor) Stop(ctx context.Context) error {
 	// Stop heartbeat goroutine (vc-m4od)
 	close(e.heartbeatStopCh)
 
-	// Stop watchdog if it's running
-	if e.watchdogConfig.IsEnabled() && e.analyzer != nil {
-		close(e.watchdogStopCh)
+	// Stop unified watchdog if it's running (vc-mq3c)
+	if e.watchdog != nil {
+		e.watchdog.Stop()
 	}
 
 	// Stop cleanup goroutine
@@ -948,22 +939,20 @@ func (e *Executor) Stop(ctx context.Context) error {
 		e.loopDetector.Stop()
 	}
 
-	// Wait for event loop, heartbeat, watchdog, cleanup, and event cleanup to finish concurrently (vc-m4od, vc-113, vc-122, vc-195)
+	// Wait for event loop, heartbeat, cleanup, and event cleanup to finish concurrently (vc-m4od, vc-113, vc-122, vc-195, vc-mq3c)
 	// This prevents sequential timeouts if one takes longer than expected
+	// Note: watchdog manages its own lifecycle and doesn't need to be waited on here
 	eventDone := false
 	heartbeatDone := false
-	watchdogDone := !e.watchdogConfig.IsEnabled() || e.analyzer == nil // Skip if not enabled
 	cleanupDone := false
 	eventCleanupDone := false
 
-	for !eventDone || !heartbeatDone || !watchdogDone || !cleanupDone || !eventCleanupDone {
+	for !eventDone || !heartbeatDone || !cleanupDone || !eventCleanupDone {
 		select {
 		case <-e.doneCh:
 			eventDone = true
 		case <-e.heartbeatDoneCh:
 			heartbeatDone = true
-		case <-e.watchdogDoneCh:
-			watchdogDone = true
 		case <-e.cleanupDoneCh:
 			cleanupDone = true
 		case <-e.eventCleanupDoneCh:

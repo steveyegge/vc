@@ -19,7 +19,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	fmt.Printf("Executing issue %s: %s\n", issue.ID, issue.Title)
 
 	// Start telemetry collection for this execution
-	e.monitor.StartExecution(issue.ID, e.instanceID)
+	e.getMonitor().StartExecution(issue.ID, e.instanceID)
 
 	// Log issue claimed event
 	e.logEvent(ctx, events.EventTypeIssueClaimed, events.SeverityInfo, issue.ID,
@@ -27,7 +27,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		map[string]interface{}{
 			"issue_title": issue.Title,
 		})
-	e.monitor.RecordEvent(string(events.EventTypeIssueClaimed))
+	e.getMonitor().RecordEvent(string(events.EventTypeIssueClaimed))
 
 	// Initialize execution state to claimed (vc-efad)
 	// This must happen before any state transitions to maintain state machine integrity
@@ -37,7 +37,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 			// Use background context for cleanup since main context is canceled
 			cleanupCtx := context.Background()
 			e.releaseIssueWithError(cleanupCtx, issue.ID, fmt.Sprintf("Execution canceled during state initialization: %v", ctx.Err()))
-			e.monitor.EndExecution(false, false)
+			e.getMonitor().EndExecution(false, false)
 			return ctx.Err()
 		}
 		fmt.Fprintf(os.Stderr, "warning: failed to initialize execution state: %v\n", err)
@@ -51,12 +51,12 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 			// Use background context for cleanup since main context is canceled
 			cleanupCtx := context.Background()
 			e.releaseIssueWithError(cleanupCtx, issue.ID, fmt.Sprintf("Execution canceled during state transition: %v", ctx.Err()))
-			e.monitor.EndExecution(false, false)
+			e.getMonitor().EndExecution(false, false)
 			return ctx.Err()
 		}
 		fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
 	}
-	e.monitor.RecordStateTransition(types.ExecutionStateClaimed, types.ExecutionStateAssessing)
+	e.getMonitor().RecordStateTransition(types.ExecutionStateClaimed, types.ExecutionStateAssessing)
 
 	// Pre-flight health check: verify AI supervisor is healthy before proceeding (vc-182)
 	if e.enableAISupervision && e.supervisor != nil {
@@ -72,7 +72,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 			// Use background context for cleanup since we're failing execution
 			cleanupCtx := context.Background()
 			e.releaseIssueWithError(cleanupCtx, issue.ID, fmt.Sprintf("AI supervisor unavailable: %v", err))
-			e.monitor.EndExecution(false, false)
+			e.getMonitor().EndExecution(false, false)
 			return fmt.Errorf("cannot execute issue: AI supervisor health check failed: %w", err)
 		}
 	}
@@ -88,7 +88,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		assessStart := time.Now()
 		var err error
 		assessment, err = e.supervisor.AssessIssueState(ctx, issue)
-		e.monitor.RecordPhaseDuration("assess", time.Since(assessStart))
+		e.getMonitor().RecordPhaseDuration("assess", time.Since(assessStart))
 		if err != nil {
 			// Check if context was canceled (shutdown initiated)
 			if ctx.Err() != nil {
@@ -96,7 +96,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 				// Use background context for cleanup since main context is canceled
 				cleanupCtx := context.Background()
 				e.releaseIssueWithError(cleanupCtx, issue.ID, "Execution canceled during assessment")
-				e.monitor.EndExecution(false, false)
+				e.getMonitor().EndExecution(false, false)
 				return ctx.Err()
 			}
 			// Real error (not cancellation) - log and continue without assessment
@@ -297,7 +297,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		// Use background context for cleanup since main context is canceled
 		cleanupCtx := context.Background()
 		e.releaseIssueWithError(cleanupCtx, issue.ID, "Execution canceled before spawning agent")
-		e.monitor.EndExecution(false, false)
+		e.getMonitor().EndExecution(false, false)
 		return ctx.Err()
 	}
 
@@ -308,13 +308,13 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 			// Use background context for cleanup since main context is canceled
 			cleanupCtx := context.Background()
 			e.releaseIssueWithError(cleanupCtx, issue.ID, fmt.Sprintf("Execution canceled during state transition: %v", ctx.Err()))
-			e.monitor.EndExecution(false, false)
+			e.getMonitor().EndExecution(false, false)
 			return ctx.Err()
 		}
 		fmt.Fprintf(os.Stderr, "warning: failed to update execution state: %v\n", err)
 	}
 	// Always transition from assessing→executing (vc-110)
-	e.monitor.RecordStateTransition(types.ExecutionStateAssessing, types.ExecutionStateExecuting)
+	e.getMonitor().RecordStateTransition(types.ExecutionStateAssessing, types.ExecutionStateExecuting)
 
 	// Create a cancelable context for the agent so watchdog can intervene
 	agentCtx, agentCancel := context.WithCancel(ctx)
@@ -323,10 +323,10 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		agentCancel() // Always cancel when we're done
 	}()
 
-	// Register agent context with intervention controller for watchdog
-	if e.intervention != nil {
-		e.intervention.SetAgentContext(issue.ID, agentCancel)
-		defer e.intervention.ClearAgentContext()
+	// Register agent context with intervention controller for watchdog (vc-mq3c)
+	if e.watchdog != nil {
+		e.watchdog.SetAgentContext(issue.ID, agentCancel)
+		defer e.watchdog.ClearAgentContext()
 	}
 
 	// Gather context for comprehensive prompt
@@ -340,7 +340,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 				"error":   err.Error(),
 			})
 		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to gather context: %v", err))
-		e.monitor.EndExecution(false, false)
+		e.getMonitor().EndExecution(false, false)
 		return fmt.Errorf("failed to gather context: %w", err)
 	}
 
@@ -354,7 +354,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 				"error":   err.Error(),
 			})
 		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to create prompt builder: %v", err))
-		e.monitor.EndExecution(false, false)
+		e.getMonitor().EndExecution(false, false)
 		return fmt.Errorf("failed to create prompt builder: %w", err)
 	}
 
@@ -367,7 +367,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 				"error":   err.Error(),
 			})
 		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to build prompt: %v", err))
-		e.monitor.EndExecution(false, false)
+		e.getMonitor().EndExecution(false, false)
 		return fmt.Errorf("failed to build prompt: %w", err)
 	}
 
@@ -389,7 +389,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		Store:      e.store,
 		ExecutorID: e.instanceID,
 		AgentID:    agentID,
-		Monitor:    e.monitor, // Pass monitor for watchdog visibility (vc-118)
+		Monitor:    e.getMonitor(), // Pass monitor for watchdog visibility (vc-118)
 		Sandbox:    sb,
 	}
 
@@ -405,7 +405,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 			})
 		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to spawn agent: %v", err))
 		// End telemetry collection on failure
-		e.monitor.EndExecution(false, false)
+		e.getMonitor().EndExecution(false, false)
 		return fmt.Errorf("failed to spawn agent: %w", err)
 	}
 
@@ -421,7 +421,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	// Track execution phase duration
 	execStart := time.Now()
 	result, err := agent.Wait(agentCtx)
-	e.monitor.RecordPhaseDuration("execute", time.Since(execStart))
+	e.getMonitor().RecordPhaseDuration("execute", time.Since(execStart))
 	if err != nil {
 		// Log agent execution failure BEFORE releasing issue
 		e.logEvent(ctx, events.EventTypeAgentCompleted, events.SeverityError, issue.ID,
@@ -432,7 +432,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 			})
 		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Agent execution failed: %v", err))
 		// End telemetry collection on failure
-		e.monitor.EndExecution(false, false)
+		e.getMonitor().EndExecution(false, false)
 		return fmt.Errorf("agent execution failed: %w", err)
 	}
 
@@ -483,7 +483,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 			})
 		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to create results processor: %v", err))
 		// End telemetry collection on failure
-		e.monitor.EndExecution(false, false)
+		e.getMonitor().EndExecution(false, false)
 		return fmt.Errorf("failed to create results processor: %w", err)
 	}
 
@@ -498,7 +498,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 			})
 		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to process results: %v", err))
 		// End telemetry collection on failure
-		e.monitor.EndExecution(false, false)
+		e.getMonitor().EndExecution(false, false)
 		return fmt.Errorf("failed to process agent result: %w", err)
 	}
 
@@ -533,7 +533,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	}
 
 	// End telemetry collection
-	e.monitor.EndExecution(procResult.Completed && result.Success, procResult.GatesPassed)
+	e.getMonitor().EndExecution(procResult.Completed && result.Success, procResult.GatesPassed)
 
 	return nil
 }
