@@ -325,6 +325,11 @@ func classifyError(err error) (ErrorType, time.Duration) {
 	// Fallback: check error string for patterns
 	errStr := err.Error()
 
+	// Empty error messages are invalid (can't classify)
+	if errStr == "" {
+		return ErrorInvalid, 0
+	}
+
 	// Rate limit patterns
 	if strings.Contains(errStr, "429") || strings.Contains(errStr, "rate limit") ||
 		strings.Contains(errStr, "quota") {
