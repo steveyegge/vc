@@ -33,6 +33,9 @@ type HealthMonitor interface {
 // CodebaseContext provides statistical distributions and patterns,
 // not absolute thresholds. This enables ZFC-compliant health monitoring.
 type CodebaseContext struct {
+	// Root directory of the codebase
+	RootPath string
+
 	// Statistical distributions for outlier detection
 	FileSizeDistribution  Distribution
 	ComplexityDistribution Distribution

@@ -246,6 +246,7 @@ func PresetConfig(preset Preset) *Config {
 			"file_size_monitor",    // Oversized files
 			"cruft_detector",       // Cruft detection
 			"duplication_detector", // Code duplication
+			"architecture",         // Package structure analysis
 			"doc_auditor",          // Documentation quality
 			"dependency_auditor",   // Dependency analysis
 		}
@@ -262,6 +263,8 @@ func PresetConfig(preset Preset) *Config {
 			"cruft_detector",          // Cruft detection
 			"duplication_detector",    // Code duplication
 			"zfc_detector",            // ZFC violations
+			"architecture",            // Package structure analysis
+			"bugs",                    // Bug pattern detection
 			"doc_auditor",             // Documentation quality
 			"test_coverage_analyzer",  // Test coverage analysis
 			"dependency_auditor",      // Dependency analysis
