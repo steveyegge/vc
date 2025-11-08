@@ -1402,6 +1402,11 @@ If this issue continues to have incomplete attempts after %d total tries, it wil
 				"analysis_summary":    analysis.Summary,
 			})
 
+		// Release execution state so executor can pick up issue for retry (vc-eqvh)
+		if err := rp.releaseExecutionState(ctx, issue.ID); err != nil {
+			return fmt.Errorf("failed to release execution state for retry: %w", err)
+		}
+
 	} else {
 		// Exceeded retry limit - escalate with needs-human-review label
 		escalationComment := fmt.Sprintf(`**Incomplete Work Escalated**
