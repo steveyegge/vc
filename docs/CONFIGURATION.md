@@ -358,6 +358,49 @@ export VC_SELF_HEALING_RECHECK_INTERVAL=1m       # Check more frequently
 
 ---
 
+## 🔁 Incomplete Work Retry Configuration
+
+VC detects when an agent succeeds technically (exit code 0, quality gates pass) but fails to fully complete the work according to acceptance criteria. This can happen when the agent reads files but doesn't make required edits, or only partially completes the task.
+
+### Environment Variables
+
+```bash
+# Maximum retries for incomplete work before escalation (default: 1)
+# After this many incomplete attempts, the issue is marked needs-human-review
+# and blocked to prevent infinite retry loops
+export VC_MAX_INCOMPLETE_RETRIES=1
+```
+
+### How It Works
+
+When AI analysis reports `completed: false` but the agent succeeded:
+
+1. **First attempt**: Issue gets a retry comment and stays open for another attempt
+2. **Second attempt** (default threshold): Issue is escalated with `needs-human-review` label and marked as blocked
+
+The retry logic counts "Incomplete Work Detected" comments in the event history to track attempts across executions.
+
+### Tuning Guidelines
+
+**For more aggressive retries** (give the agent more chances):
+```bash
+export VC_MAX_INCOMPLETE_RETRIES=2  # Allow 2 retries before escalation
+```
+
+**For conservative approach** (escalate immediately):
+```bash
+export VC_MAX_INCOMPLETE_RETRIES=0  # Escalate on first incomplete attempt
+```
+
+**Default recommendation**: Keep at 1 retry. Most incomplete work issues are due to fundamental misunderstanding of requirements rather than transient issues, so additional retries rarely help.
+
+### Related Issues
+
+- vc-1ows: Handle incomplete work with retry mechanism
+- vc-hsfz: Make maxIncompleteRetries configurable
+
+---
+
 ## 🗄️ Event Retention Configuration (Future Work)
 
 **Status:** Not yet implemented. Punted until database size becomes a real issue (vc-184, vc-198).

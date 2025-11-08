@@ -302,6 +302,7 @@ type Config struct {
 	InstanceCleanupKeep     int                          // Minimum number of stopped instances to keep (default: 10, 0 = keep none)
 	MaxEscalationAttempts   int                          // Maximum attempts before escalating baseline issues (default: 5, vc-h8b8)
 	MaxEscalationDuration   time.Duration                // Maximum duration in self-healing mode before escalating (default: 24h, vc-h8b8)
+	MaxIncompleteRetries    int                          // Maximum retries for incomplete work before escalation (default: 1, vc-hsfz)
 
 	// Self-healing configuration (vc-tn9c)
 	SelfHealingMaxAttempts     int           // Maximum attempts before escalating (same as MaxEscalationAttempts, default: 5)
@@ -403,6 +404,7 @@ func DefaultConfig() *Config {
 		// MaxEscalation* fields are legacy, use SelfHealing* fields for consistency
 		MaxEscalationAttempts:      getEnvInt("VC_SELF_HEALING_MAX_ATTEMPTS", 5),
 		MaxEscalationDuration:      getEnvDuration("VC_SELF_HEALING_MAX_DURATION", 24*time.Hour),
+		MaxIncompleteRetries:       getEnvInt("VC_MAX_INCOMPLETE_RETRIES", 1), // vc-hsfz
 		SelfHealingMaxAttempts:     getEnvInt("VC_SELF_HEALING_MAX_ATTEMPTS", 5),
 		SelfHealingMaxDuration:     getEnvDuration("VC_SELF_HEALING_MAX_DURATION", 24*time.Hour),
 		SelfHealingRecheckInterval: getEnvDuration("VC_SELF_HEALING_RECHECK_INTERVAL", 5*time.Minute),

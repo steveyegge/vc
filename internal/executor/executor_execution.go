@@ -463,6 +463,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		Executor:           e,            // Pass executor reference for code review checks (vc-1)
 		WatchdogConfig:     e.watchdogConfig, // Watchdog config for backoff reset (vc-an5o)
 		GatesTimeout:       e.config.GatesTimeout, // Quality gates timeout (vc-xcfw)
+		MaxIncompleteRetries: e.config.MaxIncompleteRetries, // Max incomplete retries (vc-hsfz)
 	})
 	if err != nil {
 		// Log results processing failure BEFORE releasing issue

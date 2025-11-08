@@ -40,6 +40,12 @@ func NewResultsProcessor(cfg *ResultsProcessorConfig) (*ResultsProcessor, error)
 		dedupBatchSize = 100
 	}
 
+	// Set default incomplete retries if not specified (vc-hsfz)
+	maxIncompleteRetries := cfg.MaxIncompleteRetries
+	if maxIncompleteRetries == 0 {
+		maxIncompleteRetries = 1
+	}
+
 	return &ResultsProcessor{
 		store:              cfg.Store,
 		supervisor:         cfg.Supervisor,
@@ -57,6 +63,7 @@ func NewResultsProcessor(cfg *ResultsProcessorConfig) (*ResultsProcessor, error)
 		watchdogConfig:     cfg.WatchdogConfig,
 		gatesTimeout:       gatesTimeout,
 		dedupBatchSize:     dedupBatchSize,
+		maxIncompleteRetries: maxIncompleteRetries,
 	}, nil
 }
 
@@ -1419,7 +1426,8 @@ func (rp *ResultsProcessor) handleIncompleteWork(ctx context.Context, issue *typ
 		return fmt.Errorf("analysis is nil - cannot handle incomplete work")
 	}
 
-	const maxIncompleteRetries = 1 // Allow 1 retry before escalation
+	// Use configured max retries (vc-hsfz)
+	maxIncompleteRetries := rp.maxIncompleteRetries
 
 	// Count how many times this issue has been attempted with incomplete results (vc-rd1z)
 	// An incomplete attempt is one where:
