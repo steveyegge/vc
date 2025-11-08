@@ -108,6 +108,7 @@ func (b *ContextBuilder) Build(ctx context.Context) (health.CodebaseContext, err
 	fileSizeDistribution := calculateDistribution(fileSizes)
 
 	return health.CodebaseContext{
+		RootPath:              b.RootDir,
 		FileSizeDistribution:  fileSizeDistribution,
 		ComplexityDistribution: health.Distribution{}, // TODO: Calculate if needed
 		DuplicationPercentage: 0.0,                    // TODO: Calculate if needed

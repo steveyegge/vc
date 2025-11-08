@@ -242,14 +242,22 @@ func DefaultRegistry(healthRegistry *health.MonitorRegistry) (*WorkerRegistry, e
 
 	// Register custom discovery workers
 	// These workers provide deep analysis beyond health monitors
-	// Import is in registry.go to avoid import cycles
-	// (workers package imports discovery, so we can't import workers here directly)
-	// Workers will be registered via a registration function in the future
-	// For now, they can be registered manually when creating the registry
 
-	// TODO: Add auto-registration mechanism
-	// - architecture worker (package structure analysis)
-	// - bugs worker (common bug pattern detection)
+	// Architecture worker - package structure analysis
+	archWorker := NewArchitectureWorker()
+	if err := registry.Register(archWorker); err != nil {
+		return nil, fmt.Errorf("registering architecture worker: %w", err)
+	}
+
+	// BugHunter worker - common bug pattern detection
+	bugWorker := NewBugHunterWorker()
+	if err := registry.Register(bugWorker); err != nil {
+		return nil, fmt.Errorf("registering bug hunter worker: %w", err)
+	}
+
+	// TODO: Additional workers to implement in future epics
+	// Note: Other workers (doc_auditor, dependency_auditor, test_coverage_analyzer, security_scanner)
+	// are being implemented in parallel epic vc-cq4l
 
 	return registry, nil
 }
