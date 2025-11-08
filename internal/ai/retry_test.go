@@ -488,6 +488,26 @@ func TestDefaultRetryConfigMaxQuotaWait(t *testing.T) {
 	t.Setenv("VC_MAX_QUOTA_WAIT", "invalid")
 	cfg = DefaultRetryConfig()
 	assert.Equal(t, 15*time.Minute, cfg.MaxQuotaWait, "Should use default for invalid env var")
+
+	// Test negative value (should use default)
+	t.Setenv("VC_MAX_QUOTA_WAIT", "-5m")
+	cfg = DefaultRetryConfig()
+	assert.Equal(t, 15*time.Minute, cfg.MaxQuotaWait, "Should use default for negative value")
+
+	// Test excessive value (should cap at 24h)
+	t.Setenv("VC_MAX_QUOTA_WAIT", "48h")
+	cfg = DefaultRetryConfig()
+	assert.Equal(t, 24*time.Hour, cfg.MaxQuotaWait, "Should cap at 24h for excessive value")
+
+	// Test boundary: exactly 24h (should be allowed)
+	t.Setenv("VC_MAX_QUOTA_WAIT", "24h")
+	cfg = DefaultRetryConfig()
+	assert.Equal(t, 24*time.Hour, cfg.MaxQuotaWait, "Should allow exactly 24h")
+
+	// Test boundary: 0 (should use default)
+	t.Setenv("VC_MAX_QUOTA_WAIT", "0")
+	cfg = DefaultRetryConfig()
+	assert.Equal(t, 15*time.Minute, cfg.MaxQuotaWait, "Zero is not positive, should use default")
 }
 
 // BenchmarkClassifyError benchmarks error classification performance

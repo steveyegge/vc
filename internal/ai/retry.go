@@ -15,6 +15,14 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 )
 
+// Pre-compiled regex patterns for parseRetryAfterFromMessage (vc-5b22)
+// Compiled at init time for better performance
+var (
+	retryAfterTryAgainRegex = regexp.MustCompile(`(?i)try again in (\d+)\s*(second|minute|hour)s?`)
+	retryAfterWaitRegex     = regexp.MustCompile(`(?i)wait (\d+)\s*(second|minute|hour)s?`)
+	retryAfterColonRegex    = regexp.MustCompile(`(?i)retry[_-]?after["']?\s*:\s*(\d+)`)
+)
+
 // ErrorType classifies errors for intelligent retry handling (vc-5b22)
 type ErrorType int
 
@@ -107,7 +115,18 @@ func DefaultRetryConfig() RetryConfig {
 	maxQuotaWait := 15 * time.Minute
 	if env := os.Getenv("VC_MAX_QUOTA_WAIT"); env != "" {
 		if d, err := time.ParseDuration(env); err == nil {
-			maxQuotaWait = d
+			// Validate bounds
+			if d <= 0 {
+				fmt.Fprintf(os.Stderr, "Warning: VC_MAX_QUOTA_WAIT must be positive (%v), using default 15m\n", d)
+				maxQuotaWait = 15 * time.Minute
+			} else if d > 24*time.Hour {
+				fmt.Fprintf(os.Stderr, "Warning: VC_MAX_QUOTA_WAIT exceeds 24h (%v), capping at 24h\n", d)
+				maxQuotaWait = 24 * time.Hour
+			} else {
+				maxQuotaWait = d
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: Invalid VC_MAX_QUOTA_WAIT format (%q), using default 15m\n", env)
 		}
 	}
 
@@ -369,6 +388,9 @@ func parseRetryAfter(apiErr *anthropic.Error) time.Duration {
 				waitTime := time.Until(resetAt)
 				if waitTime > 0 {
 					return waitTime
+				} else if waitTime < 0 {
+					// Clock skew or stale header - log for debugging
+					fmt.Fprintf(os.Stderr, "Warning: X-RateLimit-Reset is in the past (skew: %v)\n", -waitTime)
 				}
 			}
 		}
@@ -395,10 +417,10 @@ func parseRetryAfter(apiErr *anthropic.Error) time.Duration {
 
 // parseRetryAfterFromMessage extracts wait duration from error message text (vc-5b22)
 // Handles patterns like "try again in 12 minutes" or "wait 720 seconds"
+// Uses pre-compiled regex patterns for better performance
 func parseRetryAfterFromMessage(msg string) time.Duration {
 	// Pattern: "try again in N (second|minute|hour)s?"
-	re := regexp.MustCompile(`(?i)try again in (\d+)\s*(second|minute|hour)s?`)
-	if matches := re.FindStringSubmatch(msg); len(matches) == 3 {
+	if matches := retryAfterTryAgainRegex.FindStringSubmatch(msg); len(matches) == 3 {
 		value, _ := strconv.Atoi(matches[1])
 		unit := strings.ToLower(matches[2])
 		switch unit {
@@ -412,8 +434,7 @@ func parseRetryAfterFromMessage(msg string) time.Duration {
 	}
 
 	// Pattern: "wait N (second|minute|hour)s?"
-	re = regexp.MustCompile(`(?i)wait (\d+)\s*(second|minute|hour)s?`)
-	if matches := re.FindStringSubmatch(msg); len(matches) == 3 {
+	if matches := retryAfterWaitRegex.FindStringSubmatch(msg); len(matches) == 3 {
 		value, _ := strconv.Atoi(matches[1])
 		unit := strings.ToLower(matches[2])
 		switch unit {
@@ -427,8 +448,7 @@ func parseRetryAfterFromMessage(msg string) time.Duration {
 	}
 
 	// Pattern: "retry_after": N or "retry-after: N" (seconds)
-	re = regexp.MustCompile(`(?i)retry[_-]?after["']?\s*:\s*(\d+)`)
-	if matches := re.FindStringSubmatch(msg); len(matches) == 2 {
+	if matches := retryAfterColonRegex.FindStringSubmatch(msg); len(matches) == 2 {
 		if seconds, err := strconv.Atoi(matches[1]); err == nil {
 			return time.Duration(seconds) * time.Second
 		}
