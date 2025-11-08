@@ -240,13 +240,16 @@ func DefaultRegistry(healthRegistry *health.MonitorRegistry) (*WorkerRegistry, e
 		}
 	}
 
-	// TODO: Register custom discovery workers
+	// Register custom discovery workers
+	// These workers provide deep analysis beyond health monitors
+	// Import is in registry.go to avoid import cycles
+	// (workers package imports discovery, so we can't import workers here directly)
+	// Workers will be registered via a registration function in the future
+	// For now, they can be registered manually when creating the registry
+
+	// TODO: Add auto-registration mechanism
 	// - architecture worker (package structure analysis)
 	// - bugs worker (common bug pattern detection)
-	// - documentation worker (missing docs)
-	// - tests worker (coverage gaps)
-	// - dependencies worker (dependency analysis)
-	// - security worker (vulnerability scanning)
 
 	return registry, nil
 }

@@ -230,8 +230,9 @@ func PresetConfig(preset Preset) *Config {
 			MaxIssues:   20,
 		}
 		cfg.Workers = []string{
-			"file_size_monitor", // Quick scan for oversized files
-			"cruft_detector",    // Quick scan for obvious cruft
+			"file_size_monitor",    // Quick scan for oversized files
+			"cruft_detector",       // Quick scan for obvious cruft
+			"dependency_auditor",   // Check dependencies (cheap - uses APIs)
 		}
 
 	case PresetStandard:
@@ -245,6 +246,8 @@ func PresetConfig(preset Preset) *Config {
 			"file_size_monitor",    // Oversized files
 			"cruft_detector",       // Cruft detection
 			"duplication_detector", // Code duplication
+			"doc_auditor",          // Documentation quality
+			"dependency_auditor",   // Dependency analysis
 		}
 
 	case PresetThorough:
@@ -255,10 +258,14 @@ func PresetConfig(preset Preset) *Config {
 			MaxIssues:   100,
 		}
 		cfg.Workers = []string{
-			"file_size_monitor",    // Oversized files
-			"cruft_detector",       // Cruft detection
-			"duplication_detector", // Code duplication
-			"zfc_detector",         // ZFC violations
+			"file_size_monitor",       // Oversized files
+			"cruft_detector",          // Cruft detection
+			"duplication_detector",    // Code duplication
+			"zfc_detector",            // ZFC violations
+			"doc_auditor",             // Documentation quality
+			"test_coverage_analyzer",  // Test coverage analysis
+			"dependency_auditor",      // Dependency analysis
+			"security_scanner",        // Security vulnerabilities
 		}
 	}
 
