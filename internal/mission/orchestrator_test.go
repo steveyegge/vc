@@ -136,6 +136,12 @@ func (m *MockStorage) CloseIssue(ctx context.Context, id string, reason string, 
 func (m *MockStorage) SearchIssues(ctx context.Context, query string, filter types.IssueFilter) ([]*types.Issue, error) {
 	return nil, nil
 }
+func (m *MockStorage) GetDiagnosis(ctx context.Context, issueID string) (*types.TestFailureDiagnosis, error) {
+	return nil, nil
+}
+func (m *MockStorage) StoreDiagnosis(ctx context.Context, issueID string, diagnosis *types.TestFailureDiagnosis) error {
+	return nil
+}
 func (m *MockStorage) GetDependencies(ctx context.Context, issueID string) ([]*types.Issue, error) {
 	// Simple mock: if it's a phase, return the mission
 	// In reality, this would filter based on actual dependency records
