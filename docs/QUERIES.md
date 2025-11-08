@@ -406,6 +406,238 @@ ORDER BY count DESC;
 
 ---
 
+## 📈 Executor Metrics Queries (vc-b5db)
+
+The executor captures comprehensive metrics about issue completion including phase durations, discovered issues, and quality gate results. These are tracked in the monitoring system and displayed in execution summaries.
+
+### Success Rate by Issue Type
+
+**Overall success rate:**
+```sql
+SELECT
+  COUNT(*) as total_completions,
+  SUM(CASE WHEN json_extract(data, '$.success') = 1 THEN 1 ELSE 0 END) as successful,
+  ROUND(100.0 * SUM(CASE WHEN json_extract(data, '$.success') = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) as success_rate_pct
+FROM agent_events
+WHERE type = 'issue_completed';
+```
+
+**Success rate by issue type (bug vs feature vs task):**
+```sql
+SELECT
+  i.type as issue_type,
+  COUNT(*) as total,
+  SUM(CASE WHEN json_extract(ae.data, '$.success') = 1 THEN 1 ELSE 0 END) as successful,
+  ROUND(100.0 * SUM(CASE WHEN json_extract(ae.data, '$.success') = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) as success_rate_pct
+FROM agent_events ae
+JOIN issues i ON ae.issue_id = i.id
+WHERE ae.type = 'issue_completed'
+GROUP BY i.type
+ORDER BY success_rate_pct DESC;
+```
+
+**Success rate by priority:**
+```sql
+SELECT
+  i.priority as priority,
+  COUNT(*) as total,
+  SUM(CASE WHEN json_extract(ae.data, '$.success') = 1 THEN 1 ELSE 0 END) as successful,
+  ROUND(100.0 * SUM(CASE WHEN json_extract(ae.data, '$.success') = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) as success_rate_pct
+FROM agent_events ae
+JOIN issues i ON ae.issue_id = i.id
+WHERE ae.type = 'issue_completed'
+GROUP BY i.priority
+ORDER BY i.priority;
+```
+
+### Average Duration by Phase
+
+**Note:** Phase duration metrics are captured by the monitoring system but not currently stored as separate events. This is tracked via in-memory telemetry and displayed in execution summaries. Future enhancement could emit phase completion events for historical analysis.
+
+**Quality gates duration (from progress events):**
+```sql
+SELECT
+  AVG(
+    (julianday(MAX(CASE WHEN type = 'quality_gates_completed' THEN timestamp END)) -
+     julianday(MIN(CASE WHEN type = 'quality_gates_started' THEN timestamp END))) * 86400
+  ) as avg_gates_duration_sec
+FROM agent_events
+WHERE issue_id IN (
+  SELECT DISTINCT issue_id FROM agent_events
+  WHERE type = 'quality_gates_started'
+)
+GROUP BY issue_id;
+```
+
+### Discovered Issues Per Completion
+
+**Average discovered issues:**
+```sql
+SELECT
+  AVG(json_extract(data, '$.discovered_count')) as avg_discovered,
+  MAX(json_extract(data, '$.discovered_count')) as max_discovered,
+  MIN(json_extract(data, '$.discovered_count')) as min_discovered
+FROM agent_events
+WHERE type = 'analysis_completed'
+  AND json_extract(data, '$.discovered_count') IS NOT NULL;
+```
+
+**Issues that spawned most follow-on work:**
+```sql
+SELECT
+  issue_id,
+  json_extract(data, '$.discovered_count') as discovered,
+  message
+FROM agent_events
+WHERE type = 'analysis_completed'
+  AND json_extract(data, '$.discovered_count') > 3
+ORDER BY json_extract(data, '$.discovered_count') DESC
+LIMIT 10;
+```
+
+**Discovered issues breakdown by type:**
+```sql
+SELECT
+  json_extract(data, '$.issue_type') as discovered_type,
+  COUNT(*) as count
+FROM agent_events
+WHERE type = 'issue_created'
+  AND json_extract(data, '$.discovered_by') IS NOT NULL
+GROUP BY discovered_type
+ORDER BY count DESC;
+```
+
+### Quality Gate Pass Rate
+
+**Overall quality gate pass rate:**
+```sql
+SELECT
+  COUNT(*) as total_gate_runs,
+  SUM(CASE WHEN json_extract(data, '$.all_passed') = 1 THEN 1 ELSE 0 END) as passed,
+  ROUND(100.0 * SUM(CASE WHEN json_extract(data, '$.all_passed') = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) as pass_rate_pct
+FROM agent_events
+WHERE type = 'quality_gates_completed';
+```
+
+**Pass rate by gate type:**
+```sql
+SELECT
+  json_extract(data, '$.gate_name') as gate,
+  COUNT(*) as executions,
+  SUM(CASE WHEN json_extract(data, '$.passed') = 1 THEN 1 ELSE 0 END) as passed,
+  ROUND(100.0 * SUM(CASE WHEN json_extract(data, '$.passed') = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) as pass_rate_pct
+FROM agent_events
+WHERE type = 'quality_gate_result'
+GROUP BY gate
+ORDER BY pass_rate_pct ASC;
+```
+
+**Recent quality gate failures:**
+```sql
+SELECT
+  timestamp,
+  issue_id,
+  json_extract(data, '$.gate_name') as gate,
+  json_extract(data, '$.message') as error
+FROM agent_events
+WHERE type = 'quality_gate_result'
+  AND json_extract(data, '$.passed') = 0
+ORDER BY timestamp DESC
+LIMIT 20;
+```
+
+### Velocity and Throughput
+
+**Issues completed per day (last 30 days):**
+```sql
+SELECT
+  date(timestamp) as date,
+  COUNT(*) as completions,
+  SUM(CASE WHEN json_extract(data, '$.success') = 1 THEN 1 ELSE 0 END) as successful
+FROM agent_events
+WHERE type = 'issue_completed'
+  AND timestamp > datetime('now', '-30 days')
+GROUP BY date
+ORDER BY date DESC;
+```
+
+**Average time to completion:**
+```sql
+SELECT
+  AVG(
+    (julianday(completed_at) - julianday(created_at)) * 86400
+  ) as avg_completion_time_sec
+FROM issues
+WHERE status = 'closed'
+  AND completed_at IS NOT NULL
+  AND created_at IS NOT NULL;
+```
+
+**Executor efficiency (issues per hour when running):**
+```sql
+WITH executor_runtime AS (
+  SELECT
+    SUM(
+      (julianday(MAX(timestamp)) - julianday(MIN(timestamp))) * 24
+    ) as total_hours
+  FROM agent_events
+  GROUP BY issue_id
+),
+total_completions AS (
+  SELECT COUNT(*) as count FROM issues WHERE status = 'closed'
+)
+SELECT
+  tc.count as total_completed,
+  er.total_hours as total_runtime_hours,
+  ROUND(tc.count * 1.0 / er.total_hours, 2) as issues_per_hour
+FROM executor_runtime er, total_completions tc;
+```
+
+### Failure Mode Analysis
+
+**Failure reasons distribution:**
+```sql
+SELECT
+  json_extract(data, '$.failure_reason') as reason,
+  COUNT(*) as count
+FROM agent_events
+WHERE type = 'issue_failed'
+  OR (type = 'issue_completed' AND json_extract(data, '$.success') = 0)
+GROUP BY reason
+ORDER BY count DESC;
+```
+
+**Blocked issues by blocker type:**
+```sql
+SELECT
+  json_extract(data, '$.blocker_type') as blocker,
+  COUNT(*) as count
+FROM agent_events
+WHERE type = 'issue_blocked'
+GROUP BY blocker
+ORDER BY count DESC;
+```
+
+### Resource Usage Trends
+
+**Note:** Agent message/token counts are tracked in agent telemetry but not currently emitted as events. This data is available in real-time summaries but not stored for historical analysis. Consider adding `agent_stats` events in the future.
+
+**Estimated API usage (from agent activity):**
+```sql
+SELECT
+  date(timestamp) as date,
+  COUNT(DISTINCT issue_id) as issues_worked,
+  COUNT(*) as total_tool_uses,
+  SUM(CASE WHEN json_extract(data, '$.tool_name') = 'Task' THEN 1 ELSE 0 END) as subagent_spawns
+FROM agent_events
+WHERE type = 'agent_tool_use'
+  AND timestamp > datetime('now', '-30 days')
+GROUP BY date
+ORDER BY date DESC;
+```
+
+---
+
 ## 🗄️ Event Retention Queries (Future)
 
 **Status:** Not yet implemented. See docs/CONFIGURATION.md for planned event retention features.
