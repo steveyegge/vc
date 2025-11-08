@@ -48,7 +48,7 @@ func (w *ArchitectureWorker) Philosophy() string {
 
 // Scope implements DiscoveryWorker.
 func (w *ArchitectureWorker) Scope() string {
-	return "Package/module structure, import graphs, circular dependencies, coupling metrics, layer violations, god packages, missing abstractions"
+	return "Package/module structure, import graphs, circular dependencies, coupling metrics, god packages, missing abstractions (repeated structs/interfaces/functions across packages)"
 }
 
 // Cost implements DiscoveryWorker.
@@ -158,28 +158,54 @@ func (w *ArchitectureWorker) Analyze(ctx context.Context, codebase health.Codeba
 		result.IssuesDiscovered = append(result.IssuesDiscovered, issue)
 	}
 
+	// Detect missing abstractions
+	missingAbstractions := w.detectMissingAbstractions(pkgGraph)
+	for _, abs := range missingAbstractions {
+		issue := DiscoveredIssue{
+			Title:       fmt.Sprintf("Missing abstraction: %d similar %s across %d packages", len(abs.instances), abs.patternType, len(abs.packages)),
+			Description: fmt.Sprintf("Found %d similar %s definitions across packages: %s\n\nSimilar structures:\n%s\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.", len(abs.instances), abs.patternType, strings.Join(abs.packages, ", "), abs.exampleCode),
+			Category:    "architecture",
+			Type:        "task",
+			Priority:    2, // P2 - quality improvement
+			Tags:        []string{"duplication", "abstraction", "design"},
+			Evidence: map[string]interface{}{
+				"pattern_type":   abs.patternType,
+				"instance_count": len(abs.instances),
+				"packages":       abs.packages,
+				"similarity":     abs.similarityScore,
+				"instances":      abs.instances,
+			},
+			DiscoveredBy: w.Name(),
+			DiscoveredAt: startTime,
+			Confidence:   0.5, // Medium confidence - AI should determine if duplication is problematic
+		}
+		result.IssuesDiscovered = append(result.IssuesDiscovered, issue)
+	}
+
 	// Build context and reasoning for AI
 	result.Context = fmt.Sprintf(
-		"Analyzed %d packages with %d total files. Found %d circular dependencies, %d god packages, %d high-coupling packages.",
+		"Analyzed %d packages with %d total files. Found %d circular dependencies, %d god packages, %d high-coupling packages, %d missing abstractions.",
 		len(pkgGraph.packages),
 		pkgGraph.totalFiles,
 		len(cycles),
 		len(godPackages),
 		len(highCouplingPackages),
+		len(missingAbstractions),
 	)
 
 	result.Reasoning = fmt.Sprintf(
 		"Based on philosophy: '%s'\n\nPackage structure analysis revealed potential issues:\n"+
 			"- Circular dependencies prevent clean layering and testability\n"+
 			"- God packages suggest unclear responsibilities\n"+
-			"- High coupling makes changes ripple across the codebase\n\n"+
+			"- High coupling makes changes ripple across the codebase\n"+
+			"- Missing abstractions indicate repeated patterns that could be unified\n\n"+
 			"AI should evaluate: Are these issues worth addressing given the codebase context?",
 		w.Philosophy(),
 	)
 
 	result.Stats.IssuesFound = len(result.IssuesDiscovered)
 	result.Stats.Duration = time.Since(startTime)
-	result.Stats.PatternsFound = len(cycles) + len(godPackages) + len(highCouplingPackages)
+	result.Stats.PatternsFound = len(cycles) + len(godPackages) + len(highCouplingPackages) + len(missingAbstractions)
 
 	return result, nil
 }
@@ -551,4 +577,381 @@ func percentile(values []int, p float64) int {
 	result := float64(sorted[lower]) + fraction*float64(sorted[upper]-sorted[lower])
 
 	return int(math.Round(result))
+}
+
+// missingAbstraction represents a pattern of repeated code structures.
+type missingAbstraction struct {
+	patternType     string                 // "struct", "interface", "function signature"
+	instances       []abstractionInstance  // All occurrences of this pattern
+	packages        []string               // Unique packages where pattern appears
+	similarityScore float64                // 0.0-1.0 similarity score
+	exampleCode     string                 // Sample code showing the duplication
+}
+
+// abstractionInstance represents one occurrence of a repeated pattern.
+type abstractionInstance struct {
+	name     string            // Type or function name
+	pkg      string            // Package name
+	file     string            // File path
+	line     int               // Line number
+	fields   []string          // For structs: field names and types
+	params   []string          // For functions: parameter types
+	returns  []string          // For functions: return types
+	metadata map[string]string // Additional context
+}
+
+// detectMissingAbstractions finds repeated struct/interface/function patterns across packages.
+func (w *ArchitectureWorker) detectMissingAbstractions(graph *packageGraph) []missingAbstraction {
+	var abstractions []missingAbstraction
+
+	// Extract all type definitions and function signatures
+	structs := make(map[string][]abstractionInstance)
+	interfaces := make(map[string][]abstractionInstance)
+	functionSigs := make(map[string][]abstractionInstance)
+
+	for _, pkg := range graph.packages {
+		for _, file := range pkg.files {
+			fset := token.NewFileSet()
+			node, err := parser.ParseFile(fset, file, nil, 0)
+			if err != nil {
+				continue
+			}
+
+			// Extract type definitions
+			for _, decl := range node.Decls {
+				genDecl, ok := decl.(*ast.GenDecl)
+				if !ok || genDecl.Tok != token.TYPE {
+					continue
+				}
+
+				for _, spec := range genDecl.Specs {
+					typeSpec, ok := spec.(*ast.TypeSpec)
+					if !ok {
+						continue
+					}
+
+					pos := fset.Position(typeSpec.Pos())
+
+					// Handle struct types
+					if structType, ok := typeSpec.Type.(*ast.StructType); ok {
+						fields := w.extractStructFields(structType)
+						signature := w.structSignature(fields)
+
+						instance := abstractionInstance{
+							name:   typeSpec.Name.Name,
+							pkg:    pkg.name,
+							file:   file,
+							line:   pos.Line,
+							fields: fields,
+						}
+						structs[signature] = append(structs[signature], instance)
+					}
+
+					// Handle interface types
+					if interfaceType, ok := typeSpec.Type.(*ast.InterfaceType); ok {
+						methods := w.extractInterfaceMethods(interfaceType)
+						signature := w.interfaceSignature(methods)
+
+						instance := abstractionInstance{
+							name:     typeSpec.Name.Name,
+							pkg:      pkg.name,
+							file:     file,
+							line:     pos.Line,
+							params:   methods, // Store methods in params field
+						}
+						interfaces[signature] = append(interfaces[signature], instance)
+					}
+				}
+			}
+
+			// Extract function signatures
+			for _, decl := range node.Decls {
+				funcDecl, ok := decl.(*ast.FuncDecl)
+				if !ok || funcDecl.Recv != nil { // Skip methods
+					continue
+				}
+
+				pos := fset.Position(funcDecl.Pos())
+				params := w.extractFunctionParams(funcDecl.Type.Params)
+				returns := w.extractFunctionReturns(funcDecl.Type.Results)
+				signature := w.functionSignature(params, returns)
+
+				instance := abstractionInstance{
+					name:    funcDecl.Name.Name,
+					pkg:     pkg.name,
+					file:    file,
+					line:    pos.Line,
+					params:  params,
+					returns: returns,
+				}
+				functionSigs[signature] = append(functionSigs[signature], instance)
+			}
+		}
+	}
+
+	// Analyze struct patterns
+	for _, instances := range structs {
+		if len(instances) >= 2 && w.spansMultiplePackages(instances) {
+			pkgs := w.uniquePackages(instances)
+			exampleCode := w.generateStructExample(instances)
+
+			abstractions = append(abstractions, missingAbstraction{
+				patternType:     "struct",
+				instances:       instances,
+				packages:        pkgs,
+				similarityScore: 1.0, // Exact signature match
+				exampleCode:     exampleCode,
+			})
+		}
+	}
+
+	// Analyze interface patterns
+	for _, instances := range interfaces {
+		if len(instances) >= 2 && w.spansMultiplePackages(instances) {
+			pkgs := w.uniquePackages(instances)
+			exampleCode := w.generateInterfaceExample(instances)
+
+			abstractions = append(abstractions, missingAbstraction{
+				patternType:     "interface",
+				instances:       instances,
+				packages:        pkgs,
+				similarityScore: 1.0,
+				exampleCode:     exampleCode,
+			})
+		}
+	}
+
+	// Analyze function signature patterns
+	for _, instances := range functionSigs {
+		if len(instances) >= 3 && w.spansMultiplePackages(instances) {
+			pkgs := w.uniquePackages(instances)
+			exampleCode := w.generateFunctionExample(instances)
+
+			abstractions = append(abstractions, missingAbstraction{
+				patternType:     "function",
+				instances:       instances,
+				packages:        pkgs,
+				similarityScore: 1.0,
+				exampleCode:     exampleCode,
+			})
+		}
+	}
+
+	return abstractions
+}
+
+// extractStructFields extracts field names and types from a struct.
+func (w *ArchitectureWorker) extractStructFields(structType *ast.StructType) []string {
+	var fields []string
+	if structType.Fields == nil {
+		return fields
+	}
+
+	for _, field := range structType.Fields.List {
+		typeStr := w.typeToString(field.Type)
+		if len(field.Names) == 0 {
+			// Embedded field
+			fields = append(fields, typeStr)
+		} else {
+			for _, name := range field.Names {
+				fields = append(fields, fmt.Sprintf("%s %s", name.Name, typeStr))
+			}
+		}
+	}
+	return fields
+}
+
+// extractInterfaceMethods extracts method signatures from an interface.
+func (w *ArchitectureWorker) extractInterfaceMethods(interfaceType *ast.InterfaceType) []string {
+	var methods []string
+	if interfaceType.Methods == nil {
+		return methods
+	}
+
+	for _, method := range interfaceType.Methods.List {
+		if len(method.Names) == 0 {
+			// Embedded interface
+			methods = append(methods, w.typeToString(method.Type))
+			continue
+		}
+
+		if funcType, ok := method.Type.(*ast.FuncType); ok {
+			for _, name := range method.Names {
+				params := w.extractFunctionParams(funcType.Params)
+				returns := w.extractFunctionReturns(funcType.Results)
+				sig := fmt.Sprintf("%s(%s) %s", name.Name, strings.Join(params, ", "), strings.Join(returns, ", "))
+				methods = append(methods, sig)
+			}
+		}
+	}
+	return methods
+}
+
+// extractFunctionParams extracts parameter types from a function.
+func (w *ArchitectureWorker) extractFunctionParams(params *ast.FieldList) []string {
+	if params == nil {
+		return []string{}
+	}
+
+	var result []string
+	for _, param := range params.List {
+		typeStr := w.typeToString(param.Type)
+		if len(param.Names) == 0 {
+			result = append(result, typeStr)
+		} else {
+			for range param.Names {
+				result = append(result, typeStr)
+			}
+		}
+	}
+	return result
+}
+
+// extractFunctionReturns extracts return types from a function.
+func (w *ArchitectureWorker) extractFunctionReturns(results *ast.FieldList) []string {
+	if results == nil {
+		return []string{}
+	}
+
+	var result []string
+	for _, ret := range results.List {
+		typeStr := w.typeToString(ret.Type)
+		if len(ret.Names) == 0 {
+			result = append(result, typeStr)
+		} else {
+			for range ret.Names {
+				result = append(result, typeStr)
+			}
+		}
+	}
+	return result
+}
+
+// typeToString converts an AST type to a string representation.
+func (w *ArchitectureWorker) typeToString(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.SelectorExpr:
+		return fmt.Sprintf("%s.%s", w.typeToString(t.X), t.Sel.Name)
+	case *ast.StarExpr:
+		return "*" + w.typeToString(t.X)
+	case *ast.ArrayType:
+		return "[]" + w.typeToString(t.Elt)
+	case *ast.MapType:
+		return fmt.Sprintf("map[%s]%s", w.typeToString(t.Key), w.typeToString(t.Value))
+	case *ast.InterfaceType:
+		return "interface{}"
+	case *ast.FuncType:
+		return "func"
+	case *ast.ChanType:
+		return "chan " + w.typeToString(t.Value)
+	default:
+		return "unknown"
+	}
+}
+
+// structSignature generates a canonical signature for a struct (based on field types).
+func (w *ArchitectureWorker) structSignature(fields []string) string {
+	// Normalize by removing field names, keeping only types
+	var types []string
+	for _, field := range fields {
+		parts := strings.Fields(field)
+		if len(parts) > 1 {
+			types = append(types, parts[len(parts)-1]) // Last part is the type
+		} else {
+			types = append(types, field)
+		}
+	}
+	sort.Strings(types)
+	return "struct{" + strings.Join(types, ";") + "}"
+}
+
+// interfaceSignature generates a canonical signature for an interface.
+func (w *ArchitectureWorker) interfaceSignature(methods []string) string {
+	sorted := make([]string, len(methods))
+	copy(sorted, methods)
+	sort.Strings(sorted)
+	return "interface{" + strings.Join(sorted, ";") + "}"
+}
+
+// functionSignature generates a canonical signature for a function.
+func (w *ArchitectureWorker) functionSignature(params, returns []string) string {
+	return fmt.Sprintf("func(%s)(%s)", strings.Join(params, ","), strings.Join(returns, ","))
+}
+
+// spansMultiplePackages checks if instances appear in different packages.
+func (w *ArchitectureWorker) spansMultiplePackages(instances []abstractionInstance) bool {
+	pkgs := make(map[string]bool)
+	for _, inst := range instances {
+		pkgs[inst.pkg] = true
+	}
+	return len(pkgs) > 1
+}
+
+// uniquePackages extracts unique package names from instances.
+func (w *ArchitectureWorker) uniquePackages(instances []abstractionInstance) []string {
+	pkgs := make(map[string]bool)
+	for _, inst := range instances {
+		pkgs[inst.pkg] = true
+	}
+
+	var result []string
+	for pkg := range pkgs {
+		result = append(result, pkg)
+	}
+	sort.Strings(result)
+	return result
+}
+
+// generateStructExample creates example code showing struct duplication.
+func (w *ArchitectureWorker) generateStructExample(instances []abstractionInstance) string {
+	if len(instances) == 0 {
+		return ""
+	}
+
+	var examples []string
+	for i, inst := range instances {
+		if i >= 3 { // Show at most 3 examples
+			break
+		}
+		examples = append(examples, fmt.Sprintf("// %s.%s (%s:%d)\ntype %s struct {\n  %s\n}",
+			inst.pkg, inst.name, filepath.Base(inst.file), inst.line, inst.name, strings.Join(inst.fields, "\n  ")))
+	}
+	return strings.Join(examples, "\n\n")
+}
+
+// generateInterfaceExample creates example code showing interface duplication.
+func (w *ArchitectureWorker) generateInterfaceExample(instances []abstractionInstance) string {
+	if len(instances) == 0 {
+		return ""
+	}
+
+	var examples []string
+	for i, inst := range instances {
+		if i >= 3 {
+			break
+		}
+		examples = append(examples, fmt.Sprintf("// %s.%s (%s:%d)\ntype %s interface {\n  %s\n}",
+			inst.pkg, inst.name, filepath.Base(inst.file), inst.line, inst.name, strings.Join(inst.params, "\n  ")))
+	}
+	return strings.Join(examples, "\n\n")
+}
+
+// generateFunctionExample creates example code showing function signature duplication.
+func (w *ArchitectureWorker) generateFunctionExample(instances []abstractionInstance) string {
+	if len(instances) == 0 {
+		return ""
+	}
+
+	var examples []string
+	for i, inst := range instances {
+		if i >= 3 {
+			break
+		}
+		examples = append(examples, fmt.Sprintf("// %s.%s (%s:%d)\nfunc %s(%s) (%s)",
+			inst.pkg, inst.name, filepath.Base(inst.file), inst.line, inst.name,
+			strings.Join(inst.params, ", "), strings.Join(inst.returns, ", ")))
+	}
+	return strings.Join(examples, "\n\n")
 }

@@ -1,0 +1,25 @@
+=== Discovery Workers Performance Analysis ===
+Codebase: .
+Date: Fri Nov  7 23:11:05 PST 2025
+
+--- Codebase Size ---
+   49632 total
+
+--- Package Count ---
+Packages: 0
+
+--- Worker Performance ---
+Running integration tests...
+=== RUN   TestArchitectureWorker_Integration
+    workers_integration_test.go:55: Architecture Analysis Results:
+    workers_integration_test.go:56:   Files analyzed: 139
+    workers_integration_test.go:57:   Issues found: 30
+    workers_integration_test.go:59:   Duration: 65.44075ms
+--- PASS: TestArchitectureWorker_Integration (0.08s)
+    workers_integration_test.go:124: Bug Hunter Analysis Results:
+    workers_integration_test.go:125:   Files analyzed: 139
+    workers_integration_test.go:126:   Issues found: 236
+    workers_integration_test.go:128:   Duration: 168.625584ms
+    workers_integration_test.go:210:   Architecture: 30 issues, 65.64775ms
+    workers_integration_test.go:211:   Bug Hunter: 236 issues, 175.995167ms
+

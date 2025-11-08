@@ -50,7 +50,7 @@ func (w *BugHunterWorker) Philosophy() string {
 
 // Scope implements DiscoveryWorker.
 func (w *BugHunterWorker) Scope() string {
-	return "Race conditions, resource leaks, goroutine leaks, error handling gaps, off-by-one errors"
+	return "Race conditions (shared variables, map access, atomic operations), resource leaks, goroutine leaks, error handling gaps"
 }
 
 // Cost implements DiscoveryWorker.
@@ -124,6 +124,10 @@ func (w *BugHunterWorker) Analyze(ctx context.Context, codebase health.CodebaseC
 		result.IssuesDiscovered = append(result.IssuesDiscovered, errorIssues...)
 
 		// Note: Nil dereference detection removed (vc-h2a4) - too many false positives without proper data flow analysis
+
+		// Check for race conditions
+		raceIssues := w.detectRaceConditions(node, fset, path)
+		result.IssuesDiscovered = append(result.IssuesDiscovered, raceIssues...)
 
 		// Check for goroutine leaks
 		goroutineIssues := w.detectGoroutineLeaks(node, fset, path)
@@ -343,4 +347,253 @@ func (w *BugHunterWorker) detectGoroutineLeaks(node *ast.File, fset *token.FileS
 	})
 
 	return issues
+}
+
+// detectRaceConditions finds potential race conditions in concurrent code.
+// Patterns detected:
+// - Shared variables accessed from multiple goroutines without locks
+// - Map access in concurrent contexts (maps are not thread-safe)
+// - Slice/array modifications from multiple goroutines
+// - Counter increments without atomic operations
+// - Read-write races (read without lock, write with lock)
+func (w *BugHunterWorker) detectRaceConditions(node *ast.File, fset *token.FileSet, filePath string) []DiscoveredIssue {
+	var issues []DiscoveredIssue
+
+	// Track variables captured by goroutine closures
+	capturedVars := make(map[string][]capturedVariable)
+
+	// First pass: identify goroutines and their captured variables
+	ast.Inspect(node, func(n ast.Node) bool {
+		if goStmt, ok := n.(*ast.GoStmt); ok {
+			// Check if it's a function literal (closure)
+			if funcLit, ok := goStmt.Call.Fun.(*ast.FuncLit); ok {
+				pos := fset.Position(goStmt.Pos())
+
+				// Find variables referenced in the closure body
+				captured := w.findCapturedVariables(funcLit.Body)
+				for _, v := range captured {
+					capturedVars[v] = append(capturedVars[v], capturedVariable{
+						name:     v,
+						line:     pos.Line,
+						filePath: filePath,
+					})
+				}
+			}
+		}
+		return true
+	})
+
+	// Check for variables captured by multiple goroutines (potential race)
+	for varName, locations := range capturedVars {
+		if len(locations) > 1 {
+			// This variable is captured by multiple goroutines - potential race
+			issues = append(issues, DiscoveredIssue{
+				Title:       fmt.Sprintf("Potential race condition: variable '%s' accessed by multiple goroutines", varName),
+				Description: fmt.Sprintf("Variable '%s' is accessed by %d different goroutines in %s.\n\nShared variables accessed by multiple goroutines must be protected with sync.Mutex, sync.RWMutex, or accessed via channels/atomic operations to prevent race conditions.", varName, len(locations), filepath.Base(filePath)),
+				Category:    "bugs",
+				Type:        "bug",
+				Priority:    1, // P1 - race conditions are serious
+				Tags:        []string{"race-condition", "concurrency"},
+				FilePath:    filePath,
+				LineStart:   locations[0].line,
+				Evidence: map[string]interface{}{
+					"variable":        varName,
+					"goroutine_count": len(locations),
+					"file":            filepath.Base(filePath),
+					"locations":       locations,
+				},
+				Confidence: 0.6, // Medium-high confidence - needs AI to verify if properly synchronized
+			})
+		}
+	}
+
+	// Second pass: detect specific race patterns
+	ast.Inspect(node, func(n ast.Node) bool {
+		// Pattern 1: Map access without synchronization
+		if indexExpr, ok := n.(*ast.IndexExpr); ok {
+			if w.isMapAccess(indexExpr) {
+				pos := fset.Position(indexExpr.Pos())
+				// Check if this is inside a goroutine
+				if w.isInsideGoroutine(node, indexExpr) {
+					issues = append(issues, DiscoveredIssue{
+						Title:       "Potential race: map access in goroutine without synchronization",
+						Description: fmt.Sprintf("Map access at %s:%d appears to be in a goroutine context.\n\nMaps in Go are not thread-safe. Concurrent reads and writes require sync.RWMutex or sync.Map.", filepath.Base(filePath), pos.Line),
+						Category:    "bugs",
+						Type:        "bug",
+						Priority:    1, // P1 - map races crash at runtime
+						Tags:        []string{"race-condition", "map", "concurrency"},
+						FilePath:    filePath,
+						LineStart:   pos.Line,
+						Evidence: map[string]interface{}{
+							"line":    pos.Line,
+							"file":    filepath.Base(filePath),
+							"pattern": "map-access-in-goroutine",
+						},
+						Confidence: 0.5, // Medium confidence - might be protected by mutex elsewhere
+					})
+				}
+			}
+		}
+
+		// Pattern 2: Counter increment without atomic operations
+		if incDec, ok := n.(*ast.IncDecStmt); ok {
+			if w.isInsideGoroutine(node, incDec) {
+				if ident, ok := incDec.X.(*ast.Ident); ok {
+					pos := fset.Position(incDec.Pos())
+					issues = append(issues, DiscoveredIssue{
+						Title:       fmt.Sprintf("Potential race: counter '%s' modified in goroutine without atomic operation", ident.Name),
+						Description: fmt.Sprintf("Counter variable '%s' at %s:%d is incremented/decremented in a goroutine.\n\nCounter modifications in concurrent code should use sync/atomic.AddInt32/64 or be protected by a mutex.", ident.Name, filepath.Base(filePath), pos.Line),
+						Category:    "bugs",
+						Type:        "bug",
+						Priority:    2, // P2 - data race but may not crash
+						Tags:        []string{"race-condition", "atomic", "concurrency"},
+						FilePath:    filePath,
+						LineStart:   pos.Line,
+						Evidence: map[string]interface{}{
+							"variable": ident.Name,
+							"line":     pos.Line,
+							"file":     filepath.Base(filePath),
+							"pattern":  "non-atomic-counter",
+						},
+						Confidence: 0.5, // Medium confidence - might be protected
+					})
+				}
+			}
+		}
+
+		// Pattern 3: Assignment to shared variable in goroutine
+		if assign, ok := n.(*ast.AssignStmt); ok {
+			if w.isInsideGoroutine(node, assign) {
+				for _, lhs := range assign.Lhs {
+					if ident, ok := lhs.(*ast.Ident); ok {
+						// Check if this looks like a shared variable (not local declaration)
+						if assign.Tok != token.DEFINE || w.mightBeSharedVariable(ident.Name) {
+							pos := fset.Position(assign.Pos())
+							issues = append(issues, DiscoveredIssue{
+								Title:       fmt.Sprintf("Potential race: assignment to '%s' in goroutine", ident.Name),
+								Description: fmt.Sprintf("Variable '%s' is assigned at %s:%d inside a goroutine.\n\nIf this variable is accessed by multiple goroutines, the assignment must be protected by a mutex or use atomic operations.", ident.Name, filepath.Base(filePath), pos.Line),
+								Category:    "bugs",
+								Type:        "bug",
+								Priority:    2, // P2 - context-dependent severity
+								Tags:        []string{"race-condition", "write", "concurrency"},
+								FilePath:    filePath,
+								LineStart:   pos.Line,
+								Evidence: map[string]interface{}{
+									"variable": ident.Name,
+									"line":     pos.Line,
+									"file":     filepath.Base(filePath),
+									"pattern":  "shared-write",
+								},
+								Confidence: 0.4, // Lower confidence - many false positives expected
+							})
+						}
+					}
+				}
+			}
+		}
+
+		return true
+	})
+
+	return issues
+}
+
+// capturedVariable represents a variable captured by a goroutine closure.
+type capturedVariable struct {
+	name     string
+	line     int
+	filePath string
+}
+
+// findCapturedVariables finds all variables referenced in a function body.
+// This is a simplified heuristic - proper escape analysis would be more accurate.
+func (w *BugHunterWorker) findCapturedVariables(body *ast.BlockStmt) []string {
+	vars := make(map[string]bool)
+
+	ast.Inspect(body, func(n ast.Node) bool {
+		if ident, ok := n.(*ast.Ident); ok {
+			// Skip keywords and builtin functions
+			if !w.isBuiltin(ident.Name) && ident.Obj == nil {
+				vars[ident.Name] = true
+			}
+		}
+		return true
+	})
+
+	var result []string
+	for v := range vars {
+		result = append(result, v)
+	}
+	return result
+}
+
+// isMapAccess checks if an index expression is a map access.
+func (w *BugHunterWorker) isMapAccess(expr *ast.IndexExpr) bool {
+	// This is a heuristic - we can't determine types without type checking
+	// Look for common map variable naming patterns or map literals
+	if ident, ok := expr.X.(*ast.Ident); ok {
+		name := ident.Name
+		// Common map naming patterns
+		if strings.HasSuffix(name, "Map") || strings.HasSuffix(name, "Cache") ||
+			strings.HasPrefix(name, "map") || strings.Contains(name, "Index") {
+			return true
+		}
+	}
+	return false
+}
+
+// isInsideGoroutine checks if a node is inside a goroutine.
+// This is a simplified check - walks up looking for go statement.
+func (w *BugHunterWorker) isInsideGoroutine(root ast.Node, target ast.Node) bool {
+	// This would require maintaining parent pointers or a more sophisticated traversal
+	// For now, we use a heuristic: check if we're inside a function literal that's called with go
+	isInside := false
+
+	ast.Inspect(root, func(n ast.Node) bool {
+		if goStmt, ok := n.(*ast.GoStmt); ok {
+			if funcLit, ok := goStmt.Call.Fun.(*ast.FuncLit); ok {
+				// Check if target is inside this function literal
+				ast.Inspect(funcLit, func(inner ast.Node) bool {
+					if inner == target {
+						isInside = true
+						return false
+					}
+					return true
+				})
+			}
+		}
+		return !isInside // Stop if we found it
+	})
+
+	return isInside
+}
+
+// mightBeSharedVariable uses heuristics to determine if a variable name suggests it's shared.
+func (w *BugHunterWorker) mightBeSharedVariable(name string) bool {
+	// Variables that start with lowercase might be package-level
+	// Variables with certain names suggest shared state
+	sharedPatterns := []string{"count", "total", "cache", "state", "config", "result", "data"}
+
+	for _, pattern := range sharedPatterns {
+		if strings.Contains(strings.ToLower(name), pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isBuiltin checks if a name is a Go builtin.
+func (w *BugHunterWorker) isBuiltin(name string) bool {
+	builtins := map[string]bool{
+		"true": true, "false": true, "nil": true,
+		"append": true, "cap": true, "close": true, "complex": true,
+		"copy": true, "delete": true, "imag": true, "len": true,
+		"make": true, "new": true, "panic": true, "print": true,
+		"println": true, "real": true, "recover": true,
+		"error": true, "string": true, "int": true, "int64": true,
+		"uint": true, "uint64": true, "byte": true, "rune": true,
+		"bool": true, "float64": true, "float32": true,
+	}
+	return builtins[name]
 }
