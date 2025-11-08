@@ -40,3 +40,5 @@ logs/
 .beads/cost_state.json
 .beads/beads.*
 .beads/*.sock*
+.envrc
+bd
