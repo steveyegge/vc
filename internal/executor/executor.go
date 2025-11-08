@@ -700,6 +700,16 @@ func New(cfg *Config) (*Executor, error) {
 							fmt.Fprintf(os.Stderr, "Warning: failed to register CI/CD reviewer: %v\n", err)
 						}
 					}
+
+					// Register dependency auditor
+					dependencyAuditor, err := health.NewDependencyAuditor(projectRoot, e.supervisor)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to create dependency auditor: %v\n", err)
+					} else {
+						if err := registry.Register(dependencyAuditor); err != nil {
+							fmt.Fprintf(os.Stderr, "Warning: failed to register dependency auditor: %v\n", err)
+						}
+					}
 				}
 			} else {
 				fmt.Fprintf(os.Stderr, "Warning: health monitoring requires AI supervision (health monitoring disabled)\n")

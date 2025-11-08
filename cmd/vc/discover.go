@@ -165,6 +165,12 @@ func runDiscovery(
 	}
 	healthRegistry.Register(cicdReviewer)
 
+	dependencyAuditor, err := health.NewDependencyAuditor(projectRoot, supervisor)
+	if err != nil {
+		return fmt.Errorf("creating dependency auditor: %w", err)
+	}
+	healthRegistry.Register(dependencyAuditor)
+
 	// Create worker registry
 	workerRegistry, err := discovery.DefaultRegistry(healthRegistry)
 	if err != nil {
@@ -322,6 +328,11 @@ func listDiscoveryWorkers() {
 	cicdReviewer, _ := health.NewCICDReviewer(projectRoot, supervisor)
 	if cicdReviewer != nil {
 		healthRegistry.Register(cicdReviewer)
+	}
+
+	dependencyAuditor, _ := health.NewDependencyAuditor(projectRoot, supervisor)
+	if dependencyAuditor != nil {
+		healthRegistry.Register(dependencyAuditor)
 	}
 
 	workerRegistry, err := discovery.DefaultRegistry(healthRegistry)
