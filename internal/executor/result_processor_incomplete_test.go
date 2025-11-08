@@ -303,6 +303,107 @@ func TestHandleIncompleteWork(t *testing.T) {
 	}
 }
 
+// TestHandleIncompleteWorkNilAnalysis verifies that nil analysis is handled gracefully (vc-n8ua)
+func TestHandleIncompleteWorkNilAnalysis(t *testing.T) {
+	// Setup storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = t.TempDir() + "/test.db"
+
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create test issue
+	issue := &types.Issue{
+		Title:              "Test nil analysis",
+		Description:        "This tests nil analysis handling",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		AcceptanceCriteria: "Must handle nil analysis gracefully",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+
+	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Register executor instance
+	executorID := "test-executor-001"
+	instance := &types.ExecutorInstance{
+		InstanceID:    executorID,
+		Hostname:      "test-host",
+		PID:           12345,
+		Status:        types.ExecutorStatusRunning,
+		StartedAt:     time.Now(),
+		LastHeartbeat: time.Now(),
+		Version:       "test",
+		Metadata:      "{}",
+	}
+	if err := store.RegisterInstance(ctx, instance); err != nil {
+		t.Fatalf("Failed to register executor: %v", err)
+	}
+
+	// Claim the issue
+	if err := store.ClaimIssue(ctx, issue.ID, executorID); err != nil {
+		t.Fatalf("Failed to claim issue: %v", err)
+	}
+
+	// Create results processor
+	rpCfg := &ResultsProcessorConfig{
+		Store:      store,
+		WorkingDir: "/tmp/test",
+		Actor:      "test-executor",
+	}
+
+	rp, err := NewResultsProcessor(rpCfg)
+	if err != nil {
+		t.Fatalf("Failed to create results processor: %v", err)
+	}
+
+	// Call handleIncompleteWork with nil analysis - should return error
+	err = rp.handleIncompleteWork(ctx, issue, nil)
+	if err == nil {
+		t.Fatal("Expected error when calling handleIncompleteWork with nil analysis, got nil")
+	}
+
+	expectedErrorMsg := "analysis is nil - cannot handle incomplete work"
+	if err.Error() != expectedErrorMsg {
+		t.Errorf("Expected error message %q, got %q", expectedErrorMsg, err.Error())
+	}
+
+	// Verify no comments were added
+	issueEvents, err := store.GetEvents(ctx, issue.ID, 0)
+	if err != nil {
+		t.Fatalf("Failed to get events: %v", err)
+	}
+
+	// Should only have the created event, no comment events
+	commentCount := 0
+	for _, event := range issueEvents {
+		if event.EventType == types.EventCommented {
+			commentCount++
+		}
+	}
+
+	if commentCount > 0 {
+		t.Errorf("Expected no comments to be added, but found %d", commentCount)
+	}
+
+	// Verify execution state was NOT released (error path)
+	execState, err := store.GetExecutionState(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get execution state: %v", err)
+	}
+	if execState == nil {
+		t.Error("Expected execution state to still exist after error, but it was released")
+	}
+}
+
 // TestHandleIncompleteWorkAttemptCounting verifies that attempt counting only counts incomplete attempts (vc-rd1z)
 func TestHandleIncompleteWorkAttemptCounting(t *testing.T) {
 	tests := []struct {
