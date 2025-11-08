@@ -331,3 +331,262 @@ func TestHealthMonitorAdapter_Integration(t *testing.T) {
 
 	t.Log("All 4 health monitors successfully implement DiscoveryWorker interface via adapter")
 }
+
+// TestDocAuditorWorker_Integration tests the DocAuditorWorker on the VC codebase.
+func TestDocAuditorWorker_Integration(t *testing.T) {
+	// Get root of VC project
+	rootPath, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("Failed to get root path: %v", err)
+	}
+
+	// Build codebase context
+	builder := NewContextBuilder(rootPath, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	codebaseCtx, err := builder.Build(ctx)
+	if err != nil {
+		t.Fatalf("Failed to build codebase context: %v", err)
+	}
+
+	// Create and run doc auditor worker
+	worker := NewDocAuditorWorker()
+	result, err := worker.Analyze(ctx, codebaseCtx)
+	if err != nil {
+		t.Fatalf("Doc auditor worker failed: %v", err)
+	}
+
+	// Verify result structure
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+
+	if result.Stats.FilesAnalyzed == 0 {
+		t.Error("Expected some files to be analyzed")
+	}
+
+	// Log what was found (informational)
+	t.Logf("Doc Auditor Analysis Results:")
+	t.Logf("  Files analyzed: %d", result.Stats.FilesAnalyzed)
+	t.Logf("  Issues found: %d", result.Stats.IssuesFound)
+	t.Logf("  Patterns found: %d", result.Stats.PatternsFound)
+	t.Logf("  Duration: %v", result.Stats.Duration)
+
+	// Log sample issues
+	for i, issue := range result.IssuesDiscovered {
+		if i >= 5 {
+			break
+		}
+		t.Logf("  Issue %d: %s (P%d, confidence: %.2f)", i+1, issue.Title, issue.Priority, issue.Confidence)
+	}
+
+	// Verify issues have required fields
+	for i, issue := range result.IssuesDiscovered {
+		if issue.Title == "" {
+			t.Errorf("Issue %d has empty title", i)
+		}
+		if issue.Description == "" {
+			t.Errorf("Issue %d has empty description", i)
+		}
+		if issue.Category != "documentation" {
+			t.Errorf("Issue %d has wrong category: got %q, want %q", i, issue.Category, "documentation")
+		}
+		if issue.DiscoveredBy != worker.Name() {
+			t.Errorf("Issue %d has wrong DiscoveredBy: got %q, want %q", i, issue.DiscoveredBy, worker.Name())
+		}
+		if issue.Confidence < 0 || issue.Confidence > 1 {
+			t.Errorf("Issue %d has invalid confidence: %f", i, issue.Confidence)
+		}
+	}
+}
+
+// TestTestCoverageAnalyzerWorker_Integration tests the TestCoverageAnalyzerWorker on the VC codebase.
+func TestTestCoverageAnalyzerWorker_Integration(t *testing.T) {
+	// Get root of VC project
+	rootPath, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("Failed to get root path: %v", err)
+	}
+
+	// Build codebase context
+	builder := NewContextBuilder(rootPath, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	codebaseCtx, err := builder.Build(ctx)
+	if err != nil {
+		t.Fatalf("Failed to build codebase context: %v", err)
+	}
+
+	// Create and run test coverage analyzer worker
+	worker := NewTestCoverageAnalyzerWorker()
+	result, err := worker.Analyze(ctx, codebaseCtx)
+	if err != nil {
+		t.Fatalf("Test coverage analyzer worker failed: %v", err)
+	}
+
+	// Verify result structure
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+
+	if result.Stats.FilesAnalyzed == 0 {
+		t.Error("Expected some files to be analyzed")
+	}
+
+	// Log what was found (informational)
+	t.Logf("Test Coverage Analyzer Results:")
+	t.Logf("  Files analyzed: %d", result.Stats.FilesAnalyzed)
+	t.Logf("  Issues found: %d", result.Stats.IssuesFound)
+	t.Logf("  Patterns found: %d", result.Stats.PatternsFound)
+	t.Logf("  Duration: %v", result.Stats.Duration)
+
+	// Log sample issues
+	for i, issue := range result.IssuesDiscovered {
+		if i >= 5 {
+			break
+		}
+		t.Logf("  Issue %d: %s (P%d, confidence: %.2f)", i+1, issue.Title, issue.Priority, issue.Confidence)
+	}
+
+	// Verify issues have required fields
+	for i, issue := range result.IssuesDiscovered {
+		if issue.Title == "" {
+			t.Errorf("Issue %d has empty title", i)
+		}
+		if issue.Description == "" {
+			t.Errorf("Issue %d has empty description", i)
+		}
+		if issue.Category != "testing" {
+			t.Errorf("Issue %d has wrong category: got %q, want %q", i, issue.Category, "testing")
+		}
+		if issue.DiscoveredBy != worker.Name() {
+			t.Errorf("Issue %d has wrong DiscoveredBy: got %q, want %q", i, issue.DiscoveredBy, worker.Name())
+		}
+		if issue.Confidence < 0 || issue.Confidence > 1 {
+			t.Errorf("Issue %d has invalid confidence: %f", i, issue.Confidence)
+		}
+	}
+}
+
+// TestSecurityScannerWorker_Integration tests the SecurityScannerWorker on the VC codebase.
+func TestSecurityScannerWorker_Integration(t *testing.T) {
+	// Get root of VC project
+	rootPath, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("Failed to get root path: %v", err)
+	}
+
+	// Build codebase context
+	builder := NewContextBuilder(rootPath, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	codebaseCtx, err := builder.Build(ctx)
+	if err != nil {
+		t.Fatalf("Failed to build codebase context: %v", err)
+	}
+
+	// Create and run security scanner worker
+	worker := NewSecurityScannerWorker()
+	result, err := worker.Analyze(ctx, codebaseCtx)
+	if err != nil {
+		t.Fatalf("Security scanner worker failed: %v", err)
+	}
+
+	// Verify result structure
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+
+	if result.Stats.FilesAnalyzed == 0 {
+		t.Error("Expected some files to be analyzed")
+	}
+
+	// Log what was found (informational)
+	t.Logf("Security Scanner Analysis Results:")
+	t.Logf("  Files analyzed: %d", result.Stats.FilesAnalyzed)
+	t.Logf("  Issues found: %d", result.Stats.IssuesFound)
+	t.Logf("  Patterns found: %d", result.Stats.PatternsFound)
+	t.Logf("  Duration: %v", result.Stats.Duration)
+
+	// Log sample issues
+	for i, issue := range result.IssuesDiscovered {
+		if i >= 5 {
+			break
+		}
+		t.Logf("  Issue %d: %s (P%d, confidence: %.2f)", i+1, issue.Title, issue.Priority, issue.Confidence)
+	}
+
+	// Verify issues have required fields
+	for i, issue := range result.IssuesDiscovered {
+		if issue.Title == "" {
+			t.Errorf("Issue %d has empty title", i)
+		}
+		if issue.Description == "" {
+			t.Errorf("Issue %d has empty description", i)
+		}
+		if issue.Category != "security" {
+			t.Errorf("Issue %d has wrong category: got %q, want %q", i, issue.Category, "security")
+		}
+		if issue.DiscoveredBy != worker.Name() {
+			t.Errorf("Issue %d has wrong DiscoveredBy: got %q, want %q", i, issue.DiscoveredBy, worker.Name())
+		}
+		if issue.FilePath == "" {
+			t.Errorf("Issue %d has no file path", i)
+		}
+		if issue.Confidence < 0 || issue.Confidence > 1 {
+			t.Errorf("Issue %d has invalid confidence: %f", i, issue.Confidence)
+		}
+	}
+}
+
+// TestAllNewWorkers_Registration tests that the new workers register correctly.
+func TestAllNewWorkers_Registration(t *testing.T) {
+	// Create registry
+	registry := NewWorkerRegistry()
+
+	// Register all new workers (vc-cq4l)
+	docWorker := NewDocAuditorWorker()
+	if err := registry.Register(docWorker); err != nil {
+		t.Fatalf("Failed to register doc auditor worker: %v", err)
+	}
+
+	testWorker := NewTestCoverageAnalyzerWorker()
+	if err := registry.Register(testWorker); err != nil {
+		t.Fatalf("Failed to register test coverage analyzer worker: %v", err)
+	}
+
+	securityWorker := NewSecurityScannerWorker()
+	if err := registry.Register(securityWorker); err != nil {
+		t.Fatalf("Failed to register security scanner worker: %v", err)
+	}
+
+	// Verify workers are retrievable
+	workers := registry.List()
+	if len(workers) != 3 {
+		t.Errorf("Expected 3 workers, got %d", len(workers))
+	}
+
+	// Verify each worker by name
+	expectedWorkers := map[string]bool{
+		"doc_auditor":             false,
+		"test_coverage_analyzer":  false,
+		"security_scanner":        false,
+	}
+
+	for _, name := range workers {
+		if _, exists := expectedWorkers[name]; exists {
+			expectedWorkers[name] = true
+		}
+	}
+
+	for name, found := range expectedWorkers {
+		if !found {
+			t.Errorf("Worker %q not found in registry", name)
+		}
+	}
+
+	t.Log("All three new workers (vc-cq4l) registered successfully")
+}
