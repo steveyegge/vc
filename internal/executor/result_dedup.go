@@ -14,6 +14,26 @@ import (
 // deduplicateDiscoveredIssues uses the deduplicator to filter out duplicate discovered issues
 // Returns the unique issues to create and deduplication statistics
 func (rp *ResultsProcessor) deduplicateDiscoveredIssues(ctx context.Context, parentIssue *types.Issue, discovered []ai.DiscoveredIssue) ([]ai.DiscoveredIssue, deduplication.DeduplicationStats) {
+	// vc-a80e: Validate batch size to prevent performance issues and API quota exhaustion
+	originalCount := len(discovered)
+	if originalCount > rp.dedupBatchSize {
+		fmt.Fprintf(os.Stderr, 
+			"⚠ Warning: discovered issues batch too large (%d > %d), processing first %d\n",
+			originalCount, rp.dedupBatchSize, rp.dedupBatchSize)
+		
+		// Truncate to max batch size
+		discovered = discovered[:rp.dedupBatchSize]
+		
+		// Log event for observability
+		rp.logEvent(ctx, events.EventTypeDeduplicationBatchStarted, events.SeverityWarning, 
+			parentIssue.ID,
+			fmt.Sprintf("Deduplication batch truncated to %d issues", rp.dedupBatchSize),
+			map[string]interface{}{
+				"original_count": originalCount,
+				"truncated_count": rp.dedupBatchSize,
+			})
+	}
+
 	// Convert discovered issues to types.Issue for deduplication
 	candidates := make([]*types.Issue, len(discovered))
 	for i, disc := range discovered {
@@ -57,7 +77,15 @@ func (rp *ResultsProcessor) deduplicateDiscoveredIssues(ctx context.Context, par
 	// vc-151: Log deduplication batch started event
 	rp.logDeduplicationBatchStarted(ctx, parentIssue.ID, len(candidates), parentIssue.ID)
 
-	// Deduplicate
+	// Deduplicate (return early if deduplicator not configured)
+	if rp.deduplicator == nil {
+		fmt.Fprintf(os.Stderr, "⚠ Deduplication disabled - creating all %d discovered issues\n", len(discovered))
+		return discovered, deduplication.DeduplicationStats{
+			TotalCandidates: len(discovered),
+			UniqueCount:     len(discovered),
+		}
+	}
+
 	result, err := rp.deduplicator.DeduplicateBatch(ctx, candidates)
 	if err != nil {
 		// vc-5sxl: Deduplication failed - return empty list to prevent creating invalid issues

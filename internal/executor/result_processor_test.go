@@ -112,7 +112,12 @@ func TestMissionSkipsInlineGates(t *testing.T) {
 	}
 
 	if len(deferredEvents) == 0 {
-		t.Error("Expected EventTypeQualityGatesDeferred to be emitted, but no events found")
+		allEvents, _ := store.GetAgentEvents(ctx, events.EventFilter{IssueID: mission.ID})
+		var eventTypes []string
+		for _, e := range allEvents {
+			eventTypes = append(eventTypes, string(e.Type))
+		}
+		t.Errorf("Expected EventTypeQualityGatesDeferred to be emitted, but no events found. Actual events: %v", eventTypes)
 	} else if len(deferredEvents) > 1 {
 		t.Errorf("Expected exactly 1 deferred event, got %d", len(deferredEvents))
 	} else {
@@ -148,7 +153,11 @@ func TestMissionSkipsInlineGates(t *testing.T) {
 	}
 
 	if len(gatesEvents) > 0 {
-		t.Errorf("Expected NO quality gates to run for mission, but found %d gate events", len(gatesEvents))
+		var eventTypes []string
+		for _, e := range gatesEvents {
+			eventTypes = append(eventTypes, string(e.Type))
+		}
+		t.Errorf("Expected NO quality gates to run for mission, but found %d gate events: %v", len(gatesEvents), eventTypes)
 	}
 }
 
@@ -241,7 +250,11 @@ func TestRegularTaskRunsInlineGates(t *testing.T) {
 	}
 
 	if len(deferredEvents) > 0 {
-		t.Errorf("Expected NO deferred events for regular task, but found %d", len(deferredEvents))
+		var eventTypes []string
+		for _, e := range deferredEvents {
+			eventTypes = append(eventTypes, string(e.Type))
+		}
+		t.Errorf("Expected NO deferred events for regular task, but found %d: %v", len(deferredEvents), eventTypes)
 	}
 
 	// 3. Quality gates should be attempted (EventTypeQualityGatesSkipped in this case
@@ -258,7 +271,12 @@ func TestRegularTaskRunsInlineGates(t *testing.T) {
 	// We expect exactly one skipped event (because we're not in VC repo)
 	// This proves we went through the normal gates path, not the mission deferral path
 	if len(skippedEvents) != 1 {
-		t.Errorf("Expected exactly 1 quality gates skipped event for regular task, got %d", len(skippedEvents))
+		allEvents, _ := store.GetAgentEvents(ctx, events.EventFilter{IssueID: task.ID})
+		var eventTypes []string
+		for _, e := range allEvents {
+			eventTypes = append(eventTypes, string(e.Type))
+		}
+		t.Errorf("Expected exactly 1 quality gates skipped event for regular task, got %d. All events: %v", len(skippedEvents), eventTypes)
 	}
 
 	// 4. Task should be completed (unlike missions which stay open)

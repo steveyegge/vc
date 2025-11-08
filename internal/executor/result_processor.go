@@ -35,6 +35,12 @@ func NewResultsProcessor(cfg *ResultsProcessorConfig) (*ResultsProcessor, error)
 		gatesTimeout = 5 * time.Minute
 	}
 
+	// Set default dedup batch size if not specified (vc-a80e)
+	dedupBatchSize := cfg.DedupBatchSize
+	if dedupBatchSize == 0 {
+		dedupBatchSize = 100
+	}
+
 	return &ResultsProcessor{
 		store:              cfg.Store,
 		supervisor:         cfg.Supervisor,
@@ -51,6 +57,7 @@ func NewResultsProcessor(cfg *ResultsProcessorConfig) (*ResultsProcessor, error)
 		executor:           cfg.Executor,
 		watchdogConfig:     cfg.WatchdogConfig,
 		gatesTimeout:       gatesTimeout,
+		dedupBatchSize:     dedupBatchSize,
 	}, nil
 }
 

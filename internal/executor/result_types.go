@@ -35,6 +35,7 @@ type ResultsProcessor struct {
 	executor           *Executor          // Reference to parent executor for code review checks (can be nil for REPL)
 	watchdogConfig     *watchdog.WatchdogConfig // Watchdog config for backoff reset (vc-an5o, can be nil)
 	gatesTimeout       time.Duration      // Quality gates timeout (default: 5 minutes)
+	dedupBatchSize     int                // Max deduplication batch size (default: 100) (vc-a80e)
 }
 
 // ResultsProcessorConfig holds configuration for the results processor
@@ -54,6 +55,7 @@ type ResultsProcessorConfig struct {
 	Executor           *Executor        // Reference to parent executor for code review checks (can be nil for REPL)
 	WatchdogConfig     *watchdog.WatchdogConfig // Watchdog config for backoff reset (vc-an5o, can be nil)
 	GatesTimeout       time.Duration    // Quality gates timeout (default: 5 minutes if zero)
+	DedupBatchSize     int              // Max deduplication batch size (default: 100 if zero) (vc-a80e)
 }
 
 // ProcessingResult contains the outcome of processing agent results

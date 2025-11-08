@@ -417,7 +417,11 @@ func TestGetAgentEvents(t *testing.T) {
 		}
 
 		if len(results) != 3 {
-			t.Errorf("Expected 3 events for issue %s, got %d", issue.ID, len(results))
+			var eventTypes []string
+			for _, e := range results {
+				eventTypes = append(eventTypes, string(e.Type))
+			}
+			t.Errorf("Expected 3 events for issue %s, got %d: %v", issue.ID, len(results), eventTypes)
 		}
 
 		for _, e := range results {
@@ -437,10 +441,14 @@ func TestGetAgentEvents(t *testing.T) {
 		}
 
 		if len(results) != 1 {
-			t.Errorf("Expected 1 error event, got %d", len(results))
+			var eventTypes []string
+			for _, e := range results {
+				eventTypes = append(eventTypes, string(e.Type))
+			}
+			t.Errorf("Expected 1 error event, got %d: %v", len(results), eventTypes)
 		}
 
-		if results[0].Type != events.EventTypeError {
+		if len(results) > 0 && results[0].Type != events.EventTypeError {
 			t.Errorf("Expected type %s, got %s", events.EventTypeError, results[0].Type)
 		}
 	})
@@ -455,10 +463,14 @@ func TestGetAgentEvents(t *testing.T) {
 		}
 
 		if len(results) != 1 {
-			t.Errorf("Expected 1 error severity event, got %d", len(results))
+			var severities []string
+			for _, e := range results {
+				severities = append(severities, string(e.Severity))
+			}
+			t.Errorf("Expected 1 error severity event, got %d with severities: %v", len(results), severities)
 		}
 
-		if results[0].Severity != events.SeverityError {
+		if len(results) > 0 && results[0].Severity != events.SeverityError {
 			t.Errorf("Expected severity %s, got %s", events.SeverityError, results[0].Severity)
 		}
 	})
@@ -474,7 +486,11 @@ func TestGetAgentEvents(t *testing.T) {
 		}
 
 		if len(results) != 2 {
-			t.Errorf("Expected 2 events in time range, got %d", len(results))
+			var timestamps []string
+			for _, e := range results {
+				timestamps = append(timestamps, e.Timestamp.Format("15:04:05"))
+			}
+			t.Errorf("Expected 2 events in time range, got %d at times: %v", len(results), timestamps)
 		}
 	})
 
@@ -488,7 +504,11 @@ func TestGetAgentEvents(t *testing.T) {
 		}
 
 		if len(results) != 2 {
-			t.Errorf("Expected 2 events (limit), got %d", len(results))
+			var eventTypes []string
+			for _, e := range results {
+				eventTypes = append(eventTypes, string(e.Type))
+			}
+			t.Errorf("Expected 2 events (limit), got %d: %v", len(results), eventTypes)
 		}
 
 		// Verify ordering (DESC by timestamp - newest first)
@@ -509,7 +529,11 @@ func TestGetAgentEvents(t *testing.T) {
 		}
 
 		if len(results) != 2 {
-			t.Errorf("Expected 2 progress events for issue, got %d", len(results))
+			var eventTypes []string
+			for _, e := range results {
+				eventTypes = append(eventTypes, fmt.Sprintf("%s(%s)", e.Type, e.Severity))
+			}
+			t.Errorf("Expected 2 progress events for issue, got %d: %v", len(results), eventTypes)
 		}
 
 		for _, e := range results {
