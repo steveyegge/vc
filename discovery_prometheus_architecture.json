@@ -1,0 +1,3388 @@
+{
+  "IssuesDiscovered": [
+    {
+      "Title": "God package detected: storage (89 types)",
+      "Description": "Package storage contains 89 types, significantly more than average (9).\n\nGod packages with too many responsibilities are harder to understand and maintain. Consider splitting into focused sub-packages.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "god-package",
+        "cohesion"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/storage",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "avg_types": 9,
+        "package_name": "storage",
+        "package_path": "/Users/stevey/src/go/prometheus/storage",
+        "threshold": 42.84484256831388,
+        "type_count": 89
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.7
+    },
+    {
+      "Title": "God package detected: promql (46 types)",
+      "Description": "Package promql contains 46 types, significantly more than average (9).\n\nGod packages with too many responsibilities are harder to understand and maintain. Consider splitting into focused sub-packages.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "god-package",
+        "cohesion"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/promql",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "avg_types": 9,
+        "package_name": "promql",
+        "package_path": "/Users/stevey/src/go/prometheus/promql",
+        "threshold": 42.84484256831388,
+        "type_count": 46
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.7
+    },
+    {
+      "Title": "God package detected: tsdb (115 types)",
+      "Description": "Package tsdb contains 115 types, significantly more than average (9).\n\nGod packages with too many responsibilities are harder to understand and maintain. Consider splitting into focused sub-packages.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "god-package",
+        "cohesion"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/tsdb",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "avg_types": 9,
+        "package_name": "tsdb",
+        "package_path": "/Users/stevey/src/go/prometheus/tsdb",
+        "threshold": 42.84484256831388,
+        "type_count": 115
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.7
+    },
+    {
+      "Title": "God package detected: remote (49 types)",
+      "Description": "Package remote contains 49 types, significantly more than average (9).\n\nGod packages with too many responsibilities are harder to understand and maintain. Consider splitting into focused sub-packages.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "god-package",
+        "cohesion"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/storage/remote",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "avg_types": 9,
+        "package_name": "remote",
+        "package_path": "/Users/stevey/src/go/prometheus/storage/remote",
+        "threshold": 42.84484256831388,
+        "type_count": 49
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.7
+    },
+    {
+      "Title": "God package detected: v1 (44 types)",
+      "Description": "Package v1 contains 44 types, significantly more than average (9).\n\nGod packages with too many responsibilities are harder to understand and maintain. Consider splitting into focused sub-packages.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "god-package",
+        "cohesion"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/web/api/v1",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "avg_types": 9,
+        "package_name": "v1",
+        "package_path": "/Users/stevey/src/go/prometheus/web/api/v1",
+        "threshold": 42.84484256831388,
+        "type_count": 44
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.7
+    },
+    {
+      "Title": "High coupling detected: rules (fan-in: 0, fan-out: 11)",
+      "Description": "Package rules has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 11 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/rules",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 11,
+        "fan_in": 0,
+        "fan_out": 11,
+        "package_name": "rules",
+        "package_path": "/Users/stevey/src/go/prometheus/rules"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: promql (fan-in: 0, fan-out: 15)",
+      "Description": "Package promql has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 15 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/promql",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 15,
+        "fan_in": 0,
+        "fan_out": 15,
+        "package_name": "promql",
+        "package_path": "/Users/stevey/src/go/prometheus/promql"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: agent (fan-in: 0, fan-out: 15)",
+      "Description": "Package agent has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 15 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/tsdb/agent",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 15,
+        "fan_in": 0,
+        "fan_out": 15,
+        "package_name": "agent",
+        "package_path": "/Users/stevey/src/go/prometheus/tsdb/agent"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: record (fan-in: 0, fan-out: 6)",
+      "Description": "Package record has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 6 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/tsdb/record",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 6,
+        "fan_in": 0,
+        "fan_out": 6,
+        "package_name": "record",
+        "package_path": "/Users/stevey/src/go/prometheus/tsdb/record"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: promqltest (fan-in: 0, fan-out: 13)",
+      "Description": "Package promqltest has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 13 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/promql/promqltest",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 13,
+        "fan_in": 0,
+        "fan_out": 13,
+        "package_name": "promqltest",
+        "package_path": "/Users/stevey/src/go/prometheus/promql/promqltest"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: tsdb (fan-in: 0, fan-out: 22)",
+      "Description": "Package tsdb has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 22 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/tsdb",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 22,
+        "fan_in": 0,
+        "fan_out": 22,
+        "package_name": "tsdb",
+        "package_path": "/Users/stevey/src/go/prometheus/tsdb"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: main (fan-in: 0, fan-out: 5)",
+      "Description": "Package main has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 5 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/documentation/examples/remote_storage/remote_storage_adapter",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 5,
+        "fan_in": 0,
+        "fan_out": 5,
+        "package_name": "main",
+        "package_path": "/Users/stevey/src/go/prometheus/documentation/examples/remote_storage/remote_storage_adapter"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: index (fan-in: 0, fan-out: 6)",
+      "Description": "Package index has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 6 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/tsdb/index",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 6,
+        "fan_in": 0,
+        "fan_out": 6,
+        "package_name": "index",
+        "package_path": "/Users/stevey/src/go/prometheus/tsdb/index"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: textparse (fan-in: 0, fan-out: 7)",
+      "Description": "Package textparse has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 7 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/model/textparse",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 7,
+        "fan_in": 0,
+        "fan_out": 7,
+        "package_name": "textparse",
+        "package_path": "/Users/stevey/src/go/prometheus/model/textparse"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: remote (fan-in: 0, fan-out: 23)",
+      "Description": "Package remote has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 23 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/storage/remote",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 23,
+        "fan_in": 0,
+        "fan_out": 23,
+        "package_name": "remote",
+        "package_path": "/Users/stevey/src/go/prometheus/storage/remote"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: main (fan-in: 0, fan-out: 24)",
+      "Description": "Package main has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 24 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/cmd/prometheus",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 24,
+        "fan_in": 0,
+        "fan_out": 24,
+        "package_name": "main",
+        "package_path": "/Users/stevey/src/go/prometheus/cmd/prometheus"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: main (fan-in: 0, fan-out: 26)",
+      "Description": "Package main has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 26 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/plugins",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 26,
+        "fan_in": 0,
+        "fan_out": 26,
+        "package_name": "main",
+        "package_path": "/Users/stevey/src/go/prometheus/plugins"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: config (fan-in: 0, fan-out: 5)",
+      "Description": "Package config has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 5 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/config",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 5,
+        "fan_in": 0,
+        "fan_out": 5,
+        "package_name": "config",
+        "package_path": "/Users/stevey/src/go/prometheus/config"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: parser (fan-in: 0, fan-out: 7)",
+      "Description": "Package parser has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 7 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/promql/parser",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 7,
+        "fan_in": 0,
+        "fan_out": 7,
+        "package_name": "parser",
+        "package_path": "/Users/stevey/src/go/prometheus/promql/parser"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: teststorage (fan-in: 0, fan-out: 5)",
+      "Description": "Package teststorage has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 5 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/util/teststorage",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 5,
+        "fan_in": 0,
+        "fan_out": 5,
+        "package_name": "teststorage",
+        "package_path": "/Users/stevey/src/go/prometheus/util/teststorage"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: scrape (fan-in: 0, fan-out: 15)",
+      "Description": "Package scrape has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 15 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/scrape",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 15,
+        "fan_in": 0,
+        "fan_out": 15,
+        "package_name": "scrape",
+        "package_path": "/Users/stevey/src/go/prometheus/scrape"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: v1 (fan-in: 0, fan-out: 19)",
+      "Description": "Package v1 has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 19 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/web/api/v1",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 19,
+        "fan_in": 0,
+        "fan_out": 19,
+        "package_name": "v1",
+        "package_path": "/Users/stevey/src/go/prometheus/web/api/v1"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: wlog (fan-in: 0, fan-out: 8)",
+      "Description": "Package wlog has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 8 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/tsdb/wlog",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 8,
+        "fan_in": 0,
+        "fan_out": 8,
+        "package_name": "wlog",
+        "package_path": "/Users/stevey/src/go/prometheus/tsdb/wlog"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: main (fan-in: 0, fan-out: 27)",
+      "Description": "Package main has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 27 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/cmd/promtool",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 27,
+        "fan_in": 0,
+        "fan_out": 27,
+        "package_name": "main",
+        "package_path": "/Users/stevey/src/go/prometheus/cmd/promtool"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: prometheusremotewrite (fan-in: 0, fan-out: 9)",
+      "Description": "Package prometheusremotewrite has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 9 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/storage/remote/otlptranslator/prometheusremotewrite",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 9,
+        "fan_in": 0,
+        "fan_out": 9,
+        "package_name": "prometheusremotewrite",
+        "package_path": "/Users/stevey/src/go/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: storage (fan-in: 0, fan-out: 8)",
+      "Description": "Package storage has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 8 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/storage",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 8,
+        "fan_in": 0,
+        "fan_out": 8,
+        "package_name": "storage",
+        "package_path": "/Users/stevey/src/go/prometheus/storage"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: install (fan-in: 0, fan-out: 26)",
+      "Description": "Package install has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 26 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/discovery/install",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 26,
+        "fan_in": 0,
+        "fan_out": 26,
+        "package_name": "install",
+        "package_path": "/Users/stevey/src/go/prometheus/discovery/install"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: web (fan-in: 0, fan-out: 19)",
+      "Description": "Package web has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 19 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/web",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 19,
+        "fan_in": 0,
+        "fan_out": 19,
+        "package_name": "web",
+        "package_path": "/Users/stevey/src/go/prometheus/web"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: rulefmt (fan-in: 0, fan-out: 5)",
+      "Description": "Package rulefmt has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 5 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/prometheus/model/rulefmt",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 5,
+        "fan_in": 0,
+        "fan_out": 5,
+        "package_name": "rulefmt",
+        "package_path": "/Users/stevey/src/go/prometheus/model/rulefmt"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: fileutil, io_prometheus_client\n\nSimilar structures:\n// fileutil.directIORqmts (direct_io_writer.go:369)\ntype directIORqmts struct {\n  memoryAlign int\n  offsetAlign int\n}\n\n// io_prometheus_client.pos (decoder.go:310)\ntype pos struct {\n  start int\n  end int\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "fileutil",
+          "io_prometheus_client"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 35 similar struct across 16 packages",
+      "Description": "Found 35 similar struct definitions across packages: chunkenc, discovery, fileutil, httputil, ionos, labels, main, promql, promqltest, record, remote, rules, scaleway, storage, tsdb, v1\n\nSimilar structures:\n// main.promqlPrinter (main.go:1197)\ntype promqlPrinter struct {\n  \n}\n\n// main.jsonPrinter (main.go:1215)\ntype jsonPrinter struct {\n  \n}\n\n// storage.noopGenericSeriesSet (generic.go:135)\ntype noopGenericSeriesSet struct {\n  \n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 35,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "chunkenc",
+          "discovery",
+          "fileutil",
+          "httputil",
+          "ionos",
+          "labels",
+          "main",
+          "promql",
+          "promqltest",
+          "record",
+          "remote",
+          "rules",
+          "scaleway",
+          "storage",
+          "tsdb",
+          "v1"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: promql, storage\n\nSimilar structures:\n// storage.fhSample (buffer.go:223)\ntype fhSample struct {\n  t int64\n  fh *histogram.FloatHistogram\n}\n\n// promql.HPoint (value.go:119)\ntype HPoint struct {\n  T int64\n  H *histogram.FloatHistogram\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "promql",
+          "storage"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: index, v1\n\nSimilar structures:\n// index.Stat (postingsstats.go:22)\ntype Stat struct {\n  Name string\n  Count uint64\n}\n\n// v1.TSDBStat (api.go:1792)\ntype TSDBStat struct {\n  Name string\n  Value uint64\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "index",
+          "v1"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar struct across 4 packages",
+      "Description": "Found 4 similar struct definitions across packages: index, stats, tombstones, tsdb\n\nSimilar structures:\n// stats.stepStat (query_stats.go:81)\ntype stepStat struct {\n  T int64\n  V int64\n}\n\n// tombstones.Interval (tombstones.go:328)\ntype Interval struct {\n  Mint int64\n  Maxt int64\n}\n\n// tsdb.TimeRange (db.go:1852)\ntype TimeRange struct {\n  Min int64\n  Max int64\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "index",
+          "stats",
+          "tombstones",
+          "tsdb"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar struct across 2 packages",
+      "Description": "Found 3 similar struct definitions across packages: promql, storage\n\nSimilar structures:\n// storage.fSample (buffer.go:165)\ntype fSample struct {\n  t int64\n  f float64\n}\n\n// promql.Scalar (value.go:52)\ntype Scalar struct {\n  T int64\n  V float64\n}\n\n// promql.FPoint (value.go:93)\ntype FPoint struct {\n  T int64\n  F float64\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "promql",
+          "storage"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: prompb, writev2\n\nSimilar structures:\n// writev2.Sample (types.pb.go:371)\ntype Sample struct {\n  Value float64\n  Timestamp int64\n  XXX_NoUnkeyedLiteral unknown\n  XXX_unrecognized []byte\n  XXX_sizecache int32\n}\n\n// prompb.Sample (types.pb.go:238)\ntype Sample struct {\n  Value float64\n  Timestamp int64\n  XXX_NoUnkeyedLiteral unknown\n  XXX_unrecognized []byte\n  XXX_sizecache int32\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "prompb",
+          "writev2"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar struct across 2 packages",
+      "Description": "Found 3 similar struct definitions across packages: azuread, v1\n\nSimilar structures:\n// azuread.WorkloadIdentityConfig (azuread.go:59)\ntype WorkloadIdentityConfig struct {\n  ClientID string\n  TenantID string\n  TokenFilePath string\n}\n\n// azuread.OAuthConfig (azuread.go:73)\ntype OAuthConfig struct {\n  ClientID string\n  ClientSecret string\n  TenantID string\n}\n\n// v1.GlobalURLOptions (api.go:1074)\ntype GlobalURLOptions struct {\n  ListenAddress string\n  Host string\n  Scheme string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "azuread",
+          "v1"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: kubernetes, labels\n\nSimilar structures:\n// labels.equalMultiStringSliceMatcher (regexp.go:747)\ntype equalMultiStringSliceMatcher struct {\n  values []string\n  caseSensitive bool\n}\n\n// kubernetes.NamespaceDiscovery (kubernetes.go:231)\ntype NamespaceDiscovery struct {\n  IncludeOwnNamespace bool\n  Names []string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "kubernetes",
+          "labels"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: storage, testutil\n\nSimilar structures:\n// storage.MockQuerier (interface.go:124)\ntype MockQuerier struct {\n  SelectMockFunction func\n}\n\n// testutil.callbackCloser (directory.go:66)\ntype callbackCloser struct {\n  fn func\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "storage",
+          "testutil"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 20 similar struct across 16 packages",
+      "Description": "Found 20 similar struct definitions across packages: aws, digitalocean, eureka, gce, hetzner, ionos, marathon, moby, openstack, ovhcloud, puppetdb, scaleway, stackit, triton, uyuni, vultr\n\nSimilar structures:\n// triton.tritonMetrics (metrics.go:22)\ntype tritonMetrics struct {\n  refreshMetrics discovery.RefreshMetricsInstantiator\n}\n\n// gce.gceMetrics (metrics.go:22)\ntype gceMetrics struct {\n  refreshMetrics discovery.RefreshMetricsInstantiator\n}\n\n// ovhcloud.ovhcloudMetrics (metrics.go:22)\ntype ovhcloudMetrics struct {\n  refreshMetrics discovery.RefreshMetricsInstantiator\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 20,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "aws",
+          "digitalocean",
+          "eureka",
+          "gce",
+          "hetzner",
+          "ionos",
+          "marathon",
+          "moby",
+          "openstack",
+          "ovhcloud",
+          "puppetdb",
+          "scaleway",
+          "stackit",
+          "triton",
+          "uyuni",
+          "vultr"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar struct across 3 packages",
+      "Description": "Found 3 similar struct definitions across packages: http, linode, nomad\n\nSimilar structures:\n// http.httpMetrics (metrics.go:24)\ntype httpMetrics struct {\n  refreshMetrics discovery.RefreshMetricsInstantiator\n  failuresCount prometheus.Counter\n  metricRegisterer discovery.MetricRegisterer\n}\n\n// nomad.nomadMetrics (metrics.go:24)\ntype nomadMetrics struct {\n  refreshMetrics discovery.RefreshMetricsInstantiator\n  failuresCount prometheus.Counter\n  metricRegisterer discovery.MetricRegisterer\n}\n\n// linode.linodeMetrics (metrics.go:24)\ntype linodeMetrics struct {\n  refreshMetrics discovery.RefreshMetricsInstantiator\n  failuresCount prometheus.Counter\n  metricRegisterer discovery.MetricRegisterer\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "http",
+          "linode",
+          "nomad"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: main, v1\n\nSimilar structures:\n// main.compareRuleType (main.go:957)\ntype compareRuleType struct {\n  metric string\n  label labels.Labels\n}\n\n// v1.DroppedTarget (api.go:1060)\ntype DroppedTarget struct {\n  DiscoveredLabels labels.Labels\n  ScrapePool string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "main",
+          "v1"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 7 similar struct across 5 packages",
+      "Description": "Found 7 similar struct definitions across packages: azuread, googleiam, labels, promql, v1\n\nSimilar structures:\n// labels.Labels (labels_stringlabels.go:31)\ntype Labels struct {\n  data string\n}\n\n// googleiam.Config (googleiam.go:28)\ntype Config struct {\n  CredentialsFile string\n}\n\n// azuread.ManagedIdentityConfig (azuread.go:53)\ntype ManagedIdentityConfig struct {\n  ClientID string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 7,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "azuread",
+          "googleiam",
+          "labels",
+          "promql",
+          "v1"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 7 similar struct across 6 packages",
+      "Description": "Found 7 similar struct definitions across packages: index, remote, tsdb, uyuni, wlog, zookeeper\n\nSimilar structures:\n// uyuni.systemGroupID (uyuni.go:78)\ntype systemGroupID struct {\n  GroupID int\n  GroupName string\n}\n\n// zookeeper.serversetEndpoint (zookeeper.go:269)\ntype serversetEndpoint struct {\n  Host string\n  Port int\n}\n\n// tsdb.ChunkSnapshotStats (head_wal.go:1454)\ntype ChunkSnapshotStats struct {\n  TotalSeries int\n  Dir string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 7,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "index",
+          "remote",
+          "tsdb",
+          "uyuni",
+          "wlog",
+          "zookeeper"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: metadata, schema\n\nSimilar structures:\n// metadata.Metadata (metadata.go:19)\ntype Metadata struct {\n  Type model.MetricType\n  Unit string\n  Help string\n}\n\n// schema.Metadata (labels.go:56)\ntype Metadata struct {\n  Name string\n  Type model.MetricType\n  Unit string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "metadata",
+          "schema"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: kubernetes, textparse\n\nSimilar structures:\n// textparse.openMetricsParserOptions (openmetricsparse.go:117)\ntype openMetricsParserOptions struct {\n  skipCTSeries bool\n  enableTypeAndUnitLabels bool\n}\n\n// kubernetes.AttachMetadataConfig (kubernetes.go:157)\ntype AttachMetadataConfig struct {\n  Node bool\n  Namespace bool\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "kubernetes",
+          "textparse"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: ionos, linode\n\nSimilar structures:\n// ionos.SDConfig (ionos.go:79)\ntype SDConfig struct {\n  DatacenterID string\n  HTTPClientConfig config.HTTPClientConfig\n  RefreshInterval model.Duration\n  Port int\n  ionosEndpoint string\n}\n\n// linode.SDConfig (linode.go:87)\ntype SDConfig struct {\n  HTTPClientConfig config.HTTPClientConfig\n  RefreshInterval model.Duration\n  Port int\n  TagSeparator string\n  Region string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "ionos",
+          "linode"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: gate, histogram\n\nSimilar structures:\n// gate.Gate (gate.go:19)\ntype Gate struct {\n  ch chan unknown\n}\n\n// histogram.regularBucketIterator (histogram.go:480)\ntype regularBucketIterator struct {\n  unknown\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "gate",
+          "histogram"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: marathon, scaleway\n\nSimilar structures:\n// scaleway.authTokenFileRoundTripper (scaleway.go:238)\ntype authTokenFileRoundTripper struct {\n  authTokenFile string\n  rt http.RoundTripper\n}\n\n// marathon.authTokenFileRoundTripper (marathon.go:200)\ntype authTokenFileRoundTripper struct {\n  authTokenFile string\n  rt http.RoundTripper\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "marathon",
+          "scaleway"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar struct across 2 packages",
+      "Description": "Found 4 similar struct definitions across packages: prompb, writev2\n\nSimilar structures:\n// writev2.Histogram_CountFloat (types.pb.go:637)\ntype Histogram_CountFloat struct {\n  CountFloat float64\n}\n\n// writev2.Histogram_ZeroCountFloat (types.pb.go:643)\ntype Histogram_ZeroCountFloat struct {\n  ZeroCountFloat float64\n}\n\n// prompb.Histogram_CountFloat (types.pb.go:461)\ntype Histogram_CountFloat struct {\n  CountFloat float64\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "prompb",
+          "writev2"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar struct across 2 packages",
+      "Description": "Found 4 similar struct definitions across packages: prompb, writev2\n\nSimilar structures:\n// writev2.Histogram_CountInt (types.pb.go:634)\ntype Histogram_CountInt struct {\n  CountInt uint64\n}\n\n// writev2.Histogram_ZeroCountInt (types.pb.go:640)\ntype Histogram_ZeroCountInt struct {\n  ZeroCountInt uint64\n}\n\n// prompb.Histogram_CountInt (types.pb.go:458)\ntype Histogram_CountInt struct {\n  CountInt uint64\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "prompb",
+          "writev2"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 9 similar struct across 6 packages",
+      "Description": "Found 9 similar struct definitions across packages: histogram, index, promql, remote, storage, tsdb\n\nSimilar structures:\n// histogram.Error (generic.go:31)\ntype Error struct {\n  error\n}\n\n// storage.errSeriesSet (interface.go:421)\ntype errSeriesSet struct {\n  err error\n}\n\n// storage.errChunkSeriesSet (interface.go:442)\ntype errChunkSeriesSet struct {\n  err error\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 9,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "histogram",
+          "index",
+          "promql",
+          "remote",
+          "storage",
+          "tsdb"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar struct across 3 packages",
+      "Description": "Found 3 similar struct definitions across packages: io_prometheus_client, prompb, writev2\n\nSimilar structures:\n// writev2.BucketSpan (types.pb.go:792)\ntype BucketSpan struct {\n  Offset int32\n  Length uint32\n  XXX_NoUnkeyedLiteral unknown\n  XXX_unrecognized []byte\n  XXX_sizecache int32\n}\n\n// prompb.BucketSpan (types.pb.go:616)\ntype BucketSpan struct {\n  Offset int32\n  Length uint32\n  XXX_NoUnkeyedLiteral unknown\n  XXX_unrecognized []byte\n  XXX_sizecache int32\n}\n\n// io_prometheus_client.BucketSpan (metrics.pb.go:672)\ntype BucketSpan struct {\n  Offset int32\n  Length uint32\n  XXX_NoUnkeyedLiteral unknown\n  XXX_unrecognized []byte\n  XXX_sizecache int32\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "io_prometheus_client",
+          "prompb",
+          "writev2"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: agent, tsdb\n\nSimilar structures:\n// agent.stripeLock (series.go:132)\ntype stripeLock struct {\n  sync.RWMutex\n  _ []byte\n}\n\n// tsdb.stripeLock (head.go:1901)\ntype stripeLock struct {\n  sync.RWMutex\n  _ []byte\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "agent",
+          "tsdb"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: eureka, http\n\nSimilar structures:\n// http.SDConfig (http.go:56)\ntype SDConfig struct {\n  HTTPClientConfig config.HTTPClientConfig\n  RefreshInterval model.Duration\n  URL string\n}\n\n// eureka.SDConfig (eureka.go:73)\ntype SDConfig struct {\n  Server string\n  HTTPClientConfig config.HTTPClientConfig\n  RefreshInterval model.Duration\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "eureka",
+          "http"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: hetzner, stackit\n\nSimilar structures:\n// stackit.Discovery (stackit.go:124)\ntype Discovery struct {\n  *refresh.Discovery\n}\n\n// hetzner.Discovery (hetzner.go:136)\ntype Discovery struct {\n  *refresh.Discovery\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "hetzner",
+          "stackit"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: azure, dns\n\nSimilar structures:\n// azure.azureMetrics (metrics.go:24)\ntype azureMetrics struct {\n  refreshMetrics discovery.RefreshMetricsInstantiator\n  failuresCount prometheus.Counter\n  cacheHitCount prometheus.Counter\n  metricRegisterer discovery.MetricRegisterer\n}\n\n// dns.dnsMetrics (metrics.go:24)\ntype dnsMetrics struct {\n  refreshMetrics discovery.RefreshMetricsInstantiator\n  dnsSDLookupsCount prometheus.Counter\n  dnsSDLookupFailuresCount prometheus.Counter\n  metricRegisterer discovery.MetricRegisterer\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "azure",
+          "dns"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: digitalocean, vultr\n\nSimilar structures:\n// digitalocean.SDConfig (digitalocean.go:75)\ntype SDConfig struct {\n  HTTPClientConfig config.HTTPClientConfig\n  RefreshInterval model.Duration\n  Port int\n}\n\n// vultr.SDConfig (vultr.go:70)\ntype SDConfig struct {\n  HTTPClientConfig config.HTTPClientConfig\n  RefreshInterval model.Duration\n  Port int\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "digitalocean",
+          "vultr"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: main, remote\n\nSimilar structures:\n// main.setHeadersTransport (metrics.go:124)\ntype setHeadersTransport struct {\n  http.RoundTripper\n  headers map[string]string\n}\n\n// remote.injectHeadersRoundTripper (client.go:244)\ntype injectHeadersRoundTripper struct {\n  headers map[string]string\n  http.RoundTripper\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "main",
+          "remote"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar struct across 2 packages",
+      "Description": "Found 3 similar struct definitions across packages: promql, storage\n\nSimilar structures:\n// storage.testSeriesSet (interface.go:407)\ntype testSeriesSet struct {\n  series Series\n}\n\n// storage.seriesToChunkEncoder (series.go:309)\ntype seriesToChunkEncoder struct {\n  Series\n}\n\n// promql.StorageSeries (value.go:401)\ntype StorageSeries struct {\n  series Series\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "promql",
+          "storage"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: io_prometheus_client, prompb\n\nSimilar structures:\n// prompb.Label (types.pb.go:745)\ntype Label struct {\n  Name string\n  Value string\n  XXX_NoUnkeyedLiteral unknown\n  XXX_unrecognized []byte\n  XXX_sizecache int32\n}\n\n// io_prometheus_client.LabelPair (metrics.pb.go:72)\ntype LabelPair struct {\n  Name string\n  Value string\n  XXX_NoUnkeyedLiteral unknown\n  XXX_unrecognized []byte\n  XXX_sizecache int32\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "io_prometheus_client",
+          "prompb"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 8 similar struct across 7 packages",
+      "Description": "Found 8 similar struct definitions across packages: discovery, kubernetes, labels, main, marathon, openstack, v1\n\nSimilar structures:\n// main.series (unittest.go:652)\ntype series struct {\n  Series string\n  Values string\n}\n\n// labels.Label (labels_common.go:42)\ntype Label struct {\n  Name string\n  Value string\n}\n\n// marathon.ipAddress (marathon.go:278)\ntype ipAddress struct {\n  Address string\n  Proto string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 8,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "discovery",
+          "kubernetes",
+          "labels",
+          "main",
+          "marathon",
+          "openstack",
+          "v1"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar struct across 2 packages",
+      "Description": "Found 3 similar struct definitions across packages: labels, storage\n\nSimilar structures:\n// storage.AppendOptions (interface.go:258)\ntype AppendOptions struct {\n  DiscardOutOfOrder bool\n}\n\n// labels.anyNonEmptyStringMatcher (regexp.go:905)\ntype anyNonEmptyStringMatcher struct {\n  matchNL bool\n}\n\n// labels.zeroOrOneCharacterStringMatcher (regexp.go:923)\ntype zeroOrOneCharacterStringMatcher struct {\n  matchNL bool\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "labels",
+          "storage"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar struct across 3 packages",
+      "Description": "Found 3 similar struct definitions across packages: chunkenc, scrape, v1\n\nSimilar structures:\n// chunkenc.Insert (histogram_meta.go:278)\ntype Insert struct {\n  pos int\n  num int\n  bucketIdx int\n}\n\n// scrape.labelLimits (scrape.go:117)\ntype labelLimits struct {\n  labelLimit int\n  labelNameLengthLimit int\n  labelValueLengthLimit int\n}\n\n// v1.walReplayStatus (api.go:1879)\ntype walReplayStatus struct {\n  Min int\n  Max int\n  Current int\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "chunkenc",
+          "scrape",
+          "v1"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: config, storage\n\nSimilar structures:\n// storage.LabelHints (interface.go:243)\ntype LabelHints struct {\n  Limit int\n}\n\n// config.RuntimeConfig (config.go:696)\ntype RuntimeConfig struct {\n  GoGC int\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "config",
+          "storage"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: chunks, tsdb\n\nSimilar structures:\n// tsdb.sample (head.go:2086)\ntype sample struct {\n  t int64\n  f float64\n  h *histogram.Histogram\n  fh *histogram.FloatHistogram\n}\n\n// chunks.sample (samples.go:40)\ntype sample struct {\n  t int64\n  f float64\n  h *histogram.Histogram\n  fh *histogram.FloatHistogram\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "chunks",
+          "tsdb"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: main, zookeeper\n\nSimilar structures:\n// zookeeper.nerveMember (zookeeper.go:309)\ntype nerveMember struct {\n  Host string\n  Port int\n  Name string\n}\n\n// main.sdConfig (main.go:81)\ntype sdConfig struct {\n  Address string\n  TagSeparator string\n  RefreshInterval int\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "main",
+          "zookeeper"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: remote, scrape\n\nSimilar structures:\n// remote.remoteWriteAppender (write_handler.go:676)\ntype remoteWriteAppender struct {\n  storage.Appender\n  maxTime int64\n}\n\n// scrape.timeLimitAppender (target.go:366)\ntype timeLimitAppender struct {\n  storage.Appender\n  maxTime int64\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "remote",
+          "scrape"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: agent, tsdb\n\nSimilar structures:\n// agent.seriesHashmap (series.go:53)\ntype seriesHashmap struct {\n  unique map[uint64]*memSeries\n  conflicts map[uint64][]*memSeries\n}\n\n// tsdb.seriesHashmap (head.go:1817)\ntype seriesHashmap struct {\n  unique map[uint64]*memSeries\n  conflicts map[uint64][]*memSeries\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "agent",
+          "tsdb"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar struct across 3 packages",
+      "Description": "Found 3 similar struct definitions across packages: aws, index, moby\n\nSimilar structures:\n// aws.EC2Filter (ec2.go:84)\ntype EC2Filter struct {\n  Name string\n  Values []string\n}\n\n// moby.Filter (dockerswarm.go:67)\ntype Filter struct {\n  Name string\n  Values []string\n}\n\n// index.stringListIter (index.go:1755)\ntype stringListIter struct {\n  l []string\n  cur string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "aws",
+          "index",
+          "moby"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: convertnhcb, promql\n\nSimilar structures:\n// promql.Bucket (quantile.go:57)\ntype Bucket struct {\n  UpperBound float64\n  Count float64\n}\n\n// convertnhcb.tempHistogramBucket (convertnhcb.go:34)\ntype tempHistogramBucket struct {\n  le float64\n  count float64\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "convertnhcb",
+          "promql"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: prompb, writev2\n\nSimilar structures:\n// writev2.Histogram (types.pb.go:507)\ntype Histogram struct {\n  Count isHistogram_Count\n  Sum float64\n  Schema int32\n  ZeroThreshold float64\n  ZeroCount isHistogram_ZeroCount\n  NegativeSpans []BucketSpan\n  NegativeDeltas []int64\n  NegativeCounts []float64\n  PositiveSpans []BucketSpan\n  PositiveDeltas []int64\n  PositiveCounts []float64\n  ResetHint Histogram_ResetHint\n  Timestamp int64\n  CustomValues []float64\n  XXX_NoUnkeyedLiteral unknown\n  XXX_unrecognized []byte\n  XXX_sizecache int32\n}\n\n// prompb.Histogram (types.pb.go:367)\ntype Histogram struct {\n  Count isHistogram_Count\n  Sum float64\n  Schema int32\n  ZeroThreshold float64\n  ZeroCount isHistogram_ZeroCount\n  NegativeSpans []BucketSpan\n  NegativeDeltas []int64\n  NegativeCounts []float64\n  PositiveSpans []BucketSpan\n  PositiveDeltas []int64\n  PositiveCounts []float64\n  ResetHint Histogram_ResetHint\n  Timestamp int64\n  CustomValues []float64\n  XXX_NoUnkeyedLiteral unknown\n  XXX_unrecognized []byte\n  XXX_sizecache int32\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "prompb",
+          "writev2"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: index, tsdb\n\nSimilar structures:\n// tsdb.BlockStats (block.go:190)\ntype BlockStats struct {\n  NumSamples uint64\n  NumFloatSamples uint64\n  NumHistogramSamples uint64\n  NumSeries uint64\n  NumChunks uint64\n  NumTombstones uint64\n}\n\n// index.TOC (index.go:161)\ntype TOC struct {\n  Symbols uint64\n  Series uint64\n  LabelIndices uint64\n  LabelIndicesTable uint64\n  Postings uint64\n  PostingsTable uint64\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "index",
+          "tsdb"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar interface across 3 packages",
+      "Description": "Found 3 similar interface definitions across packages: chunks, encoding, index\n\nSimilar structures:\n// encoding.ByteSlice (encoding.go:311)\ntype ByteSlice interface {\n  Len() int\n  Range(int, int) []byte\n}\n\n// index.ByteSlice (index.go:969)\ntype ByteSlice interface {\n  Len() int\n  Range(int, int) []byte\n}\n\n// chunks.ByteSlice (chunks.go:604)\ntype ByteSlice interface {\n  Len() int\n  Range(int, int) []byte\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "chunks",
+          "encoding",
+          "index"
+        ],
+        "pattern_type": "interface",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar interface across 2 packages",
+      "Description": "Found 3 similar interface definitions across packages: chunkenc, histogram\n\nSimilar structures:\n// histogram.BucketCount (generic.go:106)\ntype BucketCount interface {\n  unknown\n}\n\n// histogram.InternalBucketCount (generic.go:117)\ntype InternalBucketCount interface {\n  unknown\n}\n\n// chunkenc.bucketValue (histogram_meta.go:388)\ntype bucketValue interface {\n  unknown\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "chunkenc",
+          "histogram"
+        ],
+        "pattern_type": "interface",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 5 similar interface across 5 packages",
+      "Description": "Found 5 similar interface definitions across packages: hetzner, openstack, ovhcloud, scaleway, stackit\n\nSimilar structures:\n// ovhcloud.refresher (ovhcloud.go:37)\ntype refresher interface {\n  refresh(context.Context) []*targetgroup.Group, error\n}\n\n// stackit.refresher (stackit.go:93)\ntype refresher interface {\n  refresh(context.Context) []*targetgroup.Group, error\n}\n\n// scaleway.refresher (scaleway.go:210)\ntype refresher interface {\n  refresh(context.Context) []*targetgroup.Group, error\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 5,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "hetzner",
+          "openstack",
+          "ovhcloud",
+          "scaleway",
+          "stackit"
+        ],
+        "pattern_type": "interface",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar interface across 2 packages",
+      "Description": "Found 2 similar interface definitions across packages: promql, scrape\n\nSimilar structures:\n// promql.QueryLogger (engine.go:130)\ntype QueryLogger interface {\n  slog.Handler\n  io.Closer\n}\n\n// scrape.FailureLogger (scrape.go:76)\ntype FailureLogger interface {\n  slog.Handler\n  io.Closer\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "promql",
+          "scrape"
+        ],
+        "pattern_type": "interface",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar interface across 2 packages",
+      "Description": "Found 2 similar interface definitions across packages: prompb, writev2\n\nSimilar structures:\n// writev2.isHistogram_Count (types.pb.go:623)\ntype isHistogram_Count interface {\n  isHistogram_Count() \n  MarshalTo([]byte) int, error\n  Size() int\n}\n\n// prompb.isHistogram_Count (types.pb.go:447)\ntype isHistogram_Count interface {\n  isHistogram_Count() \n  MarshalTo([]byte) int, error\n  Size() int\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "prompb",
+          "writev2"
+        ],
+        "pattern_type": "interface",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar interface across 2 packages",
+      "Description": "Found 2 similar interface definitions across packages: prompb, writev2\n\nSimilar structures:\n// writev2.isHistogram_ZeroCount (types.pb.go:628)\ntype isHistogram_ZeroCount interface {\n  isHistogram_ZeroCount() \n  MarshalTo([]byte) int, error\n  Size() int\n}\n\n// prompb.isHistogram_ZeroCount (types.pb.go:452)\ntype isHistogram_ZeroCount interface {\n  isHistogram_ZeroCount() \n  MarshalTo([]byte) int, error\n  Size() int\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "prompb",
+          "writev2"
+        ],
+        "pattern_type": "interface",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar interface across 2 packages",
+      "Description": "Found 2 similar interface definitions across packages: promql, v1\n\nSimilar structures:\n// promql.QueryOpts (engine.go:176)\ntype QueryOpts interface {\n  EnablePerStepStats() bool\n  LookbackDelta() time.Duration\n}\n\n// v1.QueryOpts (api.go:216)\ntype QueryOpts interface {\n  EnablePerStepStats() bool\n  LookbackDelta() time.Duration\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "promql",
+          "v1"
+        ],
+        "pattern_type": "interface",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 16 similar function across 8 packages",
+      "Description": "Found 16 similar function definitions across packages: config, documentcli, influxdb, kubernetes, runtime, strutil, textparse, tsdb\n\nSimilar structures:\n// documentcli.formatHyphenatedWords (documentcli.go:264)\nfunc formatHyphenatedWords(string) (string)\n\n// influxdb.escapeSingleQuotes (client.go:204)\nfunc escapeSingleQuotes(string) (string)\n\n// influxdb.escapeSlashes (client.go:208)\nfunc escapeSlashes(string) (string)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 16,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "config",
+          "documentcli",
+          "influxdb",
+          "kubernetes",
+          "runtime",
+          "strutil",
+          "textparse",
+          "tsdb"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 3 packages",
+      "Description": "Found 3 similar function definitions across packages: main, promql, promqltest\n\nSimilar structures:\n// promql.durationMilliseconds (engine.go:714)\nfunc durationMilliseconds(time.Duration) (int64)\n\n// promqltest.durationMilliseconds (test.go:1760)\nfunc durationMilliseconds(time.Duration) (int64)\n\n// main.durationToInt64Millis (main.go:1490)\nfunc durationToInt64Millis(time.Duration) (int64)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "main",
+          "promql",
+          "promqltest"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar function across 4 packages",
+      "Description": "Found 4 similar function definitions across packages: hetzner, openstack, ovhcloud, stackit\n\nSimilar structures:\n// ovhcloud.newRefresher (ovhcloud.go:140)\nfunc newRefresher(*SDConfig, *slog.Logger) (refresher, error)\n\n// stackit.newRefresher (stackit.go:151)\nfunc newRefresher(*SDConfig, *slog.Logger) (refresher, error)\n\n// hetzner.newRefresher (hetzner.go:163)\nfunc newRefresher(*SDConfig, *slog.Logger) (refresher, error)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "hetzner",
+          "openstack",
+          "ovhcloud",
+          "stackit"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 6 similar function across 5 packages",
+      "Description": "Found 6 similar function definitions across packages: chunks, file, http, promql, wlog\n\nSimilar structures:\n// http.urlSource (http.go:220)\nfunc urlSource(string, int) (string)\n\n// promql.trimStringByBytes (query_logger.go:162)\nfunc trimStringByBytes(string, int) (string)\n\n// file.fileSource (file.go:427)\nfunc fileSource(string, int) (string)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 6,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "chunks",
+          "file",
+          "http",
+          "promql",
+          "wlog"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 10 similar function across 10 packages",
+      "Description": "Found 10 similar function definitions across packages: azure, consul, digitalocean, eureka, file, linode, nomad, puppetdb, uyuni, vultr\n\nSimilar structures:\n// azure.NewDiscovery (azure.go:181)\nfunc NewDiscovery(*SDConfig, *slog.Logger, discovery.DiscovererMetrics) (*Discovery, error)\n\n// uyuni.NewDiscovery (uyuni.go:216)\nfunc NewDiscovery(*SDConfig, *slog.Logger, discovery.DiscovererMetrics) (*Discovery, error)\n\n// puppetdb.NewDiscovery (puppetdb.go:143)\nfunc NewDiscovery(*SDConfig, *slog.Logger, discovery.DiscovererMetrics) (*Discovery, error)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 10,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "azure",
+          "consul",
+          "digitalocean",
+          "eureka",
+          "file",
+          "linode",
+          "nomad",
+          "puppetdb",
+          "uyuni",
+          "vultr"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 3 packages",
+      "Description": "Found 3 similar function definitions across packages: main, relabel, schema\n\nSimilar structures:\n// schema.IsMetadataLabel (labels.go:34)\nfunc IsMetadataLabel(string) (bool)\n\n// relabel.varInRegexTemplate (relabel.go:384)\nfunc varInRegexTemplate(string) (bool)\n\n// main.startsOrEndsWithQuote (main.go:1567)\nfunc startsOrEndsWithQuote(string) (bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "main",
+          "relabel",
+          "schema"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 5 similar function across 4 packages",
+      "Description": "Found 5 similar function definitions across packages: io_prometheus_client, labels, prompb, writev2\n\nSimilar structures:\n// writev2.encodeVarintTypes (types.pb.go:1470)\nfunc encodeVarintTypes([]byte, int, uint64) (int)\n\n// prompb.encodeVarintRemote (remote.pb.go:762)\nfunc encodeVarintRemote([]byte, int, uint64) (int)\n\n// prompb.encodeVarintTypes (types.pb.go:2020)\nfunc encodeVarintTypes([]byte, int, uint64) (int)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 5,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "io_prometheus_client",
+          "labels",
+          "prompb",
+          "writev2"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 6 similar function across 6 packages",
+      "Description": "Found 6 similar function definitions across packages: index, io_prometheus_client, labels, record, scrape, textparse\n\nSimilar structures:\n// labels.yoloString (labels_common.go:241)\nfunc yoloString([]byte) (string)\n\n// record.yoloString (record.go:297)\nfunc yoloString([]byte) (string)\n\n// index.yoloString (index.go:1919)\nfunc yoloString([]byte) (string)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 6,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "index",
+          "io_prometheus_client",
+          "labels",
+          "record",
+          "scrape",
+          "textparse"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 3 packages",
+      "Description": "Found 3 similar function definitions across packages: chunks, fileutil, tsdb\n\nSimilar structures:\n// tsdb.blockDirs (db.go:2360)\nfunc blockDirs(string) ([]string, error)\n\n// fileutil.readDirs (fileutil.go:76)\nfunc readDirs(string) ([]string, error)\n\n// chunks.sequenceFiles (chunks.go:763)\nfunc sequenceFiles(string) ([]string, error)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "chunks",
+          "fileutil",
+          "tsdb"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 3 packages",
+      "Description": "Found 3 similar function definitions across packages: chunks, index, tombstones\n\nSimilar structures:\n// tombstones.newCRC32 (tombstones.go:58)\nfunc newCRC32() (hash.Hash32)\n\n// index.newCRC32 (index.go:108)\nfunc newCRC32() (hash.Hash32)\n\n// chunks.newCRC32 (chunks.go:263)\nfunc newCRC32() (hash.Hash32)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "chunks",
+          "index",
+          "tombstones"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 3 packages",
+      "Description": "Found 3 similar function definitions across packages: promql, promqltest, timestamp\n\nSimilar structures:\n// promql.timeMilliseconds (engine.go:710)\nfunc timeMilliseconds(time.Time) (int64)\n\n// promqltest.timeMilliseconds (test.go:1756)\nfunc timeMilliseconds(time.Time) (int64)\n\n// timestamp.FromTime (timestamp.go:22)\nfunc FromTime(time.Time) (int64)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "promql",
+          "promqltest",
+          "timestamp"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 9 similar function across 4 packages",
+      "Description": "Found 9 similar function definitions across packages: kubernetes, main, rules, v1\n\nSimilar structures:\n// main.indentLines (unittest.go:603)\nfunc indentLines(string, string) (string)\n\n// rules.GroupKey (group.go:904)\nfunc GroupKey(string, string) (string)\n\n// kubernetes.endpointsSourceFromNamespaceAndName (endpoints.go:323)\nfunc endpointsSourceFromNamespaceAndName(string, string) (string)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 9,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "kubernetes",
+          "main",
+          "rules",
+          "v1"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 2 packages",
+      "Description": "Found 3 similar function definitions across packages: histogram, promqltest\n\nSimilar structures:\n// histogram.floatBucketsMatch (float_histogram.go:1357)\nfunc floatBucketsMatch([]float64, []float64) (bool)\n\n// histogram.CustomBucketBoundsMatch (generic.go:92)\nfunc CustomBucketBoundsMatch([]float64, []float64) (bool)\n\n// promqltest.floatBucketsMatch (test.go:1169)\nfunc floatBucketsMatch([]float64, []float64) (bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "histogram",
+          "promqltest"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar function across 2 packages",
+      "Description": "Found 4 similar function definitions across packages: synctest, tsdbutil\n\nSimilar structures:\n// tsdbutil.TestDirLockerUsage (dir_locker_testutil.go:31)\nfunc TestDirLockerUsage(*testing.T, func) ()\n\n// synctest.Test (disabled.go:22)\nfunc Test(*testing.T, func) ()\n\n// synctest.Test (enabled.go:23)\nfunc Test(*testing.T, func) ()\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "synctest",
+          "tsdbutil"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 65 similar function across 40 packages",
+      "Description": "Found 65 similar function definitions across packages: aws, azure, chunks, consul, digitalocean, discovery, dns, eureka, file, gce, hetzner, http, index, io_prometheus_client, ionos, kubernetes, linode, main, marathon, moby, nomad, openstack, ovhcloud, parser, prompb, puppetdb, remote, scaleway, stackit, synctest, template, tombstones, treecache, triton, uyuni, v1, vultr, writev2, xds, zookeeper\n\nSimilar structures:\n// azure.init (azure.go:101)\nfunc init() ()\n\n// dns.init (dns.go:59)\nfunc init() ()\n\n// main.init (main.go:66)\nfunc init() ()\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 65,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "aws",
+          "azure",
+          "chunks",
+          "consul",
+          "digitalocean",
+          "discovery",
+          "dns",
+          "eureka",
+          "file",
+          "gce",
+          "hetzner",
+          "http",
+          "index",
+          "io_prometheus_client",
+          "ionos",
+          "kubernetes",
+          "linode",
+          "main",
+          "marathon",
+          "moby",
+          "nomad",
+          "openstack",
+          "ovhcloud",
+          "parser",
+          "prompb",
+          "puppetdb",
+          "remote",
+          "scaleway",
+          "stackit",
+          "synctest",
+          "template",
+          "tombstones",
+          "treecache",
+          "triton",
+          "uyuni",
+          "v1",
+          "vultr",
+          "writev2",
+          "xds",
+          "zookeeper"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar function across 3 packages",
+      "Description": "Found 4 similar function definitions across packages: io_prometheus_client, prompb, writev2\n\nSimilar structures:\n// writev2.skipTypes (types.pb.go:3154)\nfunc skipTypes([]byte) (int, error)\n\n// prompb.skipRemote (remote.pb.go:1619)\nfunc skipRemote([]byte) (int, error)\n\n// prompb.skipTypes (types.pb.go:4437)\nfunc skipTypes([]byte) (int, error)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "io_prometheus_client",
+          "prompb",
+          "writev2"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar function across 4 packages",
+      "Description": "Found 4 similar function definitions across packages: azuread, config, promqltest, strutil\n\nSimilar structures:\n// azuread.getAudience (azuread.go:431)\nfunc getAudience(string) (string, error)\n\n// promqltest.parseAsStringLiteral (test.go:535)\nfunc parseAsStringLiteral(string) (string, error)\n\n// config.GenerateChecksum (reload.go:33)\nfunc GenerateChecksum(string) (string, error)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "azuread",
+          "config",
+          "promqltest",
+          "strutil"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 9 similar function across 9 packages",
+      "Description": "Found 9 similar function definitions across packages: azure, consul, dns, file, http, kubernetes, linode, nomad, xds\n\nSimilar structures:\n// azure.newDiscovererMetrics (metrics.go:33)\nfunc newDiscovererMetrics(prometheus.Registerer, discovery.RefreshMetricsInstantiator) (discovery.DiscovererMetrics)\n\n// dns.newDiscovererMetrics (metrics.go:33)\nfunc newDiscovererMetrics(prometheus.Registerer, discovery.RefreshMetricsInstantiator) (discovery.DiscovererMetrics)\n\n// http.newDiscovererMetrics (metrics.go:32)\nfunc newDiscovererMetrics(prometheus.Registerer, discovery.RefreshMetricsInstantiator) (discovery.DiscovererMetrics)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 9,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "azure",
+          "consul",
+          "dns",
+          "file",
+          "http",
+          "kubernetes",
+          "linode",
+          "nomad",
+          "xds"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 6 similar function across 6 packages",
+      "Description": "Found 6 similar function definitions across packages: hetzner, ionos, openstack, ovhcloud, scaleway, stackit\n\nSimilar structures:\n// ovhcloud.NewDiscovery (ovhcloud.go:151)\nfunc NewDiscovery(*SDConfig, *slog.Logger, discovery.DiscovererMetrics) (*refresh.Discovery, error)\n\n// stackit.NewDiscovery (stackit.go:129)\nfunc NewDiscovery(*SDConfig, *slog.Logger, discovery.DiscovererMetrics) (*refresh.Discovery, error)\n\n// ionos.NewDiscovery (ionos.go:45)\nfunc NewDiscovery(*SDConfig, *slog.Logger, discovery.DiscovererMetrics) (*refresh.Discovery, error)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 6,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "hetzner",
+          "ionos",
+          "openstack",
+          "ovhcloud",
+          "scaleway",
+          "stackit"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 2 packages",
+      "Description": "Found 3 similar function definitions across packages: kubernetes, labels\n\nSimilar structures:\n// labels.hasPrefixCaseInsensitive (regexp.go:1068)\nfunc hasPrefixCaseInsensitive(string, string) (bool)\n\n// labels.hasSuffixCaseInsensitive (regexp.go:1072)\nfunc hasSuffixCaseInsensitive(string, string) (bool)\n\n// kubernetes.matchesHostnamePattern (ingress.go:272)\nfunc matchesHostnamePattern(string, string) (bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "kubernetes",
+          "labels"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 3 packages",
+      "Description": "Found 3 similar function definitions across packages: dns, gce, marathon\n\nSimilar structures:\n// dns.NewDiscovery (dns.go:121)\nfunc NewDiscovery(SDConfig, *slog.Logger, discovery.DiscovererMetrics) (*Discovery, error)\n\n// gce.NewDiscovery (gce.go:132)\nfunc NewDiscovery(SDConfig, *slog.Logger, discovery.DiscovererMetrics) (*Discovery, error)\n\n// marathon.NewDiscovery (marathon.go:143)\nfunc NewDiscovery(SDConfig, *slog.Logger, discovery.DiscovererMetrics) (*Discovery, error)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "dns",
+          "gce",
+          "marathon"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 8 similar function across 5 packages",
+      "Description": "Found 8 similar function definitions across packages: azure, chunks, fileutil, main, promqltest\n\nSimilar structures:\n// azure.validateAuthParam (azure.go:133)\nfunc validateAuthParam(string, string) (error)\n\n// main.labelsDeletePromQL (main.go:1368)\nfunc labelsDeletePromQL(string, string) (error)\n\n// promqltest.MigrateTestData (test_migrate.go:56)\nfunc MigrateTestData(string, string) (error)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 8,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "azure",
+          "chunks",
+          "fileutil",
+          "main",
+          "promqltest"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 10 similar function across 4 packages",
+      "Description": "Found 10 similar function definitions across packages: io_prometheus_client, labels, prompb, writev2\n\nSimilar structures:\n// writev2.sovTypes (types.pb.go:1733)\nfunc sovTypes(uint64) (int)\n\n// writev2.sozTypes (types.pb.go:1736)\nfunc sozTypes(uint64) (int)\n\n// prompb.sovRemote (remote.pb.go:907)\nfunc sovRemote(uint64) (int)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 10,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "io_prometheus_client",
+          "labels",
+          "prompb",
+          "writev2"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:50.735965-08:00",
+      "Confidence": 0.5
+    }
+  ],
+  "Context": "Analyzed 113 packages with 377 total files. Found 0 circular dependencies, 5 god packages, 24 high-coupling packages, 74 missing abstractions.",
+  "Reasoning": "Based on philosophy: 'Good architecture has clear boundaries, minimal coupling, and cohesive modules'\n\nPackage structure analysis revealed potential issues:\n- Circular dependencies prevent clean layering and testability\n- God packages suggest unclear responsibilities\n- High coupling makes changes ripple across the codebase\n- Missing abstractions indicate repeated patterns that could be unified\n\nAI should evaluate: Are these issues worth addressing given the codebase context?",
+  "AnalyzedAt": "2025-11-07T23:24:50.735965-08:00",
+  "Stats": {
+    "FilesAnalyzed": 377,
+    "IssuesFound": 103,
+    "Duration": 207913833,
+    "AICallsMade": 0,
+    "TokensUsed": 0,
+    "EstimatedCost": 0,
+    "ErrorsIgnored": 0,
+    "PatternsFound": 103
+  }
+}

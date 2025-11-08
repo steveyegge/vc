@@ -1,0 +1,4313 @@
+{
+  "IssuesDiscovered": [
+    {
+      "Title": "God package detected: hugolib (117 types)",
+      "Description": "Package hugolib contains 117 types, significantly more than average (6).\n\nGod packages with too many responsibilities are harder to understand and maintain. Consider splitting into focused sub-packages.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "god-package",
+        "cohesion"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/hugolib",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "avg_types": 6,
+        "package_name": "hugolib",
+        "package_path": "/Users/stevey/src/go/hugo/hugolib",
+        "threshold": 33.37103990295586,
+        "type_count": 117
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.7
+    },
+    {
+      "Title": "God package detected: resource (43 types)",
+      "Description": "Package resource contains 43 types, significantly more than average (6).\n\nGod packages with too many responsibilities are harder to understand and maintain. Consider splitting into focused sub-packages.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "god-package",
+        "cohesion"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/resources/resource",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "avg_types": 6,
+        "package_name": "resource",
+        "package_path": "/Users/stevey/src/go/hugo/resources/resource",
+        "threshold": 33.37103990295586,
+        "type_count": 43
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.7
+    },
+    {
+      "Title": "God package detected: hugofs (47 types)",
+      "Description": "Package hugofs contains 47 types, significantly more than average (6).\n\nGod packages with too many responsibilities are harder to understand and maintain. Consider splitting into focused sub-packages.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "god-package",
+        "cohesion"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/hugofs",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "avg_types": 6,
+        "package_name": "hugofs",
+        "package_path": "/Users/stevey/src/go/hugo/hugofs",
+        "threshold": 33.37103990295586,
+        "type_count": 47
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.7
+    },
+    {
+      "Title": "God package detected: page (98 types)",
+      "Description": "Package page contains 98 types, significantly more than average (6).\n\nGod packages with too many responsibilities are harder to understand and maintain. Consider splitting into focused sub-packages.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "god-package",
+        "cohesion"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/resources/page",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "avg_types": 6,
+        "package_name": "page",
+        "package_path": "/Users/stevey/src/go/hugo/resources/page",
+        "threshold": 33.37103990295586,
+        "type_count": 98
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.7
+    },
+    {
+      "Title": "God package detected: resources (42 types)",
+      "Description": "Package resources contains 42 types, significantly more than average (6).\n\nGod packages with too many responsibilities are harder to understand and maintain. Consider splitting into focused sub-packages.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "god-package",
+        "cohesion"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/resources",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "avg_types": 6,
+        "package_name": "resources",
+        "package_path": "/Users/stevey/src/go/hugo/resources",
+        "threshold": 33.37103990295586,
+        "type_count": 42
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.7
+    },
+    {
+      "Title": "God package detected: parse (34 types)",
+      "Description": "Package parse contains 34 types, significantly more than average (6).\n\nGod packages with too many responsibilities are harder to understand and maintain. Consider splitting into focused sub-packages.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "god-package",
+        "cohesion"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/tpl/internal/go_templates/texttemplate/parse",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "avg_types": 6,
+        "package_name": "parse",
+        "package_path": "/Users/stevey/src/go/hugo/tpl/internal/go_templates/texttemplate/parse",
+        "threshold": 33.37103990295586,
+        "type_count": 34
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.7
+    },
+    {
+      "Title": "High coupling detected: goldmark (fan-in: 0, fan-out: 18)",
+      "Description": "Package goldmark has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 18 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/markup/goldmark",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 18,
+        "fan_in": 0,
+        "fan_out": 18,
+        "package_name": "goldmark",
+        "package_path": "/Users/stevey/src/go/hugo/markup/goldmark"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: dartsass (fan-in: 0, fan-out: 13)",
+      "Description": "Package dartsass has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 13 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/resources/resource_transformers/tocss/dartsass",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 13,
+        "fan_in": 0,
+        "fan_out": 13,
+        "package_name": "dartsass",
+        "package_path": "/Users/stevey/src/go/hugo/resources/resource_transformers/tocss/dartsass"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: tplimplinit (fan-in: 0, fan-out: 33)",
+      "Description": "Package tplimplinit has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 33 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/tpl/tplimplinit",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 33,
+        "fan_in": 0,
+        "fan_out": 33,
+        "package_name": "tplimplinit",
+        "package_path": "/Users/stevey/src/go/hugo/tpl/tplimplinit"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: pagesfromdata (fan-in: 0, fan-out: 12)",
+      "Description": "Package pagesfromdata has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 12 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/hugolib/pagesfromdata",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 12,
+        "fan_in": 0,
+        "fan_out": 12,
+        "package_name": "pagesfromdata",
+        "package_path": "/Users/stevey/src/go/hugo/hugolib/pagesfromdata"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: hugolib (fan-in: 0, fan-out: 70)",
+      "Description": "Package hugolib has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 70 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/hugolib",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 70,
+        "fan_in": 0,
+        "fan_out": 70,
+        "package_name": "hugolib",
+        "package_path": "/Users/stevey/src/go/hugo/hugolib"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: partials (fan-in: 0, fan-out: 9)",
+      "Description": "Package partials has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 9 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/tpl/partials",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 9,
+        "fan_in": 0,
+        "fan_out": 9,
+        "package_name": "partials",
+        "package_path": "/Users/stevey/src/go/hugo/tpl/partials"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: transform (fan-in: 0, fan-out: 17)",
+      "Description": "Package transform has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 17 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/tpl/transform",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 17,
+        "fan_in": 0,
+        "fan_out": 17,
+        "package_name": "transform",
+        "package_path": "/Users/stevey/src/go/hugo/tpl/transform"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: filesystems (fan-in: 0, fan-out: 13)",
+      "Description": "Package filesystems has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 13 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/hugolib/filesystems",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 13,
+        "fan_in": 0,
+        "fan_out": 13,
+        "package_name": "filesystems",
+        "package_path": "/Users/stevey/src/go/hugo/hugolib/filesystems"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: commands (fan-in: 0, fan-out: 40)",
+      "Description": "Package commands has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 40 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/commands",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 40,
+        "fan_in": 0,
+        "fan_out": 40,
+        "package_name": "commands",
+        "package_path": "/Users/stevey/src/go/hugo/commands"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: esbuild (fan-in: 0, fan-out: 18)",
+      "Description": "Package esbuild has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 18 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/internal/js/esbuild",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 18,
+        "fan_in": 0,
+        "fan_out": 18,
+        "package_name": "esbuild",
+        "package_path": "/Users/stevey/src/go/hugo/internal/js/esbuild"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: resource (fan-in: 0, fan-out: 10)",
+      "Description": "Package resource has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 10 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/resources/resource",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 10,
+        "fan_in": 0,
+        "fan_out": 10,
+        "package_name": "resource",
+        "package_path": "/Users/stevey/src/go/hugo/resources/resource"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: css (fan-in: 0, fan-out: 13)",
+      "Description": "Package css has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 13 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/tpl/css",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 13,
+        "fan_in": 0,
+        "fan_out": 13,
+        "package_name": "css",
+        "package_path": "/Users/stevey/src/go/hugo/tpl/css"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: hugofs (fan-in: 0, fan-out: 12)",
+      "Description": "Package hugofs has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 12 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/hugofs",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 12,
+        "fan_in": 0,
+        "fan_out": 12,
+        "package_name": "hugofs",
+        "package_path": "/Users/stevey/src/go/hugo/hugofs"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: modules (fan-in: 0, fan-out: 18)",
+      "Description": "Package modules has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 18 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/modules",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 18,
+        "fan_in": 0,
+        "fan_out": 18,
+        "package_name": "modules",
+        "package_path": "/Users/stevey/src/go/hugo/modules"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: page (fan-in: 0, fan-out: 35)",
+      "Description": "Package page has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 35 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/resources/page",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 35,
+        "fan_in": 0,
+        "fan_out": 35,
+        "package_name": "page",
+        "package_path": "/Users/stevey/src/go/hugo/resources/page"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: resources (fan-in: 0, fan-out: 14)",
+      "Description": "Package resources has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 14 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/tpl/resources",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 14,
+        "fan_in": 0,
+        "fan_out": 14,
+        "package_name": "resources",
+        "package_path": "/Users/stevey/src/go/hugo/tpl/resources"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: converter (fan-in: 0, fan-out: 8)",
+      "Description": "Package converter has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 8 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/markup/converter",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 8,
+        "fan_in": 0,
+        "fan_out": 8,
+        "package_name": "converter",
+        "package_path": "/Users/stevey/src/go/hugo/markup/converter"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: create (fan-in: 0, fan-out: 17)",
+      "Description": "Package create has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 17 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/resources/resource_factories/create",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 17,
+        "fan_in": 0,
+        "fan_out": 17,
+        "package_name": "create",
+        "package_path": "/Users/stevey/src/go/hugo/resources/resource_factories/create"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: allconfig (fan-in: 0, fan-out: 38)",
+      "Description": "Package allconfig has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 38 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/config/allconfig",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 38,
+        "fan_in": 0,
+        "fan_out": 38,
+        "package_name": "allconfig",
+        "package_path": "/Users/stevey/src/go/hugo/config/allconfig"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: pagemeta (fan-in: 0, fan-out: 17)",
+      "Description": "Package pagemeta has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 17 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/resources/page/pagemeta",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 17,
+        "fan_in": 0,
+        "fan_out": 17,
+        "package_name": "pagemeta",
+        "package_path": "/Users/stevey/src/go/hugo/resources/page/pagemeta"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: resources (fan-in: 0, fan-out: 28)",
+      "Description": "Package resources has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 28 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/resources",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 28,
+        "fan_in": 0,
+        "fan_out": 28,
+        "package_name": "resources",
+        "package_path": "/Users/stevey/src/go/hugo/resources"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: config (fan-in: 0, fan-out: 10)",
+      "Description": "Package config has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 10 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/config",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 10,
+        "fan_in": 0,
+        "fan_out": 10,
+        "package_name": "config",
+        "package_path": "/Users/stevey/src/go/hugo/config"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: source (fan-in: 0, fan-out: 8)",
+      "Description": "Package source has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 8 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/source",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 8,
+        "fan_in": 0,
+        "fan_out": 8,
+        "package_name": "source",
+        "package_path": "/Users/stevey/src/go/hugo/source"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: segments (fan-in: 0, fan-out: 7)",
+      "Description": "Package segments has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 7 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/hugolib/segments",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 7,
+        "fan_in": 0,
+        "fan_out": 7,
+        "package_name": "segments",
+        "package_path": "/Users/stevey/src/go/hugo/hugolib/segments"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: scss (fan-in: 0, fan-out: 11)",
+      "Description": "Package scss has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 11 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/resources/resource_transformers/tocss/scss",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 11,
+        "fan_in": 0,
+        "fan_out": 11,
+        "package_name": "scss",
+        "package_path": "/Users/stevey/src/go/hugo/resources/resource_transformers/tocss/scss"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: tplimpl (fan-in: 0, fan-out: 24)",
+      "Description": "Package tplimpl has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 24 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/tpl/tplimpl",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 24,
+        "fan_in": 0,
+        "fan_out": 24,
+        "package_name": "tplimpl",
+        "package_path": "/Users/stevey/src/go/hugo/tpl/tplimpl"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: deps (fan-in: 0, fan-out: 22)",
+      "Description": "Package deps has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 22 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/deps",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 22,
+        "fan_in": 0,
+        "fan_out": 22,
+        "package_name": "deps",
+        "package_path": "/Users/stevey/src/go/hugo/deps"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: i18n (fan-in: 0, fan-out: 12)",
+      "Description": "Package i18n has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 12 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/langs/i18n",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 12,
+        "fan_in": 0,
+        "fan_out": 12,
+        "package_name": "i18n",
+        "package_path": "/Users/stevey/src/go/hugo/langs/i18n"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: helpers (fan-in: 0, fan-out: 17)",
+      "Description": "Package helpers has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 17 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/helpers",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 17,
+        "fan_in": 0,
+        "fan_out": 17,
+        "package_name": "helpers",
+        "package_path": "/Users/stevey/src/go/hugo/helpers"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: collections (fan-in: 0, fan-out: 12)",
+      "Description": "Package collections has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 12 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/tpl/collections",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 12,
+        "fan_in": 0,
+        "fan_out": 12,
+        "package_name": "collections",
+        "package_path": "/Users/stevey/src/go/hugo/tpl/collections"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: images (fan-in: 0, fan-out: 9)",
+      "Description": "Package images has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 9 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/resources/images",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 9,
+        "fan_in": 0,
+        "fan_out": 9,
+        "package_name": "images",
+        "package_path": "/Users/stevey/src/go/hugo/resources/images"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: babel (fan-in: 0, fan-out: 7)",
+      "Description": "Package babel has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 7 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/resources/resource_transformers/babel",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 7,
+        "fan_in": 0,
+        "fan_out": 7,
+        "package_name": "babel",
+        "package_path": "/Users/stevey/src/go/hugo/resources/resource_transformers/babel"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: dynacache (fan-in: 0, fan-out: 9)",
+      "Description": "Package dynacache has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 9 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/cache/dynacache",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 9,
+        "fan_in": 0,
+        "fan_out": 9,
+        "package_name": "dynacache",
+        "package_path": "/Users/stevey/src/go/hugo/cache/dynacache"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: markup (fan-in: 0, fan-out: 9)",
+      "Description": "Package markup has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 9 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/markup",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 9,
+        "fan_in": 0,
+        "fan_out": 9,
+        "package_name": "markup",
+        "package_path": "/Users/stevey/src/go/hugo/markup"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: compare (fan-in: 0, fan-out: 7)",
+      "Description": "Package compare has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 7 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/tpl/compare",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 7,
+        "fan_in": 0,
+        "fan_out": 7,
+        "package_name": "compare",
+        "package_path": "/Users/stevey/src/go/hugo/tpl/compare"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: js (fan-in: 0, fan-out: 10)",
+      "Description": "Package js has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 10 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/tpl/js",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 10,
+        "fan_in": 0,
+        "fan_out": 10,
+        "package_name": "js",
+        "package_path": "/Users/stevey/src/go/hugo/tpl/js"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: publisher (fan-in: 0, fan-out: 12)",
+      "Description": "Package publisher has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 12 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/publisher",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 12,
+        "fan_in": 0,
+        "fan_out": 12,
+        "package_name": "publisher",
+        "package_path": "/Users/stevey/src/go/hugo/publisher"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: cssjs (fan-in: 0, fan-out: 11)",
+      "Description": "Package cssjs has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 11 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/resources/resource_transformers/cssjs",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 11,
+        "fan_in": 0,
+        "fan_out": 11,
+        "package_name": "cssjs",
+        "package_path": "/Users/stevey/src/go/hugo/resources/resource_transformers/cssjs"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: data (fan-in: 0, fan-out: 9)",
+      "Description": "Package data has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 9 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/tpl/data",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 9,
+        "fan_in": 0,
+        "fan_out": 9,
+        "package_name": "data",
+        "package_path": "/Users/stevey/src/go/hugo/tpl/data"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "High coupling detected: hugo (fan-in: 0, fan-out: 7)",
+      "Description": "Package hugo has high coupling:\n- Imported by 0 packages (fan-in)\n- Imports 7 packages (fan-out)\n\nHigh coupling indicates tight dependencies that make code harder to change and test independently.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "coupling",
+        "dependencies"
+      ],
+      "FilePath": "/Users/stevey/src/go/hugo/common/hugo",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "coupling": 7,
+        "fan_in": 0,
+        "fan_out": 7,
+        "package_name": "hugo",
+        "package_path": "/Users/stevey/src/go/hugo/common/hugo"
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.6
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: codeblocks, passthrough\n\nSimilar structures:\n// codeblocks.codeBlockContext (render.go:125)\ntype codeBlockContext struct {\n  hooks.BaseContext\n  lang string\n  code string\n  *attributes.AttributesHolder\n}\n\n// passthrough.passthroughContext (passthrough.go:151)\ntype passthroughContext struct {\n  hooks.BaseContext\n  typ string\n  inner string\n  *attributes.AttributesHolder\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "codeblocks",
+          "passthrough"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 7 similar struct across 7 packages",
+      "Description": "Found 7 similar struct definitions across packages: config, hexec, hugolib, media, modules, paths, types\n\nSimilar structures:\n// types.KeyValueStr (types.go:48)\ntype KeyValueStr struct {\n  Key string\n  Value string\n}\n\n// hexec.NotFoundError (exec.go:257)\ntype NotFoundError struct {\n  name string\n  method string\n}\n\n// config.PageConfig (commonConfig.go:499)\ntype PageConfig struct {\n  NextPrevSortOrder string\n  NextPrevInSectionSortOrder string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 7,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "config",
+          "hexec",
+          "hugolib",
+          "media",
+          "modules",
+          "paths",
+          "types"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 8 similar struct across 7 packages",
+      "Description": "Found 8 similar struct definitions across packages: esbuild, filecache, images, integrity, modules, services, warpc\n\nSimilar structures:\n// warpc.KatexOutput (katex.go:74)\ntype KatexOutput struct {\n  Output string\n}\n\n// images.processFilter (process.go:29)\ntype processFilter struct {\n  spec string\n}\n\n// integrity.fingerprintTransformation (integrity.go:46)\ntype fingerprintTransformation struct {\n  algo string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 8,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "esbuild",
+          "filecache",
+          "images",
+          "integrity",
+          "modules",
+          "services",
+          "warpc"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar struct across 4 packages",
+      "Description": "Found 4 similar struct definitions across packages: roles, services, tplimpl, versions\n\nSimilar structures:\n// versions.VersionConfig (versions.go:32)\ntype VersionConfig struct {\n  Weight int\n}\n\n// tplimpl.ParseConfig (template_info.go:36)\ntype ParseConfig struct {\n  Version int\n}\n\n// services.RSS (servicesConfig.go:82)\ntype RSS struct {\n  Limit int\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "roles",
+          "services",
+          "tplimpl",
+          "versions"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: text, version\n\nSimilar structures:\n// text.Position (position.go:33)\ntype Position struct {\n  Filename string\n  Offset int\n  LineNumber int\n  ColumnNumber int\n}\n\n// version.Version (version.go:29)\ntype Version struct {\n  Major int\n  Minor int\n  PatchLevel int\n  Suffix string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "text",
+          "version"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: herrors, template\n\nSimilar structures:\n// herrors.FeatureNotAvailableError (errors.go:90)\ntype FeatureNotAvailableError struct {\n  Cause error\n}\n\n// template.writeError (exec.go:153)\ntype writeError struct {\n  Err error\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "herrors",
+          "template"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: identity, maps\n\nSimilar structures:\n// maps.CacheOptions (cache.go:29)\ntype CacheOptions struct {\n  Size uint64\n}\n\n// identity.IncrementByOne (identity.go:249)\ntype IncrementByOne struct {\n  counter uint64\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "identity",
+          "maps"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar struct across 2 packages",
+      "Description": "Found 3 similar struct definitions across packages: highlight, hsync\n\nSimilar structures:\n// hsync.ValueResetter (oncemore.go:60)\ntype ValueResetter struct {\n  reset func\n  f func\n}\n\n// hsync.FuncResetter (oncemore.go:111)\ntype FuncResetter struct {\n  f func\n  reset func\n}\n\n// highlight.startEnd (highlight.go:293)\ntype startEnd struct {\n  start func\n  end func\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "highlight",
+          "hsync"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar struct across 3 packages",
+      "Description": "Found 3 similar struct definitions across packages: helpers, internal, media\n\nSimilar structures:\n// internal.methodGoDocInfo (templatefuncsRegistry.go:253)\ntype methodGoDocInfo struct {\n  Description string\n  Args []string\n}\n\n// helpers.NamedSlice (path.go:120)\ntype NamedSlice struct {\n  Name string\n  Slice []string\n}\n\n// media.MediaTypeConfig (config.go:162)\ntype MediaTypeConfig struct {\n  Suffixes []string\n  Delimiter string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "helpers",
+          "internal",
+          "media"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: dartsass, js\n\nSimilar structures:\n// dartsass.transform (transform.go:49)\ntype transform struct {\n  optsm map[string]any\n  c *Client\n}\n\n// js.buildTransformation (transform.go:27)\ntype buildTransformation struct {\n  optsm map[string]any\n  c *Client\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "dartsass",
+          "js"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: config, strings\n\nSimilar structures:\n// config.Pagination (commonConfig.go:487)\ntype Pagination struct {\n  PagerSize int\n  Path string\n  DisableAliases bool\n}\n\n// strings.htmlTag (truncate.go:37)\ntype htmlTag struct {\n  name string\n  pos int\n  openTag bool\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "config",
+          "strings"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: publisher, sitesmatrix\n\nSimilar structures:\n// publisher.HTMLElements (htmlElementsCollector.go:69)\ntype HTMLElements struct {\n  Tags []string\n  Classes []string\n  IDs []string\n}\n\n// sitesmatrix.StringSlices (vectorstores.go:845)\ntype StringSlices struct {\n  Languages []string\n  Versions []string\n  Roles []string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "publisher",
+          "sitesmatrix"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar struct across 4 packages",
+      "Description": "Found 4 similar struct definitions across packages: internal, org, pandoc, rst\n\nSimilar structures:\n// org.orgConverter (convert.go:42)\ntype orgConverter struct {\n  ctx converter.DocumentContext\n  cfg converter.ProviderConfig\n}\n\n// pandoc.pandocConverter (convert.go:40)\ntype pandocConverter struct {\n  ctx converter.DocumentContext\n  cfg converter.ProviderConfig\n}\n\n// rst.rstConverter (convert.go:44)\ntype rstConverter struct {\n  ctx converter.DocumentContext\n  cfg converter.ProviderConfig\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "internal",
+          "org",
+          "pandoc",
+          "rst"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 11 similar struct across 5 packages",
+      "Description": "Found 11 similar struct definitions across packages: goldmark_config, identity, images, privacy, services\n\nSimilar structures:\n// identity.FinderConfig (finder.go:309)\ntype FinderConfig struct {\n  Exact bool\n}\n\n// privacy.Service (privacyConfig.go:24)\ntype Service struct {\n  Disable bool\n}\n\n// services.Twitter (servicesConfig.go:66)\ntype Twitter struct {\n  DisableInlineCSS bool\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 11,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "goldmark_config",
+          "identity",
+          "images",
+          "privacy",
+          "services"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: internal, partials\n\nSimilar structures:\n// partials.partialCacheKey (partials.go:39)\ntype partialCacheKey struct {\n  Name string\n  Variants []any\n}\n\n// internal.ResourceTransformationKey (key.go:22)\ntype ResourceTransformationKey struct {\n  Name string\n  elements []any\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "internal",
+          "partials"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar struct across 3 packages",
+      "Description": "Found 3 similar struct definitions across packages: esbuild, page, para\n\nSimilar structures:\n// para.Workers (para.go:24)\ntype Workers struct {\n  sem chan unknown\n}\n\n// esbuild.scriptInstanceBatchTemplateContext (batch.go:1244)\ntype scriptInstanceBatchTemplateContext struct {\n  opts unknown\n}\n\n// page.LazyContentProvider (page_lazy_contentprovider.go:50)\ntype LazyContentProvider struct {\n  init unknown\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "esbuild",
+          "page",
+          "para"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: collections, fmtsort\n\nSimilar structures:\n// collections.pair (sort.go:146)\ntype pair struct {\n  Key reflect.Value\n  Value reflect.Value\n}\n\n// fmtsort.KeyValue (sort.go:27)\ntype KeyValue struct {\n  Key reflect.Value\n  Value reflect.Value\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "collections",
+          "fmtsort"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: goldmark_config, pageparser\n\nSimilar structures:\n// pageparser.Config (pagelexer.go:66)\ntype Config struct {\n  NoFrontMatter bool\n  NoSummaryDivider bool\n}\n\n// goldmark_config.ParserAttribute (config.go:315)\ntype ParserAttribute struct {\n  Title bool\n  Block bool\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "goldmark_config",
+          "pageparser"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar struct across 3 packages",
+      "Description": "Found 3 similar struct definitions across packages: encoding, hugofs, pagemeta\n\nSimilar structures:\n// pagemeta.BuildConfig (pagemeta.go:35)\ntype BuildConfig struct {\n  List string\n  Render string\n  PublishResources bool\n}\n\n// encoding.jsonifyOpts (encoding.go:112)\ntype jsonifyOpts struct {\n  Prefix string\n  Indent string\n  NoHTMLEscape bool\n}\n\n// hugofs.ComponentPath (rootmapping_fs.go:323)\ntype ComponentPath struct {\n  Component string\n  Path string\n  Watch bool\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "encoding",
+          "hugofs",
+          "pagemeta"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: pageparser, types\n\nSimilar structures:\n// types.LowHigh (types.go:121)\ntype LowHigh struct {\n  Low int\n  High int\n}\n\n// pageparser.lowHigh (item.go:25)\ntype lowHigh struct {\n  Low int\n  High int\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "pageparser",
+          "types"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: fmt, hugocontext\n\nSimilar structures:\n// fmt.Namespace (fmt.go:42)\ntype Namespace struct {\n  logger loggers.Logger\n}\n\n// hugocontext.hugoContextExtension (hugocontext.go:295)\ntype hugoContextExtension struct {\n  logger loggers.Logger\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "fmt",
+          "hugocontext"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 39 similar struct across 31 packages",
+      "Description": "Found 39 similar struct definitions across packages: asciidocext, attributes, blockquotes, cast, codeblocks, crypto, debug, encoding, goldmark, hash, hsync, hugo, hugocontext, hugofs, hugolib, images, inflect, media, minifiers, org, page, pandoc, passthrough, paths, predicate, reflect, resources, rst, safe, tables, template\n\nSimilar structures:\n// resources.commonResource (resource.go:274)\ntype commonResource struct {\n  \n}\n\n// codeblocks.codeBlocksExtension (render.go:37)\ntype codeBlocksExtension struct {\n  \n}\n\n// codeblocks.htmlRenderer (render.go:38)\ntype htmlRenderer struct {\n  \n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 39,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "asciidocext",
+          "attributes",
+          "blockquotes",
+          "cast",
+          "codeblocks",
+          "crypto",
+          "debug",
+          "encoding",
+          "goldmark",
+          "hash",
+          "hsync",
+          "hugo",
+          "hugocontext",
+          "hugofs",
+          "hugolib",
+          "images",
+          "inflect",
+          "media",
+          "minifiers",
+          "org",
+          "page",
+          "pandoc",
+          "passthrough",
+          "paths",
+          "predicate",
+          "reflect",
+          "resources",
+          "rst",
+          "safe",
+          "tables",
+          "template"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar struct across 3 packages",
+      "Description": "Found 4 similar struct definitions across packages: herrors, page, template\n\nSimilar structures:\n// herrors.errMessage (errors.go:65)\ntype errMessage struct {\n  msg string\n  err error\n}\n\n// herrors.TextSegmentError (file_error.go:418)\ntype TextSegmentError struct {\n  Segment string\n  Err error\n}\n\n// template.ExecError (exec.go:121)\ntype ExecError struct {\n  Name string\n  Err error\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "herrors",
+          "page",
+          "template"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar struct across 3 packages",
+      "Description": "Found 3 similar struct definitions across packages: cssjs, goldmark_config, parse\n\nSimilar structures:\n// parse.lexOptions (lex.go:130)\ntype lexOptions struct {\n  emitComment bool\n  breakOK bool\n  continueOK bool\n}\n\n// cssjs.InlineImports (postcss.go:71)\ntype InlineImports struct {\n  InlineImports bool\n  DisableInlineImports bool\n  SkipInlineImportsNotFound bool\n}\n\n// goldmark_config.Renderer (config.go:273)\ntype Renderer struct {\n  HardWraps bool\n  XHTML bool\n  Unsafe bool\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "cssjs",
+          "goldmark_config",
+          "parse"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 5 similar struct across 5 packages",
+      "Description": "Found 5 similar struct definitions across packages: diagrams, math, path, strings, templates\n\nSimilar structures:\n// path.Namespace (path.go:35)\ntype Namespace struct {\n  deps *deps.Deps\n}\n\n// math.Namespace (math.go:42)\ntype Namespace struct {\n  d *deps.Deps\n}\n\n// templates.Namespace (templates.go:39)\ntype Namespace struct {\n  deps *deps.Deps\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 5,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "diagrams",
+          "math",
+          "path",
+          "strings",
+          "templates"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: hugolib, services\n\nSimilar structures:\n// services.Instagram (servicesConfig.go:52)\ntype Instagram struct {\n  DisableInlineCSS bool\n  AccessToken string\n}\n\n// hugolib.prerenderedShortcode (shortcode_page.go:45)\ntype prerenderedShortcode struct {\n  s string\n  hasVariants bool\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "hugolib",
+          "services"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: partials, warpc\n\nSimilar structures:\n// warpc.Dispatchers (warpc.go:547)\ntype Dispatchers struct {\n  katex *unknown\n}\n\n// partials.partialCache (partials.go:58)\ntype partialCache struct {\n  cache *unknown\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "partials",
+          "warpc"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: partials, types\n\nSimilar structures:\n// types.KeyValue (types.go:42)\ntype KeyValue struct {\n  Key any\n  Value any\n}\n\n// partials.contextWrapper (partials.go:95)\ntype contextWrapper struct {\n  Arg any\n  Result any\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "partials",
+          "types"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: doctree, segments\n\nSimilar structures:\n// segments.segmentFilter (segments.go:47)\ntype segmentFilter struct {\n  exclude unknown\n  include unknown\n}\n\n// doctree.Config (nodeshifttree.go:29)\ntype Config struct {\n  Shifter unknown\n  TransformerRaw unknown\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "doctree",
+          "segments"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar struct across 3 packages",
+      "Description": "Found 4 similar struct definitions across packages: blockquotes, hugolib, security\n\nSimilar structures:\n// security.AccessDeniedError (securityConfig.go:216)\ntype AccessDeniedError struct {\n  path string\n  name string\n  policies string\n}\n\n// blockquotes.blockQuoteAlert (blockquotes.go:192)\ntype blockQuoteAlert struct {\n  typ string\n  sign string\n  title string\n}\n\n// hugolib.viewName (content_map_page.go:1219)\ntype viewName struct {\n  singular string\n  plural string\n  pluralTreeKey string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "blockquotes",
+          "hugolib",
+          "security"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 5 similar struct across 4 packages",
+      "Description": "Found 5 similar struct definitions across packages: babel, bundler, cssjs, integrity\n\nSimilar structures:\n// babel.Client (babel.go:90)\ntype Client struct {\n  rs *resources.Spec\n}\n\n// integrity.Client (integrity.go:37)\ntype Client struct {\n  rs *resources.Spec\n}\n\n// cssjs.PostCSSClient (postcss.go:62)\ntype PostCSSClient struct {\n  rs *resources.Spec\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 5,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "babel",
+          "bundler",
+          "cssjs",
+          "integrity"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar struct across 3 packages",
+      "Description": "Found 3 similar struct definitions across packages: config, page, pagemeta\n\nSimilar structures:\n// pagemeta.DatesStrings (page_frontmatter.go:45)\ntype DatesStrings struct {\n  Date string\n  Lastmod string\n  PublishDate string\n  ExpiryDate string\n}\n\n// config.BaseConfig (commonConfig.go:34)\ntype BaseConfig struct {\n  WorkingDir string\n  CacheDir string\n  ThemesDir string\n  PublishDir string\n}\n\n// page.TargetPaths (page_paths.go:77)\ntype TargetPaths struct {\n  TargetFilename string\n  SubResourceBaseTarget string\n  SubResourceBaseLink string\n  Link string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "config",
+          "page",
+          "pagemeta"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar struct across 2 packages",
+      "Description": "Found 2 similar struct definitions across packages: attributes, templates\n\nSimilar structures:\n// attributes.Attribute (attributes.go:119)\ntype Attribute struct {\n  Name string\n  Value any\n}\n\n// templates.DeferOpts (templates.go:64)\ntype DeferOpts struct {\n  Key string\n  Data any\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "attributes",
+          "templates"
+        ],
+        "pattern_type": "struct",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar interface across 2 packages",
+      "Description": "Found 2 similar interface definitions across packages: converter, goldmark\n\nSimilar structures:\n// converter.TableOfContentsProvider (converter.go:119)\ntype TableOfContentsProvider interface {\n  TableOfContents() *tableofcontents.Fragments\n}\n\n// goldmark.tableOfContentsProvider (convert.go:263)\ntype tableOfContentsProvider interface {\n  TableOfContents() *tableofcontents.Fragments\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "converter",
+          "goldmark"
+        ],
+        "pattern_type": "interface",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar interface across 2 packages",
+      "Description": "Found 2 similar interface definitions across packages: hugolib, resource\n\nSimilar structures:\n// hugolib.Permalinker (permalinker.go:19)\ntype Permalinker interface {\n  Permalink() string\n  RelPermalink() string\n}\n\n// resource.ResourceLinksProvider (resourcetypes.go:101)\ntype ResourceLinksProvider interface {\n  Permalink() string\n  RelPermalink() string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "hugolib",
+          "resource"
+        ],
+        "pattern_type": "interface",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 2 similar interface across 2 packages",
+      "Description": "Found 2 similar interface definitions across packages: hashing, resource\n\nSimilar structures:\n// hashing.keyer (hashing.go:173)\ntype keyer interface {\n  Key() string\n}\n\n// resource.Identifier (resourcetypes.go:162)\ntype Identifier interface {\n  Key() string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 2,
+        "instances": [
+          {},
+          {}
+        ],
+        "packages": [
+          "hashing",
+          "resource"
+        ],
+        "pattern_type": "interface",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar interface across 3 packages",
+      "Description": "Found 3 similar interface definitions across packages: page, roles, versions\n\nSimilar structures:\n// versions.Version (versions.go:39)\ntype Version interface {\n  Name() string\n}\n\n// roles.Role (roles.go:38)\ntype Role interface {\n  Name() string\n}\n\n// page.SiteDimension (site.go:150)\ntype SiteDimension interface {\n  Name() string\n}\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "page",
+          "roles",
+          "versions"
+        ],
+        "pattern_type": "interface",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 5 similar function across 5 packages",
+      "Description": "Found 5 similar function definitions across packages: commands, hdebug, herrors, releaser, resource\n\nSimilar structures:\n// releaser.logln (releaser.go:237)\nfunc logln(unknown) ()\n\n// herrors.Recover (errors.go:36)\nfunc Recover(unknown) ()\n\n// commands.mkdir (helpers.go:115)\nfunc mkdir(unknown) ()\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 5,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "commands",
+          "hdebug",
+          "herrors",
+          "releaser",
+          "resource"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 2 packages",
+      "Description": "Found 3 similar function definitions across packages: hreflect, template\n\nSimilar structures:\n// hreflect.Indirect (helpers.go:312)\nfunc Indirect(reflect.Value) (reflect.Value, bool)\n\n// hreflect.IndirectElem (helpers.go:332)\nfunc IndirectElem(reflect.Value) (reflect.Value, bool)\n\n// template.indirect (exec.go:1076)\nfunc indirect(reflect.Value) (reflect.Value, bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "hreflect",
+          "template"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar function across 4 packages",
+      "Description": "Found 4 similar function definitions across packages: babel, bundler, create, integrity\n\nSimilar structures:\n// create.New (create.go:67)\nfunc New(*resources.Spec) (*Client)\n\n// babel.New (babel.go:95)\nfunc New(*resources.Spec) (*Client)\n\n// integrity.New (integrity.go:42)\nfunc New(*resources.Spec) (*Client)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "babel",
+          "bundler",
+          "create",
+          "integrity"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar function across 2 packages",
+      "Description": "Found 4 similar function definitions across packages: config, paths\n\nSimilar structures:\n// config.SplitEnvVar (env.go:79)\nfunc SplitEnvVar(string) (string, string)\n\n// paths.PathAndExt (path.go:137)\nfunc PathAndExt(string) (string, string)\n\n// paths.FileAndExt (path.go:143)\nfunc FileAndExt(string) (string, string)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "config",
+          "paths"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 3 packages",
+      "Description": "Found 3 similar function definitions across packages: blockquotes, codeblocks, tables\n\nSimilar structures:\n// codeblocks.New (render.go:41)\nfunc New() (goldmark.Extender)\n\n// tables.New (tables.go:34)\nfunc New() (goldmark.Extender)\n\n// blockquotes.New (blockquotes.go:37)\nfunc New() (goldmark.Extender)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "blockquotes",
+          "codeblocks",
+          "tables"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 2 packages",
+      "Description": "Found 3 similar function definitions across packages: hdebug, releaser\n\nSimilar structures:\n// releaser.logf (releaser.go:233)\nfunc logf(string, unknown) ()\n\n// hdebug.Printf (debug.go:25)\nfunc Printf(string, unknown) ()\n\n// hdebug.Panicf (debug.go:45)\nfunc Panicf(string, unknown) ()\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "hdebug",
+          "releaser"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 3 packages",
+      "Description": "Found 3 similar function definitions across packages: doctree, main, paths\n\nSimilar structures:\n// main.buildJSBundle (main.go:42)\nfunc buildJSBundle(string) (error)\n\n// doctree.ValidateKey (support.go:106)\nfunc ValidateKey(string) (error)\n\n// paths.ValidateIdentifier (pathparser.go:862)\nfunc ValidateIdentifier(string) (error)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "doctree",
+          "main",
+          "paths"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 7 similar function across 2 packages",
+      "Description": "Found 7 similar function definitions across packages: hreflect, template\n\nSimilar structures:\n// hreflect.IsInterfaceOrPointer (helpers.go:29)\nfunc IsInterfaceOrPointer(reflect.Kind) (bool)\n\n// hreflect.IsNumber (helpers.go:35)\nfunc IsNumber(reflect.Kind) (bool)\n\n// hreflect.IsInt (helpers.go:40)\nfunc IsInt(reflect.Kind) (bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 7,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "hreflect",
+          "template"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 5 similar function across 5 packages",
+      "Description": "Found 5 similar function definitions across packages: config, highlight, maps, markup_config, transform\n\nSimilar structures:\n// config.RenameKeys (configLoader.go:229)\nfunc RenameKeys(map[string]any) ()\n\n// maps.ConvertFloat64WithNoDecimalsToInt (maps.go:216)\nfunc ConvertFloat64WithNoDecimalsToInt(map[string]any) ()\n\n// markup_config.normalizeConfig (config.go:75)\nfunc normalizeConfig(map[string]any) ()\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 5,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "config",
+          "highlight",
+          "maps",
+          "markup_config",
+          "transform"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 6 similar function across 5 packages",
+      "Description": "Found 6 similar function definitions across packages: exif, helpers, herrors, htime, text\n\nSimilar structures:\n// helpers.GetTitleFunc (general.go:135)\nfunc GetTitleFunc(string) (func)\n\n// herrors.ContainsMatcher (error_locator.go:65)\nfunc ContainsMatcher(string) (func)\n\n// htime.StopWatch (time.go:172)\nfunc StopWatch(string) (func)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 6,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "exif",
+          "helpers",
+          "herrors",
+          "htime",
+          "text"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 3 packages",
+      "Description": "Found 3 similar function definitions across packages: esbuild, paths, publisher\n\nSimilar structures:\n// publisher.extractSingleQuotedStrings (htmlElementsCollector.go:531)\nfunc extractSingleQuotedStrings(string) ([]string)\n\n// esbuild.SourcesFromSourceMap (sourcemap.go:74)\nfunc SourcesFromSourceMap(string) ([]string)\n\n// paths.FieldsSlash (path.go:367)\nfunc FieldsSlash(string) ([]string)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "esbuild",
+          "paths",
+          "publisher"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 31 similar function across 11 packages",
+      "Description": "Found 31 similar function definitions across packages: asciidocext, dartsass, htesting, hugo, internal, main, pandoc, rst, scss, testenv, webp\n\nSimilar structures:\n// main.isGoLatest (magefile.go:272)\nfunc isGoLatest() (bool)\n\n// main.isUnix (magefile.go:276)\nfunc isUnix() (bool)\n\n// main.isDarwin (magefile.go:280)\nfunc isDarwin() (bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 31,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "asciidocext",
+          "dartsass",
+          "htesting",
+          "hugo",
+          "internal",
+          "main",
+          "pandoc",
+          "rst",
+          "scss",
+          "testenv",
+          "webp"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 2 packages",
+      "Description": "Found 3 similar function definitions across packages: exif, modules\n\nSimilar structures:\n// exif.WithLatLongDisabled (exif.go:82)\nfunc WithLatLongDisabled(bool) (func)\n\n// exif.WithDateDisabled (exif.go:89)\nfunc WithDateDisabled(bool) (func)\n\n// modules.getModlineSplitter (client.go:960)\nfunc getModlineSplitter(bool) (func)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "exif",
+          "modules"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 9 similar function across 6 packages",
+      "Description": "Found 9 similar function definitions across packages: codegen, commands, helpers, hglob, hstrings, pagemeta\n\nSimilar structures:\n// pagemeta.addDateFieldAliases (page_frontmatter.go:787)\nfunc addDateFieldAliases([]string) ([]string)\n\n// hglob.FilterGlobParts (glob.go:161)\nfunc FilterGlobParts([]string) ([]string)\n\n// helpers.SliceToLower (general.go:176)\nfunc SliceToLower([]string) ([]string)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 9,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "codegen",
+          "commands",
+          "helpers",
+          "hglob",
+          "hstrings",
+          "pagemeta"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 5 similar function across 3 packages",
+      "Description": "Found 5 similar function definitions across packages: collections, hreflect, template\n\nSimilar structures:\n// collections.canBeNil (index.go:139)\nfunc canBeNil(reflect.Type) (bool)\n\n// hreflect.implementsIsZero (helpers.go:99)\nfunc implementsIsZero(reflect.Type) (bool)\n\n// hreflect.IsTime (helpers.go:225)\nfunc IsTime(reflect.Type) (bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 5,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "collections",
+          "hreflect",
+          "template"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 2 packages",
+      "Description": "Found 3 similar function definitions across packages: compare, metrics\n\nSimilar structures:\n// compare.Strings (compare_strings.go:23)\nfunc Strings(string, string) (int)\n\n// compare.compareFold (compare_strings.go:36)\nfunc compareFold(string, string) (int)\n\n// metrics.howSimilarStrings (metrics.go:254)\nfunc howSimilarStrings(string, string) (int)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "compare",
+          "metrics"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 2 packages",
+      "Description": "Found 3 similar function definitions across packages: hugo, main\n\nSimilar structures:\n// main.buildFlags (magefile.go:288)\nfunc buildFlags() ([]string)\n\n// hugo.GetDependencyList (hugo.go:292)\nfunc GetDependencyList() ([]string)\n\n// hugo.GetDependencyListNonGo (hugo.go:312)\nfunc GetDependencyListNonGo() ([]string)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "hugo",
+          "main"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 2 packages",
+      "Description": "Found 3 similar function definitions across packages: livereload, main\n\nSimilar structures:\n// livereload.RefreshPath (livereload.go:126)\nfunc RefreshPath(string) ()\n\n// main.goimports (main.go:217)\nfunc goimports(string) ()\n\n// main.gofmt (main.go:226)\nfunc gofmt(string) ()\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "livereload",
+          "main"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 5 similar function across 4 packages",
+      "Description": "Found 5 similar function definitions across packages: hugo, main, pandoc, testenv\n\nSimilar structures:\n// main.testGoFlags (magefile.go:156)\nfunc testGoFlags() (string)\n\n// main.buildTags (magefile.go:295)\nfunc buildTags() (string)\n\n// pandoc.getPandocBinaryName (convert.go:72)\nfunc getPandocBinaryName() (string)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 5,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "hugo",
+          "main",
+          "pandoc",
+          "testenv"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar function across 4 packages",
+      "Description": "Found 4 similar function definitions across packages: blockquotes, codeblocks, passthrough, tables\n\nSimilar structures:\n// codeblocks.newHTMLRenderer (render.go:51)\nfunc newHTMLRenderer() (renderer.NodeRenderer)\n\n// tables.newHTMLRenderer (tables.go:44)\nfunc newHTMLRenderer() (renderer.NodeRenderer)\n\n// blockquotes.newHTMLRenderer (blockquotes.go:47)\nfunc newHTMLRenderer() (renderer.NodeRenderer)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "blockquotes",
+          "codeblocks",
+          "passthrough",
+          "tables"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 7 similar function across 4 packages",
+      "Description": "Found 7 similar function definitions across packages: helpers, internal, template, text\n\nSimilar structures:\n// helpers.stripEmptyNav (content.go:85)\nfunc stripEmptyNav([]byte) ([]byte)\n\n// helpers.Emojify (emoji.go:36)\nfunc Emojify([]byte) ([]byte)\n\n// text.RemoveAccents (transform.go:33)\nfunc RemoveAccents([]byte) ([]byte)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 7,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "helpers",
+          "internal",
+          "template",
+          "text"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 5 similar function across 3 packages",
+      "Description": "Found 5 similar function definitions across packages: hreflect, sass, types\n\nSimilar structures:\n// types.IsNil (types.go:85)\nfunc IsNil(any) (bool)\n\n// hreflect.IsTruthful (helpers.go:76)\nfunc IsTruthful(any) (bool)\n\n// hreflect.IsMap (helpers.go:86)\nfunc IsMap(any) (bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 5,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "hreflect",
+          "sass",
+          "types"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 3 packages",
+      "Description": "Found 3 similar function definitions across packages: babel, dartsass, scss\n\nSimilar structures:\n// scss.DecodeOptions (client.go:68)\nfunc DecodeOptions(map[string]any) (Options, error)\n\n// babel.DecodeOptions (babel.go:52)\nfunc DecodeOptions(map[string]any) (Options, error)\n\n// dartsass.decodeOptions (client.go:171)\nfunc decodeOptions(map[string]any) (Options, error)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "babel",
+          "dartsass",
+          "scss"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 11 similar function across 5 packages",
+      "Description": "Found 11 similar function definitions across packages: goldmark, helpers, pageparser, parse, template\n\nSimilar structures:\n// parse.isSpace (lex.go:672)\nfunc isSpace(rune) (bool)\n\n// parse.isAlphaNumeric (lex.go:677)\nfunc isAlphaNumeric(rune) (bool)\n\n// helpers.IsWhitespace (general.go:211)\nfunc IsWhitespace(rune) (bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 11,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "goldmark",
+          "helpers",
+          "pageparser",
+          "parse",
+          "template"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 26 similar function across 3 packages",
+      "Description": "Found 26 similar function definitions across packages: hashing, hugolib, template\n\nSimilar structures:\n// template.HTMLEscaper (funcs.go:658)\nfunc HTMLEscaper(unknown) (string)\n\n// template.JSEscaper (funcs.go:749)\nfunc JSEscaper(unknown) (string)\n\n// template.URLQueryEscaper (funcs.go:755)\nfunc URLQueryEscaper(unknown) (string)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 26,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "hashing",
+          "hugolib",
+          "template"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 10 similar function across 6 packages",
+      "Description": "Found 10 similar function definitions across packages: codegen, goldmark, hugo, main, paths, terminal\n\nSimilar structures:\n// terminal.colorize (colors.go:64)\nfunc colorize(string, string) (string)\n\n// hugo.formatDep (hugo.go:286)\nfunc formatDep(string, string) (string)\n\n// goldmark.sanitizeAnchorNameString (autoid.go:36)\nfunc sanitizeAnchorNameString(string, string) (string)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 10,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "codegen",
+          "goldmark",
+          "hugo",
+          "main",
+          "paths",
+          "terminal"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 2 packages",
+      "Description": "Found 3 similar function definitions across packages: hglob, segments\n\nSimilar structures:\n// hglob.GetGlobDot (glob.go:54)\nfunc GetGlobDot(string) (glob.Glob, error)\n\n// hglob.GetGlob (glob.go:129)\nfunc GetGlob(string) (glob.Glob, error)\n\n// segments.getGlob (segments.go:266)\nfunc getGlob(string) (glob.Glob, error)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "hglob",
+          "segments"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 10 similar function across 6 packages",
+      "Description": "Found 10 similar function definitions across packages: cast, collections, hashing, i18n, template, types\n\nSimilar structures:\n// types.Unwrapv (types.go:113)\nfunc Unwrapv(any) (any)\n\n// i18n.getPluralCount (i18n.go:146)\nfunc getPluralCount(any) (any)\n\n// i18n.toPluralCountValue (i18n.go:183)\nfunc toPluralCountValue(any) (any)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 10,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "cast",
+          "collections",
+          "hashing",
+          "i18n",
+          "template",
+          "types"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 79 similar function across 55 packages",
+      "Description": "Found 79 similar function definitions across packages: allconfig, attributes, cast, collections, commands, compare, config, crypto, css, data, debug, diagrams, doctree, encoding, esbuild, exif, files, fmt, hash, hdebug, helpers, highlight, htesting, hugo, images, inflect, js, kinds, lang, livereload, loggers, main, math, media, openapi3, os, output, page, pageparser, partials, path, paths, reflect, resources, safe, site, strings, template, templates, text, time, tpl, tplimpl, transform, urls\n\nSimilar structures:\n// main.init (magefile.go:33)\nfunc init() ()\n\n// main.Check (magefile.go:138)\nfunc Check() ()\n\n// main.main (main.go:23)\nfunc main() ()\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 79,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "allconfig",
+          "attributes",
+          "cast",
+          "collections",
+          "commands",
+          "compare",
+          "config",
+          "crypto",
+          "css",
+          "data",
+          "debug",
+          "diagrams",
+          "doctree",
+          "encoding",
+          "esbuild",
+          "exif",
+          "files",
+          "fmt",
+          "hash",
+          "hdebug",
+          "helpers",
+          "highlight",
+          "htesting",
+          "hugo",
+          "images",
+          "inflect",
+          "js",
+          "kinds",
+          "lang",
+          "livereload",
+          "loggers",
+          "main",
+          "math",
+          "media",
+          "openapi3",
+          "os",
+          "output",
+          "page",
+          "pageparser",
+          "partials",
+          "path",
+          "paths",
+          "reflect",
+          "resources",
+          "safe",
+          "site",
+          "strings",
+          "template",
+          "templates",
+          "text",
+          "time",
+          "tpl",
+          "tplimpl",
+          "transform",
+          "urls"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar function across 4 packages",
+      "Description": "Found 4 similar function definitions across packages: markup_config, privacy, security, services\n\nSimilar structures:\n// security.DecodeConfig (securityConfig.go:171)\nfunc DecodeConfig(config.Provider) (Config, error)\n\n// privacy.DecodeConfig (privacyConfig.go:114)\nfunc DecodeConfig(config.Provider) (Config, error)\n\n// services.DecodeConfig (servicesConfig.go:88)\nfunc DecodeConfig(config.Provider) (Config, error)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "markup_config",
+          "privacy",
+          "security",
+          "services"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 82 similar function across 31 packages",
+      "Description": "Found 82 similar function definitions across packages: blackfriday, codegen, commands, deploy, doctree, dynacache, filecache, files, goldmark, hashing, helpers, herrors, hexec, hglob, highlight, hqt, hugofs, identity, kinds, loggers, markup, metadecoders, modules, paths, publisher, scss, template, terminal, text, tpl, tplimpl\n\nSimilar structures:\n// hglob.normalizeFilenameGlobPattern (filename_filter.go:51)\nfunc normalizeFilenameGlobPattern(string) (string)\n\n// hglob.NormalizePath (glob.go:133)\nfunc NormalizePath(string) (string)\n\n// hglob.NormalizePathNoLower (glob.go:137)\nfunc NormalizePathNoLower(string) (string)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 82,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "blackfriday",
+          "codegen",
+          "commands",
+          "deploy",
+          "doctree",
+          "dynacache",
+          "filecache",
+          "files",
+          "goldmark",
+          "hashing",
+          "helpers",
+          "herrors",
+          "hexec",
+          "hglob",
+          "highlight",
+          "hqt",
+          "hugofs",
+          "identity",
+          "kinds",
+          "loggers",
+          "markup",
+          "metadecoders",
+          "modules",
+          "paths",
+          "publisher",
+          "scss",
+          "template",
+          "terminal",
+          "text",
+          "tpl",
+          "tplimpl"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 15 similar function across 2 packages",
+      "Description": "Found 15 similar function definitions across packages: main, page\n\nSimilar structures:\n// main.Hugo (magefile.go:45)\nfunc Hugo() (error)\n\n// main.HugoRace (magefile.go:50)\nfunc HugoRace() (error)\n\n// main.Install (magefile.go:55)\nfunc Install() (error)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 15,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "main",
+          "page"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 2 packages",
+      "Description": "Found 3 similar function definitions across packages: compare, page\n\nSimilar structures:\n// compare.Eq (compare.go:44)\nfunc Eq(any, any) (bool)\n\n// compare.ProbablyEq (compare.go:57)\nfunc ProbablyEq(any, any) (bool)\n\n// page.probablyEqualPageLists (pagination.go:320)\nfunc probablyEqualPageLists(any, any) (bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "compare",
+          "page"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 7 similar function across 2 packages",
+      "Description": "Found 7 similar function definitions across packages: hreflect, template\n\nSimilar structures:\n// hreflect.IsTruthfulValue (helpers.go:116)\nfunc IsTruthfulValue(reflect.Value) (bool)\n\n// hreflect.IsValid (helpers.go:237)\nfunc IsValid(reflect.Value) (bool)\n\n// hreflect.IsNil (helpers.go:345)\nfunc IsNil(reflect.Value) (bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 7,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "hreflect",
+          "template"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar function across 4 packages",
+      "Description": "Found 4 similar function definitions across packages: config, htesting, template, version\n\nSimilar structures:\n// config.GetNumWorkerMultiplier (env.go:33)\nfunc GetNumWorkerMultiplier() (int)\n\n// template.initMaxExecDepth (exec.go:24)\nfunc initMaxExecDepth() (int)\n\n// htesting.GoMinorVersion (test_helpers.go:131)\nfunc GoMinorVersion() (int)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "config",
+          "htesting",
+          "template",
+          "version"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 14 similar function across 14 packages",
+      "Description": "Found 14 similar function definitions across packages: collections, data, debug, fmt, images, math, openapi3, os, partials, path, strings, templates, transform, urls\n\nSimilar structures:\n// fmt.New (fmt.go:28)\nfunc New(*deps.Deps) (*Namespace)\n\n// collections.New (collections.go:39)\nfunc New(*deps.Deps) (*Namespace)\n\n// path.New (path.go:28)\nfunc New(*deps.Deps) (*Namespace)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 14,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "collections",
+          "data",
+          "debug",
+          "fmt",
+          "images",
+          "math",
+          "openapi3",
+          "os",
+          "partials",
+          "path",
+          "strings",
+          "templates",
+          "transform",
+          "urls"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 7 similar function across 7 packages",
+      "Description": "Found 7 similar function definitions across packages: cast, crypto, encoding, hash, inflect, reflect, safe\n\nSimilar structures:\n// safe.New (safe.go:25)\nfunc New() (*Namespace)\n\n// crypto.New (crypto.go:33)\nfunc New() (*Namespace)\n\n// encoding.New (encoding.go:31)\nfunc New() (*Namespace)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 7,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "cast",
+          "crypto",
+          "encoding",
+          "hash",
+          "inflect",
+          "reflect",
+          "safe"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 9 similar function across 4 packages",
+      "Description": "Found 9 similar function definitions across packages: herrors, hexec, security, testenv\n\nSimilar structures:\n// hexec.IsNotFound (exec.go:110)\nfunc IsNotFound(error) (bool)\n\n// security.IsAccessDenied (securityConfig.go:227)\nfunc IsAccessDenied(error) (bool)\n\n// herrors.IsTimeoutError (errors.go:47)\nfunc IsTimeoutError(error) (bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 9,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "herrors",
+          "hexec",
+          "security",
+          "testenv"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 8 similar function across 3 packages",
+      "Description": "Found 8 similar function definitions across packages: paths, publisher, template\n\nSimilar structures:\n// publisher.isSpace (htmlElementsCollector.go:527)\nfunc isSpace(byte) (bool)\n\n// template.isHex (css.go:104)\nfunc isHex(byte) (bool)\n\n// template.isCSSSpace (css.go:149)\nfunc isCSSSpace(byte) (bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 8,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "paths",
+          "publisher",
+          "template"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 3 packages",
+      "Description": "Found 3 similar function definitions across packages: helpers, htesting, version\n\nSimilar structures:\n// helpers.TotalWords (content.go:151)\nfunc TotalWords(string) (int)\n\n// htesting.extractMinorVersionFromGoTag (test_helpers.go:142)\nfunc extractMinorVersionFromGoTag(string) (int)\n\n// version.goMinorVersion (version.go:253)\nfunc goMinorVersion(string) (int)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "helpers",
+          "htesting",
+          "version"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 4 similar function across 2 packages",
+      "Description": "Found 4 similar function definitions across packages: collections, template\n\nSimilar structures:\n// collections.prepareArg (index.go:123)\nfunc prepareArg(reflect.Value, reflect.Type) (reflect.Value, error)\n\n// collections.convertValue (reflect_helpers.go:82)\nfunc convertValue(reflect.Value, reflect.Type) (reflect.Value, error)\n\n// collections.convertNumber (reflect_helpers.go:96)\nfunc convertNumber(reflect.Value, reflect.Type) (reflect.Value, error)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 4,
+        "instances": [
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "collections",
+          "template"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 6 similar function across 3 packages",
+      "Description": "Found 6 similar function definitions across packages: collections, doctree, maps\n\nSimilar structures:\n// maps.NewCache (cache.go:37)\nfunc NewCache() (*unknown)\n\n// maps.NewSliceCache (cache.go:197)\nfunc NewSliceCache() (*unknown)\n\n// maps.NewOrdered (ordered.go:34)\nfunc NewOrdered() (*unknown)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 6,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "collections",
+          "doctree",
+          "maps"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 3 similar function across 3 packages",
+      "Description": "Found 3 similar function definitions across packages: compare, paths, template\n\nSimilar structures:\n// compare.LessStrings (compare_strings.go:111)\nfunc LessStrings(string, string) (bool)\n\n// template.escFnsEq (escape.go:363)\nfunc escFnsEq(string, string) (bool)\n\n// paths.IsSameFilePath (path.go:428)\nfunc IsSameFilePath(string, string) (bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 3,
+        "instances": [
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "compare",
+          "paths",
+          "template"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    },
+    {
+      "Title": "Missing abstraction: 27 similar function across 15 packages",
+      "Description": "Found 27 similar function definitions across packages: commands, config, constants, deploy, files, hexec, hglob, kinds, modules, page, pageparser, parse, paths, template, tplimpl\n\nSimilar structures:\n// hglob.HasGlobChar (glob.go:172)\nfunc HasGlobChar(string) (bool)\n\n// hexec.InPath (exec.go:370)\nfunc InPath(string) (bool)\n\n// config.IsValidConfigFilename (configLoader.go:55)\nfunc IsValidConfigFilename(string) (bool)\n\nRepeated patterns may indicate a missing abstraction. Consider extracting a shared type or interface if these represent the same concept.",
+      "Category": "architecture",
+      "Type": "task",
+      "Priority": 2,
+      "Tags": [
+        "duplication",
+        "abstraction",
+        "design"
+      ],
+      "FilePath": "",
+      "LineStart": 0,
+      "LineEnd": 0,
+      "Evidence": {
+        "instance_count": 27,
+        "instances": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "packages": [
+          "commands",
+          "config",
+          "constants",
+          "deploy",
+          "files",
+          "hexec",
+          "hglob",
+          "kinds",
+          "modules",
+          "page",
+          "pageparser",
+          "parse",
+          "paths",
+          "template",
+          "tplimpl"
+        ],
+        "pattern_type": "function",
+        "similarity": 1
+      },
+      "DiscoveredBy": "architecture",
+      "DiscoveredAt": "2025-11-07T23:24:26.378864-08:00",
+      "Confidence": 0.5
+    }
+  ],
+  "Context": "Analyzed 192 packages with 515 total files. Found 0 circular dependencies, 6 god packages, 40 high-coupling packages, 81 missing abstractions.",
+  "Reasoning": "Based on philosophy: 'Good architecture has clear boundaries, minimal coupling, and cohesive modules'\n\nPackage structure analysis revealed potential issues:\n- Circular dependencies prevent clean layering and testability\n- God packages suggest unclear responsibilities\n- High coupling makes changes ripple across the codebase\n- Missing abstractions indicate repeated patterns that could be unified\n\nAI should evaluate: Are these issues worth addressing given the codebase context?",
+  "AnalyzedAt": "2025-11-07T23:24:26.378864-08:00",
+  "Stats": {
+    "FilesAnalyzed": 515,
+    "IssuesFound": 127,
+    "Duration": 188160750,
+    "AICallsMade": 0,
+    "TokensUsed": 0,
+    "EstimatedCost": 0,
+    "ErrorsIgnored": 0,
+    "PatternsFound": 127
+  }
+}
