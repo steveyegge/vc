@@ -362,7 +362,7 @@ func TestQuotaErrorEdgeCases(t *testing.T) {
 			// Only exact lowercase "rate limit" is detected
 			if strings.Contains(strings.ToLower(errMsg), "rate limit") {
 				isRetriable := isRetriableError(err)
-				if !isRetriable && strings.ToLower(errMsg) == strings.ToLower("rate limit") {
+				if !isRetriable && strings.EqualFold(errMsg, "rate limit") {
 					t.Errorf("Mixed case '%s' should be retriable (case-insensitive check recommended)", errMsg)
 				}
 			}
