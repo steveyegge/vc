@@ -404,3 +404,129 @@ Infrastructure issues often get overlooked because they're not blocking immediat
 - Deprecated commands break on tooling upgrades
 
 Infrastructure workers automatically find these issues during codebase discovery, ensuring they get prioritized and fixed before they cause problems.
+
+---
+
+## 🏷️ Discovered Label Taxonomy (vc-d0r3)
+
+VC uses a consistent `discovered:*` label namespace to identify all issues filed by the AI supervisor. This taxonomy makes it easy to distinguish VC-filed issues from human-filed issues and to query/filter by discovery source.
+
+### Label Categories
+
+**1. discovered:blocker**
+- Issues that block mission progress
+- Selected BEFORE regular ready work (absolute priority)
+- Example: "Missing API credentials needed for integration test"
+- Added by: AI analysis during execution
+- Code: `internal/ai/translation.go`
+
+**2. discovered:related**
+- Issues related to the mission but not blocking
+- Selected AFTER regular ready work
+- Example: "Add logging to error handling path"
+- Added by: AI analysis during execution
+- Code: `internal/ai/translation.go`
+
+**3. discovered:background**
+- Issues unrelated to the current mission
+- Lower priority than discovered:related
+- Example: "Update outdated documentation in README"
+- Added by: AI analysis during execution
+- Code: `internal/ai/translation.go`
+
+**4. discovered:supervisor**
+- Applied to ALL issues filed by VC's AI supervisor
+- Distinguishes VC-filed issues from human-filed issues
+- Used for filtering and analysis
+- Added by: All AI supervisor issue creation paths
+- Code: `internal/ai/translation.go`, `internal/executor/agent_report_handler.go`, `internal/executor/result_issues.go`
+
+**5. discovered:code-review**
+- Issues found during automated code review
+- Used by code review sweep functionality
+- Example: "Function exceeds cyclomatic complexity threshold"
+- Added by: Code review worker
+
+**6. discovered:self-healing**
+- Issues created during self-healing mode
+- Example: "Fix failing baseline test"
+- Added by: Self-healing recovery logic
+
+### Usage Patterns
+
+**Query all VC-filed issues:**
+```bash
+# In JSONL file
+grep 'discovered:' .beads/issues.jsonl
+
+# In database
+bd list | grep discovered:
+
+# Count by discovery type
+sqlite3 .beads/beads.db "SELECT label, COUNT(*) FROM labels WHERE label LIKE 'discovered:%' GROUP BY label"
+```
+
+**Filter by discovery source:**
+```bash
+# Only blockers (highest priority)
+bd list | grep discovered:blocker
+
+# All supervisor-filed issues (may have multiple discovered:* labels)
+bd list | grep discovered:supervisor
+
+# Self-healing issues only
+bd list | grep discovered:self-healing
+```
+
+**Priority Order in Executor:**
+1. Baseline-failure issues (in self-healing mode)
+2. discovered:blocker (absolute priority)
+3. Regular ready work (sorted by P0, P1, P2, P3)
+4. discovered:related
+5. discovered:background
+
+### Why Multiple Labels?
+
+VC-filed issues often have BOTH `discovered:supervisor` AND a type-specific label:
+- `discovered:supervisor` → identifies WHO filed it (VC, not human)
+- `discovered:blocker` → identifies WHAT it is (blocker, related, background)
+
+Example issue labels:
+```
+["discovered:supervisor", "discovered:blocker", "infrastructure"]
+```
+
+This allows filtering by either:
+- All VC-filed issues: `discovered:supervisor`
+- Only blocking issues: `discovered:blocker`
+- Both: issues that are VC-filed blockers
+
+### Code References
+
+**Label Constants**: `internal/types/labels.go:1-21`
+
+**Issue Creation (adds discovered:supervisor):**
+- AI Analysis: `internal/ai/translation.go:415-420`
+- Agent Blockers: `internal/executor/agent_report_handler.go:106-109`
+- Partial Completion: `internal/executor/agent_report_handler.go:172-175`
+- Decomposed Children: `internal/executor/agent_report_handler.go:292-295`
+- Code Review: `internal/executor/result_issues.go:65-68`
+- Quality Issues: `internal/executor/result_issues.go:171-174`
+- Test Issues: `internal/executor/result_issues.go:285-288`
+
+**Work Selection (uses discovered:blocker/related/background):**
+- Priority Logic: `internal/executor/work.go`
+- Blocker-First: `docs/CONFIGURATION.md:238-267`
+
+### Retroactive Labeling
+
+All existing ai-supervisor issues were retroactively labeled with `discovered:supervisor` when this taxonomy was introduced (vc-d0r3). The labeling was done via SQL migration to ensure consistency.
+
+### Why This Matters
+
+The discovered:* taxonomy enables:
+1. **Filtering**: Separate VC-filed issues from human-filed issues for analysis
+2. **Metrics**: Track false-positive rates and quality of AI-discovered work
+3. **Debugging**: Understand what the AI supervisor is creating and why
+4. **Prioritization**: Apply blocker-first logic only to AI-discovered blockers
+5. **Trust**: Users can see what VC filed vs what humans filed

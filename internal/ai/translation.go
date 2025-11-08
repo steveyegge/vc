@@ -294,6 +294,11 @@ func (s *Supervisor) CreateDiscoveredIssues(ctx context.Context, parentIssue *ty
 			fmt.Fprintf(os.Stderr, "warning: failed to add escalated label: %v\n", err)
 		}
 
+		// vc-d0r3: Add discovered:supervisor label to escalation issues
+		if err := s.store.AddLabel(ctx, escalationIssue.ID, types.LabelDiscoveredSupervisor, "ai-supervisor"); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to add %s label: %v\n", types.LabelDiscoveredSupervisor, err)
+		}
+
 		if err := s.store.AddComment(ctx, escalationIssue.ID, "ai-supervisor", fmt.Sprintf("Discovered blockers:\n%s", formatDiscoveredIssues(discovered))); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to add comment with blocker details: %v\n", err)
 		}
@@ -410,6 +415,13 @@ func (s *Supervisor) CreateDiscoveredIssues(ctx context.Context, parentIssue *ty
 			} else {
 				fmt.Printf("  Added label: %s\n", label)
 			}
+		}
+
+		// vc-d0r3: Add discovered:supervisor label to all VC-filed issues
+		if err := s.store.AddLabel(ctx, id, types.LabelDiscoveredSupervisor, "ai-supervisor"); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to add label %s to %s: %v\n", types.LabelDiscoveredSupervisor, id, err)
+		} else {
+			fmt.Printf("  Added label: %s\n", types.LabelDiscoveredSupervisor)
 		}
 
 		// vc-4vot: Add AI-specified labels (e.g., "meta-issue")

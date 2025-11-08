@@ -62,6 +62,11 @@ _This issue was automatically created by AI code review analysis._`,
 
 	reviewIssueID := reviewIssue.ID
 
+	// vc-d0r3: Add discovered:supervisor label to VC-filed code review issues
+	if err := rp.store.AddLabel(ctx, reviewIssueID, types.LabelDiscoveredSupervisor, "ai-supervisor"); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to add %s label to %s: %v\n", types.LabelDiscoveredSupervisor, reviewIssueID, err)
+	}
+
 	// Add blocking dependency: parent issue is blocked by review issue
 	// This ensures the parent can't be considered "done" until review is complete
 	dep := &types.Dependency{
@@ -162,6 +167,11 @@ _This issue was automatically created by AI code quality analysis (vc-216)._`,
 
 		fixIssueID := fixIssue.ID
 		createdIssues = append(createdIssues, fixIssueID)
+
+		// vc-d0r3: Add discovered:supervisor label to VC-filed quality issues
+		if err := rp.store.AddLabel(ctx, fixIssueID, types.LabelDiscoveredSupervisor, "ai-supervisor"); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to add %s label to %s: %v\n", types.LabelDiscoveredSupervisor, fixIssueID, err)
+		}
 
 		// Add blocking dependency: parent issue is blocked by this fix issue
 		// This ensures the parent can't be considered "done" until quality issues are addressed
@@ -271,6 +281,11 @@ _This issue was automatically created by AI test coverage analysis._`,
 		}
 
 		createdIssues = append(createdIssues, newIssue.ID)
+
+		// vc-d0r3: Add discovered:supervisor label to VC-filed test issues
+		if err := rp.store.AddLabel(ctx, newIssue.ID, types.LabelDiscoveredSupervisor, "ai-supervisor"); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to add %s label to %s: %v\n", types.LabelDiscoveredSupervisor, newIssue.ID, err)
+		}
 
 		// Add related dependency (not blocking - these are follow-on improvements)
 		dep := &types.Dependency{

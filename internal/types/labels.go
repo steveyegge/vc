@@ -14,4 +14,8 @@ const (
 	// LabelDiscoveredBackground marks issues unrelated to the mission.
 	// These are lower priority than discovered:related.
 	LabelDiscoveredBackground = "discovered:background"
+
+	// LabelDiscoveredSupervisor marks issues filed by the AI supervisor (vc-d0r3).
+	// This includes all VC-filed issues to distinguish them from human-filed issues.
+	LabelDiscoveredSupervisor = "discovered:supervisor"
 )

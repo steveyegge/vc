@@ -103,6 +103,11 @@ func (h *AgentReportHandler) handleBlocked(ctx context.Context, issue *types.Iss
 
 		createdIssues = append(createdIssues, blockerIssue.ID)
 
+		// vc-d0r3: Add discovered:supervisor label to VC-filed blocker issues
+		if err := h.store.AddLabel(ctx, blockerIssue.ID, types.LabelDiscoveredSupervisor, h.actor); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to add %s label to %s: %v\n", types.LabelDiscoveredSupervisor, blockerIssue.ID, err)
+		}
+
 		// Add blocking dependency: parent is blocked by this blocker issue
 		dep := &types.Dependency{
 			IssueID:     issue.ID,
@@ -163,6 +168,11 @@ func (h *AgentReportHandler) handlePartial(ctx context.Context, issue *types.Iss
 		}
 
 		createdIssues = append(createdIssues, followOnIssue.ID)
+
+		// vc-d0r3: Add discovered:supervisor label to VC-filed follow-on issues
+		if err := h.store.AddLabel(ctx, followOnIssue.ID, types.LabelDiscoveredSupervisor, h.actor); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to add %s label to %s: %v\n", types.LabelDiscoveredSupervisor, followOnIssue.ID, err)
+		}
 
 		// Add discovered-from dependency
 		dep := &types.Dependency{
@@ -278,6 +288,11 @@ func (h *AgentReportHandler) handleDecomposed(ctx context.Context, issue *types.
 		}
 
 		createdChildren = append(createdChildren, childIssue.ID)
+
+		// vc-d0r3: Add discovered:supervisor label to VC-filed decomposed child issues
+		if err := h.store.AddLabel(ctx, childIssue.ID, types.LabelDiscoveredSupervisor, h.actor); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to add %s label to %s: %v\n", types.LabelDiscoveredSupervisor, childIssue.ID, err)
+		}
 
 		// Add parent-child dependency
 		dep := &types.Dependency{
