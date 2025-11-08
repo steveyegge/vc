@@ -60,12 +60,13 @@ func (rp *ResultsProcessor) deduplicateDiscoveredIssues(ctx context.Context, par
 	// Deduplicate
 	result, err := rp.deduplicator.DeduplicateBatch(ctx, candidates)
 	if err != nil {
-		// vc-5sxl: Validation failures mean issues won't be created (they'll fail validation again downstream)
-		// For other errors, we return all issues as a fail-safe, but downstream validation may still reject them
-		fmt.Fprintf(os.Stderr, "Warning: deduplication failed, issues will NOT be created: %v\n", err)
+		// vc-5sxl: Deduplication failed - return empty list to prevent creating invalid issues
+		// The error message clearly states that NO issues will be created
+		fmt.Fprintf(os.Stderr, "✗ Deduplication failed - NO discovered issues will be created: %v\n", err)
 		// vc-151: Log failure
 		rp.logDeduplicationBatchCompleted(ctx, parentIssue.ID, nil, err)
-		return discovered, deduplication.DeduplicationStats{}
+		// Return empty list to prevent downstream creation attempts
+		return []ai.DiscoveredIssue{}, deduplication.DeduplicationStats{}
 	}
 
 	// vc-151: Log deduplication batch completed event with stats and individual decisions
