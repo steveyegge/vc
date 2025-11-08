@@ -209,7 +209,7 @@ func TestMetaIssueRecursionPrevention(t *testing.T) {
 		if err := store.CreateIssue(ctx, blocker1, "test"); err != nil {
 			t.Fatalf("failed to create blocker1: %v", err)
 		}
-		if err := store.AddLabel(ctx, blocker1.ID, "discovered:blocker", "test"); err != nil {
+		if err := store.AddLabel(ctx, blocker1.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 			t.Fatalf("failed to add blocker label: %v", err)
 		}
 		dep1 := &types.Dependency{
@@ -233,7 +233,7 @@ func TestMetaIssueRecursionPrevention(t *testing.T) {
 		if err := store.CreateIssue(ctx, blocker2, "test"); err != nil {
 			t.Fatalf("failed to create blocker2: %v", err)
 		}
-		if err := store.AddLabel(ctx, blocker2.ID, "discovered:blocker", "test"); err != nil {
+		if err := store.AddLabel(ctx, blocker2.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 			t.Fatalf("failed to add blocker label: %v", err)
 		}
 		dep2 := &types.Dependency{

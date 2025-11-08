@@ -93,7 +93,7 @@ func (s *Supervisor) getBlockerDepth(ctx context.Context, parentIssue *types.Iss
 		}
 
 		for _, label := range labels {
-			if label == "discovered:blocker" {
+			if label == types.LabelDiscoveredBlocker {
 				hasBlockerLabel = true
 				break
 			}

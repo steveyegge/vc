@@ -335,7 +335,7 @@ func TestSelfHealingMode_FindDiscoveredBlockers(t *testing.T) {
 	}
 
 	// Add discovered:blocker label
-	if err := store.AddLabel(ctx, "vc-discovered-blocker", "discovered:blocker", "test"); err != nil {
+	if err := store.AddLabel(ctx, "vc-discovered-blocker", types.LabelDiscoveredBlocker, "test"); err != nil {
 		t.Fatalf("Failed to add discovered:blocker label: %v", err)
 	}
 
@@ -461,7 +461,7 @@ func TestSelfHealingMode_SmartWorkSelectionFallbackChain(t *testing.T) {
 	if err = store.CreateIssue(ctx, discoveredBlocker, "test"); err != nil {
 		t.Fatalf("Failed to create discovered blocker: %v", err)
 	}
-	if err := store.AddLabel(ctx, "vc-discovered-blocker", "discovered:blocker", "test"); err != nil {
+	if err := store.AddLabel(ctx, "vc-discovered-blocker", types.LabelDiscoveredBlocker, "test"); err != nil {
 		t.Fatalf("Failed to add discovered:blocker label: %v", err)
 	}
 

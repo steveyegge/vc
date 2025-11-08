@@ -125,7 +125,7 @@ func (e *Executor) checkMissionConvergence(ctx context.Context, issue *types.Iss
 
 	hasBlockerLabel := false
 	for _, label := range labels {
-		if label == "discovered:blocker" {
+		if label == types.LabelDiscoveredBlocker {
 			hasBlockerLabel = true
 			break
 		}

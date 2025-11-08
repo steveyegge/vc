@@ -222,7 +222,7 @@ func (e *Executor) logBlockageDiagnostics(ctx context.Context) {
 	}
 
 	// Count discovered blockers by status
-	blockerIssues, err := e.store.GetIssuesByLabel(ctx, "discovered:blocker")
+	blockerIssues, err := e.store.GetIssuesByLabel(ctx, types.LabelDiscoveredBlocker)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to get blocker issues for diagnostics: %v\n", err)
 	} else {

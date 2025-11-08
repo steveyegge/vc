@@ -84,7 +84,7 @@ func TestGetNextReadyBlocker_WithReadyBlocker(t *testing.T) {
 	}
 
 	// Add blocker label
-	if err := store.AddLabel(ctx, blocker1.ID, "discovered:blocker", "test"); err != nil {
+	if err := store.AddLabel(ctx, blocker1.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 		t.Fatalf("Failed to add label: %v", err)
 	}
 
@@ -132,7 +132,7 @@ func TestGetNextReadyBlocker_BlockedByDependency(t *testing.T) {
 	}
 
 	// Add blocker label
-	if err := store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test"); err != nil {
+	if err := store.AddLabel(ctx, blocker.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 		t.Fatalf("Failed to add label: %v", err)
 	}
 
@@ -172,7 +172,7 @@ func TestGetNextReadyBlocker_PriorityOrdering(t *testing.T) {
 	if err := store.CreateIssue(ctx, blocker1, "test"); err != nil {
 		t.Fatalf("Failed to create blocker1: %v", err)
 	}
-	if err := store.AddLabel(ctx, blocker1.ID, "discovered:blocker", "test"); err != nil {
+	if err := store.AddLabel(ctx, blocker1.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 		t.Fatalf("Failed to add label: %v", err)
 	}
 
@@ -186,7 +186,7 @@ func TestGetNextReadyBlocker_PriorityOrdering(t *testing.T) {
 	if err := store.CreateIssue(ctx, blocker2, "test"); err != nil {
 		t.Fatalf("Failed to create blocker2: %v", err)
 	}
-	if err := store.AddLabel(ctx, blocker2.ID, "discovered:blocker", "test"); err != nil {
+	if err := store.AddLabel(ctx, blocker2.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 		t.Fatalf("Failed to add label: %v", err)
 	}
 
@@ -200,7 +200,7 @@ func TestGetNextReadyBlocker_PriorityOrdering(t *testing.T) {
 	if err := store.CreateIssue(ctx, blocker3, "test"); err != nil {
 		t.Fatalf("Failed to create blocker3: %v", err)
 	}
-	if err := store.AddLabel(ctx, blocker3.ID, "discovered:blocker", "test"); err != nil {
+	if err := store.AddLabel(ctx, blocker3.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 		t.Fatalf("Failed to add label: %v", err)
 	}
 
@@ -270,7 +270,7 @@ func TestCheckMissionConvergence_DetectsConvergence(t *testing.T) {
 	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 		t.Fatalf("Failed to create blocker: %v", err)
 	}
-	if err := store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test"); err != nil {
+	if err := store.AddLabel(ctx, blocker.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 		t.Fatalf("Failed to add label: %v", err)
 	}
 
@@ -347,7 +347,7 @@ func TestBlockerPrioritization_Integration(t *testing.T) {
 	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 		t.Fatalf("Failed to create blocker: %v", err)
 	}
-	if err := store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test"); err != nil {
+	if err := store.AddLabel(ctx, blocker.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 		t.Fatalf("Failed to add blocker label: %v", err)
 	}
 
@@ -417,7 +417,7 @@ func TestMissionConvergenceFlow_Integration(t *testing.T) {
 	if err := store.CreateIssue(ctx, blocker1, "test"); err != nil {
 		t.Fatalf("Failed to create blocker1: %v", err)
 	}
-	if err := store.AddLabel(ctx, blocker1.ID, "discovered:blocker", "test"); err != nil {
+	if err := store.AddLabel(ctx, blocker1.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 		t.Fatalf("Failed to add label: %v", err)
 	}
 	dep1 := &types.Dependency{
@@ -440,7 +440,7 @@ func TestMissionConvergenceFlow_Integration(t *testing.T) {
 	if err := store.CreateIssue(ctx, blocker2, "test"); err != nil {
 		t.Fatalf("Failed to create blocker2: %v", err)
 	}
-	if err := store.AddLabel(ctx, blocker2.ID, "discovered:blocker", "test"); err != nil {
+	if err := store.AddLabel(ctx, blocker2.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 		t.Fatalf("Failed to add label: %v", err)
 	}
 	dep2 := &types.Dependency{
@@ -532,7 +532,7 @@ func TestGetReadyBlockers_Performance(t *testing.T) {
 		if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 			t.Fatalf("Failed to create ready blocker %d: %v", i, err)
 		}
-		if err := store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test"); err != nil {
+		if err := store.AddLabel(ctx, blocker.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 			t.Fatalf("Failed to add label to blocker %d: %v", i, err)
 		}
 	}
@@ -561,7 +561,7 @@ func TestGetReadyBlockers_Performance(t *testing.T) {
 		if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 			t.Fatalf("Failed to create blocked blocker %d: %v", i, err)
 		}
-		if err := store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test"); err != nil {
+		if err := store.AddLabel(ctx, blocker.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 			t.Fatalf("Failed to add label to blocker %d: %v", i, err)
 		}
 		// Add blocking dependency
@@ -587,7 +587,7 @@ func TestGetReadyBlockers_Performance(t *testing.T) {
 		if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 			t.Fatalf("Failed to create closed blocker %d: %v", i, err)
 		}
-		if err := store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test"); err != nil {
+		if err := store.AddLabel(ctx, blocker.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 			t.Fatalf("Failed to add label to blocker %d: %v", i, err)
 		}
 		// Close it
@@ -622,7 +622,7 @@ func TestGetReadyBlockers_Performance(t *testing.T) {
 	}
 	hasBlockerLabel := false
 	for _, label := range labels {
-		if label == "discovered:blocker" {
+		if label == types.LabelDiscoveredBlocker {
 			hasBlockerLabel = true
 			break
 		}
@@ -663,7 +663,7 @@ func TestBlockerLogging_WhenBlockerFound(t *testing.T) {
 	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 		t.Fatalf("Failed to create blocker: %v", err)
 	}
-	if err := store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test"); err != nil {
+	if err := store.AddLabel(ctx, blocker.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 		t.Fatalf("Failed to add label: %v", err)
 	}
 
@@ -750,7 +750,7 @@ func TestBlockerPrioritizationLogging(t *testing.T) {
 	if err := store.CreateIssue(ctx, blocker, "test"); err != nil {
 		t.Fatalf("Failed to create blocker: %v", err)
 	}
-	if err := store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test"); err != nil {
+	if err := store.AddLabel(ctx, blocker.ID, types.LabelDiscoveredBlocker, "test"); err != nil {
 		t.Fatalf("Failed to add label: %v", err)
 	}
 

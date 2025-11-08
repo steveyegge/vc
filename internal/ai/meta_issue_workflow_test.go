@@ -112,7 +112,7 @@ func TestMetaIssueWorkflowIntegration(t *testing.T) {
 			if label == "meta-issue" {
 				hasMetaLabel = true
 			}
-			if label == "discovered:blocker" {
+			if label == types.LabelDiscoveredBlocker {
 				hasBlockerLabel = true
 			}
 		}

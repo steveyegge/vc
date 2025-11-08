@@ -1700,7 +1700,7 @@ func TestGetReadyBlockersFiltersDependencyTypes(t *testing.T) {
 	}
 
 	// Add discovered:blocker label
-	err = store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test")
+	err = store.AddLabel(ctx, blocker.ID, types.LabelDiscoveredBlocker, "test")
 	if err != nil {
 		t.Fatalf("Failed to add label: %v", err)
 	}
@@ -1810,7 +1810,7 @@ func TestGetReadyBlockersFiltersDependencyTypes(t *testing.T) {
 			t.Fatalf("Failed to create child blocker: %v", err)
 		}
 
-		err = store.AddLabel(ctx, childBlocker.ID, "discovered:blocker", "test")
+		err = store.AddLabel(ctx, childBlocker.ID, types.LabelDiscoveredBlocker, "test")
 		if err != nil {
 			t.Fatalf("Failed to add label: %v", err)
 		}
@@ -1924,7 +1924,7 @@ func TestEpicsExcludedFromReadyWork(t *testing.T) {
 		}
 
 		// Add discovered:blocker label to epic
-		err = store.AddLabel(ctx, epicBlocker.ID, "discovered:blocker", "test")
+		err = store.AddLabel(ctx, epicBlocker.ID, types.LabelDiscoveredBlocker, "test")
 		if err != nil {
 			t.Fatalf("Failed to add blocker label to epic: %v", err)
 		}
@@ -1944,7 +1944,7 @@ func TestEpicsExcludedFromReadyWork(t *testing.T) {
 		}
 
 		// Add discovered:blocker label
-		err = store.AddLabel(ctx, blocker.ID, "discovered:blocker", "test")
+		err = store.AddLabel(ctx, blocker.ID, types.LabelDiscoveredBlocker, "test")
 		if err != nil {
 			t.Fatalf("Failed to add blocker label: %v", err)
 		}
