@@ -5801,3 +5801,105 @@ func TestInvalidEventData(t *testing.T) {
 		}
 	}
 }
+
+// TestConcurrentStatusUpdates tests concurrent goroutines updating same issue status
+// to verify SQLite serialization prevents corruption (vc-0a3c)
+func TestConcurrentStatusUpdates(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "concurrent_status.db")
+
+	// Create storage connection
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create an issue
+	issue := &types.Issue{
+		Title:              "Concurrent Status Update Test",
+		Description:        "Testing concurrent status updates",
+		Status:             types.StatusOpen,
+		Priority:           2,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Verify SQLite serialization works correctly",
+	}
+
+	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Launch multiple goroutines that all try to update status concurrently
+	// This stresses SQLite's serialization and tests for corruption
+	numGoroutines := 20
+	done := make(chan error, numGoroutines)
+
+	// Each goroutine tries to update status to a different value
+	statuses := []string{
+		string(types.StatusInProgress),
+		string(types.StatusBlocked),
+		string(types.StatusOpen),
+		string(types.StatusClosed),
+	}
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(goroutineID int) {
+			// Pick a status based on goroutine ID
+			newStatus := statuses[goroutineID%len(statuses)]
+			updates := map[string]interface{}{
+				"status": newStatus,
+			}
+			actor := fmt.Sprintf("user%d", goroutineID)
+			done <- store.UpdateIssue(ctx, issue.ID, updates, actor)
+		}(i)
+	}
+
+	// Collect results
+	successCount := 0
+	failureCount := 0
+	for i := 0; i < numGoroutines; i++ {
+		err := <-done
+		if err != nil {
+			failureCount++
+			t.Logf("Goroutine %d failed: %v", i, err)
+		} else {
+			successCount++
+		}
+	}
+
+	// At least some updates should succeed (SQLite serializes writes)
+	if successCount == 0 {
+		t.Error("All concurrent updates failed - expected at least some to succeed")
+	}
+
+	t.Logf("Concurrent status updates: %d succeeded, %d failed", successCount, failureCount)
+
+	// Verify issue can still be retrieved and has valid data
+	retrieved, err := store.GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("Failed to retrieve issue after concurrent updates: %v", err)
+	}
+
+	// Status should be one of the values we tried to set
+	validStatus := false
+	for _, status := range statuses {
+		if string(retrieved.Status) == status {
+			validStatus = true
+			break
+		}
+	}
+	if !validStatus {
+		t.Errorf("Issue has invalid status after concurrent updates: %s", retrieved.Status)
+	}
+
+	// Verify database integrity - issue should still be retrievable
+	if retrieved.ID != issue.ID {
+		t.Error("Retrieved issue has wrong ID - possible corruption")
+	}
+	if retrieved.Title != issue.Title {
+		t.Error("Retrieved issue has wrong title - possible corruption")
+	}
+
+	t.Log("SQLite serialization handled concurrent status updates correctly")
+}
