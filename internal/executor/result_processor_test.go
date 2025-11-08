@@ -2,9 +2,12 @@ package executor
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/labels"
 	"github.com/steveyegge/vc/internal/storage"
@@ -474,5 +477,194 @@ func TestWatchdogBackoffNotResetOnFailure(t *testing.T) {
 	if interventionsAfter != interventionsBefore {
 		t.Errorf("Expected consecutive interventions to remain at %d, got %d",
 			interventionsBefore, interventionsAfter)
+	}
+}
+
+// TestHandleIncompleteWorkCounting verifies that incomplete attempt counting
+// only counts truly incomplete attempts, not all successful attempts (vc-rd1z)
+func TestHandleIncompleteWorkCounting(t *testing.T) {
+	tests := []struct {
+		name               string
+		previousComments   []string // Comments to add before calling handleIncompleteWork
+		expectedAttemptNum int      // Expected attempt number in the log output
+		expectEscalation   bool     // Should escalate to needs-human-review?
+	}{
+		{
+			name:               "first_incomplete_attempt",
+			previousComments:   []string{}, // No previous incomplete attempts
+			expectedAttemptNum: 1,
+			expectEscalation:   false,
+		},
+		{
+			name: "second_incomplete_attempt",
+			previousComments: []string{
+				"**Incomplete Work Detected (Attempt #1)**\n\nPrevious incomplete work...",
+			},
+			expectedAttemptNum: 2,
+			expectEscalation:   true, // maxIncompleteRetries=1, so 2nd attempt escalates
+		},
+		{
+			name: "mixed_comments_only_count_incomplete",
+			previousComments: []string{
+				"Some regular comment about the issue",
+				"Another comment",
+				"**Incomplete Work Detected (Attempt #1)**\n\nFirst incomplete attempt",
+				"More regular comments",
+			},
+			expectedAttemptNum: 2,
+			expectEscalation:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup storage
+			cfg := storage.DefaultConfig()
+			cfg.Path = t.TempDir() + "/test.db"
+
+			ctx := context.Background()
+			store, err := storage.NewStorage(ctx, cfg)
+			if err != nil {
+				t.Fatalf("Failed to create storage: %v", err)
+			}
+			defer func() { _ = store.Close() }()
+
+			// Create a test issue
+			issue := &types.Issue{
+				Title:              "Test Incomplete Work Issue",
+				Description:        "Testing incomplete attempt counting",
+				IssueType:          types.TypeTask,
+				Status:             types.StatusOpen,
+				Priority:           2,
+				AcceptanceCriteria: "Complete the task fully",
+				CreatedAt:          time.Now(),
+				UpdatedAt:          time.Now(),
+			}
+
+			if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+				t.Fatalf("Failed to create issue: %v", err)
+			}
+
+			// Add previous comments to simulate history
+			for _, comment := range tt.previousComments {
+				if err := store.AddComment(ctx, issue.ID, "ai-supervisor", comment); err != nil {
+					t.Fatalf("Failed to add comment: %v", err)
+				}
+			}
+
+			// Create results processor
+			rpCfg := &ResultsProcessorConfig{
+				Store:      store,
+				WorkingDir: t.TempDir(),
+				Actor:      "test-executor",
+			}
+
+			rp, err := NewResultsProcessor(rpCfg)
+			if err != nil {
+				t.Fatalf("Failed to create results processor: %v", err)
+			}
+
+			// Create a mock analysis indicating incomplete work
+			analysis := &ai.Analysis{
+				Completed:        false,
+				Summary:          "Work was started but not completed",
+				DiscoveredIssues: []ai.DiscoveredIssue{},
+				QualityIssues:    []string{},
+				PuntedItems:      []string{},
+			}
+
+			// Call handleIncompleteWork
+			err = rp.handleIncompleteWork(ctx, issue, analysis)
+			if err != nil {
+				t.Fatalf("handleIncompleteWork failed: %v", err)
+			}
+
+			// Verify the attempt number appeared in the comments
+			issueEvents, err := store.GetEvents(ctx, issue.ID, 0)
+			if err != nil {
+				t.Fatalf("Failed to get events: %v", err)
+			}
+
+			// Find the latest "Incomplete Work Detected" or "Incomplete Work Escalated" comment
+			var latestIncompleteComment string
+			for _, event := range issueEvents {
+				if event.Comment != nil {
+					comment := *event.Comment
+
+					// Match based on the expected pattern
+					if tt.expectEscalation {
+						if strings.Contains(comment, "Incomplete Work Escalated") {
+							latestIncompleteComment = comment
+						}
+					} else {
+						if strings.Contains(comment, "Incomplete Work Detected") {
+							latestIncompleteComment = comment
+						}
+					}
+				}
+			}
+
+			if latestIncompleteComment == "" {
+				if tt.expectEscalation {
+					t.Fatalf("Expected escalation comment but none was found. Found %d events total", len(issueEvents))
+				} else {
+					t.Fatalf("Expected incomplete work comment but none was found. Found %d events total", len(issueEvents))
+				}
+			}
+
+			// Verify the attempt number matches expected
+			if tt.expectEscalation {
+				// Escalation comment should mention total attempts
+				expectedPhrase := fmt.Sprintf("attempted %d times", tt.expectedAttemptNum)
+				if !strings.Contains(latestIncompleteComment, expectedPhrase) {
+					t.Errorf("Escalation comment should mention '%s', got: %s",
+						expectedPhrase, latestIncompleteComment)
+				}
+			} else {
+				// Retry comment should show attempt number
+				expectedPhrase := fmt.Sprintf("(Attempt #%d)", tt.expectedAttemptNum)
+				if !strings.Contains(latestIncompleteComment, expectedPhrase) {
+					t.Errorf("Expected comment to contain '%s', got: %s",
+						expectedPhrase, latestIncompleteComment)
+				}
+			}
+
+			// Verify escalation behavior
+			if tt.expectEscalation {
+				// Should have needs-human-review label
+				labels, err := store.GetLabels(ctx, issue.ID)
+				if err != nil {
+					t.Fatalf("Failed to get labels: %v", err)
+				}
+				hasLabel := false
+				for _, label := range labels {
+					if label == "needs-human-review" {
+						hasLabel = true
+						break
+					}
+				}
+				if !hasLabel {
+					t.Error("Expected needs-human-review label but it was not found")
+				}
+
+				// Should be blocked
+				updatedIssue, err := store.GetIssue(ctx, issue.ID)
+				if err != nil {
+					t.Fatalf("Failed to get issue: %v", err)
+				}
+				if updatedIssue.Status != types.StatusBlocked {
+					t.Errorf("Expected status=blocked, got %v", updatedIssue.Status)
+				}
+			} else {
+				// Should still be open (not blocked)
+				updatedIssue, err := store.GetIssue(ctx, issue.ID)
+				if err != nil {
+					t.Fatalf("Failed to get issue: %v", err)
+				}
+				if updatedIssue.Status == types.StatusBlocked {
+					t.Error("Expected issue to remain open, but it was blocked")
+				}
+			}
+		})
 	}
 }

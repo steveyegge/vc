@@ -1344,24 +1344,30 @@ func (rp *ResultsProcessor) logProgressEvent(ctx context.Context, severity event
 func (rp *ResultsProcessor) handleIncompleteWork(ctx context.Context, issue *types.Issue, analysis *ai.Analysis) error {
 	const maxIncompleteRetries = 1 // Allow 1 retry before escalation
 
-	// Get execution history to count incomplete attempts
-	history, err := rp.store.GetExecutionHistoryPaginated(ctx, issue.ID, 100, 0)
-	if err != nil {
-		return fmt.Errorf("failed to get execution history: %w", err)
-	}
-
-	// Count how many times this issue has been attempted with incomplete results
+	// Count how many times this issue has been attempted with incomplete results (vc-rd1z)
 	// An incomplete attempt is one where:
 	// - Agent succeeded (exit code 0)
 	// - But AI analysis reported completed=false
+	// - This function added an "Incomplete Work Detected" comment
+	//
+	// We count by looking for our own "Incomplete Work Detected" comments in the event history,
+	// which is more reliable than trying to infer from execution attempts (which don't track
+	// whether the issue was closed after each attempt).
+	issueEvents, err := rp.store.GetEvents(ctx, issue.ID, 0)
+	if err != nil {
+		return fmt.Errorf("failed to get events for incomplete attempt counting: %w", err)
+	}
+
 	incompleteAttempts := 0
-	for _, attempt := range history {
-		// Check if this was a successful execution with incomplete results
-		// We infer this from: success=true but no closed_at in issue (still open)
-		if attempt.Success != nil && *attempt.Success {
+	const incompleteMarker = "**Incomplete Work Detected"
+	for _, event := range issueEvents {
+		if event.Comment != nil && strings.Contains(*event.Comment, incompleteMarker) {
 			incompleteAttempts++
 		}
 	}
+
+	// Add 1 for the current incomplete attempt (we haven't added the comment yet)
+	incompleteAttempts++
 
 	fmt.Printf("\nIncomplete work detected: attempt #%d (max retries: %d)\n", incompleteAttempts, maxIncompleteRetries)
 
