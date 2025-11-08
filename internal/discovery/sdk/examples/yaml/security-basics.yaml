@@ -1,0 +1,130 @@
+# Example YAML Worker: Basic Security Checks
+# Simple security patterns that don't require AI
+
+name: security_basics
+philosophy: "Simple security checks catch common vulnerabilities"
+scope: "Hardcoded secrets, unsafe functions, SQL injection patterns"
+
+cost:
+  duration: "45s"
+  ai_calls: 0
+  category: cheap
+
+patterns:
+  # Hardcoded API keys
+  - name: "hardcoded_api_keys"
+    regex: '(api[_-]?key|apikey|api[_-]?secret)\s*=\s*["\'][a-zA-Z0-9]{20,}["\']'
+    file_pattern: "*.go"
+    title: "Hardcoded API key detected"
+    description: |
+      Hardcoded API keys in source code are a security risk. Keys should be loaded from:
+      - Environment variables (os.Getenv)
+      - Configuration files (not committed to git)
+      - Secret management systems
+    priority: 0  # P0 - critical security issue
+    category: "security"
+    tags:
+      - "credentials"
+      - "secrets"
+    confidence: 0.9
+
+  # Hardcoded passwords
+  - name: "hardcoded_passwords"
+    regex: '(password|passwd|pwd)\s*=\s*["\'][^"\']{8,}["\']'
+    file_pattern: "*.go"
+    title: "Possible hardcoded password"
+    description: "Hardcoded passwords should never be committed to source code. Use environment variables or secure vaults."
+    priority: 0
+    category: "security"
+    tags:
+      - "credentials"
+      - "passwords"
+    confidence: 0.7
+
+  # SQL injection patterns (string concatenation with SQL)
+  - name: "sql_concatenation"
+    regex: '(SELECT|INSERT|UPDATE|DELETE).*\+.*'
+    file_pattern: "*.go"
+    title: "Potential SQL injection via string concatenation"
+    description: |
+      Building SQL queries with string concatenation can lead to SQL injection vulnerabilities.
+      Use parameterized queries instead:
+      - db.Query("SELECT * FROM users WHERE id = ?", id)
+      - NOT: db.Query("SELECT * FROM users WHERE id = " + id)
+    priority: 1
+    category: "security"
+    tags:
+      - "sql-injection"
+      - "database"
+    confidence: 0.6
+
+  # Unsafe eval-like patterns
+  - name: "eval_patterns"
+    regex: 'exec\.Command.*\+.*|os\.Exec.*\+.*'
+    file_pattern: "*.go"
+    title: "Command injection risk via string concatenation"
+    description: |
+      Building shell commands with string concatenation can lead to command injection.
+      Validate and sanitize all user input before using in commands.
+    priority: 1
+    category: "security"
+    tags:
+      - "command-injection"
+      - "shell"
+    confidence: 0.7
+
+  # Unsafe MD5/SHA1 usage
+  - name: "weak_crypto"
+    regex: '(md5|sha1)\.(New|Sum)\('
+    file_pattern: "*.go"
+    title: "Weak cryptographic hash function"
+    description: |
+      MD5 and SHA1 are cryptographically broken and should not be used for security purposes.
+      Use SHA256 or SHA512 instead:
+      - crypto/sha256
+      - crypto/sha512
+    priority: 2
+    category: "security"
+    tags:
+      - "cryptography"
+      - "hashing"
+    confidence: 0.8
+
+  # HTTP without TLS
+  - name: "http_no_tls"
+    regex: 'http\.ListenAndServe\('
+    file_pattern: "*.go"
+    title: "HTTP server without TLS"
+    description: |
+      HTTP servers should use TLS (HTTPS) to encrypt traffic.
+      Use http.ListenAndServeTLS() instead of http.ListenAndServe().
+    priority: 2
+    category: "security"
+    tags:
+      - "tls"
+      - "encryption"
+      - "https"
+    confidence: 0.5
+
+missing_files:
+  - path: ".env"
+    title: "No .env file found"
+    description: |
+      Consider using a .env file for local development secrets (and add it to .gitignore!).
+      This separates configuration from code.
+    priority: 3
+    category: "security"
+    tags:
+      - "configuration"
+      - "secrets"
+
+  - path: "SECURITY.md"
+    title: "No SECURITY.md file"
+    description: |
+      Projects should have a SECURITY.md file explaining how to report security vulnerabilities.
+      This helps security researchers report issues responsibly.
+    priority: 3
+    category: "security"
+    tags:
+      - "documentation"
+      - "vulnerability-disclosure"

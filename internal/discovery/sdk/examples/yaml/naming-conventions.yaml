@@ -1,0 +1,79 @@
+# Example YAML Worker: Naming Conventions
+# This worker enforces company-specific naming standards without writing Go code
+
+name: naming_conventions
+philosophy: "Consistent naming improves code readability and maintainability"
+scope: "Function names, variable names, type names"
+
+cost:
+  duration: "30s"
+  ai_calls: 0
+  category: cheap
+
+# Pattern-based checks (regex matching)
+patterns:
+  # Check for snake_case function names (Go uses camelCase)
+  - name: "snake_case_functions"
+    regex: 'func\s+[a-z][a-z0-9_]+_[a-z0-9_]*\('
+    file_pattern: "*.go"
+    title: "Function uses snake_case (should be camelCase)"
+    description: "Go convention is camelCase for function names. Consider renaming to follow Go standards."
+    priority: 3
+    category: "naming"
+    tags:
+      - "style"
+      - "conventions"
+    confidence: 0.9
+
+  # Check for ALL_CAPS constant names without const keyword
+  - name: "all_caps_variables"
+    regex: 'var\s+[A-Z][A-Z0-9_]+\s*='
+    file_pattern: "*.go"
+    title: "ALL_CAPS variable should be const"
+    description: "Variables in ALL_CAPS suggest they should be constants. Use 'const' instead of 'var'."
+    priority: 3
+    category: "naming"
+    tags:
+      - "style"
+      - "constants"
+    confidence: 0.8
+
+  # Check for single-letter variable names outside loops
+  - name: "single_letter_vars"
+    regex: '(?<!for\s+)\b[a-z]\s+:=.*$'
+    file_pattern: "*.go"
+    title: "Single-letter variable name"
+    description: "Single-letter variable names reduce readability. Use descriptive names except in short loops."
+    priority: 3
+    category: "naming"
+    tags:
+      - "readability"
+    confidence: 0.6
+
+# Missing file checks
+missing_files:
+  - path: "README.md"
+    title: "Missing README.md"
+    description: "Every project should have a README.md explaining what it does and how to use it."
+    priority: 2
+    category: "documentation"
+    tags:
+      - "documentation"
+
+  - path: ".gitignore"
+    title: "Missing .gitignore"
+    description: "Projects should have a .gitignore to avoid committing build artifacts and sensitive files."
+    priority: 2
+    category: "configuration"
+    tags:
+      - "git"
+      - "configuration"
+
+  - path: "LICENSE"
+    title: "Missing LICENSE file"
+    description: "Open source projects should include a LICENSE file to clarify usage terms."
+    priority: 3
+    category: "legal"
+    tags:
+      - "legal"
+      - "licensing"
