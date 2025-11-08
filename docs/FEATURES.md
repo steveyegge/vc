@@ -310,3 +310,97 @@ The AI has access to these tools (you don't call them directly):
 - **search_issues**: Searches issues by text
 
 The AI understands your intent and uses these tools automatically.
+
+---
+
+## 🏗️ Infrastructure Workers: Build & CI/CD (vc-c9an)
+
+Infrastructure workers analyze build systems and CI/CD pipelines to identify modernization opportunities and quality improvements.
+
+### BuildModernizer
+
+**Philosophy:** "Build systems should be simple, fast, and follow current best practices."
+
+Analyzes build configuration files for:
+- **Deprecated patterns**: Old commands, removed flags, outdated syntax
+- **Missing optimizations**: Build caching, parallelism, incremental builds
+- **Version issues**: EOL tool versions, inconsistent versions across files
+- **Best practices**: Version managers, dependency management, reproducibility
+
+**Supported build systems:**
+- **Go**: go.mod, Makefile
+- **JavaScript**: package.json, package-lock.json, yarn.lock, pnpm-lock.yaml
+- **Python**: requirements.txt, setup.py, pyproject.toml
+- **Rust**: Cargo.toml, Cargo.lock
+- **Java**: build.gradle, pom.xml
+- **Docker**: Dockerfile
+- **Version files**: .tool-versions, .nvmrc, .ruby-version
+
+**Example issues discovered:**
+- "Makefile uses deprecated `go get`, migrate to `go install`"
+- "Go version in go.mod is EOL (1.18), upgrade to 1.23"
+- "No build caching configured, add go build cache"
+- "Missing .tool-versions file for consistent tooling"
+
+**Cost:** Cheap (~10 seconds, 1 AI call)
+
+### CICDReviewer
+
+**Philosophy:** "CI/CD pipelines should be fast, reliable, and enforce quality gates."
+
+Analyzes CI/CD configuration files for:
+- **Missing quality gates**: No tests, linting, security scans in pipeline
+- **Slow pipelines**: Serial jobs that could run in parallel
+- **Security issues**: Hardcoded secrets, missing secret scanning, overly permissive permissions
+- **Deprecated actions**: Old GitHub Actions versions, outdated Docker images
+- **Missing caching**: Dependencies re-downloaded every run, no build artifact caching
+
+**Supported CI/CD platforms:**
+- **GitHub Actions**: .github/workflows/*.yml
+- **GitLab CI**: .gitlab-ci.yml
+- **CircleCI**: .circleci/config.yml
+- **Travis CI**: .travis.yml
+- **Azure Pipelines**: azure-pipelines.yml
+- **Jenkins**: Jenkinsfile
+
+**Example issues discovered:**
+- "CI runs tests serially, parallelize for 3x speedup"
+- "No security scanning in CI pipeline, add govulncheck"
+- "Using deprecated actions/checkout@v2, upgrade to v4"
+- "Deploy job has hardcoded credentials, use secrets"
+- "No dependency caching, reduce npm install time from 2min to 10sec"
+
+**Cost:** Moderate (~20 seconds, 1-3 AI calls)
+
+### Usage
+
+Infrastructure workers run automatically during discovery:
+
+```bash
+# Standard preset includes both workers
+vc discover
+
+# Run specific infrastructure workers
+vc discover --workers=build_modernizer,cicd_reviewer
+
+# List all available workers
+vc discover --list
+```
+
+### Code References
+
+- **BuildModernizer**: `internal/health/build_modernizer.go`
+- **BuildModernizer Tests**: `internal/health/build_modernizer_test.go`
+- **CICDReviewer**: `internal/health/cicd_reviewer.go`
+- **CICDReviewer Tests**: `internal/health/cicd_reviewer_test.go`
+- **Registration**: `cmd/vc/discover.go:156-166` (discovery), `internal/executor/executor.go:700-718` (executor)
+
+### Why This Matters
+
+Infrastructure issues often get overlooked because they're not blocking immediate feature work. But they create technical debt:
+- Slow builds waste developer time daily
+- Missing CI quality gates let bugs slip through
+- EOL tool versions create security risks
+- Deprecated commands break on tooling upgrades
+
+Infrastructure workers automatically find these issues during codebase discovery, ensuring they get prioritized and fixed before they cause problems.

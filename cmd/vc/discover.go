@@ -153,6 +153,18 @@ func runDiscovery(
 	}
 	healthRegistry.Register(zfcDetector)
 
+	buildModernizer, err := health.NewBuildModernizer(projectRoot, supervisor)
+	if err != nil {
+		return fmt.Errorf("creating build modernizer: %w", err)
+	}
+	healthRegistry.Register(buildModernizer)
+
+	cicdReviewer, err := health.NewCICDReviewer(projectRoot, supervisor)
+	if err != nil {
+		return fmt.Errorf("creating CI/CD reviewer: %w", err)
+	}
+	healthRegistry.Register(cicdReviewer)
+
 	// Create worker registry
 	workerRegistry, err := discovery.DefaultRegistry(healthRegistry)
 	if err != nil {
@@ -300,6 +312,16 @@ func listDiscoveryWorkers() {
 	zfcDetector, _ := health.NewZFCDetector(projectRoot, supervisor)
 	if zfcDetector != nil {
 		healthRegistry.Register(zfcDetector)
+	}
+
+	buildModernizer, _ := health.NewBuildModernizer(projectRoot, supervisor)
+	if buildModernizer != nil {
+		healthRegistry.Register(buildModernizer)
+	}
+
+	cicdReviewer, _ := health.NewCICDReviewer(projectRoot, supervisor)
+	if cicdReviewer != nil {
+		healthRegistry.Register(cicdReviewer)
 	}
 
 	workerRegistry, err := discovery.DefaultRegistry(healthRegistry)

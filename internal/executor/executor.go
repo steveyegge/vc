@@ -696,6 +696,26 @@ func New(cfg *Config) (*Executor, error) {
 							fmt.Fprintf(os.Stderr, "Warning: failed to register cruft detector: %v\n", err)
 						}
 					}
+
+					// Register build modernizer
+					buildModernizer, err := health.NewBuildModernizer(projectRoot, e.supervisor)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to create build modernizer: %v\n", err)
+					} else {
+						if err := registry.Register(buildModernizer); err != nil {
+							fmt.Fprintf(os.Stderr, "Warning: failed to register build modernizer: %v\n", err)
+						}
+					}
+
+					// Register CI/CD reviewer
+					cicdReviewer, err := health.NewCICDReviewer(projectRoot, e.supervisor)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to create CI/CD reviewer: %v\n", err)
+					} else {
+						if err := registry.Register(cicdReviewer); err != nil {
+							fmt.Fprintf(os.Stderr, "Warning: failed to register CI/CD reviewer: %v\n", err)
+						}
+					}
 				}
 			} else {
 				fmt.Fprintf(os.Stderr, "Warning: health monitoring requires AI supervision (health monitoring disabled)\n")
