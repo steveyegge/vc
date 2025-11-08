@@ -4937,9 +4937,7 @@ func TestAcceptanceCriteriaWorkflowEnforcement(t *testing.T) {
 
 // TestJSONLRoundTripAcceptanceCriteria verifies that acceptance_criteria survives JSONL export/import cycle (vc-ht3e)
 // This catches JSONL escaping bugs, Beads library serialization issues, and field name mismatches
-// TODO(vc-vizo): Currently skipped due to bd import duplicate detection issue
 func TestJSONLRoundTripAcceptanceCriteria(t *testing.T) {
-	t.Skip("TODO(vc-vizo): bd import returns '0 created, 0 updated' - needs fix for duplicate detection")
 	ctx := context.Background()
 	tmpDir := t.TempDir()
 
@@ -5010,9 +5008,8 @@ Final notes and additional context for the acceptance criteria.`,
 			// Close storage before running bd export (avoid lock conflicts)
 			store1.Close()
 
-			// Run: bd export -o jsonl_path (using BEADS_DB_PATH env var to specify database)
-			exportCmd := exec.Command("bd", "export", "-o", jsonlPath)
-			exportCmd.Env = append(os.Environ(), fmt.Sprintf("BEADS_DB_PATH=%s", dbPath1))
+			// Run: bd export using --db flag to specify database
+			exportCmd := exec.Command("bd", "--db", dbPath1, "export", "-o", jsonlPath)
 			exportOutput, err := exportCmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("bd export failed: %v\nOutput: %s", err, exportOutput)
@@ -5033,20 +5030,26 @@ Final notes and additional context for the acceptance criteria.`,
 			// Create second database and import using bd import command
 			dbPath2 := filepath.Join(tmpDir, fmt.Sprintf("test2_%s.db", strings.ReplaceAll(tc.name, " ", "_")))
 
-			// Run: bd import jsonl_path (using BEADS_DB_PATH env var to specify database)
-			// bd uses BEADS_DB_PATH, not VC_DB_PATH
-			importCmd := exec.Command("bd", "import", jsonlPath)
-			importCmd.Env = append(os.Environ(), fmt.Sprintf("BEADS_DB_PATH=%s", dbPath2))
+			// Initialize the second database first (required for import)
+			// Create storage to initialize the database with proper schema
+			store2, err := NewVCStorage(ctx, dbPath2)
+			if err != nil {
+				t.Fatalf("Failed to create second storage: %v", err)
+			}
+			store2.Close()
+
+			// Run: bd import using --db flag to specify database
+			importCmd := exec.Command("bd", "--db", dbPath2, "import", "-i", jsonlPath)
 			importOutput, err := importCmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("bd import failed: %v\nOutput: %s", err, importOutput)
 			}
 			t.Logf("Import output: %s", importOutput)
 
-			// Open second storage to verify import
-			store2, err := NewVCStorage(ctx, dbPath2)
+			// Re-open second storage to verify import
+			store2, err = NewVCStorage(ctx, dbPath2)
 			if err != nil {
-				t.Fatalf("Failed to create second storage: %v", err)
+				t.Fatalf("Failed to re-open second storage: %v", err)
 			}
 			defer store2.Close()
 
