@@ -15,6 +15,6 @@ db.sqlite
 bd.db
 
 # Keep JSONL exports and config (source of truth for git)
-!*.jsonl
+!issues.jsonl
 !metadata.json
 !config.json
