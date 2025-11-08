@@ -38,6 +38,11 @@ type CICDReviewer struct {
 
 // NewCICDReviewer creates a CI/CD reviewer with sensible defaults.
 func NewCICDReviewer(rootPath string, supervisor AISupervisor) (*CICDReviewer, error) {
+	// Validate supervisor is non-nil (required for AI evaluation)
+	if supervisor == nil {
+		return nil, fmt.Errorf("AI supervisor is required for CI/CD review")
+	}
+
 	// Validate and clean the root path
 	absPath, err := filepath.Abs(rootPath)
 	if err != nil {
@@ -132,24 +137,19 @@ func (r *CICDReviewer) Check(ctx context.Context, codebase CodebaseContext) (*Mo
 		}, nil
 	}
 
-	// 3. Validate that AI supervisor is configured (only when we have files)
-	if r.Supervisor == nil {
-		return nil, fmt.Errorf("AI supervisor is required for CI/CD review")
-	}
-
-	// 4. Read CI/CD file contents
+	// 3. Read CI/CD file contents
 	cicdContents, errorsIgnored, err := r.readCICDFiles(cicdFiles)
 	if err != nil {
 		return nil, fmt.Errorf("reading CI/CD files: %w", err)
 	}
 
-	// 5. Ask AI to evaluate the CI/CD configs
+	// 4. Ask AI to evaluate the CI/CD configs
 	evaluation, err := r.evaluateCICD(ctx, cicdContents)
 	if err != nil {
 		return nil, fmt.Errorf("evaluating CI/CD configs: %w", err)
 	}
 
-	// 6. Build issues from AI evaluation
+	// 5. Build issues from AI evaluation
 	issues := r.buildIssues(evaluation)
 
 	return &MonitorResult{
@@ -220,7 +220,7 @@ func (r *CICDReviewer) scanCICDFiles(ctx context.Context) ([]cicdFile, error) {
 	return files, nil
 }
 
-// findGlobMatches finds files matching a glob pattern.
+// findGlobMatches finds files matching a glob pattern, respecting ExcludePatterns.
 func (r *CICDReviewer) findGlobMatches(ctx context.Context, pattern string) ([]string, error) {
 	var matches []string
 
@@ -253,7 +253,19 @@ func (r *CICDReviewer) findGlobMatches(ctx context.Context, pattern string) ([]s
 
 		if matched {
 			relPath := filepath.Join(dir, entry.Name())
-			matches = append(matches, relPath)
+
+			// Check if path matches any exclude pattern
+			excluded := false
+			for _, exclude := range r.ExcludePatterns {
+				if strings.Contains(relPath, exclude) {
+					excluded = true
+					break
+				}
+			}
+
+			if !excluded {
+				matches = append(matches, relPath)
+			}
 		}
 	}
 
@@ -381,7 +393,13 @@ func (r *CICDReviewer) evaluateCICD(ctx context.Context, files []cicdFileContent
 		return nil, fmt.Errorf("parsing AI response: %s", parseResult.Error)
 	}
 
-	return &parseResult.Data, nil
+	// Validate response structure (vc-174i)
+	evaluation := &parseResult.Data
+	if err := validateCICDEvaluation(evaluation); err != nil {
+		return nil, fmt.Errorf("invalid AI response structure: %w", err)
+	}
+
+	return evaluation, nil
 }
 
 // buildPrompt creates the AI evaluation prompt.
@@ -658,4 +676,36 @@ func (r *CICDReviewer) buildContext(files []cicdFile, eval *cicdEvaluation) stri
 		len(eval.MissingCaching),
 		len(eval.BestPractices),
 	)
+}
+
+// validateCICDEvaluation checks that the AI response has all required fields (vc-174i).
+func validateCICDEvaluation(eval *cicdEvaluation) error {
+	if eval == nil {
+		return fmt.Errorf("evaluation is nil")
+	}
+
+	// All array fields should be initialized (even if empty)
+	if eval.MissingQualityGates == nil {
+		return fmt.Errorf("missing field: missing_quality_gates")
+	}
+	if eval.SlowPipelines == nil {
+		return fmt.Errorf("missing field: slow_pipelines")
+	}
+	if eval.SecurityIssues == nil {
+		return fmt.Errorf("missing field: security_issues")
+	}
+	if eval.DeprecatedActions == nil {
+		return fmt.Errorf("missing field: deprecated_actions")
+	}
+	if eval.MissingCaching == nil {
+		return fmt.Errorf("missing field: missing_caching")
+	}
+	if eval.BestPractices == nil {
+		return fmt.Errorf("missing field: best_practices")
+	}
+
+	// Reasoning should be present (can be empty string)
+	// Note: string fields default to "", so no explicit check needed
+
+	return nil
 }

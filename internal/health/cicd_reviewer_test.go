@@ -12,7 +12,8 @@ import (
 )
 
 func TestCICDReviewer_Interface(t *testing.T) {
-	reviewer, err := NewCICDReviewer("/tmp", nil)
+	mockAI := &mockSupervisor{}
+	reviewer, err := NewCICDReviewer("/tmp", mockAI)
 	require.NoError(t, err)
 
 	assert.Equal(t, "cicd_reviewer", reviewer.Name())
@@ -44,7 +45,8 @@ func TestNewCICDReviewer_PathValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			reviewer, err := NewCICDReviewer(tt.rootPath, nil)
+			mockAI := &mockSupervisor{}
+			reviewer, err := NewCICDReviewer(tt.rootPath, mockAI)
 			assert.NoError(t, err)
 			assert.NotNil(t, reviewer)
 			// Verify path is absolute
@@ -85,7 +87,8 @@ func TestCICDReviewer_ScanCICDFiles(t *testing.T) {
 	err = os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte("# Test\n"), 0644)
 	require.NoError(t, err)
 
-	reviewer, err := NewCICDReviewer(tmpDir, nil)
+	mockAI := &mockSupervisor{}
+	reviewer, err := NewCICDReviewer(tmpDir, mockAI)
 	require.NoError(t, err)
 
 	files, err := reviewer.scanCICDFiles(context.Background())
@@ -115,7 +118,8 @@ func TestCICDReviewer_ScanCICDFiles_NoWorkflowsDir(t *testing.T) {
 	err = os.MkdirAll(githubDir, 0755)
 	require.NoError(t, err)
 
-	reviewer, err := NewCICDReviewer(tmpDir, nil)
+	mockAI := &mockSupervisor{}
+	reviewer, err := NewCICDReviewer(tmpDir, mockAI)
 	require.NoError(t, err)
 
 	files, err := reviewer.scanCICDFiles(context.Background())
@@ -146,7 +150,8 @@ func TestCICDReviewer_ReadCICDFiles(t *testing.T) {
 	err = os.WriteFile(filepath.Join(tmpDir, "large-ci.yml"), largeContent, 0644)
 	require.NoError(t, err)
 
-	reviewer, err := NewCICDReviewer(tmpDir, nil)
+	mockAI := &mockSupervisor{}
+	reviewer, err := NewCICDReviewer(tmpDir, mockAI)
 	require.NoError(t, err)
 
 	cicdFiles := []cicdFile{
@@ -181,7 +186,8 @@ func TestCICDReviewer_ReadCICDFiles(t *testing.T) {
 }
 
 func TestCICDReviewer_CalculateQualityGateSeverity(t *testing.T) {
-	reviewer, err := NewCICDReviewer("/tmp", nil)
+	mockAI := &mockSupervisor{}
+	reviewer, err := NewCICDReviewer("/tmp", mockAI)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -232,7 +238,8 @@ func TestCICDReviewer_CalculateQualityGateSeverity(t *testing.T) {
 }
 
 func TestCICDReviewer_CalculateSecuritySeverity(t *testing.T) {
-	reviewer, err := NewCICDReviewer("/tmp", nil)
+	mockAI := &mockSupervisor{}
+	reviewer, err := NewCICDReviewer("/tmp", mockAI)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -273,7 +280,8 @@ func TestCICDReviewer_CalculateSecuritySeverity(t *testing.T) {
 }
 
 func TestCICDReviewer_BuildContext(t *testing.T) {
-	reviewer, err := NewCICDReviewer("/tmp", nil)
+	mockAI := &mockSupervisor{}
+	reviewer, err := NewCICDReviewer("/tmp", mockAI)
 	require.NoError(t, err)
 
 	files := []cicdFile{
@@ -314,7 +322,8 @@ func TestCICDReviewer_BuildContext(t *testing.T) {
 }
 
 func TestCICDReviewer_BuildIssues(t *testing.T) {
-	reviewer, err := NewCICDReviewer("/tmp", nil)
+	mockAI := &mockSupervisor{}
+	reviewer, err := NewCICDReviewer("/tmp", mockAI)
 	require.NoError(t, err)
 
 	eval := &cicdEvaluation{
@@ -370,7 +379,8 @@ func TestCICDReviewer_Check_NoCICDFiles(t *testing.T) {
 	err = os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte("package main\n"), 0644)
 	require.NoError(t, err)
 
-	reviewer, err := NewCICDReviewer(tmpDir, nil)
+	mockAI := &mockSupervisor{}
+	reviewer, err := NewCICDReviewer(tmpDir, mockAI)
 	require.NoError(t, err)
 
 	result, err := reviewer.Check(context.Background(), CodebaseContext{})
@@ -389,10 +399,8 @@ func TestCICDReviewer_Check_NoSupervisor(t *testing.T) {
 	err = os.WriteFile(filepath.Join(tmpDir, ".gitlab-ci.yml"), []byte("test:\n  script:\n    - go test\n"), 0644)
 	require.NoError(t, err)
 
-	reviewer, err := NewCICDReviewer(tmpDir, nil)
-	require.NoError(t, err)
-
-	_, err = reviewer.Check(context.Background(), CodebaseContext{})
+	// Constructor now fails fast with nil supervisor (vc-i8vz)
+	_, err = NewCICDReviewer(tmpDir, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "AI supervisor is required")
 }
@@ -414,7 +422,8 @@ func TestCICDReviewer_FindGlobMatches(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	reviewer, err := NewCICDReviewer(tmpDir, nil)
+	mockAI := &mockSupervisor{}
+	reviewer, err := NewCICDReviewer(tmpDir, mockAI)
 	require.NoError(t, err)
 
 	// Test glob pattern for .yml files

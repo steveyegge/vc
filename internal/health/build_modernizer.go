@@ -38,6 +38,11 @@ type BuildModernizer struct {
 
 // NewBuildModernizer creates a build modernizer with sensible defaults.
 func NewBuildModernizer(rootPath string, supervisor AISupervisor) (*BuildModernizer, error) {
+	// Validate supervisor is non-nil (required for AI evaluation)
+	if supervisor == nil {
+		return nil, fmt.Errorf("AI supervisor is required for build modernization")
+	}
+
 	// Validate and clean the root path
 	absPath, err := filepath.Abs(rootPath)
 	if err != nil {
@@ -131,24 +136,19 @@ func (m *BuildModernizer) Check(ctx context.Context, codebase CodebaseContext) (
 		}, nil
 	}
 
-	// 3. Validate that AI supervisor is configured (only when we have files)
-	if m.Supervisor == nil {
-		return nil, fmt.Errorf("AI supervisor is required for build modernization")
-	}
-
-	// 4. Read build file contents
+	// 3. Read build file contents
 	buildFileContents, errorsIgnored, err := m.readBuildFiles(buildFiles)
 	if err != nil {
 		return nil, fmt.Errorf("reading build files: %w", err)
 	}
 
-	// 5. Ask AI to evaluate the build files
+	// 4. Ask AI to evaluate the build files
 	evaluation, err := m.evaluateBuildFiles(ctx, buildFileContents)
 	if err != nil {
 		return nil, fmt.Errorf("evaluating build files: %w", err)
 	}
 
-	// 6. Build issues from AI evaluation
+	// 5. Build issues from AI evaluation
 	issues := m.buildIssues(evaluation)
 
 	return &MonitorResult{
@@ -376,7 +376,13 @@ func (m *BuildModernizer) evaluateBuildFiles(ctx context.Context, files []buildF
 		return nil, fmt.Errorf("parsing AI response: %s", parseResult.Error)
 	}
 
-	return &parseResult.Data, nil
+	// Validate response structure (vc-174i)
+	evaluation := &parseResult.Data
+	if err := validateBuildEvaluation(evaluation); err != nil {
+		return nil, fmt.Errorf("invalid AI response structure: %w", err)
+	}
+
+	return evaluation, nil
 }
 
 // buildPrompt creates the AI evaluation prompt.
@@ -593,4 +599,30 @@ func (m *BuildModernizer) buildContext(files []buildFile, eval *buildEvaluation)
 		len(eval.VersionIssues),
 		len(eval.BestPractices),
 	)
+}
+
+// validateBuildEvaluation checks that the AI response has all required fields (vc-174i).
+func validateBuildEvaluation(eval *buildEvaluation) error {
+	if eval == nil {
+		return fmt.Errorf("evaluation is nil")
+	}
+
+	// All array fields should be initialized (even if empty)
+	if eval.DeprecatedPatterns == nil {
+		return fmt.Errorf("missing field: deprecated_patterns")
+	}
+	if eval.MissingOptimizations == nil {
+		return fmt.Errorf("missing field: missing_optimizations")
+	}
+	if eval.VersionIssues == nil {
+		return fmt.Errorf("missing field: version_issues")
+	}
+	if eval.BestPractices == nil {
+		return fmt.Errorf("missing field: best_practices")
+	}
+
+	// Reasoning should be present (can be empty string)
+	// Note: string fields default to "", so no explicit check needed
+
+	return nil
 }

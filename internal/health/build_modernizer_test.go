@@ -12,7 +12,9 @@ import (
 )
 
 func TestBuildModernizer_Interface(t *testing.T) {
-	modernizer, err := NewBuildModernizer("/tmp", nil)
+	// Use mock supervisor since constructor now requires non-nil
+	mockAI := &mockSupervisor{}
+	modernizer, err := NewBuildModernizer("/tmp", mockAI)
 	require.NoError(t, err)
 
 	assert.Equal(t, "build_modernizer", modernizer.Name())
@@ -44,7 +46,8 @@ func TestNewBuildModernizer_PathValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			modernizer, err := NewBuildModernizer(tt.rootPath, nil)
+			mockAI := &mockSupervisor{}
+			modernizer, err := NewBuildModernizer(tt.rootPath, mockAI)
 			assert.NoError(t, err)
 			assert.NotNil(t, modernizer)
 			// Verify path is absolute
@@ -80,7 +83,8 @@ func TestBuildModernizer_ScanBuildFiles(t *testing.T) {
 	err = os.WriteFile(filepath.Join(vendorDir, "Makefile"), []byte("vendor makefile\n"), 0644)
 	require.NoError(t, err)
 
-	modernizer, err := NewBuildModernizer(tmpDir, nil)
+	mockAI := &mockSupervisor{}
+	modernizer, err := NewBuildModernizer(tmpDir, mockAI)
 	require.NoError(t, err)
 
 	files, err := modernizer.scanBuildFiles(context.Background())
@@ -101,7 +105,8 @@ func TestBuildModernizer_ScanBuildFiles(t *testing.T) {
 }
 
 func TestBuildModernizer_DetectFileType(t *testing.T) {
-	modernizer, err := NewBuildModernizer("/tmp", nil)
+	mockAI := &mockSupervisor{}
+	modernizer, err := NewBuildModernizer("/tmp", mockAI)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -160,7 +165,8 @@ func TestBuildModernizer_ReadBuildFiles(t *testing.T) {
 	err = os.WriteFile(filepath.Join(tmpDir, "large.gradle"), largeContent, 0644)
 	require.NoError(t, err)
 
-	modernizer, err := NewBuildModernizer(tmpDir, nil)
+	mockAI := &mockSupervisor{}
+	modernizer, err := NewBuildModernizer(tmpDir, mockAI)
 	require.NoError(t, err)
 
 	buildFiles := []buildFile{
@@ -195,7 +201,8 @@ func TestBuildModernizer_ReadBuildFiles(t *testing.T) {
 }
 
 func TestBuildModernizer_CalculateDeprecationSeverity(t *testing.T) {
-	modernizer, err := NewBuildModernizer("/tmp", nil)
+	mockAI := &mockSupervisor{}
+	modernizer, err := NewBuildModernizer("/tmp", mockAI)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -246,7 +253,8 @@ func TestBuildModernizer_CalculateDeprecationSeverity(t *testing.T) {
 }
 
 func TestBuildModernizer_CalculateVersionSeverity(t *testing.T) {
-	modernizer, err := NewBuildModernizer("/tmp", nil)
+	mockAI := &mockSupervisor{}
+	modernizer, err := NewBuildModernizer("/tmp", mockAI)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -295,7 +303,8 @@ func TestBuildModernizer_CalculateVersionSeverity(t *testing.T) {
 }
 
 func TestBuildModernizer_BuildContext(t *testing.T) {
-	modernizer, err := NewBuildModernizer("/tmp", nil)
+	mockAI := &mockSupervisor{}
+	modernizer, err := NewBuildModernizer("/tmp", mockAI)
 	require.NoError(t, err)
 
 	files := []buildFile{
@@ -336,7 +345,8 @@ func TestBuildModernizer_Check_NoBuildFiles(t *testing.T) {
 	err = os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte("package main\n"), 0644)
 	require.NoError(t, err)
 
-	modernizer, err := NewBuildModernizer(tmpDir, nil)
+	mockAI := &mockSupervisor{}
+	modernizer, err := NewBuildModernizer(tmpDir, mockAI)
 	require.NoError(t, err)
 
 	result, err := modernizer.Check(context.Background(), CodebaseContext{})
@@ -355,10 +365,8 @@ func TestBuildModernizer_Check_NoSupervisor(t *testing.T) {
 	err = os.WriteFile(filepath.Join(tmpDir, "Makefile"), []byte("all:\n\tgo build\n"), 0644)
 	require.NoError(t, err)
 
-	modernizer, err := NewBuildModernizer(tmpDir, nil)
-	require.NoError(t, err)
-
-	_, err = modernizer.Check(context.Background(), CodebaseContext{})
+	// Constructor now fails fast with nil supervisor (vc-i8vz)
+	_, err = NewBuildModernizer(tmpDir, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "AI supervisor is required")
 }
