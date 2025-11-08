@@ -7,7 +7,13 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/vc/internal/discovery"
 	"github.com/steveyegge/vc/internal/storage"
+)
+
+var (
+	initDiscover bool
+	initPreset   string
 )
 
 var initCmd = &cobra.Command{
@@ -22,10 +28,15 @@ This creates:
 
 If no project name is provided, the current directory name is used.
 
+With --discover flag, also runs discovery workers to bootstrap the issue tracker
+with actionable issues found in the codebase.
+
 Example:
   cd ~/myproject
-  vc init           # Creates .beads/myproject.db
-  vc init myapp     # Creates .beads/myapp.db`,
+  vc init                          # Creates .beads/myproject.db
+  vc init myapp                    # Creates .beads/myapp.db
+  vc init --discover               # Initialize and run discovery (standard preset)
+  vc init --discover --preset=quick  # Initialize and run quick discovery`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		// Get project name from args or use current directory name
@@ -65,8 +76,30 @@ Example:
 		fmt.Printf("  Database: %s\n", cyan(dbPath))
 		fmt.Printf("  Project root: %s\n", cyan(cwd))
 		fmt.Println()
+
+		// Run discovery if requested
+		if initDiscover {
+			fmt.Printf("%s Running discovery workers...\n\n", gray("→"))
+
+			// Get preset
+			preset := discovery.Preset(initPreset)
+			if preset == "" {
+				preset = discovery.PresetStandard
+			}
+
+			// Run discovery
+			if err := runDiscovery(ctx, db, cwd, preset, false); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: discovery failed: %v\n", err)
+				fmt.Fprintf(os.Stderr, "The tracker was initialized successfully, but discovery encountered errors.\n")
+			}
+
+			fmt.Println()
+		}
+
 		fmt.Printf("%s Next steps:\n", gray("→"))
-		fmt.Printf("  %s\n", gray("vc create \"My first issue\" -t task"))
+		if !initDiscover {
+			fmt.Printf("  %s\n", gray("vc discover --preset=quick  # Discover issues in codebase"))
+		}
 		fmt.Printf("  %s\n", gray("vc ready"))
 		fmt.Printf("  %s\n", gray("vc execute"))
 		fmt.Println()
@@ -75,4 +108,6 @@ Example:
 
 func init() {
 	rootCmd.AddCommand(initCmd)
+	initCmd.Flags().BoolVar(&initDiscover, "discover", false, "Run discovery workers after initialization")
+	initCmd.Flags().StringVar(&initPreset, "preset", "standard", "Discovery preset: quick, standard, or thorough")
 }
