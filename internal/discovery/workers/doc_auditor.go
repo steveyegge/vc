@@ -96,14 +96,13 @@ func (d *DocAuditor) Analyze(ctx context.Context, codebase health.CodebaseContex
 			return nil
 		}
 
-		// Skip vendor, hidden directories
-		if strings.Contains(path, "/vendor/") ||
-			strings.Contains(path, "/.") ||
-			strings.Contains(path, "/node_modules/") {
-			if info.IsDir() {
+		// Skip vendor, hidden directories (vc-dkho fix: check IsDir first)
+		if info.IsDir() {
+			if strings.Contains(path, "/vendor/") ||
+				strings.Contains(path, "/.") ||
+				strings.Contains(path, "/node_modules/") {
 				return filepath.SkipDir
 			}
-			return nil
 		}
 
 		filesAnalyzed++

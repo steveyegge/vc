@@ -90,14 +90,13 @@ func (t *TestCoverageAnalyzer) Analyze(ctx context.Context, codebase health.Code
 			return nil
 		}
 
-		// Skip vendor, hidden directories
-		if strings.Contains(path, "/vendor/") ||
-			strings.Contains(path, "/.") ||
-			strings.Contains(path, "/node_modules/") {
-			if info.IsDir() {
+		// Skip vendor, hidden directories (vc-dkho fix: check IsDir first)
+		if info.IsDir() {
+			if strings.Contains(path, "/vendor/") ||
+				strings.Contains(path, "/.") ||
+				strings.Contains(path, "/node_modules/") {
 				return filepath.SkipDir
 			}
-			return nil
 		}
 
 		relPath, _ := filepath.Rel(rootDir, path)

@@ -20,10 +20,12 @@ import (
 // This worker performs static analysis to discover potential bugs:
 // - Resource leaks (files/connections not closed)
 // - Error handling gaps (errors ignored)
-// - Nil dereference risks (unchecked nil returns)
 // - Goroutine leaks (no cleanup on context cancellation)
 // - Race conditions (shared mutable state without locks)
 // - Off-by-one errors (loop bounds)
+//
+// Note: Nil dereference detection was removed (vc-h2a4) due to high false positive rate.
+// Proper nil detection requires data flow analysis beyond simple AST inspection.
 //
 // ZFC Compliance: Detects patterns. AI determines if they're real bugs or false positives.
 type BugHunterWorker struct {
@@ -48,7 +50,7 @@ func (w *BugHunterWorker) Philosophy() string {
 
 // Scope implements DiscoveryWorker.
 func (w *BugHunterWorker) Scope() string {
-	return "Race conditions, nil dereference risks, resource leaks, goroutine leaks, error handling gaps, off-by-one errors"
+	return "Race conditions, resource leaks, goroutine leaks, error handling gaps, off-by-one errors"
 }
 
 // Cost implements DiscoveryWorker.
@@ -85,18 +87,21 @@ func (w *BugHunterWorker) Analyze(ctx context.Context, codebase health.CodebaseC
 			return err
 		}
 
-		// Skip directories and non-Go files
-		if info.IsDir() || !strings.HasSuffix(path, ".go") {
+		// Skip vendor and hidden directories (vc-dkho fix: check IsDir first and return SkipDir)
+		if info.IsDir() {
+			if strings.Contains(path, "/vendor/") || strings.Contains(path, "/.") {
+				return filepath.SkipDir
+			}
+			return nil // Skip other directories but continue traversing
+		}
+
+		// Skip non-Go files
+		if !strings.HasSuffix(path, ".go") {
 			return nil
 		}
 
 		// Skip test files and generated files
 		if strings.HasSuffix(path, "_test.go") || strings.Contains(path, "_generated.go") {
-			return nil
-		}
-
-		// Skip vendor and hidden directories
-		if strings.Contains(path, "/vendor/") || strings.Contains(path, "/.") {
 			return nil
 		}
 
@@ -118,9 +123,7 @@ func (w *BugHunterWorker) Analyze(ctx context.Context, codebase health.CodebaseC
 		errorIssues := w.detectErrorHandlingGaps(node, fset, path)
 		result.IssuesDiscovered = append(result.IssuesDiscovered, errorIssues...)
 
-		// Check for nil dereference risks
-		nilIssues := w.detectNilDereferenceRisks(node, fset, path)
-		result.IssuesDiscovered = append(result.IssuesDiscovered, nilIssues...)
+		// Note: Nil dereference detection removed (vc-h2a4) - too many false positives without proper data flow analysis
 
 		// Check for goroutine leaks
 		goroutineIssues := w.detectGoroutineLeaks(node, fset, path)
@@ -152,7 +155,6 @@ func (w *BugHunterWorker) Analyze(ctx context.Context, codebase health.CodebaseC
 		"Based on philosophy: '%s'\n\nStatic analysis found patterns that often indicate bugs:\n"+
 			"- Resource leaks can cause file descriptor exhaustion\n"+
 			"- Ignored errors can hide failures\n"+
-			"- Nil dereferences cause runtime panics\n"+
 			"- Goroutine leaks waste memory and resources\n\n"+
 			"AI should evaluate: Which of these are real bugs vs. acceptable patterns in context?",
 		w.Philosophy(),
@@ -272,41 +274,17 @@ func (w *BugHunterWorker) detectErrorHandlingGaps(node *ast.File, fset *token.Fi
 	return issues
 }
 
-// detectNilDereferenceRisks finds potential nil pointer dereferences.
-func (w *BugHunterWorker) detectNilDereferenceRisks(node *ast.File, fset *token.FileSet, filePath string) []DiscoveredIssue {
-	var issues []DiscoveredIssue
-
-	// Track variables that might be nil
-	ast.Inspect(node, func(n ast.Node) bool {
-		// Look for dereferences of potentially nil values
-		if star, ok := n.(*ast.StarExpr); ok {
-			// Check if we're dereferencing without nil check
-			// This is a simplified heuristic - would need proper data flow analysis
-			if ident, ok := star.X.(*ast.Ident); ok {
-				pos := fset.Position(star.Pos())
-				issues = append(issues, DiscoveredIssue{
-					Title:       fmt.Sprintf("Potential nil dereference: *%s", ident.Name),
-					Description: fmt.Sprintf("At %s:%d, dereferencing %s without visible nil check.\n\nNil pointer dereferences cause runtime panics. Consider checking 'if %s != nil' before dereferencing.", filepath.Base(filePath), pos.Line, ident.Name, ident.Name),
-					Category:    "bugs",
-					Type:        "bug",
-					Priority:    1, // P1 - panics are serious
-					Tags:        []string{"nil-dereference", "panic"},
-					FilePath:    filePath,
-					LineStart:   pos.Line,
-					Evidence: map[string]interface{}{
-						"variable": ident.Name,
-						"line":     pos.Line,
-						"file":     filepath.Base(filePath),
-					},
-					Confidence: 0.4, // Lower confidence - high false positive rate without data flow analysis
-				})
-			}
-		}
-		return true
-	})
-
-	return issues
-}
+// detectNilDereferenceRisks - REMOVED (vc-h2a4)
+// The original implementation flagged every pointer dereference without data flow analysis,
+// resulting in an unacceptably high false positive rate. Proper nil dereference detection
+// requires sophisticated data flow analysis that tracks:
+// - Where pointers are initialized
+// - What functions return nil vs non-nil
+// - Control flow paths (if x != nil checks)
+// - Type assertions and casts
+//
+// Until we have proper data flow analysis, this detector is disabled.
+// Future work: Consider using a static analysis tool like go-critic or nilaway.
 
 // detectGoroutineLeaks finds goroutines that might not clean up properly.
 func (w *BugHunterWorker) detectGoroutineLeaks(node *ast.File, fset *token.FileSet, filePath string) []DiscoveredIssue {

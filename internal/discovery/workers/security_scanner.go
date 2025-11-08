@@ -104,14 +104,17 @@ func (s *SecurityScanner) Analyze(ctx context.Context, codebase health.CodebaseC
 			return nil
 		}
 
-		// Skip vendor, hidden directories, test files
-		if strings.Contains(path, "/vendor/") ||
-			strings.Contains(path, "/.") ||
-			strings.Contains(path, "/node_modules/") ||
-			strings.HasSuffix(path, "_test.go") {
-			if info.IsDir() {
+		// Skip vendor, hidden directories (vc-dkho fix: check IsDir first)
+		if info.IsDir() {
+			if strings.Contains(path, "/vendor/") ||
+				strings.Contains(path, "/.") ||
+				strings.Contains(path, "/node_modules/") {
 				return filepath.SkipDir
 			}
+		}
+
+		// Skip test files (not directories)
+		if strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
 

@@ -6,8 +6,10 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -26,15 +28,12 @@ import (
 //
 // ZFC Compliance: Collects facts about structure. AI determines if they're problems.
 type ArchitectureWorker struct {
-	// Configuration
-	godPackageThreshold int // Number of types that indicates a "god package"
+	// No configuration - uses distribution-based detection
 }
 
 // NewArchitectureWorker creates a new architecture analysis worker.
 func NewArchitectureWorker() *ArchitectureWorker {
-	return &ArchitectureWorker{
-		godPackageThreshold: 20, // Configurable threshold
-	}
+	return &ArchitectureWorker{}
 }
 
 // Name implements DiscoveryWorker.
@@ -123,7 +122,7 @@ func (w *ArchitectureWorker) Analyze(ctx context.Context, codebase health.Codeba
 			Evidence: map[string]interface{}{
 				"type_count":    pkg.typeCount,
 				"avg_types":     pkgGraph.avgTypesPerPackage,
-				"threshold":     w.godPackageThreshold,
+				"threshold":     pkg.threshold,
 				"package_name":  pkg.name,
 				"package_path":  pkg.path,
 			},
@@ -202,30 +201,59 @@ type packageInfo struct {
 	files     []string // Go files in this package
 }
 
+// getModuleName extracts the module name from go.mod file.
+func getModuleName(rootPath string) (string, error) {
+	goModPath := filepath.Join(rootPath, "go.mod")
+	data, err := os.ReadFile(goModPath)
+	if err != nil {
+		return "", fmt.Errorf("reading go.mod: %w", err)
+	}
+
+	// Parse module line (first non-comment line starting with "module")
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module")), nil
+		}
+	}
+
+	return "", fmt.Errorf("module name not found in go.mod")
+}
+
 // buildPackageGraph constructs the import graph for a codebase.
 func (w *ArchitectureWorker) buildPackageGraph(rootPath string) (*packageGraph, error) {
+	// Extract module name from go.mod
+	moduleName, err := getModuleName(rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("getting module name: %w", err)
+	}
+
 	graph := &packageGraph{
 		packages: make(map[string]*packageInfo),
 	}
 
 	// Walk the directory tree and parse Go files
-	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		// Skip directories and non-Go files
-		if info.IsDir() || !strings.HasSuffix(path, ".go") {
+		// Skip vendor and hidden directories (vc-dkho fix: check IsDir first and return SkipDir)
+		if info.IsDir() {
+			if strings.Contains(path, "/vendor/") || strings.Contains(path, "/.") {
+				return filepath.SkipDir
+			}
+			return nil // Skip other directories but continue traversing
+		}
+
+		// Skip non-Go files
+		if !strings.HasSuffix(path, ".go") {
 			return nil
 		}
 
 		// Skip test files and generated files
 		if strings.HasSuffix(path, "_test.go") || strings.Contains(path, "_generated.go") {
-			return nil
-		}
-
-		// Skip vendor and hidden directories
-		if strings.Contains(path, "/vendor/") || strings.Contains(path, "/.") {
 			return nil
 		}
 
@@ -260,7 +288,8 @@ func (w *ArchitectureWorker) buildPackageGraph(rootPath string) (*packageGraph, 
 		for _, imp := range node.Imports {
 			importPath := strings.Trim(imp.Path.Value, "\"")
 			// Only track internal imports (within the project)
-			if strings.Contains(importPath, rootPath) || !strings.Contains(importPath, "/") {
+			// Internal imports start with the module name (e.g., "github.com/steveyegge/vc/...")
+			if strings.HasPrefix(importPath, moduleName) {
 				if !contains(pkg.imports, importPath) {
 					pkg.imports = append(pkg.imports, importPath)
 				}
@@ -388,18 +417,52 @@ type godPackageCandidate struct {
 	name      string
 	path      string
 	typeCount int
+	threshold float64 // Calculated threshold (mean + 2*stddev)
 }
 
-// detectGodPackages finds packages with too many types.
+// detectGodPackages finds packages with too many types using distribution-based detection.
+// ZFC Compliance: Uses statistical analysis instead of hardcoded thresholds.
 func (w *ArchitectureWorker) detectGodPackages(graph *packageGraph) []godPackageCandidate {
 	var candidates []godPackageCandidate
 
+	// Collect all type counts
+	var typeCounts []int
 	for _, pkg := range graph.packages {
-		if pkg.typeCount > w.godPackageThreshold {
+		typeCounts = append(typeCounts, pkg.typeCount)
+	}
+
+	// Need at least 2 packages to calculate meaningful statistics
+	if len(typeCounts) < 2 {
+		return candidates
+	}
+
+	// Calculate mean
+	sum := 0
+	for _, count := range typeCounts {
+		sum += count
+	}
+	mean := float64(sum) / float64(len(typeCounts))
+
+	// Calculate standard deviation
+	varianceSum := 0.0
+	for _, count := range typeCounts {
+		diff := float64(count) - mean
+		varianceSum += diff * diff
+	}
+	stdDev := math.Sqrt(varianceSum / float64(len(typeCounts)))
+
+	// Use 2 standard deviations above mean as threshold (captures ~95% of normal distribution)
+	// This makes detection adaptive to the codebase's actual distribution
+	threshold := mean + (2.0 * stdDev)
+
+	// Find packages that exceed the threshold
+	for _, pkg := range graph.packages {
+		if float64(pkg.typeCount) > threshold {
 			candidates = append(candidates, godPackageCandidate{
 				name:      pkg.name,
 				path:      pkg.path,
 				typeCount: pkg.typeCount,
+				threshold: threshold,
 			})
 		}
 	}
@@ -447,28 +510,45 @@ func (w *ArchitectureWorker) detectHighCoupling(graph *packageGraph) []couplingC
 	return candidates
 }
 
-// percentile calculates the nth percentile of a slice of integers.
+// percentile calculates the nth percentile of a slice of integers using linear interpolation.
+// Uses the "R-7" method (Excel PERCENTILE function) for compatibility.
 func percentile(values []int, p float64) int {
 	if len(values) == 0 {
 		return 0
 	}
-
-	// Simple percentile calculation
-	idx := int(float64(len(values)) * p)
-	if idx >= len(values) {
-		idx = len(values) - 1
+	if len(values) == 1 {
+		return values[0]
 	}
 
-	// Sort values
+	// Sort values using stdlib for efficiency
 	sorted := make([]int, len(values))
 	copy(sorted, values)
-	for i := 0; i < len(sorted); i++ {
-		for j := i + 1; j < len(sorted); j++ {
-			if sorted[i] > sorted[j] {
-				sorted[i], sorted[j] = sorted[j], sorted[i]
-			}
-		}
+	sort.Ints(sorted)
+
+	// Handle boundary cases
+	if p <= 0 {
+		return sorted[0]
+	}
+	if p >= 1 {
+		return sorted[len(sorted)-1]
 	}
 
-	return sorted[idx]
+	// Calculate position using linear interpolation (R-7 method)
+	// Position h = (n-1)*p, where n is the number of elements
+	h := float64(len(sorted)-1) * p
+
+	// Lower and upper indices for interpolation
+	lower := int(math.Floor(h))
+	upper := int(math.Ceil(h))
+
+	// If h is exactly on an index, return that value
+	if lower == upper {
+		return sorted[lower]
+	}
+
+	// Linear interpolation between lower and upper values
+	fraction := h - float64(lower)
+	result := float64(sorted[lower]) + fraction*float64(sorted[upper]-sorted[lower])
+
+	return int(math.Round(result))
 }

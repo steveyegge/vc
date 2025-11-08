@@ -247,6 +247,7 @@ func PresetConfig(preset Preset) *Config {
 			"cruft_detector",       // Cruft detection
 			"duplication_detector", // Code duplication
 			"architecture",         // Package structure analysis
+			"bugs",                 // Bug pattern detection (depends on architecture)
 			"doc_auditor",          // Documentation quality
 			"dependency_auditor",   // Dependency analysis
 		}
