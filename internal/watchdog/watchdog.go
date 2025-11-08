@@ -159,15 +159,19 @@ func (w *Watchdog) monitoringLoop() {
 			return
 
 		case <-timer.C:
+			tickCtx, tickCancel := context.WithTimeout(w.ctx, 30*time.Second)
+			
 			// Check for context exhaustion first (highest priority)
-			if err := w.checkContextExhaustion(); err != nil {
+			if err := w.checkContextExhaustion(tickCtx); err != nil {
 				fmt.Printf("Watchdog: context exhaustion check failed: %v\n", err)
 			}
 
 			// Run general anomaly detection
-			if err := w.checkAnomalies(); err != nil {
+			if err := w.checkAnomalies(tickCtx); err != nil {
 				fmt.Printf("Watchdog: anomaly detection failed: %v\n", err)
 			}
+
+			tickCancel()
 
 			// Reset timer with current interval (may have changed due to backoff)
 			currentInterval := w.config.GetCurrentCheckInterval()
@@ -178,7 +182,7 @@ func (w *Watchdog) monitoringLoop() {
 
 // checkContextExhaustion checks if context usage is approaching exhaustion
 // This is the highest priority check since it's time-sensitive
-func (w *Watchdog) checkContextExhaustion() error {
+func (w *Watchdog) checkContextExhaustion(ctx context.Context) error {
 	metrics := w.contextDetector.GetMetrics()
 
 	// Check if context is exhausting (80%+ usage)
@@ -220,7 +224,7 @@ func (w *Watchdog) checkContextExhaustion() error {
 	}
 
 	// Intervene
-	result, err := w.interventionController.Intervene(w.ctx, report)
+	result, err := w.interventionController.Intervene(ctx, report)
 	if err != nil {
 		return fmt.Errorf("intervention failed: %w", err)
 	}
@@ -230,9 +234,9 @@ func (w *Watchdog) checkContextExhaustion() error {
 }
 
 // checkAnomalies runs general anomaly detection on telemetry
-func (w *Watchdog) checkAnomalies() error {
+func (w *Watchdog) checkAnomalies(ctx context.Context) error {
 	// Run AI-driven anomaly detection
-	report, err := w.analyzer.DetectAnomalies(w.ctx)
+	report, err := w.analyzer.DetectAnomalies(ctx)
 	if err != nil {
 		return fmt.Errorf("anomaly detection failed: %w", err)
 	}
@@ -252,7 +256,7 @@ func (w *Watchdog) checkAnomalies() error {
 	}
 
 	// Intervene
-	result, err := w.interventionController.Intervene(w.ctx, report)
+	result, err := w.interventionController.Intervene(ctx, report)
 	if err != nil {
 		return fmt.Errorf("intervention failed: %w", err)
 	}

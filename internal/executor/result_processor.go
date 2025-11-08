@@ -1046,6 +1046,11 @@ func (rp *ResultsProcessor) handleAutoCommitAndCodeReview(ctx context.Context, i
 func (rp *ResultsProcessor) handleCodeReviewDecision(ctx context.Context, issue *types.Issue, commitHash string, result *ProcessingResult) error {
 	fmt.Printf("\n=== Code Review Decision ===\n")
 
+	// Check for context cancellation before expensive operations (vc-25e5)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	// Get the diff for this commit using git directly
 	diff, err := rp.getCommitDiff(ctx, commitHash)
 	if err != nil {
@@ -1079,6 +1084,11 @@ func (rp *ResultsProcessor) handleCodeReviewDecision(ctx context.Context, issue 
 	if needsReview {
 		if decision.NeedsReview {
 			fmt.Printf("Code review recommended (confidence: %.0f%%)\n", decision.Confidence*100)
+		}
+
+		// Check for context cancellation before AI quality analysis (vc-25e5)
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 
 		fmt.Printf("\n=== Automated Code Quality Analysis ===\n")

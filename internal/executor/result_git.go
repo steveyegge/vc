@@ -159,6 +159,11 @@ func (rp *ResultsProcessor) autoCommit(ctx context.Context, issue *types.Issue) 
 		gitOps = trackedGit
 	}
 
+	// Check for context cancellation before starting auto-commit (vc-25e5)
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+
 	// Step 1: Check if there are uncommitted changes
 	hasChanges, err := gitOps.HasUncommittedChanges(ctx, rp.workingDir)
 	if err != nil {
@@ -184,6 +189,11 @@ func (rp *ResultsProcessor) autoCommit(ctx context.Context, issue *types.Issue) 
 	changedFiles = append(changedFiles, status.Untracked...)
 
 	fmt.Printf("Found %d changed files\n", len(changedFiles))
+
+	// Check for context cancellation before expensive AI operation (vc-25e5)
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 
 	// Step 3: Generate commit message using AI
 	req := git.CommitMessageRequest{
@@ -213,6 +223,11 @@ func (rp *ResultsProcessor) autoCommit(ctx context.Context, issue *types.Issue) 
 	}
 
 	fmt.Printf("Generated message:\n  Subject: %s\n", msgResponse.Subject)
+
+	// Check for context cancellation before git commit (vc-25e5)
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 
 	// Step 4: Commit the changes
 	commitOpts := git.CommitOptions{
@@ -261,6 +276,11 @@ func (rp *ResultsProcessor) isVCRepo() bool {
 // Returns the PR URL if successful, empty string if PR creation was skipped or failed
 func (rp *ResultsProcessor) createAutoPR(ctx context.Context, issue *types.Issue, commitHash string, gateResults []*gates.Result) (string, error) {
 	fmt.Printf("\n=== Auto-PR Creation ===\n")
+
+	// Check for context cancellation before network operations (vc-25e5)
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 
 	// Check if gh CLI is available
 	if _, err := exec.LookPath("gh"); err != nil {

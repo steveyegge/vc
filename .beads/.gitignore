@@ -19,6 +19,6 @@ bd.db
 !metadata.json
 !config.json
 
-# But ignore beads merge temporary files
-beads.*.jsonl
-beads.*.meta.json
+# Ignore merge conflict temporary files
+beads.base.jsonl
+beads.left.jsonl
