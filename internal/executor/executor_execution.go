@@ -2,7 +2,6 @@ package executor
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -272,17 +271,9 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 				fmt.Fprintf(os.Stderr, "warning: failed to add diagnosis comment: %v\n", err)
 			}
 
-			// vc-261: Store diagnosis as JSON for result processor to use
-			// This allows the result processor to get fix_type from diagnosis.FailureType
-			// instead of using string matching (violates ZFC)
-			diagnosisJSON, err := json.Marshal(diagnosis)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "warning: failed to marshal diagnosis JSON: %v\n", err)
-			} else {
-				jsonComment := fmt.Sprintf("<!--VC-DIAGNOSIS:%s-->", string(diagnosisJSON))
-				if err := e.store.AddComment(ctx, issue.ID, "ai-supervisor", jsonComment); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: failed to add diagnosis JSON comment: %v\n", err)
-				}
+			// vc-9aa9: Store diagnosis in dedicated table (replaces HTML comment approach)
+			if err := e.store.StoreDiagnosis(ctx, issue.ID, diagnosis); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to store diagnosis: %v\n", err)
 			}
 
 			fmt.Printf("Diagnosis complete: %s failure with %.0f%% confidence\n",

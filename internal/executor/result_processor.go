@@ -2,7 +2,6 @@ package executor
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -287,9 +286,12 @@ func (rp *ResultsProcessor) handleSuccessPath(ctx context.Context, issue *types.
 				// Extract gate type
 				gateType := GetGateType(issue.ID)
 
-				// Get diagnosis to extract fix type (vc-261: No more ZFC violation!)
+				// Get diagnosis to extract fix type (vc-9aa9: Use dedicated storage)
 				fixType := "unknown"
-				diagnosis := rp.getDiagnosisFromComments(ctx, issue.ID)
+				diagnosis, err := rp.store.GetDiagnosis(ctx, issue.ID)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to get diagnosis: %v\n", err)
+				}
 				if diagnosis != nil {
 					fixType = string(diagnosis.FailureType)
 				}
@@ -1360,42 +1362,6 @@ func (rp *ResultsProcessor) buildSummary(issue *types.Issue, agentResult *AgentR
 	return summary.String()
 }
 
-// getDiagnosisFromComments extracts the test failure diagnosis from issue comments (vc-261).
-// The diagnosis is stored as a JSON comment in the format: <!--VC-DIAGNOSIS:{json}-->
-// Returns nil if no diagnosis is found.
-func (rp *ResultsProcessor) getDiagnosisFromComments(ctx context.Context, issueID string) *ai.TestFailureDiagnosis {
-	// Get all events for the issue (comments are stored as events)
-	events, err := rp.store.GetEvents(ctx, issueID, 0)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to get events for diagnosis extraction: %v\n", err)
-		return nil
-	}
-
-	// Look for the diagnosis JSON comment
-	const diagnosisPrefix = "<!--VC-DIAGNOSIS:"
-	const diagnosisSuffix = "-->"
-	for _, event := range events {
-		if event.Comment != nil {
-			commentText := *event.Comment
-			if strings.HasPrefix(commentText, diagnosisPrefix) && strings.HasSuffix(commentText, diagnosisSuffix) {
-				// Extract JSON from comment
-				jsonStr := strings.TrimPrefix(commentText, diagnosisPrefix)
-				jsonStr = strings.TrimSuffix(jsonStr, diagnosisSuffix)
-
-				// Parse JSON
-				var diagnosis ai.TestFailureDiagnosis
-				if err := json.Unmarshal([]byte(jsonStr), &diagnosis); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: failed to parse diagnosis JSON: %v\n", err)
-					return nil
-				}
-
-				return &diagnosis
-			}
-		}
-	}
-
-	return nil
-}
 
 // logEvent creates and stores an agent event for observability
 func (rp *ResultsProcessor) logEvent(ctx context.Context, eventType events.EventType, severity events.EventSeverity, issueID, message string, data map[string]interface{}) {

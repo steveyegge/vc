@@ -74,6 +74,10 @@ type Storage interface {
 	// Quality Gate Workers (vc-252)
 	GetMissionsNeedingGates(ctx context.Context) ([]*types.Issue, error)
 
+	// Baseline Diagnostics (vc-9aa9)
+	StoreDiagnosis(ctx context.Context, issueID string, diagnosis *types.TestFailureDiagnosis) error
+	GetDiagnosis(ctx context.Context, issueID string) (*types.TestFailureDiagnosis, error)
+
 	// Events
 	AddComment(ctx context.Context, issueID, actor, comment string) error
 	GetEvents(ctx context.Context, issueID string, limit int) ([]*types.Event, error)

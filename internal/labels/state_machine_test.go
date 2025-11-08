@@ -79,6 +79,14 @@ func (m *mockStorage) LogStatusChangeFromUpdates(ctx context.Context, issueID st
 	// No-op for tests
 }
 
+// Baseline Diagnostics methods (vc-9aa9) - Not used in labels package tests
+func (m *mockStorage) StoreDiagnosis(ctx context.Context, issueID string, diagnosis *types.TestFailureDiagnosis) error {
+	return nil
+}
+func (m *mockStorage) GetDiagnosis(ctx context.Context, issueID string) (*types.TestFailureDiagnosis, error) {
+	return nil, nil
+}
+
 func TestTransitionState(t *testing.T) {
 	tests := []struct {
 		name        string

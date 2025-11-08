@@ -468,3 +468,27 @@ type GateResult struct {
 	Output string `json:"output"`
 	Error  string `json:"error,omitempty"`
 }
+
+// FailureType categorizes test failures
+// vc-9aa9: Moved from ai package to avoid import cycles
+type FailureType string
+
+const (
+	FailureTypeFlaky         FailureType = "flaky"         // Intermittent failure (race condition, timing)
+	FailureTypeReal          FailureType = "real"          // Actual bug in code
+	FailureTypeEnvironmental FailureType = "environmental" // External dependency issue
+	FailureTypeUnknown       FailureType = "unknown"       // Cannot determine
+)
+
+// TestFailureDiagnosis represents AI diagnosis of a test failure
+// vc-210: Self-healing - AI agent can fix baseline test failures
+// vc-9aa9: Moved from ai package to avoid import cycles with storage
+type TestFailureDiagnosis struct {
+	FailureType  FailureType `json:"failure_type"`  // Type of failure: flaky, real, or environmental
+	RootCause    string      `json:"root_cause"`    // Detailed explanation of why the test is failing
+	ProposedFix  string      `json:"proposed_fix"`  // Proposed fix with rationale
+	Confidence   float64     `json:"confidence"`    // Confidence in the diagnosis (0.0-1.0)
+	TestNames    []string    `json:"test_names"`    // List of failing test names
+	StackTraces  []string    `json:"stack_traces"`  // Relevant stack traces
+	Verification []string    `json:"verification"`  // Steps to verify the fix works
+}

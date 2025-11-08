@@ -278,6 +278,14 @@ func (m *mockStorage) VacuumDatabase(ctx context.Context) error {
 	return nil
 }
 
+// Baseline Diagnostics methods (vc-9aa9)
+func (m *mockStorage) StoreDiagnosis(ctx context.Context, issueID string, diagnosis *TestFailureDiagnosis) error {
+	return nil
+}
+func (m *mockStorage) GetDiagnosis(ctx context.Context, issueID string) (*TestFailureDiagnosis, error) {
+	return nil, nil
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a

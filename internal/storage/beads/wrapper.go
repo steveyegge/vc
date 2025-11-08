@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	beadsLib "github.com/steveyegge/beads"
 	"github.com/steveyegge/vc/internal/events"
@@ -382,6 +383,21 @@ CREATE TABLE IF NOT EXISTS vc_review_checkpoints (
     timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     review_scope TEXT NOT NULL,  -- "quick" | "thorough" | "targeted:path/to/dir"
     review_issue_id TEXT         -- Reference to the review issue that was created (if any)
+);
+
+-- Baseline test failure diagnostics (structured storage for AI diagnoses)
+-- vc-9aa9: Extract diagnosis parsing from HTML comments to dedicated table
+CREATE TABLE IF NOT EXISTS vc_baseline_diagnostics (
+    issue_id TEXT PRIMARY KEY,
+    failure_type TEXT NOT NULL,      -- "flaky" | "real" | "environmental" | "unknown"
+    root_cause TEXT,
+    proposed_fix TEXT,
+    confidence REAL NOT NULL,
+    test_names TEXT,                 -- JSON array of test names
+    stack_traces TEXT,               -- JSON array of stack traces
+    verification TEXT,               -- JSON array of verification steps
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
 );
 `
 
@@ -808,4 +824,99 @@ func (s *VCStorage) CleanupOldBaselines(ctx context.Context, maxAge string) (int
 	}
 
 	return int(rowsAffected), nil
+}
+
+// StoreDiagnosis saves a test failure diagnosis to the database
+// vc-9aa9: Replaces fragile HTML comment parsing with structured storage
+func (s *VCStorage) StoreDiagnosis(ctx context.Context, issueID string, diagnosis *types.TestFailureDiagnosis) error {
+	if diagnosis == nil {
+		return fmt.Errorf("diagnosis cannot be nil")
+	}
+
+	// Serialize array fields to JSON
+	testNamesJSON, err := json.Marshal(diagnosis.TestNames)
+	if err != nil {
+		return fmt.Errorf("failed to marshal test names: %w", err)
+	}
+
+	stackTracesJSON, err := json.Marshal(diagnosis.StackTraces)
+	if err != nil {
+		return fmt.Errorf("failed to marshal stack traces: %w", err)
+	}
+
+	verificationJSON, err := json.Marshal(diagnosis.Verification)
+	if err != nil {
+		return fmt.Errorf("failed to marshal verification: %w", err)
+	}
+
+	// Insert or replace diagnosis
+	_, err = s.db.ExecContext(ctx, `
+		INSERT OR REPLACE INTO vc_baseline_diagnostics (
+			issue_id, failure_type, root_cause, proposed_fix, confidence,
+			test_names, stack_traces, verification, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, issueID, string(diagnosis.FailureType), diagnosis.RootCause, diagnosis.ProposedFix,
+		diagnosis.Confidence, string(testNamesJSON), string(stackTracesJSON),
+		string(verificationJSON), time.Now().Unix())
+
+	if err != nil {
+		return fmt.Errorf("failed to store diagnosis: %w", err)
+	}
+
+	return nil
+}
+
+// GetDiagnosis retrieves a test failure diagnosis from the database
+// vc-9aa9: Replaces fragile HTML comment parsing with structured storage
+func (s *VCStorage) GetDiagnosis(ctx context.Context, issueID string) (*types.TestFailureDiagnosis, error) {
+	var (
+		failureType      string
+		rootCause        string
+		proposedFix      string
+		confidence       float64
+		testNamesJSON    string
+		stackTracesJSON  string
+		verificationJSON string
+	)
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT failure_type, root_cause, proposed_fix, confidence,
+		       test_names, stack_traces, verification
+		FROM vc_baseline_diagnostics
+		WHERE issue_id = ?
+	`, issueID).Scan(&failureType, &rootCause, &proposedFix, &confidence,
+		&testNamesJSON, &stackTracesJSON, &verificationJSON)
+
+	if err == sql.ErrNoRows {
+		return nil, nil // No diagnosis found
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get diagnosis: %w", err)
+	}
+
+	// Deserialize array fields
+	var testNames []string
+	if err := json.Unmarshal([]byte(testNamesJSON), &testNames); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal test names: %w", err)
+	}
+
+	var stackTraces []string
+	if err := json.Unmarshal([]byte(stackTracesJSON), &stackTraces); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal stack traces: %w", err)
+	}
+
+	var verification []string
+	if err := json.Unmarshal([]byte(verificationJSON), &verification); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal verification: %w", err)
+	}
+
+	return &types.TestFailureDiagnosis{
+		FailureType:  types.FailureType(failureType),
+		RootCause:    rootCause,
+		ProposedFix:  proposedFix,
+		Confidence:   confidence,
+		TestNames:    testNames,
+		StackTraces:  stackTraces,
+		Verification: verification,
+	}, nil
 }

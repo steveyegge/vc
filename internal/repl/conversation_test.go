@@ -270,6 +270,14 @@ func (m *mockStorage) RecordWatchdogIntervention(ctx context.Context, issueID st
 	return nil
 }
 
+// Baseline Diagnostics methods (vc-9aa9)
+func (m *mockStorage) StoreDiagnosis(ctx context.Context, issueID string, diagnosis *types.TestFailureDiagnosis) error {
+	return nil
+}
+func (m *mockStorage) GetDiagnosis(ctx context.Context, issueID string) (*types.TestFailureDiagnosis, error) {
+	return nil, nil
+}
+
 // TestToolGetStatus tests the get_status tool
 func TestToolGetStatus(t *testing.T) {
 	t.Run("successful status retrieval", func(t *testing.T) {
