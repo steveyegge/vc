@@ -53,6 +53,32 @@ Workers follow **Zero Framework Cognition (ZFC)** principles:
 
 ## Built-In Workers
 
+### Health Monitor Adapter
+
+The `WorkerAdapter` allows existing health monitors to be used as discovery workers. This means all health monitors automatically work in discovery mode without code changes:
+
+- **FileSizeMonitor**: Detects oversized files using distribution analysis
+- **CruftDetector**: Finds dead code, commented blocks, TODOs
+- **DuplicationDetector**: Identifies code duplication
+- **ZFCDetector**: Finds Zero Framework Cognition violations
+
+The adapter implements the `DiscoveryWorker` interface by wrapping a `HealthMonitor`:
+
+```go
+// Use any health monitor as a discovery worker
+monitor, _ := health.NewFileSizeMonitor(rootPath, supervisor)
+worker := discovery.NewWorkerAdapter(monitor)
+
+// Now it implements DiscoveryWorker
+result, err := worker.Analyze(ctx, codebaseCtx)
+```
+
+**Benefits**:
+- Reuses existing health monitor logic
+- No code duplication
+- Consistent behavior between health monitoring and discovery
+- Easy to add new monitors to discovery presets
+
 ### 1. ArchitectureScanner
 
 **Philosophy**: *"Good architecture has clear boundaries, minimal coupling, and cohesive modules"*
@@ -85,8 +111,9 @@ Workers follow **Zero Framework Cognition (ZFC)** principles:
 
 4. **Detect God Packages**
    - Count type declarations per package
-   - Flag packages with >20 types (configurable threshold)
-   - Compare against average types per package
+   - Calculate mean and standard deviation of types across all packages
+   - Flag packages with type count > (mean + 2*stddev)
+   - Uses distribution-based detection (adaptive to codebase)
 
 **Cost Estimate**:
 - Duration: ~30 seconds
@@ -135,10 +162,9 @@ Confidence: 0.7 (medium-high - needs AI to confirm if it's really a problem)
 **What it analyzes**:
 - Resource leaks (files/connections not closed)
 - Error handling gaps (errors ignored)
-- Nil dereference risks (unchecked nil returns)
 - Goroutine leaks (no cleanup mechanism)
-- Race conditions (shared mutable state without locks)
-- Off-by-one errors (loop bounds)
+
+**Note**: Nil dereference detection was removed (vc-h2a4) due to high false positive rate. Proper nil detection requires data flow analysis beyond simple AST inspection.
 
 **Algorithm**:
 
@@ -152,12 +178,7 @@ Confidence: 0.7 (medium-high - needs AI to confirm if it's really a problem)
    - Check if this is the error return value (last or second-to-last position)
    - Flag ignored errors with function name and location
 
-3. **Nil Dereference Risk Detection**
-   - Find pointer dereferences (`*ptr`)
-   - Check for nil checks before dereference
-   - Flag unchecked dereferences (high false positive rate)
-
-4. **Goroutine Leak Detection**
+3. **Goroutine Leak Detection**
    - Find `go` statements launching goroutines
    - Check if goroutine has `context.Context` parameter
    - Check if goroutine body has `select` with `ctx.Done()`

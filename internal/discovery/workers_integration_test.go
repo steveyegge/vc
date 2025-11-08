@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/steveyegge/vc/internal/health"
 )
 
 // TestArchitectureWorker_Integration tests the ArchitectureWorker on the VC codebase.
@@ -250,4 +252,82 @@ func TestWorkerRegistry_Integration(t *testing.T) {
 	}
 
 	t.Log("Worker dependency resolution working correctly")
+}
+
+// TestHealthMonitorAdapter_Integration tests that health monitors can be used as discovery workers.
+func TestHealthMonitorAdapter_Integration(t *testing.T) {
+	// Get root of VC project
+	rootPath, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("Failed to get root path: %v", err)
+	}
+
+	// Create a file size monitor (without AI supervisor for interface testing)
+	monitor, err := health.NewFileSizeMonitor(rootPath, nil)
+	if err != nil {
+		t.Fatalf("Failed to create file size monitor: %v", err)
+	}
+
+	// Adapt it to a discovery worker
+	adapter := NewWorkerAdapter(monitor)
+
+	// Verify it implements DiscoveryWorker interface
+	if adapter.Name() == "" {
+		t.Error("Adapter should have a name")
+	}
+
+	if adapter.Philosophy() == "" {
+		t.Error("Adapter should have a philosophy")
+	}
+
+	if adapter.Cost().EstimatedDuration == 0 {
+		t.Error("Adapter should have cost estimate")
+	}
+
+	// Verify no dependencies (health monitors don't depend on other workers)
+	if len(adapter.Dependencies()) != 0 {
+		t.Errorf("Expected no dependencies, got %v", adapter.Dependencies())
+	}
+
+	t.Logf("Health Monitor Adapter Interface:")
+	t.Logf("  Name: %s", adapter.Name())
+	t.Logf("  Philosophy: %s", adapter.Philosophy())
+	t.Logf("  Scope: %s", adapter.Scope())
+	t.Logf("  Cost: %v duration, %d AI calls", adapter.Cost().EstimatedDuration, adapter.Cost().AICallsEstimated)
+
+	// Test that all 4 core health monitors can be adapted
+	monitorNames := []string{"file_size", "cruft", "duplication", "zfc"}
+	for _, name := range monitorNames {
+		var testMonitor health.HealthMonitor
+		var err error
+
+		switch name {
+		case "file_size":
+			testMonitor, err = health.NewFileSizeMonitor(rootPath, nil)
+		case "cruft":
+			testMonitor, err = health.NewCruftDetector(rootPath, nil)
+		case "duplication":
+			testMonitor, err = health.NewDuplicationDetector(rootPath, nil)
+		case "zfc":
+			testMonitor, err = health.NewZFCDetector(rootPath, nil)
+		}
+
+		if err != nil {
+			t.Errorf("Failed to create %s monitor: %v", name, err)
+			continue
+		}
+
+		// Verify each can be adapted
+		adapted := NewWorkerAdapter(testMonitor)
+		if adapted.Name() == "" {
+			t.Errorf("%s adapter has empty name", name)
+		}
+		if adapted.Philosophy() == "" {
+			t.Errorf("%s adapter has empty philosophy", name)
+		}
+
+		t.Logf("  ✓ %s monitor successfully adapted", name)
+	}
+
+	t.Log("All 4 health monitors successfully implement DiscoveryWorker interface via adapter")
 }
