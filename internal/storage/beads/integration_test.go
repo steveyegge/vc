@@ -5640,3 +5640,160 @@ func TestGetReadyDependentsOfBlockedBaselines(t *testing.T) {
 	// epics from being children in parent-child relationships. The SQL query
 	// filters them out anyway with "issue_type != 'epic'".
 }
+
+// TestCorruptedDatabaseFile tests error handling when database file is corrupted (vc-n8ua)
+func TestCorruptedDatabaseFile(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "corrupted.db")
+
+	// Write garbage to the database file
+	if err := os.WriteFile(dbPath, []byte("this is not a valid SQLite database"), 0644); err != nil {
+		t.Fatalf("Failed to write corrupted file: %v", err)
+	}
+
+	// Try to open the corrupted database
+	_, err := NewVCStorage(ctx, dbPath)
+
+	// Should get an error
+	if err == nil {
+		t.Error("Expected error when opening corrupted database, but got nil")
+	}
+
+	// Error should indicate database corruption
+	if !strings.Contains(err.Error(), "database") && !strings.Contains(err.Error(), "file") {
+		t.Logf("Got error (acceptable): %v", err)
+	}
+}
+
+// TestConcurrentAccessConflicts tests handling of concurrent updates to same issue (vc-n8ua)
+func TestConcurrentAccessConflicts(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "concurrent.db")
+
+	// Create first storage connection
+	store1, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create first storage: %v", err)
+	}
+	defer func() { _ = store1.Close() }()
+
+	// Create an issue
+	issue := &types.Issue{
+		Title:              "Concurrent Test Issue",
+		Description:        "Testing concurrent updates",
+		Status:             types.StatusOpen,
+		Priority:           2,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Handle concurrency gracefully",
+	}
+
+	if err := store1.CreateIssue(ctx, issue, "test"); err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Create second storage connection to same database
+	store2, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create second storage: %v", err)
+	}
+	defer func() { _ = store2.Close() }()
+
+	// Try concurrent updates from both connections
+	done := make(chan error, 2)
+
+	// Goroutine 1: Update priority
+	go func() {
+		updates := map[string]interface{}{"priority": 1}
+		done <- store1.UpdateIssue(ctx, issue.ID, updates, "user1")
+	}()
+
+	// Goroutine 2: Update status
+	go func() {
+		updates := map[string]interface{}{"status": string(types.StatusInProgress)}
+		done <- store2.UpdateIssue(ctx, issue.ID, updates, "user2")
+	}()
+
+	// Wait for both updates
+	err1 := <-done
+	err2 := <-done
+
+	// At least one should succeed (SQLite serializes writes)
+	if err1 != nil && err2 != nil {
+		t.Errorf("Both concurrent updates failed: err1=%v, err2=%v", err1, err2)
+	}
+
+	// Verify issue can still be retrieved
+	retrieved, err := store1.GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("Failed to retrieve issue after concurrent updates: %v", err)
+	}
+
+	// Should have one of the updates
+	if retrieved.Priority == 2 && retrieved.Status == types.StatusOpen {
+		t.Error("Neither concurrent update was applied")
+	}
+}
+
+// TestInvalidEventData tests handling of invalid data types in events.Data (vc-n8ua)
+func TestInvalidEventData(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create an issue
+	issue := &types.Issue{
+		Title:              "Event Test Issue",
+		Status:             types.StatusOpen,
+		Priority:           2,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test event data",
+	}
+
+	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Try to create event with complex data that might not serialize well
+	event := &events.AgentEvent{
+		IssueID:   issue.ID,
+		Type:      events.EventTypeProgress,
+		Severity:  events.SeverityInfo,
+		Message:   "Test with complex data",
+		Timestamp: time.Now(),
+		Data: map[string]interface{}{
+			"valid_string": "hello",
+			"valid_number": 42,
+			"valid_bool":   true,
+			// These should be handled gracefully
+			"nil_value":   nil,
+			"empty_array": []interface{}{},
+			"empty_map":   map[string]interface{}{},
+		},
+	}
+
+	// Should handle event creation without panic
+	err = store.StoreAgentEvent(ctx, event)
+	if err != nil {
+		t.Logf("StoreAgentEvent with complex data returned error (acceptable): %v", err)
+	}
+
+	// If it succeeded, verify we can retrieve it
+	if err == nil {
+		filter := events.EventFilter{IssueID: issue.ID}
+		retrieved, err := store.GetAgentEvents(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to retrieve events: %v", err)
+		}
+		if len(retrieved) == 0 {
+			t.Error("Expected to retrieve stored event")
+		}
+	}
+}

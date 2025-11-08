@@ -1414,6 +1414,11 @@ func (rp *ResultsProcessor) logProgressEvent(ctx context.Context, severity event
 // - If attempts < maxIncompleteRetries: Leave as open for retry with enhanced context
 // - If attempts >= maxIncompleteRetries: Escalate with needs-human-review label
 func (rp *ResultsProcessor) handleIncompleteWork(ctx context.Context, issue *types.Issue, analysis *ai.Analysis) error {
+	// Guard against nil analysis (vc-n8ua)
+	if analysis == nil {
+		return fmt.Errorf("analysis is nil - cannot handle incomplete work")
+	}
+
 	const maxIncompleteRetries = 1 // Allow 1 retry before escalation
 
 	// Count how many times this issue has been attempted with incomplete results (vc-rd1z)

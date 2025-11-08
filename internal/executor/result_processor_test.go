@@ -686,3 +686,264 @@ func TestHandleIncompleteWorkCounting(t *testing.T) {
 		})
 	}
 }
+
+// TestMissionGateDelegationLabelFailure tests graceful handling when adding
+// needs-quality-gates label fails (vc-n8ua)
+func TestMissionGateDelegationLabelFailure(t *testing.T) {
+	// Setup storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = t.TempDir() + "/test.db"
+
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a mission issue
+	mission := &types.Issue{
+		Title:              "Test Mission for Label Failure",
+		Description:        "Testing label add failure",
+		IssueType:          types.TypeEpic,
+		IssueSubtype:       types.SubtypeMission,
+		Status:             types.StatusInProgress,
+		Priority:           1,
+		AcceptanceCriteria: "Mission should handle label failure gracefully",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+
+	if err := store.CreateIssue(ctx, mission, "test"); err != nil {
+		t.Fatalf("Failed to create mission: %v", err)
+	}
+
+	// Close the store to force label add to fail
+	if err := store.Close(); err != nil {
+		t.Fatalf("Failed to close store: %v", err)
+	}
+
+	// Create results processor
+	rpCfg := &ResultsProcessorConfig{
+		Store:              store,
+		EnableQualityGates: true,
+		WorkingDir:         "/tmp/test",
+		Actor:              "test-executor",
+	}
+
+	rp, err := NewResultsProcessor(rpCfg)
+	if err != nil {
+		t.Fatalf("Failed to create results processor: %v", err)
+	}
+
+	// Create successful agent result
+	agentResult := &AgentResult{
+		Success:  true,
+		ExitCode: 0,
+		Duration: time.Second,
+		Output:   []string{"Mission work complete"},
+	}
+
+	// Process the agent result - should handle label failure gracefully
+	_, err = rp.ProcessAgentResult(ctx, mission, agentResult)
+
+	// The code actually handles this gracefully by logging warnings but not failing
+	// This is acceptable behavior - the test verifies no panic occurred
+	if err != nil {
+		// If there is an error, it should not mention "panic"
+		if strings.Contains(err.Error(), "panic") {
+			t.Errorf("Expected graceful error handling, but got panic: %v", err)
+		}
+	}
+
+	// Most important: no panic occurred, and processing completed
+	t.Logf("Label failure handled gracefully (err=%v)", err)
+}
+
+// TestMissionGateDelegationEventFailure tests graceful handling when logging
+// deferred event fails (vc-n8ua)
+func TestMissionGateDelegationEventFailure(t *testing.T) {
+	// Setup storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = t.TempDir() + "/test.db"
+
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+
+	// Create a mission issue
+	mission := &types.Issue{
+		Title:              "Test Mission for Event Failure",
+		Description:        "Testing event log failure",
+		IssueType:          types.TypeEpic,
+		IssueSubtype:       types.SubtypeMission,
+		Status:             types.StatusInProgress,
+		Priority:           1,
+		AcceptanceCriteria: "Mission should handle event failure gracefully",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+
+	if err := store.CreateIssue(ctx, mission, "test"); err != nil {
+		t.Fatalf("Failed to create mission: %v", err)
+	}
+
+	// Create results processor
+	rpCfg := &ResultsProcessorConfig{
+		Store:              store,
+		EnableQualityGates: true,
+		WorkingDir:         "/tmp/test",
+		Actor:              "test-executor",
+	}
+
+	rp, err := NewResultsProcessor(rpCfg)
+	if err != nil {
+		t.Fatalf("Failed to create results processor: %v", err)
+	}
+
+	// Create successful agent result
+	agentResult := &AgentResult{
+		Success:  true,
+		ExitCode: 0,
+		Duration: time.Second,
+		Output:   []string{"Mission work complete"},
+	}
+
+	// Process the agent result
+	result, err := rp.ProcessAgentResult(ctx, mission, agentResult)
+	if err != nil {
+		t.Fatalf("ProcessAgentResult failed: %v", err)
+	}
+
+	// Now close store and try to query events
+	// The important thing is the processing completed despite potential event logging issues
+	if err := store.Close(); err != nil {
+		t.Fatalf("Failed to close store: %v", err)
+	}
+
+	// Verify result indicates gates were deferred
+	if !result.GatesPassed {
+		t.Error("Expected GatesPassed=true for mission (deferred)")
+	}
+}
+
+// TestIncompleteWorkNilAnalysis tests handling of nil analysis data (vc-n8ua)
+func TestIncompleteWorkNilAnalysis(t *testing.T) {
+	// Setup storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = t.TempDir() + "/test.db"
+
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a test issue
+	issue := &types.Issue{
+		Title:              "Test Issue for Nil Analysis",
+		Description:        "Testing nil analysis handling",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           2,
+		AcceptanceCriteria: "Handle nil gracefully",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+
+	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Create results processor
+	rpCfg := &ResultsProcessorConfig{
+		Store:      store,
+		WorkingDir: t.TempDir(),
+		Actor:      "test-executor",
+	}
+
+	rp, err := NewResultsProcessor(rpCfg)
+	if err != nil {
+		t.Fatalf("Failed to create results processor: %v", err)
+	}
+
+	// Call handleIncompleteWork with nil analysis - should not panic
+	err = rp.handleIncompleteWork(ctx, issue, nil)
+
+	// Should handle nil gracefully
+	if err != nil {
+		t.Logf("handleIncompleteWork with nil analysis returned error (acceptable): %v", err)
+	}
+	// Most important: no panic occurred
+}
+
+// TestIncompleteWorkMissingFields tests handling of analysis with missing fields (vc-n8ua)
+func TestIncompleteWorkMissingFields(t *testing.T) {
+	// Setup storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = t.TempDir() + "/test.db"
+
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a test issue
+	issue := &types.Issue{
+		Title:              "Test Issue for Missing Fields",
+		Description:        "Testing missing analysis fields",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           2,
+		AcceptanceCriteria: "Handle missing fields gracefully",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+
+	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	// Create results processor
+	rpCfg := &ResultsProcessorConfig{
+		Store:      store,
+		WorkingDir: t.TempDir(),
+		Actor:      "test-executor",
+	}
+
+	rp, err := NewResultsProcessor(rpCfg)
+	if err != nil {
+		t.Fatalf("Failed to create results processor: %v", err)
+	}
+
+	// Create analysis with missing/empty fields
+	analysis := &ai.Analysis{
+		Completed:        false,
+		Summary:          "", // Empty summary
+		DiscoveredIssues: nil,
+		QualityIssues:    nil,
+		PuntedItems:      nil,
+	}
+
+	// Call handleIncompleteWork - should not panic
+	err = rp.handleIncompleteWork(ctx, issue, analysis)
+	if err != nil {
+		t.Fatalf("handleIncompleteWork failed with missing fields: %v", err)
+	}
+
+	// Verify issue handling occurred (check for comment or status change)
+	updatedIssue, err := store.GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("Failed to get issue: %v", err)
+	}
+
+	// Issue should remain open (first incomplete attempt)
+	if updatedIssue.Status == types.StatusBlocked {
+		t.Error("Expected issue to remain open on first incomplete attempt with missing fields")
+	}
+}

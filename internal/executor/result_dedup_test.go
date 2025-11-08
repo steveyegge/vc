@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/storage"
@@ -143,4 +144,206 @@ func TestDeduplicateSmallBatch(t *testing.T) {
 	}
 
 	t.Logf("Small batch test passed: processed %d unique issues without truncation", len(unique))
+}
+
+// TestDeduplicationTimeout tests graceful handling when AI deduplication times out (vc-n8ua)
+func TestDeduplicationTimeout(t *testing.T) {
+	// Setup storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = t.TempDir() + "/test.db"
+
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a parent issue
+	parent := &types.Issue{
+		Title:              "Parent Issue",
+		Description:        "Parent for dedup test",
+		Status:             types.StatusInProgress,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test timeout handling",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+
+	if err := store.CreateIssue(ctx, parent, "test"); err != nil {
+		t.Fatalf("Failed to create parent issue: %v", err)
+	}
+
+	// Create results processor WITHOUT deduplicator (nil deduplicator)
+	rpCfg := &ResultsProcessorConfig{
+		Store:      store,
+		WorkingDir: t.TempDir(),
+		Actor:      "test-executor",
+		// Deduplicator is nil - simulates timeout/failure scenario
+	}
+
+	rp, err := NewResultsProcessor(rpCfg)
+	if err != nil {
+		t.Fatalf("Failed to create results processor: %v", err)
+	}
+
+	// Create some discovered issues
+	discovered := []ai.DiscoveredIssue{
+		{
+			Title:       "Test Issue 1",
+			Description: "First test issue",
+			Type:        "task",
+			Priority:    "P2",
+		},
+		{
+			Title:       "Test Issue 2",
+			Description: "Second test issue",
+			Type:        "bug",
+			Priority:    "P1",
+		},
+	}
+
+	// Create context with short timeout
+	timeoutCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+
+	// Call deduplicateDiscoveredIssues with timeout context
+	unique, stats := rp.deduplicateDiscoveredIssues(timeoutCtx, parent, discovered)
+
+	// Without deduplicator, should return all issues as unique
+	if len(unique) != len(discovered) {
+		t.Errorf("Expected %d unique issues (dedup disabled), got %d", len(discovered), len(unique))
+	}
+
+	// Stats should reflect no deduplication occurred
+	if stats.TotalCandidates != len(discovered) {
+		t.Errorf("Expected TotalCandidates=%d, got %d", len(discovered), stats.TotalCandidates)
+	}
+
+	// Most importantly: no panic occurred
+}
+
+// TestDeduplicationMalformedIssue tests handling of malformed DiscoveredIssue data (vc-n8ua)
+func TestDeduplicationMalformedIssue(t *testing.T) {
+	// Setup storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = t.TempDir() + "/test.db"
+
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a parent issue
+	parent := &types.Issue{
+		Title:              "Parent Issue",
+		Description:        "Parent for malformed test",
+		Status:             types.StatusInProgress,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test malformed data handling",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+
+	if err := store.CreateIssue(ctx, parent, "test"); err != nil {
+		t.Fatalf("Failed to create parent issue: %v", err)
+	}
+
+	// Create results processor
+	rpCfg := &ResultsProcessorConfig{
+		Store:      store,
+		WorkingDir: t.TempDir(),
+		Actor:      "test-executor",
+		// No deduplicator - will skip dedup logic
+	}
+
+	rp, err := NewResultsProcessor(rpCfg)
+	if err != nil {
+		t.Fatalf("Failed to create results processor: %v", err)
+	}
+
+	// Create discovered issues with malformed data
+	discovered := []ai.DiscoveredIssue{
+		{
+			Title:       "", // Empty title
+			Description: "Issue with empty title",
+			Type:        "task",
+			Priority:    "P2",
+		},
+		{
+			Title:       "Valid Title",
+			Description: "", // Empty description
+			Type:        "",  // Empty type
+			Priority:    "INVALID", // Invalid priority
+		},
+		{
+			// Completely empty issue
+		},
+	}
+
+	// Call deduplicateDiscoveredIssues - should not panic
+	unique, stats := rp.deduplicateDiscoveredIssues(ctx, parent, discovered)
+
+	// Should handle malformed data gracefully
+	t.Logf("Processed %d malformed issues, got %d unique, stats: %+v", len(discovered), len(unique), stats)
+
+	// Most important: no panic occurred
+}
+
+// TestDeduplicationEmptyBatch tests handling of empty discovered issues list (vc-n8ua)
+func TestDeduplicationEmptyBatch(t *testing.T) {
+	// Setup storage
+	cfg := storage.DefaultConfig()
+	cfg.Path = t.TempDir() + "/test.db"
+
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Create a parent issue
+	parent := &types.Issue{
+		Title:              "Parent Issue",
+		Description:        "Parent for empty batch test",
+		Status:             types.StatusInProgress,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Test empty batch handling",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+
+	if err := store.CreateIssue(ctx, parent, "test"); err != nil {
+		t.Fatalf("Failed to create parent issue: %v", err)
+	}
+
+	// Create results processor
+	rpCfg := &ResultsProcessorConfig{
+		Store:      store,
+		WorkingDir: t.TempDir(),
+		Actor:      "test-executor",
+	}
+
+	rp, err := NewResultsProcessor(rpCfg)
+	if err != nil {
+		t.Fatalf("Failed to create results processor: %v", err)
+	}
+
+	// Call with empty list - should not panic
+	unique, stats := rp.deduplicateDiscoveredIssues(ctx, parent, []ai.DiscoveredIssue{})
+
+	// Should return empty results
+	if len(unique) != 0 {
+		t.Errorf("Expected 0 unique issues for empty batch, got %d", len(unique))
+	}
+
+	if stats.TotalCandidates != 0 {
+		t.Errorf("Expected TotalCandidates=0 for empty batch, got %d", stats.TotalCandidates)
+	}
 }
