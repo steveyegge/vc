@@ -252,7 +252,21 @@ func TestBeadsExtensionTablesCreated(t *testing.T) {
 		"vc_execution_history",
 	}
 
+	// Allowlist for SQL injection prevention
+	allowedTables := map[string]bool{
+		"vc_mission_state":         true,
+		"vc_agent_events":          true,
+		"vc_executor_instances":    true,
+		"vc_issue_execution_state": true,
+		"vc_execution_history":     true,
+	}
+
 	for _, table := range tables {
+		// Validate table name against allowlist to prevent SQL injection
+		if !allowedTables[table] {
+			t.Fatalf("Invalid table name: %s", table)
+		}
+
 		var count int
 		err := store.db.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM "+table,
@@ -287,7 +301,21 @@ func TestBeadsCoreTables(t *testing.T) {
 		"events",
 	}
 
+	// Allowlist for SQL injection prevention
+	allowedBeadsTables := map[string]bool{
+		"issues":       true,
+		"dependencies": true,
+		"labels":       true,
+		"comments":     true,
+		"events":       true,
+	}
+
 	for _, table := range beadsTables {
+		// Validate table name against allowlist to prevent SQL injection
+		if !allowedBeadsTables[table] {
+			t.Fatalf("Invalid table name: %s", table)
+		}
+
 		var count int
 		err := store.db.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM "+table,
