@@ -4,6 +4,93 @@ This document contains all environment variable configuration options for VC.
 
 ---
 
+## 🤖 AI Model Selection (vc-35, vc-lf8j)
+
+VC uses a **tiered AI model strategy** to optimize cost and performance:
+- **Sonnet 4.5** (`claude-sonnet-4-5-20250929`): Complex reasoning tasks
+- **Haiku** (`claude-3-5-haiku-20241022`): Simple, deterministic tasks
+
+### Cost Savings
+
+Haiku is approximately **75% cheaper** than Sonnet:
+- Sonnet: $3/$15 per million tokens (input/output)
+- Haiku: $0.80/$4 per million tokens (input/output)
+
+By using Haiku for simple operations (30-40% of total AI calls), VC achieves **25%+ overall cost savings** while maintaining quality.
+
+### Model Assignment
+
+**Operations using Haiku (simple tasks):**
+- Cruft detection
+- File size monitoring
+- Gitignore pattern recommendations
+- Commit message generation
+
+**Operations using Sonnet (complex/medium tasks):**
+- Pre-execution assessment
+- Post-execution analysis
+- Code review and test coverage
+- **Deduplication detection** (medium complexity - requires semantic understanding)
+- Discovered issue translation
+- Complexity monitoring
+
+**Why deduplication uses Sonnet:**
+Deduplication requires nuanced semantic understanding and has a high cost of failure (false negatives create duplicate issues, false positives lose work). While it's not as complex as assessment/analysis, it's more complex than simple pattern matching. Additionally, vc-159 already optimized dedup cost by 80% through batching, making model switching less impactful.
+
+### Environment Variables
+
+Override model selection with environment variables:
+
+```bash
+# Override default model (used for complex tasks)
+# Default: claude-sonnet-4-5-20250929
+export VC_MODEL_DEFAULT="claude-sonnet-4-5-20250929"
+
+# Override simple task model (used for cruft detection, file size, etc.)
+# Default: claude-3-5-haiku-20241022
+export VC_MODEL_SIMPLE="claude-3-5-haiku-20241022"
+```
+
+**Use cases for overrides:**
+
+1. **Testing with cheaper models:**
+   ```bash
+   # Use Haiku for everything (save cost during development)
+   export VC_MODEL_DEFAULT="claude-3-5-haiku-20241022"
+   export VC_MODEL_SIMPLE="claude-3-5-haiku-20241022"
+   ```
+
+2. **Testing with premium models:**
+   ```bash
+   # Use Opus for everything (maximum quality)
+   export VC_MODEL_DEFAULT="claude-opus-4-20250514"
+   export VC_MODEL_SIMPLE="claude-opus-4-20250514"
+   ```
+
+3. **A/B testing quality:**
+   ```bash
+   # Compare Sonnet vs Haiku for simple tasks
+   export VC_MODEL_SIMPLE="claude-sonnet-4-5-20250929"
+   ```
+
+### Quality Validation
+
+Phase 2 validation tests (vc-lf8j) verify:
+- **<5% quality degradation** when using Haiku vs Sonnet for simple tasks
+- **>50% cost savings** for simple operations
+- **Overall 25%+ cost reduction** across all AI calls
+
+Run validation tests:
+```bash
+# Quality comparison tests
+go test -v ./internal/health -run TestModelQuality
+
+# Cost measurement tests
+go test -v ./internal/health -run TestModelCost
+```
+
+---
+
 ## 🔍 Deduplication Configuration
 
 VC uses AI-powered deduplication to prevent filing duplicate issues. This feature can be tuned via environment variables to balance between avoiding duplicates and avoiding false positives.

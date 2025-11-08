@@ -261,7 +261,7 @@ func (d *CruftDetector) evaluateCruft(ctx context.Context, files []cruftFile) (*
 	}
 
 	// Call AI supervisor (vc-35: using Haiku for cost efficiency)
-	response, err := d.Supervisor.CallAI(ctx, prompt, "cruft_evaluation", "claude-3-5-haiku-20241022", 4096)
+	response, err := d.Supervisor.CallAI(ctx, prompt, "cruft_evaluation", ai.GetSimpleTaskModel(), 4096)
 	if err != nil {
 		return nil, fmt.Errorf("AI call failed: %w", err)
 	}

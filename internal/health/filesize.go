@@ -366,7 +366,7 @@ func (m *FileSizeMonitor) evaluateOutliers(ctx context.Context, outliers []fileS
 	prompt := m.buildPrompt(outliers, dist)
 
 	// Call AI supervisor (vc-35: using Haiku for cost efficiency)
-	response, err := m.Supervisor.CallAI(ctx, prompt, "file_size_evaluation", "claude-3-5-haiku-20241022", 4096)
+	response, err := m.Supervisor.CallAI(ctx, prompt, "file_size_evaluation", ai.GetSimpleTaskModel(), 4096)
 	if err != nil {
 		return nil, fmt.Errorf("AI call failed: %w", err)
 	}

@@ -560,7 +560,7 @@ func New(cfg *Config) (*Executor, error) {
 		if apiKey != "" {
 			// Create Anthropic client for message generation (vc-35: using Haiku for cost efficiency)
 			client := anthropic.NewClient(option.WithAPIKey(apiKey))
-			e.messageGen = git.NewMessageGenerator(&client, "claude-3-5-haiku-20241022")
+			e.messageGen = git.NewMessageGenerator(&client, ai.GetSimpleTaskModel())
 		} else {
 			fmt.Fprintf(os.Stderr, "Warning: ANTHROPIC_API_KEY not set (auto-commit message generation disabled)\n")
 		}

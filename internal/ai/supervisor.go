@@ -19,6 +19,10 @@ import (
 // - Haiku: Simple tasks like file size checks, commit messages, cruft detection
 //
 // Cost savings: Haiku is ~80% cheaper than Sonnet for simple operations.
+//
+// Environment variable overrides (vc-lf8j Phase 2):
+// - VC_MODEL_DEFAULT: Override default model (default: Sonnet)
+// - VC_MODEL_SIMPLE: Override model for simple tasks (default: Haiku)
 const (
 	// ModelSonnet is the high-end model for complex reasoning tasks
 	ModelSonnet = "claude-sonnet-4-5-20250929"
@@ -26,6 +30,22 @@ const (
 	// ModelHaiku is the cost-efficient model for simple tasks
 	ModelHaiku = "claude-3-5-haiku-20241022"
 )
+
+// GetDefaultModel returns the default model, checking VC_MODEL_DEFAULT env var first
+func GetDefaultModel() string {
+	if model := os.Getenv("VC_MODEL_DEFAULT"); model != "" {
+		return model
+	}
+	return ModelSonnet
+}
+
+// GetSimpleTaskModel returns the model for simple tasks, checking VC_MODEL_SIMPLE env var first
+func GetSimpleTaskModel() string {
+	if model := os.Getenv("VC_MODEL_SIMPLE"); model != "" {
+		return model
+	}
+	return ModelHaiku
+}
 
 // Supervisor handles AI-powered assessment and analysis of issues
 // It also implements the MissionPlanner interface for mission orchestration
@@ -89,7 +109,7 @@ func NewSupervisor(cfg *Config) (*Supervisor, error) {
 
 	model := cfg.Model
 	if model == "" {
-		model = ModelSonnet
+		model = GetDefaultModel()
 	}
 
 	// Use default retry config if not specified
