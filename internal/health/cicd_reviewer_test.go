@@ -155,11 +155,13 @@ func TestCICDReviewer_ReadCICDFiles(t *testing.T) {
 		{Path: "large-ci.yml", Name: "large-ci.yml", Platform: "gitlab"},
 	}
 
-	contents, err := reviewer.readCICDFiles(cicdFiles)
+	contents, errorsIgnored, err := reviewer.readCICDFiles(cicdFiles)
 	require.NoError(t, err)
 
 	// Should have skipped the large file
 	assert.Len(t, contents, 2)
+	// No errors expected (large file is intentionally skipped, not an error)
+	assert.Equal(t, 0, errorsIgnored)
 
 	// Verify content was read correctly
 	foundGitLab := false

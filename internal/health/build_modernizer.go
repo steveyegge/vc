@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,7 +137,7 @@ func (m *BuildModernizer) Check(ctx context.Context, codebase CodebaseContext) (
 	}
 
 	// 4. Read build file contents
-	buildFileContents, err := m.readBuildFiles(buildFiles)
+	buildFileContents, errorsIgnored, err := m.readBuildFiles(buildFiles)
 	if err != nil {
 		return nil, fmt.Errorf("reading build files: %w", err)
 	}
@@ -156,10 +157,11 @@ func (m *BuildModernizer) Check(ctx context.Context, codebase CodebaseContext) (
 		Reasoning:   evaluation.Reasoning,
 		CheckedAt:   startTime,
 		Stats: CheckStats{
-			FilesScanned: len(buildFiles),
-			IssuesFound:  len(issues),
-			Duration:     time.Since(startTime),
-			AICallsMade:  1,
+			FilesScanned:  len(buildFiles),
+			IssuesFound:   len(issues),
+			Duration:      time.Since(startTime),
+			AICallsMade:   1,
+			ErrorsIgnored: errorsIgnored,
 		},
 	}, nil
 }
@@ -269,8 +271,9 @@ func (m *BuildModernizer) detectFileType(fileName string) string {
 
 // readBuildFiles reads the content of build files.
 // Limits the number of files and content size to prevent token limits.
-func (m *BuildModernizer) readBuildFiles(files []buildFile) ([]buildFileContent, error) {
+func (m *BuildModernizer) readBuildFiles(files []buildFile) ([]buildFileContent, int, error) {
 	var contents []buildFileContent
+	var errorsIgnored int
 
 	// Limit the number of files to prevent overwhelming the AI
 	filesToRead := files
@@ -284,11 +287,13 @@ func (m *BuildModernizer) readBuildFiles(files []buildFile) ([]buildFileContent,
 		// Get file size
 		info, err := os.Stat(fullPath)
 		if err != nil {
-			// Skip files we can't stat
+			// Log warning for file access errors (separate from intentional skips)
+			log.Printf("BuildModernizer: failed to stat %s: %v", file.Path, err)
+			errorsIgnored++
 			continue
 		}
 
-		// Skip very large files (> 100KB)
+		// Skip very large files (> 100KB) - this is intentional, not an error
 		if info.Size() > 100*1024 {
 			continue
 		}
@@ -296,7 +301,9 @@ func (m *BuildModernizer) readBuildFiles(files []buildFile) ([]buildFileContent,
 		// Read file content
 		content, err := os.ReadFile(fullPath)
 		if err != nil {
-			// Skip files we can't read
+			// Log warning for file read errors
+			log.Printf("BuildModernizer: failed to read %s: %v", file.Path, err)
+			errorsIgnored++
 			continue
 		}
 
@@ -309,7 +316,7 @@ func (m *BuildModernizer) readBuildFiles(files []buildFile) ([]buildFileContent,
 		})
 	}
 
-	return contents, nil
+	return contents, errorsIgnored, nil
 }
 
 // buildEvaluation is the AI's analysis of build files.

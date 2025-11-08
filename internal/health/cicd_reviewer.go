@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,7 +138,7 @@ func (r *CICDReviewer) Check(ctx context.Context, codebase CodebaseContext) (*Mo
 	}
 
 	// 4. Read CI/CD file contents
-	cicdContents, err := r.readCICDFiles(cicdFiles)
+	cicdContents, errorsIgnored, err := r.readCICDFiles(cicdFiles)
 	if err != nil {
 		return nil, fmt.Errorf("reading CI/CD files: %w", err)
 	}
@@ -157,10 +158,11 @@ func (r *CICDReviewer) Check(ctx context.Context, codebase CodebaseContext) (*Mo
 		Reasoning:   evaluation.Reasoning,
 		CheckedAt:   startTime,
 		Stats: CheckStats{
-			FilesScanned: len(cicdFiles),
-			IssuesFound:  len(issues),
-			Duration:     time.Since(startTime),
-			AICallsMade:  1,
+			FilesScanned:  len(cicdFiles),
+			IssuesFound:   len(issues),
+			Duration:      time.Since(startTime),
+			AICallsMade:   1,
+			ErrorsIgnored: errorsIgnored,
 		},
 	}, nil
 }
@@ -259,8 +261,9 @@ func (r *CICDReviewer) findGlobMatches(ctx context.Context, pattern string) ([]s
 }
 
 // readCICDFiles reads the content of CI/CD config files.
-func (r *CICDReviewer) readCICDFiles(files []cicdFile) ([]cicdFileContent, error) {
+func (r *CICDReviewer) readCICDFiles(files []cicdFile) ([]cicdFileContent, int, error) {
 	var contents []cicdFileContent
+	var errorsIgnored int
 
 	// Limit the number of files to prevent overwhelming the AI
 	filesToRead := files
@@ -274,10 +277,13 @@ func (r *CICDReviewer) readCICDFiles(files []cicdFile) ([]cicdFileContent, error
 		// Get file size
 		info, err := os.Stat(fullPath)
 		if err != nil {
-			continue // Skip files we can't stat
+			// Log warning for file access errors (separate from intentional skips)
+			log.Printf("CICDReviewer: failed to stat %s: %v", file.Path, err)
+			errorsIgnored++
+			continue
 		}
 
-		// Skip very large files (> 200KB)
+		// Skip very large files (> 200KB) - this is intentional, not an error
 		if info.Size() > 200*1024 {
 			continue
 		}
@@ -285,7 +291,10 @@ func (r *CICDReviewer) readCICDFiles(files []cicdFile) ([]cicdFileContent, error
 		// Read file content
 		content, err := os.ReadFile(fullPath)
 		if err != nil {
-			continue // Skip files we can't read
+			// Log warning for file read errors
+			log.Printf("CICDReviewer: failed to read %s: %v", file.Path, err)
+			errorsIgnored++
+			continue
 		}
 
 		contents = append(contents, cicdFileContent{
@@ -297,7 +306,7 @@ func (r *CICDReviewer) readCICDFiles(files []cicdFile) ([]cicdFileContent, error
 		})
 	}
 
-	return contents, nil
+	return contents, errorsIgnored, nil
 }
 
 // cicdEvaluation is the AI's analysis of CI/CD configs.
