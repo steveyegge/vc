@@ -153,7 +153,7 @@ func (m *ComplexityMonitor) Check(ctx context.Context, codebase CodebaseContext)
 	}
 
 	// 5. Parse AI response
-	issues, err := m.parseAIResponse(response, complexFunctions)
+	issues, err := m.parseAIResponse(response)
 	if err != nil {
 		return nil, fmt.Errorf("parsing AI response: %w", err)
 	}
@@ -337,10 +337,11 @@ func (m *ComplexityMonitor) extractFunctionBody(lines []string, startLine int) (
 
 		// Count braces to find function end
 		for _, ch := range line {
-			if ch == '{' {
+			switch ch {
+			case '{':
 				braceDepth++
 				foundStart = true
-			} else if ch == '}' {
+			case '}':
 				braceDepth--
 				if foundStart && braceDepth == 0 {
 					return strings.Join(bodyLines, "\n"), nil
@@ -442,7 +443,7 @@ func (m *ComplexityMonitor) buildAIPrompt(functions []*FunctionComplexity, codeb
 }
 
 // parseAIResponse extracts refactoring tasks from AI response.
-func (m *ComplexityMonitor) parseAIResponse(response string, functions []*FunctionComplexity) ([]DiscoveredIssue, error) {
+func (m *ComplexityMonitor) parseAIResponse(response string) ([]DiscoveredIssue, error) {
 	// Define response structure
 	type ComplexityEvaluation struct {
 		FunctionsToRefactor []struct {

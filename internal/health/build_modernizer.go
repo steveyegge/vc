@@ -141,10 +141,7 @@ func (m *BuildModernizer) Check(ctx context.Context, codebase CodebaseContext) (
 	}
 
 	// 3. Read build file contents
-	buildFileContents, errorsIgnored, err := m.readBuildFiles(buildFiles)
-	if err != nil {
-		return nil, fmt.Errorf("reading build files: %w", err)
-	}
+	buildFileContents, errorsIgnored := m.readBuildFiles(buildFiles)
 
 	// 4. Ask AI to evaluate the build files
 	evaluation, err := m.evaluateBuildFiles(ctx, buildFileContents)
@@ -279,7 +276,7 @@ func (m *BuildModernizer) detectFileType(fileName string) string {
 
 // readBuildFiles reads the content of build files.
 // Limits the number of files and content size to prevent token limits.
-func (m *BuildModernizer) readBuildFiles(files []buildFile) ([]buildFileContent, int, error) {
+func (m *BuildModernizer) readBuildFiles(files []buildFile) ([]buildFileContent, int) {
 	var contents []buildFileContent
 	var errorsIgnored int
 
@@ -324,7 +321,7 @@ func (m *BuildModernizer) readBuildFiles(files []buildFile) ([]buildFileContent,
 		})
 	}
 
-	return contents, errorsIgnored, nil
+	return contents, errorsIgnored
 }
 
 // buildEvaluation is the AI's analysis of build files.

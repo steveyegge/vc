@@ -175,8 +175,7 @@ func TestBuildModernizer_ReadBuildFiles(t *testing.T) {
 		{Path: "large.gradle", Name: "large.gradle", FileType: "gradle"},
 	}
 
-	contents, errorsIgnored, err := modernizer.readBuildFiles(buildFiles)
-	require.NoError(t, err)
+	contents, errorsIgnored := modernizer.readBuildFiles(buildFiles)
 
 	// Should have skipped the large file
 	assert.Len(t, contents, 2)

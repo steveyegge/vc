@@ -160,8 +160,7 @@ func TestCICDReviewer_ReadCICDFiles(t *testing.T) {
 		{Path: "large-ci.yml", Name: "large-ci.yml", Platform: "gitlab"},
 	}
 
-	contents, errorsIgnored, err := reviewer.readCICDFiles(cicdFiles)
-	require.NoError(t, err)
+	contents, errorsIgnored := reviewer.readCICDFiles(cicdFiles)
 
 	// Should have skipped the large file
 	assert.Len(t, contents, 2)
@@ -427,7 +426,7 @@ func TestCICDReviewer_FindGlobMatches(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test glob pattern for .yml files
-	matches, err := reviewer.findGlobMatches(context.Background(), ".github/workflows/*.yml")
+	matches, err := reviewer.findGlobMatches(".github/workflows/*.yml")
 	require.NoError(t, err)
 
 	assert.Len(t, matches, 2) // ci.yml and release.yml

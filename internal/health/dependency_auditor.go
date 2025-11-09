@@ -130,11 +130,7 @@ func (a *DependencyAuditor) Check(ctx context.Context, codebase CodebaseContext)
 	}
 
 	// 5. Check for outdated dependencies
-	outdatedDeps, err := a.checkOutdated(ctx, dependencies)
-	if err != nil {
-		log.Printf("Warning: outdated check failed: %v", err)
-		outdatedDeps = []outdatedDependency{}
-	}
+	outdatedDeps := a.checkOutdated(ctx, dependencies)
 
 	// 6. Ask AI to evaluate findings
 	var issues []DiscoveredIssue
@@ -356,7 +352,7 @@ func (a *DependencyAuditor) checkVulnerabilities(ctx context.Context, deps []dep
 
 // checkOutdated checks for outdated dependencies (simplified version).
 // In production, this would query pkg.go.dev or proxy.golang.org.
-func (a *DependencyAuditor) checkOutdated(ctx context.Context, deps []dependency) ([]outdatedDependency, error) {
+func (a *DependencyAuditor) checkOutdated(ctx context.Context, deps []dependency) []outdatedDependency {
 	var outdated []outdatedDependency
 
 	// For each dependency, check if there's a newer version
@@ -379,7 +375,7 @@ func (a *DependencyAuditor) checkOutdated(ctx context.Context, deps []dependency
 		}
 	}
 
-	return outdated, nil
+	return outdated
 }
 
 // getLatestVersion queries the Go module proxy for the latest version.

@@ -341,7 +341,7 @@ func (w *TestCoverageAnalyzerWorker) calculateComplexity(funcDecl *ast.FuncDecl)
 	complexity := 1
 
 	ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
-		switch n.(type) {
+		switch n := n.(type) {
 		case *ast.IfStmt:
 			complexity++
 		case *ast.ForStmt:
@@ -353,10 +353,8 @@ func (w *TestCoverageAnalyzerWorker) calculateComplexity(funcDecl *ast.FuncDecl)
 		case *ast.CaseClause:
 			complexity++
 		case *ast.BinaryExpr:
-			if binExpr, ok := n.(*ast.BinaryExpr); ok {
-				if binExpr.Op == token.LAND || binExpr.Op == token.LOR {
-					complexity++
-				}
+			if n.Op == token.LAND || n.Op == token.LOR {
+				complexity++
 			}
 		}
 		return true

@@ -1,23 +1,9 @@
 package health
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
-
-// mockSupervisor is a mock AI supervisor for testing.
-type mockComplexitySupervisor struct {
-	response string
-	err      error
-}
-
-func (m *mockComplexitySupervisor) CallAI(ctx context.Context, prompt string, operation string, model string, maxTokens int) (string, error) {
-	if m.err != nil {
-		return "", m.err
-	}
-	return m.response, nil
-}
 
 func TestComplexityMonitor_Name(t *testing.T) {
 	monitor, err := NewComplexityMonitor(".", nil)
@@ -225,17 +211,7 @@ func TestComplexityMonitor_parseAIResponse(t *testing.T) {
   ]
 }`
 
-	functions := []*FunctionComplexity{
-		{
-			Complexity: 45,
-			Package:    "executor",
-			Function:   "executeIssue",
-			FilePath:   "internal/executor/executor.go",
-			Line:       123,
-		},
-	}
-
-	issues, err := monitor.parseAIResponse(aiResponse, functions)
+	issues, err := monitor.parseAIResponse(aiResponse)
 	if err != nil {
 		t.Fatalf("parseAIResponse failed: %v", err)
 	}

@@ -215,9 +215,7 @@ func (rp *ResultsProcessor) ProcessAgentResult(ctx context.Context, issue *types
 	}
 
 	// Step 3.7: Auto-commit and code review (if enabled, agent succeeded, and gates passed)
-	if err := rp.handleAutoCommitAndCodeReview(ctx, issue, agentResult, result, gateResults); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: auto-commit or code review failed: %v\n", err)
-	}
+	rp.handleAutoCommitAndCodeReview(ctx, issue, agentResult, result, gateResults)
 
 	// Step 4: Update issue status
 	if agentResult.Success && result.GatesPassed {
@@ -1029,21 +1027,21 @@ func (rp *ResultsProcessor) handleTestCoverageAnalysis(ctx context.Context, issu
 
 // handleAutoCommitAndCodeReview handles auto-committing changes and performing code review analysis.
 // This combines Step 3.7 (auto-commit) and Step 3.8 (code review decision) from the original flow.
-// Returns error if critical steps fail, nil otherwise (most failures are non-fatal).
-func (rp *ResultsProcessor) handleAutoCommitAndCodeReview(ctx context.Context, issue *types.Issue, agentResult *AgentResult, result *ProcessingResult, gateResults []*gates.Result) error {
+// Most failures are non-fatal and logged as warnings.
+func (rp *ResultsProcessor) handleAutoCommitAndCodeReview(ctx context.Context, issue *types.Issue, agentResult *AgentResult, result *ProcessingResult, gateResults []*gates.Result) {
 	if !agentResult.Success || !result.GatesPassed || !rp.enableAutoCommit || rp.gitOps == nil || rp.messageGen == nil {
-		return nil // Preconditions not met, skip silently
+		return // Preconditions not met, skip silently
 	}
 
 	commitHash, err := rp.autoCommit(ctx, issue)
 	if err != nil {
 		// Don't fail - just log and continue
 		fmt.Fprintf(os.Stderr, "Warning: auto-commit failed: %v (continuing without commit)\n", err)
-		return nil
+		return
 	}
 
 	if commitHash == "" {
-		return nil // No changes to commit
+		return // No changes to commit
 	}
 
 	result.CommitHash = commitHash
@@ -1074,8 +1072,6 @@ func (rp *ResultsProcessor) handleAutoCommitAndCodeReview(ctx context.Context, i
 			fmt.Fprintf(os.Stderr, "Warning: code review decision failed: %v\n", err)
 		}
 	}
-
-	return nil
 }
 
 // handleCodeReviewDecision performs AI-based code review decision and quality analysis (vc-216).

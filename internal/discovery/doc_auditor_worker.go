@@ -116,7 +116,7 @@ func (w *DocAuditorWorker) Analyze(ctx context.Context, codebase health.Codebase
 		}
 
 		// Check package documentation
-		pkgIssues := w.checkPackageDocs(node, fset, path)
+		pkgIssues := w.checkPackageDocs(node, path)
 		result.IssuesDiscovered = append(result.IssuesDiscovered, pkgIssues...)
 
 		// Check exported declarations
@@ -212,7 +212,7 @@ func (w *DocAuditorWorker) checkReadme(rootPath string) []DiscoveredIssue {
 }
 
 // checkPackageDocs verifies package-level documentation.
-func (w *DocAuditorWorker) checkPackageDocs(node *ast.File, fset *token.FileSet, filePath string) []DiscoveredIssue {
+func (w *DocAuditorWorker) checkPackageDocs(node *ast.File, filePath string) []DiscoveredIssue {
 	var issues []DiscoveredIssue
 
 	// Check if this is the package's main file (typically has package comment)
@@ -363,7 +363,7 @@ func (w *DocAuditorWorker) calculateCyclomaticComplexity(funcDecl *ast.FuncDecl)
 	complexity := 1 // Base complexity
 
 	ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
-		switch n.(type) {
+		switch n := n.(type) {
 		case *ast.IfStmt:
 			complexity++
 		case *ast.ForStmt:
@@ -377,10 +377,8 @@ func (w *DocAuditorWorker) calculateCyclomaticComplexity(funcDecl *ast.FuncDecl)
 			complexity++
 		case *ast.BinaryExpr:
 			// Logical operators (&&, ||) add complexity
-			if binExpr, ok := n.(*ast.BinaryExpr); ok {
-				if binExpr.Op == token.LAND || binExpr.Op == token.LOR {
-					complexity++
-				}
+			if n.Op == token.LAND || n.Op == token.LOR {
+				complexity++
 			}
 		}
 		return true

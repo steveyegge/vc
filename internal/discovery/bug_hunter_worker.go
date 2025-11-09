@@ -28,10 +28,7 @@ import (
 // Proper nil detection requires data flow analysis beyond simple AST inspection.
 //
 // ZFC Compliance: Detects patterns. AI determines if they're real bugs or false positives.
-type BugHunterWorker struct {
-	// Context from architecture worker (if available)
-	pkgGraph *packageGraph
-}
+type BugHunterWorker struct{}
 
 // NewBugHunterWorker creates a new bug hunting worker.
 func NewBugHunterWorker() *BugHunterWorker {

@@ -142,10 +142,7 @@ func (r *CICDReviewer) Check(ctx context.Context, codebase CodebaseContext) (*Mo
 	}
 
 	// 3. Read CI/CD file contents
-	cicdContents, errorsIgnored, err := r.readCICDFiles(cicdFiles)
-	if err != nil {
-		return nil, fmt.Errorf("reading CI/CD files: %w", err)
-	}
+	cicdContents, errorsIgnored := r.readCICDFiles(cicdFiles)
 
 	// 4. Ask AI to evaluate the CI/CD configs
 	evaluation, err := r.evaluateCICD(ctx, cicdContents)
@@ -210,7 +207,7 @@ func (r *CICDReviewer) scanCICDFiles(ctx context.Context) ([]cicdFile, error) {
 
 			// Handle glob patterns in .github/workflows/*
 			if strings.Contains(pattern, "*") {
-				matches, err := r.findGlobMatches(ctx, pattern)
+				matches, err := r.findGlobMatches(pattern)
 				if err != nil {
 					continue // Skip patterns that error
 				}
@@ -239,7 +236,7 @@ func (r *CICDReviewer) scanCICDFiles(ctx context.Context) ([]cicdFile, error) {
 }
 
 // findGlobMatches finds files matching a glob pattern, respecting ExcludePatterns.
-func (r *CICDReviewer) findGlobMatches(ctx context.Context, pattern string) ([]string, error) {
+func (r *CICDReviewer) findGlobMatches(pattern string) ([]string, error) {
 	var matches []string
 
 	// Extract directory and file pattern
@@ -289,7 +286,7 @@ func (r *CICDReviewer) findGlobMatches(ctx context.Context, pattern string) ([]s
 }
 
 // readCICDFiles reads the content of CI/CD config files.
-func (r *CICDReviewer) readCICDFiles(files []cicdFile) ([]cicdFileContent, int, error) {
+func (r *CICDReviewer) readCICDFiles(files []cicdFile) ([]cicdFileContent, int) {
 	var contents []cicdFileContent
 	var errorsIgnored int
 
@@ -334,7 +331,7 @@ func (r *CICDReviewer) readCICDFiles(files []cicdFile) ([]cicdFileContent, int, 
 		})
 	}
 
-	return contents, errorsIgnored, nil
+	return contents, errorsIgnored
 }
 
 // cicdEvaluation is the AI's analysis of CI/CD configs.

@@ -592,12 +592,11 @@ type missingAbstraction struct {
 type abstractionInstance struct {
 	name     string            // Type or function name
 	pkg      string            // Package name
-	file     string            // File path
-	line     int               // Line number
-	fields   []string          // For structs: field names and types
-	params   []string          // For functions: parameter types
-	returns  []string          // For functions: return types
-	metadata map[string]string // Additional context
+	file    string   // File path
+	line    int      // Line number
+	fields  []string // For structs: field names and types
+	params  []string // For functions: parameter types
+	returns []string // For functions: return types
 }
 
 // detectMissingAbstractions finds repeated struct/interface/function patterns across packages.

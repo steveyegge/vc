@@ -392,10 +392,11 @@ func (s *costTrackingSupervisor) CallAI(ctx context.Context, prompt string, oper
 func (s *costTrackingSupervisor) GetUsage() *TokenUsage {
 	var inputCost, outputCost float64
 
-	if s.model == ai.ModelSonnet {
+	switch s.model {
+	case ai.ModelSonnet:
 		inputCost = SonnetInputCostPerMToken
 		outputCost = SonnetOutputCostPerMToken
-	} else if s.model == ai.ModelHaiku {
+	case ai.ModelHaiku:
 		inputCost = HaikuInputCostPerMToken
 		outputCost = HaikuOutputCostPerMToken
 	}
