@@ -89,6 +89,7 @@ type Storage interface {
 	RegisterInstance(ctx context.Context, instance *types.ExecutorInstance) error
 	MarkInstanceStopped(ctx context.Context, instanceID string) error
 	UpdateHeartbeat(ctx context.Context, instanceID string) error
+	UpdateSelfHealingMode(ctx context.Context, instanceID string, mode string) error // vc-556f: Persist self-healing mode
 	GetActiveInstances(ctx context.Context) ([]*types.ExecutorInstance, error)
 	CleanupStaleInstances(ctx context.Context, staleThreshold int) (int, error)
 	DeleteOldStoppedInstances(ctx context.Context, olderThanSeconds int, maxToKeep int) (int, error)

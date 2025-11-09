@@ -194,6 +194,9 @@ func (m *MockStorage) RegisterInstance(ctx context.Context, instance *types.Exec
 	return nil
 }
 func (m *MockStorage) UpdateHeartbeat(ctx context.Context, instanceID string) error     { return nil }
+func (m *MockStorage) UpdateSelfHealingMode(ctx context.Context, instanceID string, mode string) error {
+	return nil
+}
 func (m *MockStorage) MarkInstanceStopped(ctx context.Context, instanceID string) error { return nil }
 func (m *MockStorage) GetActiveInstances(ctx context.Context) ([]*types.ExecutorInstance, error) {
 	return nil, nil

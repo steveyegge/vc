@@ -280,14 +280,15 @@ func (s ExecutorStatus) IsValid() bool {
 
 // ExecutorInstance represents a running executor instance
 type ExecutorInstance struct {
-	InstanceID    string         `json:"instance_id"`
-	Hostname      string         `json:"hostname"`
-	PID           int            `json:"pid"`
-	Status        ExecutorStatus `json:"status"`
-	StartedAt     time.Time      `json:"started_at"`
-	LastHeartbeat time.Time      `json:"last_heartbeat"`
-	Version       string         `json:"version"`
-	Metadata      string         `json:"metadata"` // JSON string (must be valid JSON)
+	InstanceID       string         `json:"instance_id"`
+	Hostname         string         `json:"hostname"`
+	PID              int            `json:"pid"`
+	Status           ExecutorStatus `json:"status"`
+	StartedAt        time.Time      `json:"started_at"`
+	LastHeartbeat    time.Time      `json:"last_heartbeat"`
+	Version          string         `json:"version"`
+	Metadata         string         `json:"metadata"` // JSON string (must be valid JSON)
+	SelfHealingMode  string         `json:"self_healing_mode"` // vc-556f: HEALTHY, SELF_HEALING, or ESCALATED
 }
 
 // Validate checks if the executor instance has valid field values

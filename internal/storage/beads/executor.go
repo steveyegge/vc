@@ -22,18 +22,25 @@ func (s *VCStorage) RegisterInstance(ctx context.Context, instance *types.Execut
 	// This allows executors to restart with the same ID
 	// IMPORTANT: We use ON CONFLICT DO UPDATE instead of INSERT OR REPLACE because
 	// REPLACE triggers DELETE, which cascades to execution_state.executor_instance_id (ON DELETE SET NULL)
+	// vc-556f: Now includes self_healing_mode (default to HEALTHY if not set)
+	selfHealingMode := instance.SelfHealingMode
+	if selfHealingMode == "" {
+		selfHealingMode = "HEALTHY"
+	}
+
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO vc_executor_instances (id, hostname, pid, version, started_at, last_heartbeat, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO vc_executor_instances (id, hostname, pid, version, started_at, last_heartbeat, status, self_healing_mode)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			hostname = excluded.hostname,
 			pid = excluded.pid,
 			version = excluded.version,
 			started_at = excluded.started_at,
 			last_heartbeat = excluded.last_heartbeat,
-			status = excluded.status
+			status = excluded.status,
+			self_healing_mode = excluded.self_healing_mode
 	`, instance.InstanceID, instance.Hostname, instance.PID, instance.Version,
-		instance.StartedAt, instance.LastHeartbeat, instance.Status)
+		instance.StartedAt, instance.LastHeartbeat, instance.Status, selfHealingMode)
 
 	if err != nil {
 		return fmt.Errorf("failed to register executor instance: %w", err)
@@ -90,10 +97,35 @@ func (s *VCStorage) UpdateHeartbeat(ctx context.Context, instanceID string) erro
 	return nil
 }
 
+// UpdateSelfHealingMode updates the self-healing mode for an executor instance (vc-556f)
+func (s *VCStorage) UpdateSelfHealingMode(ctx context.Context, instanceID string, mode string) error {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE vc_executor_instances
+		SET self_healing_mode = ?
+		WHERE id = ?
+	`, mode, instanceID)
+
+	if err != nil {
+		return fmt.Errorf("failed to update self-healing mode: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("executor instance %s not found", instanceID)
+	}
+
+	return nil
+}
+
 // GetActiveInstances retrieves all active executor instances
 func (s *VCStorage) GetActiveInstances(ctx context.Context) ([]*types.ExecutorInstance, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, hostname, pid, version, started_at, last_heartbeat, status
+		SELECT id, hostname, pid, version, started_at, last_heartbeat, status, 
+		       COALESCE(self_healing_mode, 'HEALTHY') as self_healing_mode
 		FROM vc_executor_instances
 		WHERE status = 'running'
 		ORDER BY started_at
@@ -107,7 +139,7 @@ func (s *VCStorage) GetActiveInstances(ctx context.Context) ([]*types.ExecutorIn
 	for rows.Next() {
 		var inst types.ExecutorInstance
 		if err := rows.Scan(&inst.InstanceID, &inst.Hostname, &inst.PID, &inst.Version,
-			&inst.StartedAt, &inst.LastHeartbeat, &inst.Status); err != nil {
+			&inst.StartedAt, &inst.LastHeartbeat, &inst.Status, &inst.SelfHealingMode); err != nil {
 			return nil, fmt.Errorf("failed to scan instance: %w", err)
 		}
 		instances = append(instances, &inst)

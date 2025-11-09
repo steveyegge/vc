@@ -110,6 +110,11 @@ func createVCExtensionTables(ctx context.Context, conn *sql.Conn) error {
 		return fmt.Errorf("failed to migrate execution_state table: %w", err)
 	}
 
+	// vc-556f: Migrate executor instances table for self-healing mode persistence
+	if err := migrateExecutorInstancesTable(ctx, conn); err != nil {
+		return fmt.Errorf("failed to migrate executor_instances table: %w", err)
+	}
+
 	// Step 3: Create indexes (now that all columns exist)
 	_, err = conn.ExecContext(ctx, vcExtensionIndexSchema)
 	if err != nil {
@@ -278,6 +283,48 @@ func migrateExecutionStateTable(ctx context.Context, conn *sql.Conn) error {
 	return nil
 }
 
+// migrateExecutorInstancesTable adds self_healing_mode column to vc_executor_instances (vc-556f)
+// Uses a scoped connection (*sql.Conn) for DDL operations as recommended by Beads
+// Wraps all operations in a transaction for atomicity
+func migrateExecutorInstancesTable(ctx context.Context, conn *sql.Conn) error {
+	// Begin transaction for atomic migration
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin migration transaction: %w", err)
+	}
+	defer tx.Rollback() // Safe to call even after commit
+
+	// Check if self_healing_mode column exists
+	var hasSelfHealingMode bool
+	err = tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) > 0
+		FROM pragma_table_info('vc_executor_instances')
+		WHERE name = 'self_healing_mode'
+	`).Scan(&hasSelfHealingMode)
+	if err != nil {
+		return fmt.Errorf("failed to check for self_healing_mode column: %w", err)
+	}
+
+	if !hasSelfHealingMode {
+		// Add self_healing_mode column
+		_, err = tx.ExecContext(ctx, `
+			ALTER TABLE vc_executor_instances 
+			ADD COLUMN self_healing_mode TEXT NOT NULL DEFAULT 'HEALTHY' 
+			CHECK(self_healing_mode IN ('HEALTHY', 'SELF_HEALING', 'ESCALATED'))
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to add self_healing_mode column: %w", err)
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit migration transaction: %w", err)
+	}
+
+	return nil
+}
+
 // VC-specific extension schema - TABLE DEFINITIONS ONLY
 // These tables coexist with Beads core tables in the same database
 // Following the IntelliJ/Android Studio extensibility model
@@ -331,7 +378,8 @@ CREATE TABLE IF NOT EXISTS vc_executor_instances (
     version TEXT NOT NULL,
     started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_heartbeat DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running', 'stopped', 'crashed'))
+    status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running', 'stopped', 'crashed')),
+    self_healing_mode TEXT NOT NULL DEFAULT 'HEALTHY' CHECK(self_healing_mode IN ('HEALTHY', 'SELF_HEALING', 'ESCALATED'))
 );
 
 -- Issue execution state (checkpoint/resume for long-running tasks)

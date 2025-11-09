@@ -137,6 +137,50 @@ func (e *Executor) getSelfHealingMode() SelfHealingMode {
 	return e.selfHealingMode
 }
 
+// restoreSelfHealingMode checks if there are open baseline-failure issues and restores mode (vc-556f)
+// This ensures executor continues in self-healing mode after restarts when baseline is still broken
+func (e *Executor) restoreSelfHealingMode(ctx context.Context) error {
+	// Query for open baseline-failure issues
+	status := types.StatusOpen
+	filter := types.IssueFilter{
+		Labels: []string{"baseline-failure"},
+		Status: &status,
+	}
+	
+	baselineIssues, err := e.store.SearchIssues(ctx, "", filter)
+	if err != nil {
+		return fmt.Errorf("failed to query baseline issues: %w", err)
+	}
+
+	// If there are open baseline-failure issues, enter self-healing mode
+	if len(baselineIssues) > 0 {
+		e.modeMutex.Lock()
+		oldMode := e.selfHealingMode
+		e.selfHealingMode = ModeSelfHealing
+		e.modeChangedAt = time.Now()
+		e.modeMutex.Unlock()
+
+		// Persist to database
+		if err := e.store.UpdateSelfHealingMode(ctx, e.instanceID, "SELF_HEALING"); err != nil {
+			return fmt.Errorf("failed to persist restored mode: %w", err)
+		}
+
+		fmt.Printf("ℹ️  Restored self-healing mode from previous state (%d open baseline issue(s))\n", len(baselineIssues))
+		
+		// Emit event for tracking
+		e.logEvent(ctx, events.EventTypeExecutorSelfHealingMode, events.SeverityInfo, "SYSTEM",
+			fmt.Sprintf("Restored SELF_HEALING mode on startup (%d baseline issues)", len(baselineIssues)),
+			map[string]interface{}{
+				"from_mode":       oldMode.String(),
+				"restored_mode":   "SELF_HEALING",
+				"baseline_issues": len(baselineIssues),
+				"timestamp":       time.Now().Format(time.RFC3339),
+			})
+	}
+
+	return nil
+}
+
 // getModeChangedAt returns when the mode last changed (thread-safe)
 func (e *Executor) getModeChangedAt() time.Time {
 	e.modeMutex.RLock()
@@ -158,6 +202,11 @@ func (e *Executor) transitionToHealthy(ctx context.Context) {
 
 	// Clear all escalation trackers since baseline is now healthy (vc-h8b8)
 	e.clearAllTrackers()
+
+	// Persist mode change to database (vc-556f)
+	if err := e.store.UpdateSelfHealingMode(ctx, e.instanceID, "HEALTHY"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to persist self-healing mode transition: %v\n", err)
+	}
 
 	// Log transition
 	fmt.Printf("✓ State transition: %s → HEALTHY (baseline quality gates passing)\n", oldMode)
@@ -191,6 +240,11 @@ func (e *Executor) transitionToSelfHealing(ctx context.Context) {
 	e.selfHealingDeadlockIssue = ""
 	e.selfHealingProgressMutex.Unlock()
 
+	// Persist mode change to database (vc-556f)
+	if err := e.store.UpdateSelfHealingMode(ctx, e.instanceID, "SELF_HEALING"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to persist self-healing mode transition: %v\n", err)
+	}
+
 	// Log transition
 	fmt.Printf("⚠️  State transition: %s → SELF_HEALING (baseline failed, attempting fix)\n", oldMode)
 
@@ -215,6 +269,11 @@ func (e *Executor) transitionToEscalated(ctx context.Context, reason string) {
 	e.selfHealingMode = ModeEscalated
 	e.modeChangedAt = time.Now()
 	e.modeMutex.Unlock()
+
+	// Persist mode change to database (vc-556f)
+	if err := e.store.UpdateSelfHealingMode(ctx, e.instanceID, "ESCALATED"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to persist self-healing mode transition: %v\n", err)
+	}
 
 	// Log transition with reason
 	fmt.Printf("🚨 State transition: %s → ESCALATED (reason: %s)\n", oldMode, reason)
@@ -832,16 +891,17 @@ func (e *Executor) Start(ctx context.Context) error {
 	e.running = true
 	e.mu.Unlock()
 
-	// Register this executor instance
+	// Register this executor instance (vc-556f: includes self-healing mode)
 	instance := &types.ExecutorInstance{
-		InstanceID:    e.instanceID,
-		Hostname:      e.hostname,
-		PID:           e.pid,
-		Status:        types.ExecutorStatusRunning,
-		StartedAt:     time.Now(),
-		LastHeartbeat: time.Now(),
-		Version:       e.version,
-		Metadata:      "{}",
+		InstanceID:      e.instanceID,
+		Hostname:        e.hostname,
+		PID:             e.pid,
+		Status:          types.ExecutorStatusRunning,
+		StartedAt:       time.Now(),
+		LastHeartbeat:   time.Now(),
+		Version:         e.version,
+		Metadata:        "{}",
+		SelfHealingMode: e.getSelfHealingMode().String(), // Persist initial mode (usually HEALTHY)
 	}
 
 	if err := e.store.RegisterInstance(ctx, instance); err != nil {
@@ -869,6 +929,12 @@ func (e *Executor) Start(ctx context.Context) error {
 			// Log warning but don't fail startup
 			fmt.Fprintf(os.Stderr, "Warning: failed to cleanup orphaned branches: %v\n", err)
 		}
+	}
+
+	// Restore self-healing mode from previous instances if baseline is still broken (vc-556f)
+	// This prevents resetting to HEALTHY on restart when baseline failures still exist
+	if err := e.restoreSelfHealingMode(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to restore self-healing mode: %v\n", err)
 	}
 
 	// Start the event loop
