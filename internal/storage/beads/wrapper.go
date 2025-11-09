@@ -476,6 +476,17 @@ CREATE TABLE IF NOT EXISTS vc_quota_operations (
     duration_ms INTEGER,                 -- How long the operation took
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL
 );
+
+-- Health metrics: lightweight metrics storage for trend tracking (vc-2px0)
+-- Self-managing with 30-day retention policy, automatic cleanup on insert
+CREATE TABLE IF NOT EXISTS health_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,             -- ISO 8601 timestamp
+    metric_name TEXT NOT NULL,           -- e.g., 'total_files', 'avg_complexity'
+    value REAL NOT NULL,                 -- Numeric value
+    metadata_json TEXT,                  -- Optional JSON for extra context
+    recorded_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 `
 
 // VC-specific extension schema - INDEX DEFINITIONS
@@ -522,6 +533,10 @@ CREATE INDEX IF NOT EXISTS idx_vc_quota_operations_timestamp ON vc_quota_operati
 CREATE INDEX IF NOT EXISTS idx_vc_quota_operations_issue ON vc_quota_operations(issue_id);
 CREATE INDEX IF NOT EXISTS idx_vc_quota_operations_type ON vc_quota_operations(operation_type);
 CREATE INDEX IF NOT EXISTS idx_vc_quota_operations_model ON vc_quota_operations(model);
+
+-- Health metrics indexes (vc-2px0)
+CREATE INDEX IF NOT EXISTS idx_health_metrics_name_time ON health_metrics(metric_name, timestamp);
+CREATE INDEX IF NOT EXISTS idx_health_metrics_timestamp ON health_metrics(timestamp);
 `
 
 // ======================================================================
@@ -1181,4 +1196,142 @@ type QuotaOperation struct {
 	OutputTokens  int64
 	Cost          float64
 	DurationMs    int64
+}
+
+// ======================================================================
+// HEALTH METRICS METHODS (vc-2px0)
+// ======================================================================
+
+// HealthMetric represents a single health metric data point
+type HealthMetric struct {
+	ID           int64
+	Timestamp    time.Time
+	MetricName   string
+	Value        float64
+	MetadataJSON string // Optional JSON for extra context
+	RecordedAt   time.Time
+}
+
+// RecordMetric stores a health metric and automatically cleans up old records (30-day retention)
+// This is the primary way to insert metrics - cleanup happens automatically
+func (s *VCStorage) RecordMetric(ctx context.Context, name string, value float64, metadata map[string]interface{}) error {
+	// Serialize metadata to JSON if present
+	var metadataJSON string
+	if metadata != nil {
+		jsonBytes, err := json.Marshal(metadata)
+		if err != nil {
+			return fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+		metadataJSON = string(jsonBytes)
+	}
+
+	// Insert the metric
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO health_metrics (timestamp, metric_name, value, metadata_json)
+		VALUES (?, ?, ?, ?)
+	`, timestamp, name, value, metadataJSON)
+
+	if err != nil {
+		return fmt.Errorf("failed to record metric: %w", err)
+	}
+
+	// Auto-cleanup: remove records older than 30 days
+	// This runs on every insert to ensure retention policy is enforced
+	if _, err := s.CleanupOldMetrics(ctx, 30*24*time.Hour); err != nil {
+		// Log but don't fail the insert if cleanup fails
+		// The metric was successfully recorded, cleanup is a background task
+		fmt.Printf("Warning: failed to cleanup old metrics: %v\n", err)
+	}
+
+	return nil
+}
+
+// GetMetrics retrieves metrics matching the given filters
+// since and until are optional time boundaries (use zero values to skip)
+func (s *VCStorage) GetMetrics(ctx context.Context, name string, since, until time.Time) ([]*HealthMetric, error) {
+	// Build WHERE clause dynamically based on filters
+	var whereClauses []string
+	var args []interface{}
+
+	if name != "" {
+		whereClauses = append(whereClauses, "metric_name = ?")
+		args = append(args, name)
+	}
+
+	if !since.IsZero() {
+		whereClauses = append(whereClauses, "timestamp >= ?")
+		args = append(args, since.Format(time.RFC3339))
+	}
+
+	if !until.IsZero() {
+		whereClauses = append(whereClauses, "timestamp <= ?")
+		args = append(args, until.Format(time.RFC3339))
+	}
+
+	// Build the query
+	query := `SELECT id, timestamp, metric_name, value, metadata_json, recorded_at FROM health_metrics`
+	if len(whereClauses) > 0 {
+		query += " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+	query += " ORDER BY timestamp ASC"
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query metrics: %w", err)
+	}
+	defer rows.Close()
+
+	var metrics []*HealthMetric
+	for rows.Next() {
+		var m HealthMetric
+		var timestampStr, recordedAtStr string
+		var metadataJSON sql.NullString
+
+		if err := rows.Scan(&m.ID, &timestampStr, &m.MetricName, &m.Value, &metadataJSON, &recordedAtStr); err != nil {
+			return nil, fmt.Errorf("failed to scan metric: %w", err)
+		}
+
+		// Parse timestamps
+		if m.Timestamp, err = time.Parse(time.RFC3339, timestampStr); err != nil {
+			return nil, fmt.Errorf("failed to parse timestamp: %w", err)
+		}
+		if m.RecordedAt, err = time.Parse(time.RFC3339, recordedAtStr); err != nil {
+			// Try parsing as SQLite datetime format if RFC3339 fails
+			if m.RecordedAt, err = time.Parse("2006-01-02 15:04:05", recordedAtStr); err != nil {
+				return nil, fmt.Errorf("failed to parse recorded_at: %w", err)
+			}
+		}
+
+		if metadataJSON.Valid {
+			m.MetadataJSON = metadataJSON.String
+		}
+
+		metrics = append(metrics, &m)
+	}
+
+	return metrics, rows.Err()
+}
+
+// CleanupOldMetrics removes metrics older than the given age
+// This is called automatically by RecordMetric() but can also be called manually
+// Returns the number of records deleted
+func (s *VCStorage) CleanupOldMetrics(ctx context.Context, maxAge time.Duration) (int, error) {
+	cutoff := time.Now().Add(-maxAge).UTC().Format(time.RFC3339)
+
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM health_metrics
+		WHERE timestamp < ?
+	`, cutoff)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to cleanup old metrics: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return int(rowsAffected), nil
 }

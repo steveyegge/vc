@@ -277,3 +277,279 @@ func TestReleaseIssueIdempotent(t *testing.T) {
 		}
 	})
 }
+
+// TestHealthMetricsRecordAndRetrieve verifies that health metrics can be recorded and retrieved correctly
+// Tests the basic RecordMetric and GetMetrics functionality (vc-2px0)
+func TestHealthMetricsRecordAndRetrieve(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Create VC storage
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Test 1: Record a metric without metadata
+	err = store.RecordMetric(ctx, "test_metric", 42.5, nil)
+	if err != nil {
+		t.Fatalf("Failed to record metric: %v", err)
+	}
+
+	// Test 2: Record a metric with metadata
+	metadata := map[string]interface{}{
+		"source": "test",
+		"count":  10,
+	}
+	err = store.RecordMetric(ctx, "test_metric_with_metadata", 100.0, metadata)
+	if err != nil {
+		t.Fatalf("Failed to record metric with metadata: %v", err)
+	}
+
+	// Test 3: Retrieve all metrics
+	metrics, err := store.GetMetrics(ctx, "", time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Failed to get metrics: %v", err)
+	}
+
+	if len(metrics) < 2 {
+		t.Errorf("Expected at least 2 metrics, got: %d", len(metrics))
+	}
+
+	// Test 4: Retrieve metrics by name
+	metrics, err = store.GetMetrics(ctx, "test_metric", time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Failed to get metrics by name: %v", err)
+	}
+
+	if len(metrics) != 1 {
+		t.Errorf("Expected 1 metric, got: %d", len(metrics))
+	}
+
+	if metrics[0].MetricName != "test_metric" {
+		t.Errorf("Expected metric_name 'test_metric', got: %s", metrics[0].MetricName)
+	}
+
+	if metrics[0].Value != 42.5 {
+		t.Errorf("Expected value 42.5, got: %f", metrics[0].Value)
+	}
+
+	// Test 5: Verify metadata was stored correctly
+	metrics, err = store.GetMetrics(ctx, "test_metric_with_metadata", time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Failed to get metric with metadata: %v", err)
+	}
+
+	if len(metrics) != 1 {
+		t.Errorf("Expected 1 metric, got: %d", len(metrics))
+	}
+
+	if metrics[0].MetadataJSON == "" {
+		t.Error("Expected metadata_json to be set, got empty string")
+	}
+}
+
+// TestHealthMetricsTimeFiltering verifies that time-based filtering works correctly
+// Tests the since/until parameters of GetMetrics (vc-2px0)
+func TestHealthMetricsTimeFiltering(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Create VC storage
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Record metrics at different times by manually inserting with specific timestamps
+	// This avoids timing issues with RecordMetric's auto-cleanup
+	baseTime := time.Now().Add(-1 * time.Hour) // Use past time to avoid auto-cleanup issues
+
+	_, err = store.db.ExecContext(ctx, `
+		INSERT INTO health_metrics (timestamp, metric_name, value, metadata_json)
+		VALUES (?, ?, ?, ?)
+	`, baseTime.Format(time.RFC3339), "time_test", 1.0, nil)
+	if err != nil {
+		t.Fatalf("Failed to insert metric 1: %v", err)
+	}
+
+	middleTime := baseTime.Add(30 * time.Minute)
+	_, err = store.db.ExecContext(ctx, `
+		INSERT INTO health_metrics (timestamp, metric_name, value, metadata_json)
+		VALUES (?, ?, ?, ?)
+	`, middleTime.Format(time.RFC3339), "time_test", 2.0, nil)
+	if err != nil {
+		t.Fatalf("Failed to insert metric 2: %v", err)
+	}
+
+	endTime := baseTime.Add(60 * time.Minute)
+	_, err = store.db.ExecContext(ctx, `
+		INSERT INTO health_metrics (timestamp, metric_name, value, metadata_json)
+		VALUES (?, ?, ?, ?)
+	`, endTime.Format(time.RFC3339), "time_test", 3.0, nil)
+	if err != nil {
+		t.Fatalf("Failed to insert metric 3: %v", err)
+	}
+
+	// Test 1: Get all metrics (no time filter)
+	allMetrics, err := store.GetMetrics(ctx, "time_test", time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Failed to get all metrics: %v", err)
+	}
+
+	if len(allMetrics) != 3 {
+		t.Errorf("Expected 3 metrics, got: %d", len(allMetrics))
+	}
+
+	// Test 2: Get metrics since middle time (should get last 2 metrics)
+	sinceMid := middleTime
+	metrics, err := store.GetMetrics(ctx, "time_test", sinceMid, time.Time{})
+	if err != nil {
+		t.Fatalf("Failed to get metrics with since filter: %v", err)
+	}
+
+	if len(metrics) != 2 {
+		t.Errorf("Expected 2 metrics with since=%v filter, got: %d", sinceMid, len(metrics))
+	}
+
+	// Test 3: Get metrics until middle time (should get first 2 metrics)
+	untilMid := middleTime
+	metrics, err = store.GetMetrics(ctx, "time_test", time.Time{}, untilMid)
+	if err != nil {
+		t.Fatalf("Failed to get metrics with until filter: %v", err)
+	}
+
+	if len(metrics) != 2 {
+		t.Errorf("Expected 2 metrics with until=%v filter, got: %d", untilMid, len(metrics))
+	}
+
+	// Test 4: Get metrics in specific range (should get only middle metric)
+	sinceBase := baseTime.Add(15 * time.Minute) // After first, before middle
+	untilEnd := baseTime.Add(45 * time.Minute)  // After middle, before end
+	metrics, err = store.GetMetrics(ctx, "time_test", sinceBase, untilEnd)
+	if err != nil {
+		t.Fatalf("Failed to get metrics with range filter: %v", err)
+	}
+
+	if len(metrics) != 1 {
+		t.Errorf("Expected 1 metric with range filter, got: %d", len(metrics))
+	}
+	if len(metrics) > 0 && metrics[0].Value != 2.0 {
+		t.Errorf("Expected middle metric (value 2.0), got value: %f", metrics[0].Value)
+	}
+}
+
+// TestHealthMetricsRetention verifies that the 30-day retention policy works correctly
+// Tests automatic cleanup and manual CleanupOldMetrics (vc-2px0)
+func TestHealthMetricsRetention(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Create VC storage
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Manually insert old metrics directly into database (bypassing RecordMetric's auto-cleanup)
+	// This simulates metrics that were recorded 35 days ago
+	oldTimestamp := time.Now().Add(-35 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	_, err = store.db.ExecContext(ctx, `
+		INSERT INTO health_metrics (timestamp, metric_name, value, metadata_json)
+		VALUES (?, ?, ?, ?)
+	`, oldTimestamp, "old_metric", 1.0, nil)
+	if err != nil {
+		t.Fatalf("Failed to insert old metric: %v", err)
+	}
+
+	// Insert recent metric (should not be deleted)
+	recentTimestamp := time.Now().Add(-1 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	_, err = store.db.ExecContext(ctx, `
+		INSERT INTO health_metrics (timestamp, metric_name, value, metadata_json)
+		VALUES (?, ?, ?, ?)
+	`, recentTimestamp, "recent_metric", 2.0, nil)
+	if err != nil {
+		t.Fatalf("Failed to insert recent metric: %v", err)
+	}
+
+	// Verify both metrics exist before cleanup
+	metrics, err := store.GetMetrics(ctx, "", time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Failed to get metrics before cleanup: %v", err)
+	}
+
+	if len(metrics) != 2 {
+		t.Errorf("Expected 2 metrics before cleanup, got: %d", len(metrics))
+	}
+
+	// Test 1: Manual cleanup with 30-day retention
+	deleted, err := store.CleanupOldMetrics(ctx, 30*24*time.Hour)
+	if err != nil {
+		t.Fatalf("Failed to cleanup old metrics: %v", err)
+	}
+
+	if deleted != 1 {
+		t.Errorf("Expected 1 metric to be deleted, got: %d", deleted)
+	}
+
+	// Verify only recent metric remains
+	metrics, err = store.GetMetrics(ctx, "", time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Failed to get metrics after cleanup: %v", err)
+	}
+
+	if len(metrics) != 1 {
+		t.Errorf("Expected 1 metric after cleanup, got: %d", len(metrics))
+	}
+
+	if metrics[0].MetricName != "recent_metric" {
+		t.Errorf("Expected remaining metric to be 'recent_metric', got: %s", metrics[0].MetricName)
+	}
+
+	// Test 2: Verify auto-cleanup in RecordMetric
+	// Insert another old metric
+	veryOldTimestamp := time.Now().Add(-40 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	_, err = store.db.ExecContext(ctx, `
+		INSERT INTO health_metrics (timestamp, metric_name, value, metadata_json)
+		VALUES (?, ?, ?, ?)
+	`, veryOldTimestamp, "very_old_metric", 3.0, nil)
+	if err != nil {
+		t.Fatalf("Failed to insert very old metric: %v", err)
+	}
+
+	// RecordMetric should automatically clean up old metrics
+	err = store.RecordMetric(ctx, "new_metric", 4.0, nil)
+	if err != nil {
+		t.Fatalf("Failed to record new metric: %v", err)
+	}
+
+	// Verify old metric was auto-cleaned
+	metrics, err = store.GetMetrics(ctx, "", time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Failed to get metrics after auto-cleanup: %v", err)
+	}
+
+	// Should have 2 metrics: recent_metric and new_metric (very_old_metric should be gone)
+	if len(metrics) != 2 {
+		t.Errorf("Expected 2 metrics after auto-cleanup, got: %d", len(metrics))
+	}
+
+	// Verify very_old_metric is not present
+	for _, m := range metrics {
+		if m.MetricName == "very_old_metric" {
+			t.Error("Expected very_old_metric to be auto-cleaned, but it's still present")
+		}
+	}
+}
