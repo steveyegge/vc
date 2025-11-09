@@ -6217,11 +6217,12 @@ func TestGetReadyDependentsOfBlockedBaselines(t *testing.T) {
 		foundReady := false
 		for _, dep := range dependents {
 			if baselineMap[dep.ID] == baseline6.ID {
-				if dep.ID == readyDep.ID {
+				switch dep.ID {
+				case readyDep.ID:
 					foundReady = true
-				} else if dep.ID == blockedDepMixed.ID {
+				case blockedDepMixed.ID:
 					t.Errorf("Should not return blocked dependent %s", dep.ID)
-				} else if dep.ID == closedDepMixed.ID {
+				case closedDepMixed.ID:
 					t.Errorf("Should not return closed dependent %s", dep.ID)
 				}
 			}
