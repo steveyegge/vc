@@ -399,6 +399,35 @@ CREATE TABLE IF NOT EXISTS vc_baseline_diagnostics (
     created_at INTEGER NOT NULL,
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
 );
+
+-- Quota monitoring: usage snapshots (vc-7e21)
+-- Tracks hourly quota consumption at 5-minute intervals for burn rate prediction
+CREATE TABLE IF NOT EXISTS vc_quota_snapshots (
+    id TEXT PRIMARY KEY,
+    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    window_start DATETIME NOT NULL,     -- Start of the hourly budget window
+    hourly_tokens_used INTEGER NOT NULL,
+    hourly_cost_used REAL NOT NULL,
+    total_tokens_used INTEGER NOT NULL,  -- All-time cumulative
+    total_cost_used REAL NOT NULL,       -- All-time cumulative
+    budget_status TEXT NOT NULL CHECK(budget_status IN ('HEALTHY', 'WARNING', 'EXCEEDED')),
+    issues_worked INTEGER NOT NULL DEFAULT 0  -- Count of issues in this window
+);
+
+-- Quota monitoring: operation-level attribution (vc-7e21)
+-- Tracks which AI operations consume most quota for cost attribution
+CREATE TABLE IF NOT EXISTS vc_quota_operations (
+    id TEXT PRIMARY KEY,
+    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    issue_id TEXT,                       -- Issue being worked on (nullable for system operations)
+    operation_type TEXT NOT NULL,        -- "assessment" | "analysis" | "deduplication" | "code_review" | "discovery"
+    model TEXT NOT NULL,                 -- "sonnet" | "haiku" | "opus"
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cost REAL NOT NULL,
+    duration_ms INTEGER,                 -- How long the operation took
+    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL
+);
 `
 
 // VC-specific extension schema - INDEX DEFINITIONS
@@ -435,6 +464,16 @@ CREATE INDEX IF NOT EXISTS idx_vc_gate_baselines_branch ON vc_gate_baselines(bra
 -- Code review checkpoints indexes
 CREATE INDEX IF NOT EXISTS idx_vc_review_checkpoints_timestamp ON vc_review_checkpoints(timestamp);
 CREATE INDEX IF NOT EXISTS idx_vc_review_checkpoints_commit ON vc_review_checkpoints(commit_sha);
+
+-- Quota snapshots indexes (vc-7e21)
+CREATE INDEX IF NOT EXISTS idx_vc_quota_snapshots_timestamp ON vc_quota_snapshots(timestamp);
+CREATE INDEX IF NOT EXISTS idx_vc_quota_snapshots_window ON vc_quota_snapshots(window_start);
+
+-- Quota operations indexes (vc-7e21)
+CREATE INDEX IF NOT EXISTS idx_vc_quota_operations_timestamp ON vc_quota_operations(timestamp);
+CREATE INDEX IF NOT EXISTS idx_vc_quota_operations_issue ON vc_quota_operations(issue_id);
+CREATE INDEX IF NOT EXISTS idx_vc_quota_operations_type ON vc_quota_operations(operation_type);
+CREATE INDEX IF NOT EXISTS idx_vc_quota_operations_model ON vc_quota_operations(model);
 `
 
 // ======================================================================
@@ -919,4 +958,179 @@ func (s *VCStorage) GetDiagnosis(ctx context.Context, issueID string) (*types.Te
 		StackTraces:  stackTraces,
 		Verification: verification,
 	}, nil
+}
+
+// ======================================================================
+// QUOTA MONITORING METHODS (vc-7e21)
+// ======================================================================
+
+// StoreQuotaSnapshot stores a quota usage snapshot in the database
+func (s *VCStorage) StoreQuotaSnapshot(ctx context.Context, snapshot *QuotaSnapshot) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO vc_quota_snapshots (
+			id, timestamp, window_start, hourly_tokens_used, hourly_cost_used,
+			total_tokens_used, total_cost_used, budget_status, issues_worked
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, snapshot.ID, snapshot.Timestamp, snapshot.WindowStart,
+		snapshot.HourlyTokensUsed, snapshot.HourlyCostUsed,
+		snapshot.TotalTokensUsed, snapshot.TotalCostUsed,
+		snapshot.BudgetStatus, snapshot.IssuesWorked)
+
+	if err != nil {
+		return fmt.Errorf("failed to store quota snapshot: %w", err)
+	}
+	return nil
+}
+
+// GetRecentQuotaSnapshots retrieves recent quota snapshots within the given time window
+func (s *VCStorage) GetRecentQuotaSnapshots(ctx context.Context, since time.Time, limit int) ([]*QuotaSnapshot, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, timestamp, window_start, hourly_tokens_used, hourly_cost_used,
+		       total_tokens_used, total_cost_used, budget_status, issues_worked
+		FROM vc_quota_snapshots
+		WHERE timestamp > ?
+		ORDER BY timestamp DESC
+		LIMIT ?
+	`, since, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query quota snapshots: %w", err)
+	}
+	defer rows.Close()
+
+	var snapshots []*QuotaSnapshot
+	for rows.Next() {
+		var s QuotaSnapshot
+		if err := rows.Scan(&s.ID, &s.Timestamp, &s.WindowStart,
+			&s.HourlyTokensUsed, &s.HourlyCostUsed,
+			&s.TotalTokensUsed, &s.TotalCostUsed,
+			&s.BudgetStatus, &s.IssuesWorked); err != nil {
+			return nil, fmt.Errorf("failed to scan quota snapshot: %w", err)
+		}
+		snapshots = append(snapshots, &s)
+	}
+
+	return snapshots, rows.Err()
+}
+
+// StoreQuotaOperation stores a quota operation for cost attribution
+func (s *VCStorage) StoreQuotaOperation(ctx context.Context, op *QuotaOperation) error {
+	// Convert empty issue_id to NULL
+	var issueID interface{}
+	if op.IssueID == "" {
+		issueID = nil
+	} else {
+		issueID = op.IssueID
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO vc_quota_operations (
+			id, timestamp, issue_id, operation_type, model,
+			input_tokens, output_tokens, cost, duration_ms
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, op.ID, op.Timestamp, issueID, op.OperationType, op.Model,
+		op.InputTokens, op.OutputTokens, op.Cost, op.DurationMs)
+
+	if err != nil {
+		return fmt.Errorf("failed to store quota operation: %w", err)
+	}
+	return nil
+}
+
+// GetQuotaOperationsByIssue retrieves all quota operations for a specific issue
+func (s *VCStorage) GetQuotaOperationsByIssue(ctx context.Context, issueID string) ([]*QuotaOperation, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, timestamp, issue_id, operation_type, model,
+		       input_tokens, output_tokens, cost, duration_ms
+		FROM vc_quota_operations
+		WHERE issue_id = ?
+		ORDER BY timestamp
+	`, issueID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query quota operations: %w", err)
+	}
+	defer rows.Close()
+
+	var operations []*QuotaOperation
+	for rows.Next() {
+		var op QuotaOperation
+		var issueIDNull sql.NullString
+		if err := rows.Scan(&op.ID, &op.Timestamp, &issueIDNull, &op.OperationType, &op.Model,
+			&op.InputTokens, &op.OutputTokens, &op.Cost, &op.DurationMs); err != nil {
+			return nil, fmt.Errorf("failed to scan quota operation: %w", err)
+		}
+		if issueIDNull.Valid {
+			op.IssueID = issueIDNull.String
+		}
+		operations = append(operations, &op)
+	}
+
+	return operations, rows.Err()
+}
+
+// CleanupOldQuotaSnapshots removes snapshots older than the given age
+func (s *VCStorage) CleanupOldQuotaSnapshots(ctx context.Context, maxAge time.Duration) (int, error) {
+	cutoff := time.Now().Add(-maxAge)
+
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM vc_quota_snapshots
+		WHERE timestamp < ?
+	`, cutoff)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to cleanup old quota snapshots: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return int(rowsAffected), nil
+}
+
+// CleanupOldQuotaOperations removes operations older than the given age
+func (s *VCStorage) CleanupOldQuotaOperations(ctx context.Context, maxAge time.Duration) (int, error) {
+	cutoff := time.Now().Add(-maxAge)
+
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM vc_quota_operations
+		WHERE timestamp < ?
+	`, cutoff)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to cleanup old quota operations: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return int(rowsAffected), nil
+}
+
+// QuotaSnapshot represents a quota usage snapshot (vc-7e21)
+type QuotaSnapshot struct {
+	ID               string
+	Timestamp        time.Time
+	WindowStart      time.Time
+	HourlyTokensUsed int64
+	HourlyCostUsed   float64
+	TotalTokensUsed  int64
+	TotalCostUsed    float64
+	BudgetStatus     string
+	IssuesWorked     int
+}
+
+// QuotaOperation represents a quota operation for cost attribution (vc-7e21)
+type QuotaOperation struct {
+	ID            string
+	Timestamp     time.Time
+	IssueID       string
+	OperationType string
+	Model         string
+	InputTokens   int64
+	OutputTokens  int64
+	Cost          float64
+	DurationMs    int64
 }

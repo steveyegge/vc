@@ -475,6 +475,235 @@ export VC_MAX_QUOTA_WAIT=1s
 
 ---
 
+## 💰 Quota Monitoring and Pre-emptive Alerting (vc-7e21)
+
+VC tracks quota usage in real-time and predicts quota exhaustion **before** it happens, allowing preventive action instead of reactive crisis management.
+
+### The Problem
+
+Without monitoring, quota exhaustion happens unexpectedly:
+- No visibility into burn rate trends
+- Can't predict when limits will be hit
+- Emergency response when quota is already exhausted
+- Lost productivity during quota outages
+
+### Proactive Monitoring Solution
+
+VC captures usage snapshots every 5 minutes and uses them to:
+1. **Calculate burn rate** (tokens/min, cost/min)
+2. **Predict time-to-limit** with confidence scoring
+3. **Emit pre-emptive alerts** at escalating levels (YELLOW → ORANGE → RED)
+4. **Auto-create crisis issues** when exhaustion is imminent
+
+### Environment Variables
+
+```bash
+# Enable/disable quota monitoring (default: true)
+export VC_ENABLE_QUOTA_MONITORING=true
+
+# How often to capture usage snapshots (default: 5 minutes)
+export VC_QUOTA_SNAPSHOT_INTERVAL=5m
+
+# Alert thresholds (time-to-limit that triggers alerts)
+export VC_QUOTA_ALERT_YELLOW=30m    # Warning: 15-30min to limit
+export VC_QUOTA_ALERT_ORANGE=15m    # Urgent: 5-15min to limit
+export VC_QUOTA_ALERT_RED=5m        # Critical: <5min to limit
+
+# Historical data retention (default: 30 days)
+export VC_QUOTA_RETENTION_DAYS=30
+
+# Auto-create P0 quota-crisis issues on RED alerts (default: true)
+export VC_QUOTA_AUTO_CREATE_CRISIS_ISSUE=true
+```
+
+### Alert Levels
+
+**GREEN** (Healthy):
+- >30 minutes until limit at current burn rate
+- No alerts emitted (normal operation)
+
+**YELLOW** (Warning):
+- 15-30 minutes until limit
+- Alert: "Monitor usage, consider reducing AI operations"
+- Console warning logged
+- Event logged to activity feed
+
+**ORANGE** (Urgent):
+- 5-15 minutes until limit
+- Alert: "Urgent - reduce AI operations or risk hitting limit"
+- Escalated console warning
+- Event logged with URGENT severity
+
+**RED** (Critical):
+- <5 minutes until limit
+- Alert: "CRITICAL - quota exhaustion imminent"
+- P0 `quota-crisis` issue auto-created (if enabled)
+- Enables Bootstrap Mode for minimal-AI fixes (vc-b027)
+
+### Burn Rate Calculation
+
+VC uses **linear regression over last 15 minutes** of snapshots:
+
+**Algorithm:**
+1. Collect snapshots from last 15 minutes (3 snapshots at 5-min intervals)
+2. Calculate `tokens_per_minute` and `cost_per_minute` from oldest to newest
+3. Project when each limit (tokens, cost) will be reached
+4. Report whichever limit will be hit first
+5. Include confidence score (based on sample size, 0.0-1.0)
+
+**Confidence scoring:**
+- 3 snapshots = 0.6 confidence
+- 5+ snapshots = 1.0 confidence
+- Only alert if confidence >0.5
+
+### Cost Attribution
+
+Every AI operation is logged with full attribution:
+- **Operation type**: assessment, analysis, deduplication, code_review, discovery
+- **Model used**: sonnet, haiku, opus
+- **Tokens consumed**: input + output
+- **Cost**: calculated from token counts
+- **Duration**: milliseconds taken
+- **Issue**: which issue the operation was for
+
+This enables queries like:
+- "Which operation types cost the most?"
+- "Which issues burn through quota fastest?"
+- "Is sonnet or haiku more cost-effective for assessments?"
+
+See [docs/QUERIES.md](./QUERIES.md) for cost attribution queries.
+
+### Integration with Other Features
+
+**Quota Retry (vc-5b22):**
+- Monitoring = proactive (prevent hitting limits)
+- Retry = reactive (handle limits gracefully when hit)
+- Together = comprehensive quota management
+
+**Bootstrap Mode (vc-b027):**
+- RED alert auto-creates `quota-crisis` issue
+- Bootstrap mode activates (minimal AI usage)
+- Crisis can be fixed without exhausting remaining quota
+
+**Cost Budgeting (vc-e3s7):**
+- Budgeting = hard limits (stop at threshold)
+- Monitoring = predictive alerts (warn before threshold)
+- Together = stay informed while staying under budget
+
+### Example Alert Flow
+
+**Normal operation:**
+```
+✓ Quota healthy (45min to limit, 85% confidence)
+```
+
+**Approaching limit:**
+```
+⚠️  Quota approaching limit: ~25 minutes remaining at current burn rate
+   Burn rate: 3,200 tokens/min ($0.12/min)
+   Current usage: 75,000/100,000 tokens ($3.75/$5.00)
+   Recommended: Monitor usage. Consider reducing AI operations or increasing quota limits.
+```
+
+**Imminent exhaustion:**
+```
+🚨 CRITICAL: Quota exhaustion in ~4 minutes at current burn rate
+   Burn rate: 5,000 tokens/min ($0.18/min)
+   Current usage: 95,000/100,000 tokens ($4.80/$5.00)
+   Recommended: IMMEDIATE ACTION REQUIRED: Stop non-essential AI operations. Quota crisis issue will be auto-created.
+
+[Auto-created vc-abc: "Quota crisis imminent: <5min until exhaustion"]
+```
+
+### Database Schema
+
+**vc_quota_snapshots** - Point-in-time usage (every 5 minutes):
+- Hourly tokens/cost used
+- Total tokens/cost (all-time)
+- Budget status (HEALTHY/WARNING/EXCEEDED)
+- Issues worked in this window
+
+**vc_quota_operations** - Individual AI calls:
+- Operation type, model, tokens, cost
+- Issue attribution
+- Duration (for performance analysis)
+
+### Tuning Guidelines
+
+**For high-volume production:**
+```bash
+# More frequent snapshots for better predictions
+export VC_QUOTA_SNAPSHOT_INTERVAL=2m
+
+# Earlier warnings to allow more reaction time
+export VC_QUOTA_ALERT_YELLOW=45m
+export VC_QUOTA_ALERT_ORANGE=20m
+export VC_QUOTA_ALERT_RED=10m
+```
+
+**For development/testing:**
+```bash
+# Less frequent snapshots (reduce noise)
+export VC_QUOTA_SNAPSHOT_INTERVAL=10m
+
+# Shorter retention (save disk space)
+export VC_QUOTA_RETENTION_DAYS=7
+
+# Disable auto-issue creation (manual review)
+export VC_QUOTA_AUTO_CREATE_CRISIS_ISSUE=false
+```
+
+**For cost-sensitive environments:**
+```bash
+# Aggressive early warnings
+export VC_QUOTA_ALERT_YELLOW=50m
+export VC_QUOTA_ALERT_ORANGE=30m
+export VC_QUOTA_ALERT_RED=15m
+
+# Auto-create crisis issues earlier
+export VC_QUOTA_AUTO_CREATE_CRISIS_ISSUE=true
+```
+
+### Monitoring Queries
+
+See [docs/QUERIES.md](./QUERIES.md) for comprehensive queries including:
+- Current burn rate calculation
+- Time-to-limit prediction
+- Top quota consumers by operation/issue/model
+- Budget window analysis
+- Cost efficiency metrics
+
+### Performance Impact
+
+Minimal overhead:
+- Snapshot collection: <1ms every 5 minutes
+- Burn rate calculation: <5ms (only on snapshots)
+- Database writes: Batched, non-blocking
+- No impact on AI operations
+
+### Cleanup and Maintenance
+
+Old data is automatically cleaned up:
+```bash
+# Default retention: 30 days
+# Runs daily as background goroutine
+# Cleanup is transactional and batched
+```
+
+Manual cleanup (future):
+```bash
+vc cleanup quotas --dry-run    # Preview
+vc cleanup quotas               # Execute
+```
+
+### Related Features
+
+- **vc-5b22**: Intelligent quota retry (reactive handling)
+- **vc-b027**: Bootstrap mode (minimal AI for crisis fixes)
+- **vc-e3s7**: Cost budgeting (proactive limits)
+
+---
+
 ## 🎯 Blocker Priority Configuration
 
 **EnableBlockerPriority** (Default: true):

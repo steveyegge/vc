@@ -674,3 +674,283 @@ FROM agent_events
 GROUP BY type
 ORDER BY avg_age_days DESC;
 ```
+
+---
+
+## 💰 Quota Monitoring Queries (vc-7e21)
+
+VC tracks quota usage at two levels:
+1. **Snapshots** - Point-in-time usage captured every 5 minutes
+2. **Operations** - Individual AI calls with full attribution
+
+These queries help analyze burn rates, predict quota exhaustion, and identify high-cost operations.
+
+### Quota Usage Overview
+
+**Current quota snapshot (most recent):**
+```sql
+SELECT *
+FROM vc_quota_snapshots
+ORDER BY timestamp DESC
+LIMIT 1;
+```
+
+**Quota usage trend (last hour):**
+```sql
+SELECT
+  timestamp,
+  hourly_tokens_used,
+  hourly_cost_used,
+  budget_status,
+  issues_worked
+FROM vc_quota_snapshots
+WHERE timestamp > datetime('now', '-1 hour')
+ORDER BY timestamp;
+```
+
+**Hourly budget consumption over time:**
+```sql
+SELECT
+  strftime('%H:%M', timestamp) as time,
+  hourly_tokens_used,
+  hourly_cost_used,
+  budget_status
+FROM vc_quota_snapshots
+WHERE window_start > datetime('now', '-6 hours')
+ORDER BY timestamp;
+```
+
+### Burn Rate Analysis
+
+**Calculate current burn rate (tokens/min):**
+```sql
+WITH recent_snapshots AS (
+  SELECT *
+  FROM vc_quota_snapshots
+  WHERE timestamp > datetime('now', '-15 minutes')
+  ORDER BY timestamp
+),
+first_snap AS (
+  SELECT * FROM recent_snapshots ORDER BY timestamp ASC LIMIT 1
+),
+last_snap AS (
+  SELECT * FROM recent_snapshots ORDER BY timestamp DESC LIMIT 1
+)
+SELECT
+  (last_snap.hourly_tokens_used - first_snap.hourly_tokens_used) /
+    ((julianday(last_snap.timestamp) - julianday(first_snap.timestamp)) * 1440) as tokens_per_minute,
+  (last_snap.hourly_cost_used - first_snap.hourly_cost_used) /
+    ((julianday(last_snap.timestamp) - julianday(first_snap.timestamp)) * 1440) as cost_per_minute
+FROM first_snap, last_snap;
+```
+
+**Time to quota limit prediction:**
+```sql
+-- Assumes max tokens = 100,000 and max cost = $5.00
+WITH recent_snapshots AS (
+  SELECT *
+  FROM vc_quota_snapshots
+  WHERE timestamp > datetime('now', '-15 minutes')
+  ORDER BY timestamp
+),
+first_snap AS (
+  SELECT * FROM recent_snapshots ORDER BY timestamp ASC LIMIT 1
+),
+last_snap AS (
+  SELECT * FROM recent_snapshots ORDER BY timestamp DESC LIMIT 1
+),
+burn_rate AS (
+  SELECT
+    (last_snap.hourly_tokens_used - first_snap.hourly_tokens_used) /
+      ((julianday(last_snap.timestamp) - julianday(first_snap.timestamp)) * 1440) as tokens_per_min,
+    (last_snap.hourly_cost_used - first_snap.hourly_cost_used) /
+      ((julianday(last_snap.timestamp) - julianday(first_snap.timestamp)) * 1440) as cost_per_min,
+    last_snap.hourly_tokens_used as current_tokens,
+    last_snap.hourly_cost_used as current_cost
+  FROM first_snap, last_snap
+)
+SELECT
+  current_tokens,
+  tokens_per_min,
+  (100000 - current_tokens) / tokens_per_min as minutes_until_token_limit,
+  current_cost,
+  cost_per_min,
+  (5.00 - current_cost) / cost_per_min as minutes_until_cost_limit
+FROM burn_rate
+WHERE tokens_per_min > 0 OR cost_per_min > 0;
+```
+
+### Cost Attribution Queries
+
+**Top quota consumers by operation type (last hour):**
+```sql
+SELECT
+  operation_type,
+  COUNT(*) as calls,
+  SUM(input_tokens + output_tokens) as total_tokens,
+  SUM(cost) as total_cost,
+  AVG(cost) as avg_cost_per_call,
+  AVG(duration_ms) as avg_duration_ms
+FROM vc_quota_operations
+WHERE timestamp > datetime('now', '-1 hour')
+GROUP BY operation_type
+ORDER BY total_cost DESC;
+```
+
+**Top quota consumers by issue (last hour):**
+```sql
+SELECT
+  issue_id,
+  COUNT(*) as ai_calls,
+  SUM(input_tokens + output_tokens) as tokens,
+  SUM(cost) as cost,
+  AVG(duration_ms) as avg_duration_ms
+FROM vc_quota_operations
+WHERE timestamp > datetime('now', '-1 hour')
+  AND issue_id IS NOT NULL
+GROUP BY issue_id
+ORDER BY cost DESC
+LIMIT 20;
+```
+
+**Top quota consumers by model (last hour):**
+```sql
+SELECT
+  model,
+  COUNT(*) as calls,
+  SUM(input_tokens + output_tokens) as total_tokens,
+  SUM(cost) as total_cost,
+  ROUND(AVG(cost), 4) as avg_cost_per_call
+FROM vc_quota_operations
+WHERE timestamp > datetime('now', '-1 hour')
+GROUP BY model
+ORDER BY total_cost DESC;
+```
+
+**Most expensive individual operations:**
+```sql
+SELECT
+  timestamp,
+  issue_id,
+  operation_type,
+  model,
+  input_tokens,
+  output_tokens,
+  cost,
+  duration_ms
+FROM vc_quota_operations
+ORDER BY cost DESC
+LIMIT 20;
+```
+
+### Budget Window Analysis
+
+**Usage by budget window (hourly buckets):**
+```sql
+SELECT
+  window_start,
+  MAX(hourly_tokens_used) as peak_tokens,
+  MAX(hourly_cost_used) as peak_cost,
+  MAX(issues_worked) as issues_worked,
+  MAX(CASE WHEN budget_status = 'EXCEEDED' THEN 1 ELSE 0 END) as was_exceeded
+FROM vc_quota_snapshots
+GROUP BY window_start
+ORDER BY window_start DESC
+LIMIT 24;
+```
+
+**Budget exhaustion incidents:**
+```sql
+SELECT
+  window_start,
+  timestamp,
+  hourly_tokens_used,
+  hourly_cost_used,
+  budget_status
+FROM vc_quota_snapshots
+WHERE budget_status = 'EXCEEDED'
+ORDER BY timestamp DESC;
+```
+
+**Warning-to-exceeded transition time:**
+```sql
+WITH status_changes AS (
+  SELECT
+    window_start,
+    timestamp,
+    budget_status,
+    LAG(budget_status) OVER (PARTITION BY window_start ORDER BY timestamp) as prev_status
+  FROM vc_quota_snapshots
+)
+SELECT
+  window_start,
+  timestamp as exceeded_at,
+  (SELECT timestamp FROM vc_quota_snapshots s2
+   WHERE s2.window_start = status_changes.window_start
+     AND s2.budget_status = 'WARNING'
+     AND s2.timestamp < status_changes.timestamp
+   ORDER BY s2.timestamp DESC
+   LIMIT 1) as warning_at
+FROM status_changes
+WHERE prev_status = 'WARNING'
+  AND budget_status = 'EXCEEDED';
+```
+
+### Operation Performance Analysis
+
+**Slowest operations by type:**
+```sql
+SELECT
+  operation_type,
+  model,
+  AVG(duration_ms) as avg_duration_ms,
+  MAX(duration_ms) as max_duration_ms,
+  MIN(duration_ms) as min_duration_ms,
+  COUNT(*) as sample_size
+FROM vc_quota_operations
+WHERE duration_ms IS NOT NULL
+GROUP BY operation_type, model
+ORDER BY avg_duration_ms DESC;
+```
+
+**Operation cost efficiency (tokens per dollar):**
+```sql
+SELECT
+  operation_type,
+  model,
+  SUM(input_tokens + output_tokens) as total_tokens,
+  SUM(cost) as total_cost,
+  ROUND(SUM(input_tokens + output_tokens) / SUM(cost), 0) as tokens_per_dollar
+FROM vc_quota_operations
+WHERE cost > 0
+GROUP BY operation_type, model
+ORDER BY tokens_per_dollar DESC;
+```
+
+### Cleanup and Maintenance
+
+**Snapshot retention check:**
+```sql
+SELECT
+  COUNT(*) as total_snapshots,
+  MIN(timestamp) as oldest,
+  MAX(timestamp) as newest,
+  julianday('now') - julianday(MIN(timestamp)) as age_days
+FROM vc_quota_snapshots;
+```
+
+**Old snapshots eligible for cleanup (>30 days):**
+```sql
+SELECT COUNT(*) as snapshots_to_delete
+FROM vc_quota_snapshots
+WHERE timestamp < datetime('now', '-30 days');
+```
+
+**Old operations eligible for cleanup (>30 days):**
+```sql
+SELECT COUNT(*) as operations_to_delete
+FROM vc_quota_operations
+WHERE timestamp < datetime('now', '-30 days');
+```
+
+---
