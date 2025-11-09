@@ -74,7 +74,7 @@ type Supervisor struct {
 // Compile-time check that Supervisor implements MissionPlanner
 var _ types.MissionPlanner = (*Supervisor)(nil)
 
-// CostTracker defines the interface for cost budgeting (vc-e3s7)
+// CostTracker defines the interface for cost budgeting (vc-e3s7, vc-7e21)
 // This allows dependency injection and testing without circular imports
 type CostTracker interface {
 	// RecordUsage records token usage for an issue
@@ -82,6 +82,10 @@ type CostTracker interface {
 	RecordUsage(ctx context.Context, issueID string, inputTokens, outputTokens int64) (interface{}, error)
 	// CanProceed checks if we can make another AI call within budget
 	CanProceed(issueID string) (bool, string)
+	// RecordOperation records a detailed quota operation for cost attribution (vc-7e21)
+	// This is optional - if quota monitoring is disabled, this is a no-op
+	// Takes a generic interface{} to avoid importing the cost package (circular dependency)
+	RecordOperation(ctx context.Context, op interface{}) error
 }
 
 // Config holds supervisor configuration

@@ -27,13 +27,29 @@ func (s *Supervisor) checkBudget(issueID string) error {
 	return nil
 }
 
-// recordAIUsage records AI usage to both the cost tracker and activity feed (vc-e3s7)
+// recordAIUsage records AI usage to both the cost tracker and activity feed (vc-e3s7, vc-7e21)
 func (s *Supervisor) recordAIUsage(ctx context.Context, issueID, activity string, inputTokens, outputTokens int64, duration time.Duration) error {
 	// Record to cost tracker first (if enabled)
 	if s.costTracker != nil {
+		// Record aggregated usage
 		if _, err := s.costTracker.RecordUsage(ctx, issueID, inputTokens, outputTokens); err != nil {
 			// Log warning but don't fail (cost tracking is best-effort)
 			fmt.Fprintf(os.Stderr, "Warning: failed to record AI cost: %v\n", err)
+		}
+
+		// Record operation-level details for quota monitoring (vc-7e21)
+		// We create a map instead of importing cost.QuotaOperation to avoid circular dependency
+		op := map[string]interface{}{
+			"issue_id":        issueID,
+			"operation_type":  activity,
+			"model":           s.model,
+			"input_tokens":    inputTokens,
+			"output_tokens":   outputTokens,
+			"duration_ms":     duration.Milliseconds(),
+		}
+		if err := s.costTracker.RecordOperation(ctx, op); err != nil {
+			// Log warning but don't fail (operation tracking is best-effort)
+			fmt.Fprintf(os.Stderr, "Warning: failed to record quota operation: %v\n", err)
 		}
 	}
 

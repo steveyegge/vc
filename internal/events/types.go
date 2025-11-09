@@ -165,6 +165,10 @@ const (
 	EventTypeAICost EventType = "ai_cost"
 	// EventTypeBudgetAlert indicates budget warning or exceeded alert
 	EventTypeBudgetAlert EventType = "budget_alert"
+
+	// Quota monitoring events (vc-7e21)
+	// EventTypeQuotaAlert indicates predictive quota alert (YELLOW/ORANGE/RED)
+	EventTypeQuotaAlert EventType = "quota_alert"
 )
 
 // EventSeverity represents the severity level of an event.
@@ -609,6 +613,30 @@ type EpicCleanupCompletedData struct {
 	Error string `json:"error,omitempty"`
 	// DurationMs is the time taken to cleanup in milliseconds
 	DurationMs int64 `json:"duration_ms,omitempty"`
+}
+
+// QuotaAlertData contains structured data for quota alert events (vc-7e21).
+type QuotaAlertData struct {
+	// AlertLevel is the urgency level (YELLOW, ORANGE, RED)
+	AlertLevel string `json:"alert_level"`
+	// TokensPerMinute is the current burn rate in tokens/minute
+	TokensPerMinute float64 `json:"tokens_per_minute"`
+	// CostPerMinute is the current burn rate in $/minute
+	CostPerMinute float64 `json:"cost_per_minute"`
+	// EstimatedMinutesToLimit is the predicted time until quota exhaustion
+	EstimatedMinutesToLimit float64 `json:"estimated_minutes_to_limit"`
+	// Confidence is the AI's confidence in the prediction (0.0-1.0)
+	Confidence float64 `json:"confidence"`
+	// CurrentTokensUsed is the current hourly token usage
+	CurrentTokensUsed int64 `json:"current_tokens_used"`
+	// TokenLimit is the hourly token limit
+	TokenLimit int64 `json:"token_limit"`
+	// CurrentCostUsed is the current hourly cost
+	CurrentCostUsed float64 `json:"current_cost_used"`
+	// CostLimit is the hourly cost limit
+	CostLimit float64 `json:"cost_limit"`
+	// RecommendedAction is what the user should do
+	RecommendedAction string `json:"recommended_action"`
 }
 
 // EventStore defines the interface for storing and retrieving agent events.

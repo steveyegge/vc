@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/storage"
+	"github.com/steveyegge/vc/internal/types"
 )
 
 // BudgetStatus represents the current budget state
@@ -738,22 +740,188 @@ func (t *Tracker) storeSnapshot(ctx context.Context, snapshot QuotaSnapshot) err
 
 // logQuotaAlert logs a quota alert event to the activity feed
 func (t *Tracker) logQuotaAlert(ctx context.Context, alert QuotaAlert) error {
-	// TODO: Implement when activity feed integration is added
-	// For now, this is a no-op placeholder
-	return nil
+	if t.store == nil {
+		return nil // No storage configured
+	}
+
+	// Determine event severity based on alert level
+	var severity events.EventSeverity
+	switch alert.Level {
+	case AlertYellow:
+		severity = events.SeverityWarning
+	case AlertOrange:
+		severity = events.SeverityError
+	case AlertRed:
+		severity = events.SeverityCritical
+	default:
+		severity = events.SeverityInfo
+	}
+
+	// Create structured data for the event
+	data := map[string]interface{}{
+		"alert_level":                alert.Level.String(),
+		"tokens_per_minute":          alert.BurnRate.TokensPerMinute,
+		"cost_per_minute":            alert.BurnRate.CostPerMinute,
+		"estimated_minutes_to_limit": alert.BurnRate.EstimatedTimeToLimit.Minutes(),
+		"confidence":                 alert.BurnRate.Confidence,
+		"current_tokens_used":        alert.CurrentUsage.HourlyTokensUsed,
+		"token_limit":                alert.CurrentUsage.Config.MaxTokensPerHour,
+		"current_cost_used":          alert.CurrentUsage.HourlyCostUsed,
+		"cost_limit":                 alert.CurrentUsage.Config.MaxCostPerHour,
+		"recommended_action":         alert.RecommendedAction,
+	}
+
+	// Create the event
+	event := &events.AgentEvent{
+		ID:         uuid.New().String(),
+		Type:       events.EventTypeQuotaAlert,
+		Timestamp:  time.Now(),
+		IssueID:    "SYSTEM", // System-level event (not tied to a specific issue)
+		ExecutorID: "",       // No executor ID (cost tracker is global)
+		AgentID:    "",       // Not produced by a coding agent
+		Severity:   severity,
+		Message:    alert.Message,
+		Data:       data,
+		SourceLine: 0, // Not applicable for cost tracker events
+	}
+
+	// Store the event
+	return t.store.StoreAgentEvent(ctx, event)
 }
 
 // createQuotaCrisisIssue auto-creates a P0 quota crisis issue
 func (t *Tracker) createQuotaCrisisIssue(ctx context.Context, alert QuotaAlert) error {
-	// TODO: Implement when issue creation integration is added
-	// For now, this is a no-op placeholder
+	if t.store == nil {
+		return nil // No storage configured
+	}
+
+	// Check if a quota crisis issue already exists (avoid duplicates)
+	existingIssues, err := t.store.GetIssuesByLabel(ctx, "quota-crisis")
+	if err != nil {
+		return fmt.Errorf("failed to check for existing quota crisis issues: %w", err)
+	}
+
+	// Count open quota crisis issues
+	openCrisisCount := 0
+	for _, issue := range existingIssues {
+		if issue.Status == types.StatusOpen || issue.Status == types.StatusInProgress {
+			openCrisisCount++
+		}
+	}
+
+	// If there are already open quota crisis issues, don't create another
+	if openCrisisCount > 0 {
+		fmt.Printf("Quota crisis issue already exists (found %d open issues), skipping auto-creation\n", openCrisisCount)
+		return nil
+	}
+
+	// Create detailed description with actionable information
+	description := fmt.Sprintf(`CRITICAL: Quota exhaustion predicted in ~%.0f minutes at current burn rate.
+
+**Current Usage:**
+- Tokens: %d / %d (%.1f%%)
+- Cost: $%.2f / $%.2f (%.1f%%)
+
+**Burn Rate:**
+- Tokens: %.0f tokens/minute
+- Cost: $%.4f/minute
+- Confidence: %.0f%%
+
+**Immediate Actions Required:**
+1. Review current executor activity and pause non-critical missions
+2. Check for any runaway loops or inefficient operations
+3. Consider increasing quota limits if justified
+4. Investigate root cause of high burn rate
+
+**Recommended Action:**
+%s
+
+This issue was auto-created by the quota monitoring system (vc-7e21).
+`,
+		alert.BurnRate.EstimatedTimeToLimit.Minutes(),
+		alert.CurrentUsage.HourlyTokensUsed, alert.CurrentUsage.Config.MaxTokensPerHour,
+		float64(alert.CurrentUsage.HourlyTokensUsed)/float64(alert.CurrentUsage.Config.MaxTokensPerHour)*100,
+		alert.CurrentUsage.HourlyCostUsed, alert.CurrentUsage.Config.MaxCostPerHour,
+		alert.CurrentUsage.HourlyCostUsed/alert.CurrentUsage.Config.MaxCostPerHour*100,
+		alert.BurnRate.TokensPerMinute,
+		alert.BurnRate.CostPerMinute,
+		alert.BurnRate.Confidence*100,
+		alert.RecommendedAction,
+	)
+
+	// Create acceptance criteria
+	acceptanceCriteria := `- [ ] Burn rate reduced to sustainable level (<80% of quota)
+- [ ] Root cause identified and addressed
+- [ ] Quota limits reviewed and adjusted if needed
+- [ ] Monitoring shows stable usage for 1+ hour`
+
+	// Create the issue
+	issue := &types.Issue{
+		Title:              fmt.Sprintf("QUOTA CRISIS: Exhaustion predicted in %.0fm", alert.BurnRate.EstimatedTimeToLimit.Minutes()),
+		IssueType:          types.TypeBug, // Crisis is a type of urgent bug
+		Priority:           0,              // P0 - highest priority
+		Status:             types.StatusOpen,
+		Description:        description,
+		AcceptanceCriteria: acceptanceCriteria,
+	}
+
+	// Create the issue
+	if err := t.store.CreateIssue(ctx, issue, "quota-monitor"); err != nil {
+		return fmt.Errorf("failed to create quota crisis issue: %w", err)
+	}
+
+	// Add label to mark as quota crisis
+	if err := t.store.AddLabel(ctx, issue.ID, "quota-crisis", "quota-monitor"); err != nil {
+		// Log warning but don't fail (issue was created successfully)
+		fmt.Printf("Warning: failed to add quota-crisis label to %s: %v\n", issue.ID, err)
+	}
+
+	// Add label to prevent auto-claiming (requires human intervention)
+	if err := t.store.AddLabel(ctx, issue.ID, "no-auto-claim", "quota-monitor"); err != nil {
+		// Log warning but don't fail
+		fmt.Printf("Warning: failed to add no-auto-claim label to %s: %v\n", issue.ID, err)
+	}
+
+	fmt.Printf("🚨 Created quota crisis issue %s (P0)\n", issue.ID)
+
 	return nil
 }
 
 // RecordOperation records a quota operation for cost attribution (vc-7e21)
-func (t *Tracker) RecordOperation(ctx context.Context, op QuotaOperation) error {
+// Accepts either QuotaOperation or map[string]interface{} (for avoiding circular dependencies)
+func (t *Tracker) RecordOperation(ctx context.Context, opInterface interface{}) error {
 	if !t.config.EnableQuotaMonitoring {
 		return nil // Monitoring disabled
+	}
+
+	// Convert interface to QuotaOperation
+	var op QuotaOperation
+
+	switch v := opInterface.(type) {
+	case QuotaOperation:
+		op = v
+	case map[string]interface{}:
+		// Extract fields from map (sent by AI supervisor to avoid circular dependency)
+		if issueID, ok := v["issue_id"].(string); ok {
+			op.IssueID = issueID
+		}
+		if opType, ok := v["operation_type"].(string); ok {
+			op.OperationType = opType
+		}
+		if model, ok := v["model"].(string); ok {
+			op.Model = model
+		}
+		if inputTokens, ok := v["input_tokens"].(int64); ok {
+			op.InputTokens = inputTokens
+		}
+		if outputTokens, ok := v["output_tokens"].(int64); ok {
+			op.OutputTokens = outputTokens
+		}
+		if durationMs, ok := v["duration_ms"].(int64); ok {
+			op.DurationMs = durationMs
+		}
+	default:
+		return fmt.Errorf("unsupported operation type: %T", opInterface)
 	}
 
 	// Calculate cost if not provided
