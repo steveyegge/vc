@@ -441,7 +441,9 @@ func (p *PreFlightChecker) HandleBaselineFailure(ctx context.Context, executorID
 // createBaselineBlockingIssue creates a system-level blocking issue for a gate failure
 // vc-ebd9: Extended to parse individual test failures and deduplicate child issues
 func (p *PreFlightChecker) createBaselineBlockingIssue(ctx context.Context, result *gates.Result) error {
-	issueID := fmt.Sprintf("vc-baseline-%s", result.Gate)
+	// Generate stable baseline issue ID with 4-char hash
+	// Format: vc-{hash}-baseline-{gate} (e.g., vc-9f86-baseline-test)
+	issueID := GenerateBaselineIssueID(string(result.Gate))
 
 	// Check if issue already exists
 	existingIssue, err := p.storage.GetIssue(ctx, issueID)

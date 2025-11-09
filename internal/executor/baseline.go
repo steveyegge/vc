@@ -8,29 +8,75 @@ import (
 )
 
 // Baseline issue IDs for quality gate failures (vc-210, vc-261)
+// DEPRECATED: These constants are being replaced by GenerateBaselineIssueID()
+// to include 4-char hashes and avoid beads prefix detection issues.
+// Kept for backward compatibility during migration.
 const (
-	BaselineTestIssueID  = "vc-baseline-test"
-	BaselineLintIssueID  = "vc-baseline-lint"
-	BaselineBuildIssueID = "vc-baseline-build"
+	BaselineTestIssueID  = "vc-baseline-test"  // Deprecated: use GenerateBaselineIssueID("test")
+	BaselineLintIssueID  = "vc-baseline-lint"  // Deprecated: use GenerateBaselineIssueID("lint")
+	BaselineBuildIssueID = "vc-baseline-build" // Deprecated: use GenerateBaselineIssueID("build")
 )
+
+// GenerateBaselineIssueID generates a stable baseline issue ID for a given gate type.
+// Format: vc-{hash}-baseline-{gate} where hash is first 4 chars of SHA256(gate)
+//
+// Examples:
+//   - test  -> vc-9f86-baseline-test
+//   - lint  -> vc-b0a3-baseline-lint
+//   - build -> vc-e4c2-baseline-build
+//
+// The hash ensures the ID has a unique component while remaining stable for the same gate.
+func GenerateBaselineIssueID(gateType string) string {
+	// Compute stable hash from gate type
+	hash := sha256.Sum256([]byte(gateType))
+	hashPrefix := fmt.Sprintf("%x", hash[:2]) // First 2 bytes = 4 hex chars
+
+	return fmt.Sprintf("vc-%s-baseline-%s", hashPrefix, gateType)
+}
 
 // IsBaselineIssue returns true if the given issue ID is a baseline issue (vc-261).
 // Baseline issues are special issues created by preflight quality gates when
 // they detect failures in the baseline (main branch).
+//
+// Supports both old format (vc-baseline-test) and new format (vc-9f86-baseline-test).
 func IsBaselineIssue(issueID string) bool {
-	return issueID == BaselineTestIssueID ||
+	// Check old format (deprecated)
+	if issueID == BaselineTestIssueID ||
 		issueID == BaselineLintIssueID ||
-		issueID == BaselineBuildIssueID
+		issueID == BaselineBuildIssueID {
+		return true
+	}
+
+	// Check new format: vc-{hash}-baseline-{gate}
+	// Pattern: vc-[0-9a-f]{4}-baseline-
+	matched, _ := regexp.MatchString(`^vc-[0-9a-f]{4}-baseline-\w+$`, issueID)
+	return matched
 }
 
 // GetGateType extracts the gate type from a baseline issue ID (vc-261).
-// For example, "vc-baseline-test" returns "test".
+// For example:
+//   - "vc-baseline-test" returns "test" (old format)
+//   - "vc-9f86-baseline-test" returns "test" (new format)
+//
 // Returns empty string if the issue ID is not a baseline issue.
 func GetGateType(issueID string) string {
 	if !IsBaselineIssue(issueID) {
 		return ""
 	}
-	return strings.TrimPrefix(issueID, "vc-baseline-")
+
+	// Try old format first (vc-baseline-{gate})
+	if strings.HasPrefix(issueID, "vc-baseline-") {
+		return strings.TrimPrefix(issueID, "vc-baseline-")
+	}
+
+	// Try new format (vc-{hash}-baseline-{gate})
+	// Extract everything after "baseline-"
+	parts := strings.Split(issueID, "-baseline-")
+	if len(parts) == 2 {
+		return parts[1]
+	}
+
+	return ""
 }
 
 // TestFailure represents a parsed individual test failure (vc-ebd9)
