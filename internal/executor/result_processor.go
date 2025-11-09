@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -884,6 +885,10 @@ func (rp *ResultsProcessor) handleQualityGates(ctx context.Context, issue *types
 		fmt.Printf("\n=== Quality Gates Failed ===\n")
 		fmt.Printf("Issue %s marked as blocked due to failing quality gates\n", issue.ID)
 
+		// vc-16fe: Auto-rollback changes on quality gate failure
+		// This prevents broken code from lingering in the sandbox
+		rollbackSuccess := rp.rollbackChanges(ctx, issue, gateResults)
+
 		// Build comment explaining which gates failed
 		var failedGates []string
 		var passedGates []string
@@ -907,9 +912,21 @@ func (rp *ResultsProcessor) handleQualityGates(ctx context.Context, issue *types
 		}
 		gatesComment += "\nPlease fix the failing gates and retry."
 
+		// Add rollback status to comment
+		if rollbackSuccess {
+			gatesComment += "\n\n✓ Changes automatically rolled back to clean state (git reset --hard HEAD)"
+		} else {
+			gatesComment += "\n\n⚠ Automatic rollback failed - working tree may contain uncommitted changes"
+		}
+
 		// Add comment before updating status
 		if err := rp.store.AddComment(ctx, issue.ID, rp.actor, gatesComment); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to add quality gates comment: %v\n", err)
+		}
+
+		// Add quality-gates-failed label (vc-16fe)
+		if err := rp.store.AddLabel(ctx, issue.ID, "quality-gates-failed", rp.actor); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to add quality-gates-failed label: %v\n", err)
 		}
 
 		// Update issue to blocked status
@@ -1371,6 +1388,109 @@ func (rp *ResultsProcessor) buildSummary(issue *types.Issue, agentResult *AgentR
 	}
 
 	return summary.String()
+}
+
+// rollbackChanges reverts working tree changes after quality gate failure (vc-16fe).
+// Returns true if rollback succeeded, false otherwise.
+// Preserves failure logs in database before rollback.
+func (rp *ResultsProcessor) rollbackChanges(ctx context.Context, issue *types.Issue, gateResults []*gates.Result) bool {
+	// Step 1: Preserve failure logs in database
+	failureData := rp.captureGateFailureLogs(gateResults)
+
+	// Log the failure data as an event before rollback
+	rp.logEvent(ctx, events.EventTypeQualityGatesRollback, events.SeverityWarning, issue.ID,
+		"Preserving quality gate failure logs before rollback",
+		map[string]interface{}{
+			"action":        "preserve_logs",
+			"failed_gates":  failureData["failed_gates"],
+			"failure_count": failureData["failure_count"],
+			"logs_length":   len(failureData["full_logs"].(string)),
+		})
+
+	// Step 2: Determine working directory for git reset
+	workingDir := rp.workingDir
+	if rp.sandbox != nil && rp.sandbox.GitWorktree != "" {
+		// Use sandbox worktree if available
+		workingDir = rp.sandbox.GitWorktree
+		fmt.Printf("Rollback: Using sandbox worktree at %s\n", workingDir)
+	}
+
+	// Step 3: Execute git reset --hard HEAD
+	fmt.Printf("Rollback: Reverting changes in %s\n", workingDir)
+	cmd := exec.CommandContext(ctx, "git", "reset", "--hard", "HEAD")
+	cmd.Dir = workingDir
+
+	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+
+	success := err == nil
+	severity := events.SeverityInfo
+	if !success {
+		severity = events.SeverityError
+		fmt.Fprintf(os.Stderr, "Rollback failed: %v\nOutput: %s\n", err, outputStr)
+	} else {
+		fmt.Printf("✓ Rollback successful: %s\n", outputStr)
+	}
+
+	// Step 4: Emit rollback event
+	rollbackData := map[string]interface{}{
+		"success":          success,
+		"working_dir":      workingDir,
+		"git_output":       outputStr,
+		"failed_gates":     failureData["failed_gates"],
+		"failure_count":    failureData["failure_count"],
+		"failure_logs_len": len(failureData["full_logs"].(string)),
+	}
+
+	if !success {
+		rollbackData["error"] = err.Error()
+	}
+
+	message := "Successfully rolled back changes after quality gate failure"
+	if !success {
+		message = fmt.Sprintf("Failed to rollback changes: %v", err)
+	}
+
+	rp.logEvent(ctx, events.EventTypeQualityGatesRollback, severity, issue.ID, message, rollbackData)
+
+	// Step 5: Update sandbox status if available
+	if rp.sandbox != nil {
+		if success {
+			// Keep as failed since gates failed, but working tree is now clean
+			fmt.Printf("✓ Sandbox %s working tree cleaned via rollback\n", rp.sandbox.ID)
+		} else {
+			fmt.Printf("⚠ Sandbox %s working tree may contain uncommitted changes\n", rp.sandbox.ID)
+		}
+	}
+
+	return success
+}
+
+// captureGateFailureLogs extracts and formats failure information from gate results.
+// Returns a map with failed gates list, failure count, and full logs.
+func (rp *ResultsProcessor) captureGateFailureLogs(gateResults []*gates.Result) map[string]interface{} {
+	var failedGates []string
+	var fullLogs strings.Builder
+	failureCount := 0
+
+	for _, gateResult := range gateResults {
+		if !gateResult.Passed {
+			failedGates = append(failedGates, string(gateResult.Gate))
+			failureCount++
+
+			fullLogs.WriteString(fmt.Sprintf("\n=== %s Gate Failure ===\n", gateResult.Gate))
+			if gateResult.Error != nil {
+				fullLogs.WriteString(fmt.Sprintf("Error: %v\n", gateResult.Error))
+			}
+			fullLogs.WriteString(fmt.Sprintf("Output:\n%s\n", gateResult.Output))
+		}
+	}
+
+	return map[string]interface{}{
+		"failed_gates":  failedGates,
+		"failure_count": failureCount,
+		"full_logs":     fullLogs.String(),
+	}
 }
 
 
