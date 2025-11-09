@@ -313,6 +313,11 @@ type Config struct {
 
 	// Loop detector configuration (vc-0vfg)
 	LoopDetectorConfig *LoopDetectorConfig // Loop detector configuration (default: sensible defaults, nil = use defaults)
+
+	// Bootstrap mode configuration (vc-b027)
+	EnableBootstrapMode     bool     // Enable bootstrap mode during quota crisis (default: false, opt-in)
+	BootstrapModeLabels     []string // Labels that trigger bootstrap mode (default: ["quota-crisis"])
+	BootstrapModeTitleKeywords []string // Title keywords that trigger bootstrap mode (default: ["quota", "budget", "cost", "API limit"])
 }
 
 // Validate checks the configuration for invalid combinations (vc-q5ve)
@@ -410,6 +415,10 @@ func DefaultConfig() *Config {
 		SelfHealingRecheckInterval: getEnvDuration("VC_SELF_HEALING_RECHECK_INTERVAL", 5*time.Minute),
 		SelfHealingVerboseLogging:  getEnvBool("VC_SELF_HEALING_VERBOSE_LOGGING", true),
 		SelfHealingDeadlockTimeout: getEnvDuration("VC_SELF_HEALING_DEADLOCK_TIMEOUT", 30*time.Minute),
+		// Bootstrap mode (vc-b027) - disabled by default (opt-in)
+		EnableBootstrapMode:        getEnvBool("VC_ENABLE_BOOTSTRAP_MODE", false),
+		BootstrapModeLabels:        getEnvStringSlice("VC_BOOTSTRAP_MODE_LABELS", []string{"quota-crisis"}),
+		BootstrapModeTitleKeywords: getEnvStringSlice("VC_BOOTSTRAP_MODE_TITLE_KEYWORDS", []string{"quota", "budget", "cost", "API limit"}),
 	}
 }
 
@@ -1207,6 +1216,14 @@ func getEnvBool(key string, defaultValue bool) bool {
 		if boolValue, err := strconv.ParseBool(value); err == nil {
 			return boolValue
 		}
+	}
+	return defaultValue
+}
+
+// getEnvStringSlice retrieves a comma-separated string slice from an environment variable, or returns the default value
+func getEnvStringSlice(key string, defaultValue []string) []string {
+	if value := os.Getenv(key); value != "" {
+		return strings.Split(value, ",")
 	}
 	return defaultValue
 }

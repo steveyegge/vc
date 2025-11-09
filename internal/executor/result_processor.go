@@ -64,6 +64,7 @@ func NewResultsProcessor(cfg *ResultsProcessorConfig) (*ResultsProcessor, error)
 		gatesTimeout:       gatesTimeout,
 		dedupBatchSize:     dedupBatchSize,
 		maxIncompleteRetries: maxIncompleteRetries,
+		bootstrapMode:        cfg.BootstrapMode, // vc-b027
 	}, nil
 }
 
@@ -530,7 +531,10 @@ func (rp *ResultsProcessor) handleStructuredReportAndAnalysis(ctx context.Contex
 	}
 
 	var analysis *ai.Analysis
-	if reportHandled {
+	// vc-b027: Skip AI analysis in bootstrap mode
+	if rp.bootstrapMode {
+		fmt.Printf("Skipping AI analysis (bootstrap mode active)\n")
+	} else if reportHandled {
 		fmt.Printf("Using structured agent report - skipping AI analysis\n")
 	} else if rp.supervisor != nil {
 		rp.logEvent(ctx, events.EventTypeAnalysisStarted, events.SeverityInfo, issue.ID,

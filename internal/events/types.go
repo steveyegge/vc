@@ -146,6 +146,10 @@ const (
 	// EventTypeMissionMetadataUpdated indicates mission metadata was updated
 	EventTypeMissionMetadataUpdated EventType = "mission_metadata_updated"
 
+	// Bootstrap mode events (vc-b027)
+	// EventTypeBootstrapModeActivated indicates executor entered bootstrap mode (quota crisis)
+	EventTypeBootstrapModeActivated EventType = "bootstrap_mode_activated"
+
 	// Epic lifecycle events (vc-268)
 	// EventTypeEpicCompleted indicates an epic was completed (all children done)
 	EventTypeEpicCompleted EventType = "epic_completed"

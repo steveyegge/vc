@@ -37,6 +37,7 @@ type ResultsProcessor struct {
 	gatesTimeout         time.Duration      // Quality gates timeout (default: 5 minutes)
 	dedupBatchSize       int                // Max deduplication batch size (default: 100) (vc-a80e)
 	maxIncompleteRetries int                // Max retries for incomplete work before escalation (default: 1) (vc-hsfz)
+	bootstrapMode        bool               // Bootstrap mode active (quota crisis) (vc-b027)
 }
 
 // ResultsProcessorConfig holds configuration for the results processor
@@ -58,6 +59,7 @@ type ResultsProcessorConfig struct {
 	GatesTimeout         time.Duration    // Quality gates timeout (default: 5 minutes if zero)
 	DedupBatchSize       int              // Max deduplication batch size (default: 100 if zero) (vc-a80e)
 	MaxIncompleteRetries int              // Max retries for incomplete work before escalation (default: 1 if zero) (vc-hsfz)
+	BootstrapMode        bool             // Bootstrap mode active (quota crisis) (vc-b027)
 }
 
 // ProcessingResult contains the outcome of processing agent results

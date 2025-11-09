@@ -704,6 +704,333 @@ vc cleanup quotas               # Execute
 
 ---
 
+## 🆘 Bootstrap Mode (vc-b027)
+
+**Bootstrap mode** enables VC to fix quota-related issues even when AI budget is exhausted, breaking the circular dependency where quota issues need AI supervision but no quota is available.
+
+### The Problem
+
+Without bootstrap mode, quota exhaustion creates a deadlock:
+- Quota issues need to be fixed to restore AI budget
+- Fixing issues requires AI supervision (assessment, analysis)
+- But AI supervision requires available quota
+- **Result:** VC is stuck and cannot self-heal
+
+### Bootstrap Mode Solution
+
+Bootstrap mode is a **degraded execution mode** that activates automatically when:
+1. AI budget is exceeded (cost tracker status = `BudgetExceeded`) AND
+2. Issue has `quota-crisis` label OR title contains quota-related keywords
+
+When active, bootstrap mode:
+- ✅ **Still runs**: Agent execution, quality gates (test/lint/build)
+- ❌ **Skips**: AI assessment, AI analysis, discovered issue creation, deduplication
+
+This allows VC to work on quota fixes with minimal AI usage.
+
+### Environment Variables
+
+```bash
+# Enable bootstrap mode (default: false, opt-in for safety)
+# IMPORTANT: Only enable if you trust VC to work without AI supervision
+export VC_ENABLE_BOOTSTRAP_MODE=true
+
+# Labels that trigger bootstrap mode (default: quota-crisis)
+# Comma-separated list of labels
+export VC_BOOTSTRAP_MODE_LABELS="quota-crisis,budget-fix"
+
+# Title keywords that trigger bootstrap mode (default: quota,budget,cost,API limit)
+# Comma-separated list (case-insensitive)
+export VC_BOOTSTRAP_MODE_TITLE_KEYWORDS="quota,budget,cost,API limit"
+```
+
+### Activation Logic
+
+Bootstrap mode activates when **ALL** conditions are met:
+1. `VC_ENABLE_BOOTSTRAP_MODE=true`
+2. Cost tracker reports `BudgetExceeded`
+3. Either:
+   - Issue has a label matching `VC_BOOTSTRAP_MODE_LABELS` OR
+   - Issue title contains any keyword from `VC_BOOTSTRAP_MODE_TITLE_KEYWORDS`
+
+**Example scenarios:**
+
+✅ **Activates:**
+- Issue: "Fix quota exhaustion in cost tracker" + budget exceeded
+- Issue labeled `quota-crisis` + budget exceeded
+
+❌ **Doesn't activate:**
+- Issue: "Fix authentication bug" (not quota-related)
+- Issue: "Fix quota exhaustion" but budget not exceeded (not a crisis yet)
+- Budget exceeded but bootstrap mode disabled in config
+
+### What Changes in Bootstrap Mode
+
+**Assessment Phase (Skipped):**
+- No AI assessment call
+- No risk analysis
+- No pre-flight checks
+- Logs: "Skipping AI assessment (bootstrap mode active)"
+
+**Analysis Phase (Skipped):**
+- No AI analysis call
+- No quality validation
+- No discovered issue creation
+- Logs: "Skipping AI analysis (bootstrap mode active)"
+
+**Deduplication (Skipped):**
+- No AI deduplication calls
+- All discovered issues treated as unique
+- **Risk:** May create duplicate issues
+- Logs: "Bootstrap mode active - skipping deduplication (risk of duplicates)"
+
+**Quality Gates (Still Run):**
+- Tests must still pass
+- Linting must still pass
+- Build must still succeed
+- No degradation in code quality enforcement
+
+**Agent Execution (Still Runs):**
+- Coding agent executes normally
+- Uses separate API key via Amp CLI
+- Not affected by VC's AI budget
+
+### Visibility and Logging
+
+When bootstrap mode activates, VC emits:
+
+**Console Warning:**
+```
+⚠️  BOOTSTRAP MODE ACTIVATED for vc-123 (reason: budget_exceeded + label:quota-crisis)
+   Budget status: EXCEEDED (hourly: 105000/100000 tokens, $5.25/$5.00)
+   ⚠️  LIMITED AI SUPERVISION: No assessment, no analysis, no discovered issues
+```
+
+**Activity Feed Event:**
+```json
+{
+  "type": "bootstrap_mode_activated",
+  "severity": "WARNING",
+  "issue_id": "vc-123",
+  "reason": "budget_exceeded + label:quota-crisis",
+  "budget_status": "EXCEEDED",
+  "hourly_tokens_used": 105000,
+  "hourly_tokens_limit": 100000
+}
+```
+
+**Issue Comment:**
+```markdown
+⚠️ **BOOTSTRAP MODE ACTIVE**
+
+This issue is being executed in bootstrap mode due to quota exhaustion.
+
+**Limitations:**
+- No AI assessment (pre-flight checks)
+- No AI analysis (quality validation)
+- No discovered issue creation (follow-on work)
+- No deduplication (risk of duplicates)
+
+**Quality gates still enforce:**
+- Tests must pass
+- Linting must pass
+- Build must succeed
+
+Reason: budget_exceeded + label:quota-crisis
+Budget: 105000/100000 tokens used ($5.25/$5.00)
+```
+
+### Safety Mechanisms
+
+**Opt-in Required:**
+- Bootstrap mode disabled by default
+- Requires explicit `VC_ENABLE_BOOTSTRAP_MODE=true`
+- Must be consciously enabled to use
+
+**Limited Scope:**
+- Only affects issues with specific labels/keywords
+- Normal issues wait for budget reset
+- No system-wide AI supervision bypass
+
+**Quality Gates Still Apply:**
+- Tests must pass
+- Linting must pass
+- Build must succeed
+- Code quality is not degraded
+
+**Clear Visibility:**
+- Prominent warnings when activated
+- Activity feed event logged
+- Issue comment added for audit trail
+
+### Limitations and Risks
+
+**What You Lose:**
+
+1. **No AI Assessment:**
+   - No risk analysis
+   - No pre-flight validation
+   - No strategic planning
+   - May miss complex issues
+
+2. **No AI Analysis:**
+   - No completion validation
+   - No quality issue detection
+   - No punted items tracking
+   - May mark incomplete work as done
+
+3. **No Discovered Issues:**
+   - Follow-on work not automatically filed
+   - Must manually track remaining tasks
+   - May lose context for future work
+
+4. **No Deduplication:**
+   - May create duplicate issues
+   - Increases tracker noise
+   - Requires manual cleanup later
+
+**When NOT to Use Bootstrap Mode:**
+
+- ❌ Complex architectural changes (need assessment)
+- ❌ Production incidents (need full analysis)
+- ❌ Issues that typically spawn many discovered issues
+- ❌ Any work where AI supervision is critical
+
+**Mitigation Strategies:**
+
+1. **Manual review:** Review bootstrap mode executions more carefully
+2. **Post-budget sweep:** Run deduplication sweep after budget resets
+3. **Follow-up issues:** Manually file discovered work after execution
+4. **Label tracking:** Add `bootstrap-mode-used` label for audit
+
+### Integration with Other Features
+
+**Quota Monitoring (vc-7e21):**
+- Monitoring predicts quota exhaustion
+- AUTO-creates `quota-crisis` issue on RED alert
+- Bootstrap mode activates for auto-created issue
+- Crisis can be fixed before complete exhaustion
+
+**Cost Budgeting (vc-e3s7):**
+- Budgeting blocks AI calls when budget exceeded
+- Bootstrap mode works around this for quota issues
+- Non-quota issues still respect budget limits
+
+**Quota Retry (vc-5b22):**
+- Retry handles temporary quota errors
+- Bootstrap mode handles exhausted budgets
+- Together: comprehensive quota crisis handling
+
+### Example Workflow
+
+**Normal operation:**
+```
+1. Quota monitoring detects high burn rate
+2. RED alert issued (<5min to limit)
+3. Auto-creates vc-abc: "Quota crisis: reduce burn rate"
+4. Label: quota-crisis
+5. Executor claims vc-abc
+6. Budget now exceeded (from continued use)
+7. Bootstrap mode activates (quota-crisis label + budget exceeded)
+8. Agent runs with minimal AI supervision
+9. Quality gates enforce correctness
+10. Issue closed, burn rate reduced
+11. Budget resets in new hour
+12. Normal operation resumes
+```
+
+**Manual quota fix:**
+```bash
+# Create quota crisis issue
+bd create "Fix quota exhaustion in deduplication" \
+  -t bug \
+  -p 0 \
+  --label quota-crisis
+
+# Enable bootstrap mode
+export VC_ENABLE_BOOTSTRAP_MODE=true
+
+# Start executor - will use bootstrap mode for this issue
+vc run
+```
+
+### Testing Bootstrap Mode
+
+**Unit tests:**
+```bash
+# Test bootstrap mode detection
+go test -v ./internal/executor -run TestBootstrapMode
+
+# Test AI skipping in bootstrap mode
+go test -v ./internal/executor -run TestBootstrapModeSkipsAI
+```
+
+**Manual testing:**
+```bash
+# 1. Exhaust AI budget
+export VC_COST_MAX_TOKENS_PER_HOUR=100
+export VC_COST_MAX_COST_PER_HOUR=0.01
+
+# 2. Enable bootstrap mode
+export VC_ENABLE_BOOTSTRAP_MODE=true
+
+# 3. Create quota issue
+bd create "Test bootstrap mode" --label quota-crisis -p 0
+
+# 4. Run executor
+vc run
+
+# 5. Verify in logs:
+# - "BOOTSTRAP MODE ACTIVATED" warning
+# - "Skipping AI assessment (bootstrap mode active)"
+# - "Skipping AI analysis (bootstrap mode active)"
+# - Quality gates still run
+```
+
+**Verification checklist:**
+- ✅ Bootstrap mode only activates when budget exceeded + label/keyword match
+- ✅ Assessment phase skipped
+- ✅ Analysis phase skipped
+- ✅ Deduplication skipped
+- ✅ Quality gates still run
+- ✅ Clear warnings logged
+- ✅ Activity feed event emitted
+- ✅ Issue comment added
+
+### Tuning Guidelines
+
+**Conservative (recommended):**
+```bash
+# Only enable for emergencies
+export VC_ENABLE_BOOTSTRAP_MODE=false  # Disabled by default
+
+# Only manual quota issues
+export VC_BOOTSTRAP_MODE_LABELS="quota-crisis"
+
+# Strict keyword matching
+export VC_BOOTSTRAP_MODE_TITLE_KEYWORDS="quota,budget"
+```
+
+**Aggressive (for self-hosting):**
+```bash
+# Always enabled
+export VC_ENABLE_BOOTSTRAP_MODE=true
+
+# Broader label matching
+export VC_BOOTSTRAP_MODE_LABELS="quota-crisis,budget-fix,cost-emergency"
+
+# More lenient keyword matching
+export VC_BOOTSTRAP_MODE_TITLE_KEYWORDS="quota,budget,cost,API,rate limit,exhaustion"
+```
+
+### Related Features
+
+- **vc-7e21**: Quota monitoring (creates quota-crisis issues)
+- **vc-e3s7**: Cost budgeting (enforces limits that trigger bootstrap)
+- **vc-5b22**: Quota retry (handles transient quota errors)
+
+---
+
 ## 🎯 Blocker Priority Configuration
 
 **EnableBlockerPriority** (Default: true):

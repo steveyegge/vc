@@ -14,6 +14,15 @@ import (
 // deduplicateDiscoveredIssues uses the deduplicator to filter out duplicate discovered issues
 // Returns the unique issues to create and deduplication statistics
 func (rp *ResultsProcessor) deduplicateDiscoveredIssues(ctx context.Context, parentIssue *types.Issue, discovered []ai.DiscoveredIssue) ([]ai.DiscoveredIssue, deduplication.DeduplicationStats) {
+	// vc-b027: Skip deduplication in bootstrap mode (no AI budget for comparison)
+	if rp.bootstrapMode {
+		fmt.Fprintf(os.Stderr, "⚠ Bootstrap mode active - skipping deduplication (risk of duplicates)\n")
+		return discovered, deduplication.DeduplicationStats{
+			TotalCandidates: len(discovered),
+			UniqueCount:     len(discovered),
+		}
+	}
+
 	// vc-a80e: Validate batch size to prevent performance issues and API quota exhaustion
 	originalCount := len(discovered)
 	if originalCount > rp.dedupBatchSize {

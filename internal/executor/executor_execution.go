@@ -17,6 +17,12 @@ import (
 func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	fmt.Printf("Executing issue %s: %s\n", issue.ID, issue.Title)
 
+	// Check if bootstrap mode should be activated (vc-b027)
+	bootstrapMode, bootstrapReason := e.ShouldUseBootstrapMode(ctx, issue)
+	if bootstrapMode {
+		e.logBootstrapModeActivation(ctx, issue, bootstrapReason)
+	}
+
 	// Start telemetry collection for this execution
 	e.getMonitor().StartExecution(issue.ID, e.instanceID)
 
@@ -77,7 +83,10 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	}
 
 	var assessment *ai.Assessment
-	if e.enableAISupervision && e.supervisor != nil {
+	// vc-b027: Skip AI assessment in bootstrap mode
+	if bootstrapMode {
+		fmt.Printf("Skipping AI assessment (bootstrap mode active)\n")
+	} else if e.enableAISupervision && e.supervisor != nil {
 		// Log assessment started
 		e.logEvent(ctx, events.EventTypeAssessmentStarted, events.SeverityInfo, issue.ID,
 			fmt.Sprintf("Starting AI assessment for issue %s", issue.ID),
@@ -464,6 +473,7 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		WatchdogConfig:     e.watchdogConfig, // Watchdog config for backoff reset (vc-an5o)
 		GatesTimeout:       e.config.GatesTimeout, // Quality gates timeout (vc-xcfw)
 		MaxIncompleteRetries: e.config.MaxIncompleteRetries, // Max incomplete retries (vc-hsfz)
+		BootstrapMode:        bootstrapMode, // Bootstrap mode for quota crisis (vc-b027)
 	})
 	if err != nil {
 		// Log results processing failure BEFORE releasing issue
