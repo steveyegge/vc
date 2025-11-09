@@ -15,6 +15,7 @@ import (
 	"github.com/steveyegge/vc/internal/health"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"
+	"golang.org/x/time/rate"
 )
 
 // DependencyAuditor is a discovery worker that audits project dependencies.
@@ -26,7 +27,8 @@ import (
 // - Unused dependencies (in go.mod but not imported)
 // - Deprecated packages (archived, unmaintained)
 type DependencyAuditor struct {
-	httpClient *http.Client
+	httpClient  *http.Client
+	rateLimiter *rate.Limiter
 }
 
 // NewDependencyAuditor creates a new dependency auditor worker.
@@ -35,6 +37,9 @@ func NewDependencyAuditor() discovery.DiscoveryWorker {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		// Rate limit: 10 requests per second with burst of 20
+		// This prevents hitting rate limits on proxy.golang.org and OSV.dev
+		rateLimiter: rate.NewLimiter(rate.Limit(10), 20),
 	}
 }
 
@@ -233,6 +238,11 @@ func (d *DependencyAuditor) isOutdatedGoVersion(version string) bool {
 
 // getLatestVersion queries pkg.go.dev for the latest version of a module.
 func (d *DependencyAuditor) getLatestVersion(ctx context.Context, modulePath string) (string, error) {
+	// Rate limit external API calls
+	if err := d.rateLimiter.Wait(ctx); err != nil {
+		return "", fmt.Errorf("rate limiter: %w", err)
+	}
+
 	// Use proxy.golang.org to get latest version
 	url := fmt.Sprintf("https://proxy.golang.org/%s/@latest", modulePath)
 
@@ -314,6 +324,11 @@ type Vulnerability struct {
 
 // checkVulnerabilities queries OSV.dev for known vulnerabilities.
 func (d *DependencyAuditor) checkVulnerabilities(ctx context.Context, modulePath, version string) ([]Vulnerability, error) {
+	// Rate limit external API calls
+	if err := d.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limiter: %w", err)
+	}
+
 	// OSV.dev API endpoint
 	url := "https://api.osv.dev/v1/query"
 

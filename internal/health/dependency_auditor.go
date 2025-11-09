@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"
+	"golang.org/x/time/rate"
 )
 
 // DependencyAuditor analyzes dependencies for security vulnerabilities,
@@ -31,6 +32,9 @@ type DependencyAuditor struct {
 
 	// HTTPClient for external API calls (OSV.dev, pkg.go.dev)
 	HTTPClient *http.Client
+
+	// RateLimiter for external API calls
+	RateLimiter *rate.Limiter
 }
 
 // NewDependencyAuditor creates a dependency auditor with sensible defaults.
@@ -47,6 +51,9 @@ func NewDependencyAuditor(rootPath string, supervisor AISupervisor) (*Dependency
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		// Rate limit: 10 requests per second with burst of 20
+		// This prevents hitting rate limits on proxy.golang.org and OSV.dev
+		RateLimiter: rate.NewLimiter(rate.Limit(10), 20),
 	}, nil
 }
 
@@ -259,6 +266,11 @@ func (a *DependencyAuditor) checkVulnerabilities(ctx context.Context, deps []dep
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
+	// Rate limit external API calls
+	if err := a.RateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limiter: %w", err)
+	}
+
 	// Make API request
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.osv.dev/v1/querybatch", strings.NewReader(string(reqJSON)))
 	if err != nil {
@@ -380,6 +392,11 @@ func (a *DependencyAuditor) checkOutdated(ctx context.Context, deps []dependency
 
 // getLatestVersion queries the Go module proxy for the latest version.
 func (a *DependencyAuditor) getLatestVersion(ctx context.Context, modulePath string) (string, error) {
+	// Rate limit external API calls
+	if err := a.RateLimiter.Wait(ctx); err != nil {
+		return "", fmt.Errorf("rate limiter: %w", err)
+	}
+
 	// Use Go module proxy to get latest version
 	// https://proxy.golang.org/{module}/@latest
 	url := fmt.Sprintf("https://proxy.golang.org/%s/@latest", modulePath)
