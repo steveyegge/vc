@@ -540,3 +540,95 @@ func isRaceDetectorEnabled() bool {
 // raceEnabled is set by the build tag in race_detector.go and race_detector_off.go
 // Default to false (overridden when -race flag is used)
 var raceEnabled = false
+
+// TestToolCallLimit verifies that the circuit breaker catches loops involving
+// repeated calls to non-Read tools like Grep, todo_write, Bash, etc. (vc-34cz)
+func TestToolCallLimit(t *testing.T) {
+	ctx := context.Background()
+
+	// Create agent with circuit breaker state
+	agent := &Agent{
+		config: AgentConfig{
+			Issue: &types.Issue{
+				ID:    "vc-test-tool-limit",
+				Title: "Test Tool Call Limit",
+			},
+		},
+		ctx:            ctx,
+		toolCallCounts: make(map[string]int),
+		totalToolCalls: 0,
+	}
+
+	// Test 1: Repeated Grep calls should trigger circuit breaker
+	t.Run("RepeatedGrepCalls", func(t *testing.T) {
+		agent.toolCallCounts = make(map[string]int)
+		agent.totalToolCalls = 0
+
+		// Call Grep many times - should trigger at maxSameToolCalls (100)
+		var firstErr error
+		for i := 0; i < maxSameToolCalls+10; i++ {
+			err := agent.checkToolCallLimit("grep")
+			if err != nil && firstErr == nil {
+				firstErr = err
+				t.Logf("Circuit breaker triggered after %d Grep calls: %v", i+1, err)
+				break
+			}
+		}
+
+		if firstErr == nil {
+			t.Errorf("Expected circuit breaker to trigger for repeated Grep calls")
+		}
+		if !agent.loopDetected.Load() {
+			t.Errorf("Expected loopDetected flag to be set")
+		}
+	})
+
+	// Test 2: Mixed tool calls should trigger total limit
+	t.Run("TotalToolCallLimit", func(t *testing.T) {
+		agent.toolCallCounts = make(map[string]int)
+		agent.totalToolCalls = 0
+		agent.loopDetected.Store(false)
+
+		// Mix different tools - should trigger at maxTotalToolCalls (300)
+		tools := []string{"grep", "bash", "todo_write", "edit_file", "glob"}
+		var firstErr error
+		for i := 0; i < maxTotalToolCalls+10; i++ {
+			tool := tools[i%len(tools)]
+			err := agent.checkToolCallLimit(tool)
+			if err != nil && firstErr == nil {
+				firstErr = err
+				t.Logf("Circuit breaker triggered after %d total tool calls: %v", i+1, err)
+				break
+			}
+		}
+
+		if firstErr == nil {
+			t.Errorf("Expected circuit breaker to trigger for excessive total tool calls")
+		}
+		if !agent.loopDetected.Load() {
+			t.Errorf("Expected loopDetected flag to be set")
+		}
+	})
+
+	// Test 3: Normal usage should not trigger
+	t.Run("NormalUsageAllowed", func(t *testing.T) {
+		agent.toolCallCounts = make(map[string]int)
+		agent.totalToolCalls = 0
+		agent.loopDetected.Store(false)
+
+		// Simulate normal mixed tool usage (50 calls across different tools)
+		tools := []string{"read", "grep", "bash", "edit_file", "todo_write"}
+		for i := 0; i < 50; i++ {
+			tool := tools[i%len(tools)]
+			err := agent.checkToolCallLimit(tool)
+			if err != nil {
+				t.Errorf("Circuit breaker triggered unexpectedly on normal usage (call %d): %v", i+1, err)
+				break
+			}
+		}
+
+		if agent.loopDetected.Load() {
+			t.Errorf("Circuit breaker should not trigger on normal tool usage")
+		}
+	})
+}

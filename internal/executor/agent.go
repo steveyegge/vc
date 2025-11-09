@@ -60,6 +60,16 @@ const (
 	// Backstop for pathological same-file loops - watchdog should catch normal stuckness
 	// Even complex refactoring shouldn't read the same file 20+ times
 	maxSameFileReads = 20
+
+	// maxSameToolCalls is the maximum number of times the same tool can be called (vc-34cz)
+	// Detects loops where agent repeatedly tries the same tool (e.g., repeated Grep, todo_write)
+	// Set high enough for legitimate exploration but catches pathological repetition
+	maxSameToolCalls = 100
+
+	// maxTotalToolCalls is the maximum total number of tool calls per execution (vc-34cz)
+	// Acts as a catastrophic backstop for any type of infinite loop
+	// Simple fixes should complete in <50 tool calls; complex work <200
+	maxTotalToolCalls = 300
 )
 
 // AgentResult contains the output and status from agent execution
@@ -186,9 +196,11 @@ type Agent struct {
 	result AgentResult
 	parser *events.OutputParser // Parser for extracting events from output
 
-	// Circuit breaker state for detecting infinite loops (vc-117)
+	// Circuit breaker state for detecting infinite loops (vc-117, vc-34cz)
 	totalReadCount int            // Total number of Read tool invocations
 	fileReadCounts map[string]int // Number of times each file has been read
+	toolCallCounts map[string]int // Number of times each tool has been called (vc-34cz)
+	totalToolCalls int            // Total number of tool calls across all types (vc-34cz)
 	loopDetected   atomic.Bool    // Whether an infinite loop was detected (lock-free for monitoring goroutine)
 	loopReason     string         // Reason for loop detection (for error messages)
 }
@@ -250,9 +262,11 @@ func SpawnAgent(ctx context.Context, cfg AgentConfig, prompt string) (*Agent, er
 			Output: []string{},
 			Errors: []string{},
 		},
-		// Initialize circuit breaker state (vc-117)
+		// Initialize circuit breaker state (vc-117, vc-34cz)
 		totalReadCount: 0,
 		fileReadCounts: make(map[string]int),
+		toolCallCounts: make(map[string]int),
+		totalToolCalls: 0,
 		loopReason:     "",
 		// loopDetected is atomic.Bool and initializes to false automatically
 	}
@@ -637,7 +651,14 @@ func (a *Agent) convertJSONToEvent(msg AgentMessage) *events.AgentEvent {
 			continue
 		}
 
-		// Circuit breaker: Track Read tool usage to detect infinite loops (vc-117)
+		// Circuit breaker: Track all tool usage to detect infinite loops (vc-117, vc-34cz)
+		// Check general tool call limits first (applies to ALL tools)
+		if err := a.checkToolCallLimit(toolName); err != nil {
+			fmt.Fprintf(os.Stderr, "\n!!! CIRCUIT BREAKER TRIGGERED !!!\n%v\n", err)
+			return nil
+		}
+
+		// Additional Read-specific tracking for file-level granularity
 		if toolName == "read" {
 			// Extract file path from input
 			var filePath string
@@ -647,7 +668,7 @@ func (a *Agent) convertJSONToEvent(msg AgentMessage) *events.AgentEvent {
 				}
 			}
 
-			// Check for infinite loop condition
+			// Check for infinite loop condition (file-specific)
 			// Note: Do NOT kill here while holding mutex - just set flag
 			if err := a.checkCircuitBreaker(filePath); err != nil {
 				// Circuit breaker triggered - log it but don't kill yet
@@ -847,12 +868,13 @@ func (a *Agent) GetErrors() []string {
 	return errors
 }
 
-// checkCircuitBreaker checks if the agent is stuck in an infinite loop (vc-117)
+// checkCircuitBreaker checks if the agent is stuck in an infinite loop (vc-117, vc-34cz)
+// Tracks both file reads (backward compatible) and general tool calls
 func (a *Agent) checkCircuitBreaker(filePath string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Initialize map if needed (for tests that create agents without using SpawnAgent)
+	// Initialize maps if needed (for tests that create agents without using SpawnAgent)
 	if a.fileReadCounts == nil {
 		a.fileReadCounts = make(map[string]int)
 	}
@@ -873,6 +895,36 @@ func (a *Agent) checkCircuitBreaker(filePath string) error {
 	if a.totalReadCount > maxFileReads {
 		a.loopReason = fmt.Sprintf("Total Read operations: %d (limit: %d)", a.totalReadCount, maxFileReads)
 		a.loopDetected.Store(true) // Atomic write for lock-free monitoring
+		return fmt.Errorf("infinite loop detected: %s", a.loopReason)
+	}
+
+	return nil
+}
+
+// checkToolCallLimit checks if a specific tool is being called too many times (vc-34cz)
+// This catches loops involving Grep, todo_write, Bash, and other non-Read tools
+func (a *Agent) checkToolCallLimit(toolName string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Initialize map if needed
+	if a.toolCallCounts == nil {
+		a.toolCallCounts = make(map[string]int)
+	}
+
+	// Increment total tool call count and check limit
+	a.totalToolCalls++
+	if a.totalToolCalls > maxTotalToolCalls {
+		a.loopReason = fmt.Sprintf("Total tool calls: %d (limit: %d) - agent may be stuck in a loop", a.totalToolCalls, maxTotalToolCalls)
+		a.loopDetected.Store(true)
+		return fmt.Errorf("infinite loop detected: %s", a.loopReason)
+	}
+
+	// Track per-tool call count and check limit
+	a.toolCallCounts[toolName]++
+	if a.toolCallCounts[toolName] > maxSameToolCalls {
+		a.loopReason = fmt.Sprintf("Tool '%s' called %d times (limit: %d) - agent may be stuck repeating the same operation", toolName, a.toolCallCounts[toolName], maxSameToolCalls)
+		a.loopDetected.Store(true)
 		return fmt.Errorf("infinite loop detected: %s", a.loopReason)
 	}
 
