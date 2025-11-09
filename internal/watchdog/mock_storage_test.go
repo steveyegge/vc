@@ -183,3 +183,8 @@ func (m *mockStorage) StoreDiagnosis(ctx context.Context, issueID string, diagno
 func (m *mockStorage) GetDiagnosis(ctx context.Context, issueID string) (*types.TestFailureDiagnosis, error) {
 	return nil, nil
 }
+
+// Self-healing mode (vc-556f)
+func (m *mockStorage) UpdateSelfHealingMode(ctx context.Context, instanceID string, mode string) error {
+	return nil
+}

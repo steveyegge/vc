@@ -546,6 +546,9 @@ var raceEnabled = false
 func TestToolCallLimit(t *testing.T) {
 	ctx := context.Background()
 
+	// Disable AI loop detection for this test (we're testing the hard limits)
+	t.Setenv("VC_DISABLE_AI_LOOP_DETECTION", "1")
+
 	// Create agent with circuit breaker state
 	agent := &Agent{
 		config: AgentConfig{
@@ -589,7 +592,8 @@ func TestToolCallLimit(t *testing.T) {
 		agent.totalToolCalls = 0
 		agent.loopDetected.Store(false)
 
-		// Mix different tools - should trigger at maxTotalToolCalls (300)
+		// Mix different tools - should trigger at maxTotalToolCalls (1000)
+		// With AI disabled, this tests the hard backstop limit
 		tools := []string{"grep", "bash", "todo_write", "edit_file", "glob"}
 		var firstErr error
 		for i := 0; i < maxTotalToolCalls+10; i++ {

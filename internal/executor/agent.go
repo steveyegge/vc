@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/sandbox"
@@ -66,10 +68,15 @@ const (
 	// Set high enough for legitimate exploration but catches pathological repetition
 	maxSameToolCalls = 100
 
-	// maxTotalToolCalls is the maximum total number of tool calls per execution (vc-34cz)
-	// Acts as a catastrophic backstop for any type of infinite loop
-	// Simple fixes should complete in <50 tool calls; complex work <200
-	maxTotalToolCalls = 300
+	// aiLoopCheckInterval is how often to ask AI if agent is stuck (vc-34cz)
+	// Every 50 tool calls, Haiku checks if we're making progress or looping
+	// This is ZFC-compliant: AI judges stuckness, not arbitrary limits
+	aiLoopCheckInterval = 50
+
+	// maxTotalToolCalls is the catastrophic backstop (vc-34cz)
+	// Raised to 1000 since AI loop detection at 50-call intervals should catch loops first
+	// Only triggers if AI checks fail or are disabled (no API key)
+	maxTotalToolCalls = 1000
 )
 
 // AgentResult contains the output and status from agent execution
@@ -197,12 +204,13 @@ type Agent struct {
 	parser *events.OutputParser // Parser for extracting events from output
 
 	// Circuit breaker state for detecting infinite loops (vc-117, vc-34cz)
-	totalReadCount int            // Total number of Read tool invocations
-	fileReadCounts map[string]int // Number of times each file has been read
-	toolCallCounts map[string]int // Number of times each tool has been called (vc-34cz)
-	totalToolCalls int            // Total number of tool calls across all types (vc-34cz)
-	loopDetected   atomic.Bool    // Whether an infinite loop was detected (lock-free for monitoring goroutine)
-	loopReason     string         // Reason for loop detection (for error messages)
+	totalReadCount  int            // Total number of Read tool invocations
+	fileReadCounts  map[string]int // Number of times each file has been read
+	toolCallCounts  map[string]int // Number of times each tool has been called (vc-34cz)
+	totalToolCalls  int            // Total number of tool calls across all types (vc-34cz)
+	recentToolCalls []string       // Recent tool calls for AI loop detection (vc-34cz)
+	loopDetected    atomic.Bool    // Whether an infinite loop was detected (lock-free for monitoring goroutine)
+	loopReason      string         // Reason for loop detection (for error messages)
 }
 
 // SpawnAgent starts a coding agent process with a pre-built prompt
@@ -263,11 +271,12 @@ func SpawnAgent(ctx context.Context, cfg AgentConfig, prompt string) (*Agent, er
 			Errors: []string{},
 		},
 		// Initialize circuit breaker state (vc-117, vc-34cz)
-		totalReadCount: 0,
-		fileReadCounts: make(map[string]int),
-		toolCallCounts: make(map[string]int),
-		totalToolCalls: 0,
-		loopReason:     "",
+		totalReadCount:  0,
+		fileReadCounts:  make(map[string]int),
+		toolCallCounts:  make(map[string]int),
+		totalToolCalls:  0,
+		recentToolCalls: make([]string, 0, 100), // Pre-allocate for efficiency
+		loopReason:      "",
 		// loopDetected is atomic.Bool and initializes to false automatically
 	}
 
@@ -902,22 +911,14 @@ func (a *Agent) checkCircuitBreaker(filePath string) error {
 }
 
 // checkToolCallLimit checks if a specific tool is being called too many times (vc-34cz)
-// This catches loops involving Grep, todo_write, Bash, and other non-Read tools
+// Uses both AI-based loop detection (ZFC-compliant) and hard limits as backstop
 func (a *Agent) checkToolCallLimit(toolName string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Initialize map if needed
+	// Initialize maps if needed
 	if a.toolCallCounts == nil {
 		a.toolCallCounts = make(map[string]int)
-	}
-
-	// Increment total tool call count and check limit
-	a.totalToolCalls++
-	if a.totalToolCalls > maxTotalToolCalls {
-		a.loopReason = fmt.Sprintf("Total tool calls: %d (limit: %d) - agent may be stuck in a loop", a.totalToolCalls, maxTotalToolCalls)
-		a.loopDetected.Store(true)
-		return fmt.Errorf("infinite loop detected: %s", a.loopReason)
 	}
 
 	// Track per-tool call count and check limit
@@ -928,5 +929,156 @@ func (a *Agent) checkToolCallLimit(toolName string) error {
 		return fmt.Errorf("infinite loop detected: %s", a.loopReason)
 	}
 
+	// Track recent tool calls for AI analysis
+	a.recentToolCalls = append(a.recentToolCalls, toolName)
+
+	// Increment total tool call count
+	a.totalToolCalls++
+
+	// Every aiLoopCheckInterval calls, ask AI if we're stuck (ZFC-compliant)
+	if a.totalToolCalls%aiLoopCheckInterval == 0 {
+		// Release lock before making AI call (can take time)
+		recentCalls := make([]string, len(a.recentToolCalls))
+		copy(recentCalls, a.recentToolCalls)
+		a.mu.Unlock()
+
+		// Ask AI to judge if we're stuck in a loop
+		stuck, reason := a.checkAILoopDetection(a.ctx, recentCalls)
+
+		// Reacquire lock before updating state
+		a.mu.Lock()
+
+		if stuck {
+			a.loopReason = fmt.Sprintf("AI detected loop after %d tool calls: %s", a.totalToolCalls, reason)
+			a.loopDetected.Store(true)
+			return fmt.Errorf("infinite loop detected: %s", a.loopReason)
+		}
+	}
+
+	// Catastrophic backstop (only if AI checks fail or are disabled)
+	if a.totalToolCalls > maxTotalToolCalls {
+		a.loopReason = fmt.Sprintf("Total tool calls: %d (limit: %d) - exceeded catastrophic backstop", a.totalToolCalls, maxTotalToolCalls)
+		a.loopDetected.Store(true)
+		return fmt.Errorf("infinite loop detected: %s", a.loopReason)
+	}
+
 	return nil
+}
+
+
+// checkAILoopDetection uses Haiku to judge if the agent is stuck in a loop (vc-34cz)
+// This is ZFC-compliant: AI makes the judgment, not arbitrary heuristics
+// Returns (stuck bool, reason string)
+func (a *Agent) checkAILoopDetection(ctx context.Context, recentCalls []string) (bool, string) {
+	// Check if API key is available (or if AI checks are disabled for testing)
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey == "" || os.Getenv("VC_DISABLE_AI_LOOP_DETECTION") != "" {
+		// No API key or disabled - skip AI check, rely on hard limits
+		return false, ""
+	}
+
+	// Build tool call summary (last 100 calls or all if fewer)
+	startIdx := 0
+	if len(recentCalls) > 100 {
+		startIdx = len(recentCalls) - 100
+	}
+	callsToAnalyze := recentCalls[startIdx:]
+
+	// Count frequency of each tool
+	toolFreq := make(map[string]int)
+	for _, tool := range callsToAnalyze {
+		toolFreq[tool]++
+	}
+
+	// Build summary for AI
+	summary := fmt.Sprintf("Recent tool calls (last %d):\n", len(callsToAnalyze))
+	summary += fmt.Sprintf("Tool sequence: %v\n\n", callsToAnalyze)
+	summary += "Tool frequency:\n"
+	for tool, count := range toolFreq {
+		summary += fmt.Sprintf("  %s: %d calls\n", tool, count)
+	}
+
+	// Construct prompt
+	prompt := fmt.Sprintf(`You are analyzing agent tool usage to detect infinite loops.
+
+%s
+
+Is this agent stuck in an unproductive loop? Consider:
+- Is the agent repeating the same tools without making progress?
+- Are we seeing patterns like: grep -> read -> grep -> read repeatedly?
+- Or todo_write being called many times without other productive work?
+
+Respond with JSON:
+{
+  "stuck": true/false,
+  "confidence": 0.0-1.0,
+  "reasoning": "Brief explanation"
+}
+
+Only say stuck=true if you're confident (>0.8) this is a loop.`, summary)
+
+	// Make Haiku API call with short timeout (don't want to slow down agent too much)
+	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	client := anthropic.NewClient(option.WithAPIKey(apiKey))
+
+	resp, err := client.Messages.New(checkCtx, anthropic.MessageNewParams{
+		Model:     anthropic.Model("claude-3-5-haiku-20241022"), // Haiku for speed/cost
+		MaxTokens: int64(500),
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+		},
+	})
+
+	if err != nil {
+		// AI call failed - don't halt, just log and continue
+		if os.Getenv("VC_DEBUG_EVENTS") != "" {
+			fmt.Fprintf(os.Stderr, "[DEBUG] AI loop detection failed: %v\n", err)
+		}
+		return false, ""
+	}
+
+	// Extract text from response
+	var responseText string
+	for _, block := range resp.Content {
+		if block.Type == "text" {
+			responseText += block.Text
+		}
+	}
+
+	if responseText == "" {
+		return false, ""
+	}
+
+	// Parse JSON response
+	var result struct {
+		Stuck      bool    `json:"stuck"`
+		Confidence float64 `json:"confidence"`
+		Reasoning  string  `json:"reasoning"`
+	}
+
+	if err := json.Unmarshal([]byte(responseText), &result); err != nil {
+		// Try to extract JSON from markdown code fence
+		if strings.Contains(responseText, "```json") {
+			start := strings.Index(responseText, "```json") + 7
+			end := strings.Index(responseText[start:], "```")
+			if end > 0 {
+				jsonStr := responseText[start : start+end]
+				if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+					return false, ""
+				}
+			} else {
+				return false, ""
+			}
+		} else {
+			return false, ""
+		}
+	}
+
+	if result.Stuck && result.Confidence > 0.8 {
+		return true, result.Reasoning
+	}
+
+	return false, ""
 }

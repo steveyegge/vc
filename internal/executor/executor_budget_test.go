@@ -54,13 +54,18 @@ func TestExecutorQuotaExhaustion(t *testing.T) {
 
 	// Create cost tracker with very small budget
 	costCfg := &cost.Config{
-		MaxTokensPerHour:    1000, // Small budget that will be exhausted
-		MaxTokensPerIssue:   500,
-		MaxCostPerHour:      0.10, // $0.10/hour
-		AlertThreshold:      0.80,
-		BudgetResetInterval: 1 * time.Hour,
-		PersistStatePath:    "", // Don't persist for test
-		Enabled:             true,
+		MaxTokensPerHour:          1000, // Small budget that will be exhausted
+		MaxTokensPerIssue:         500,
+		MaxCostPerHour:            0.10, // $0.10/hour
+		AlertThreshold:            0.80,
+		BudgetResetInterval:       1 * time.Hour,
+		PersistStatePath:          "", // Don't persist for test
+		Enabled:                   true,
+		QuotaSnapshotInterval:     5 * time.Minute,  // Required for validation
+		QuotaAlertYellowThreshold: 30 * time.Minute, // Required for validation
+		QuotaAlertOrangeThreshold: 15 * time.Minute, // Required for validation
+		QuotaAlertRedThreshold:    5 * time.Minute,  // Required for validation
+		QuotaRetentionDays:        30,               // Required for validation
 	}
 	costTracker, err := cost.NewTracker(costCfg, store)
 	if err != nil {
@@ -156,13 +161,18 @@ func TestExecutorQuotaRecovery(t *testing.T) {
 
 	// Create cost tracker with very small budget and SHORT reset interval
 	costCfg := &cost.Config{
-		MaxTokensPerHour:    1000,
-		MaxTokensPerIssue:   500,
-		MaxCostPerHour:      0.10,
-		AlertThreshold:      0.80,
-		BudgetResetInterval: 200 * time.Millisecond, // Very short for testing
-		PersistStatePath:    "",
-		Enabled:             true,
+		MaxTokensPerHour:          1000,
+		MaxTokensPerIssue:         500,
+		MaxCostPerHour:            0.10,
+		AlertThreshold:            0.80,
+		BudgetResetInterval:       200 * time.Millisecond, // Very short for testing
+		PersistStatePath:          "",
+		Enabled:                   true,
+		QuotaSnapshotInterval:     5 * time.Minute,  // Required for validation
+		QuotaAlertYellowThreshold: 30 * time.Minute, // Required for validation
+		QuotaAlertOrangeThreshold: 15 * time.Minute, // Required for validation
+		QuotaAlertRedThreshold:    5 * time.Minute,  // Required for validation
+		QuotaRetentionDays:        30,               // Required for validation
 	}
 	costTracker, err := cost.NewTracker(costCfg, store)
 	if err != nil {
