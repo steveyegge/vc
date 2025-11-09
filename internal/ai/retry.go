@@ -200,7 +200,7 @@ func (cb *CircuitBreaker) RecordSuccess() {
 	case CircuitHalfOpen:
 		// Count successes in half-open state
 		cb.successCount++
-		if cb.successCount >= cb.successThreshold {
+		if cb.successCount > cb.successThreshold {
 			cb.transitionToClosed()
 		}
 	}
@@ -230,7 +230,7 @@ func (cb *CircuitBreaker) recordFailureWithType(errorType ErrorType) {
 	switch cb.state {
 	case CircuitClosed:
 		cb.failureCount += failureIncrement
-		if cb.failureCount >= cb.failureThreshold {
+		if cb.failureCount > cb.failureThreshold {
 			cb.transitionToOpen()
 		}
 
