@@ -272,3 +272,134 @@ func TestConvertJSONToEventActualAmpFormat(t *testing.T) {
 		}
 	})
 }
+
+// TestConvertJSONToEventClaudeCodeFormat tests parsing of Claude Code --output-format stream-json (vc-q788)
+// Claude Code uses similar structure to Amp but with different parameter names
+func TestConvertJSONToEventClaudeCodeFormat(t *testing.T) {
+	// Setup test agent with mock dependencies
+	cfg := storage.DefaultConfig()
+	cfg.Path = t.TempDir() + "/test.db"
+
+	ctx := context.Background()
+	store, err := storage.NewStorage(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	issue := &types.Issue{
+		ID:                 "vc-test-claude-format",
+		Title:              "Test Claude Code JSON Format",
+		Description:        "Test convertJSONToEvent with Claude Code structure",
+		IssueType:          types.TypeTask,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		AcceptanceCriteria: "Test correctly parses Claude Code JSON format",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+		t.Fatalf("Failed to create issue: %v", err)
+	}
+
+	executorID := "test-executor"
+	agentID := "test-agent"
+
+	agent := &Agent{
+		config: AgentConfig{
+			Issue:      issue,
+			Store:      store,
+			ExecutorID: executorID,
+			AgentID:    agentID,
+			StreamJSON: true,
+		},
+		parser: events.NewOutputParser(issue.ID, executorID, agentID),
+		ctx:    ctx,
+	}
+
+	tests := []struct {
+		name       string
+		jsonString string
+		expectTool string
+		expectFile string
+		expectCmd  string
+	}{
+		{
+			name: "Read tool - Claude Code format uses file_path",
+			jsonString: `{
+				"type": "assistant",
+				"message": {
+					"content": [
+						{"type": "text", "text": "Reading file"},
+						{"type": "tool_use", "id": "toolu_123", "name": "Read", "input": {"file_path": "/tmp/test.txt"}}
+					]
+				}
+			}`,
+			expectTool: "read",
+			expectFile: "/tmp/test.txt",
+		},
+		{
+			name: "Bash tool - Claude Code format uses command",
+			jsonString: `{
+				"type": "assistant",
+				"message": {
+					"content": [
+						{"type": "tool_use", "id": "toolu_456", "name": "Bash", "input": {"command": "go test", "description": "Run tests"}}
+					]
+				}
+			}`,
+			expectTool: "bash",
+			expectCmd:  "go test",
+		},
+		{
+			name: "Edit tool - Claude Code format uses file_path",
+			jsonString: `{
+				"type": "assistant",
+				"message": {
+					"content": [
+						{"type": "tool_use", "id": "toolu_789", "name": "Edit", "input": {"file_path": "/tmp/code.go", "old_string": "old", "new_string": "new"}}
+					]
+				}
+			}`,
+			expectTool: "edit",
+			expectFile: "/tmp/code.go",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var msg AgentMessage
+			if err := json.Unmarshal([]byte(tt.jsonString), &msg); err != nil {
+				t.Fatalf("Failed to unmarshal JSON: %v", err)
+			}
+
+			event := agent.convertJSONToEvent(msg)
+			if event == nil {
+				t.Fatal("Expected event, got nil")
+			}
+
+			// Verify event type
+			if event.Type != events.EventTypeAgentToolUse {
+				t.Errorf("Expected EventTypeAgentToolUse, got %s", event.Type)
+			}
+
+			// Extract and verify tool data
+			toolData, err := event.GetAgentToolUseData()
+			if err != nil {
+				t.Fatalf("Failed to get tool data: %v", err)
+			}
+
+			if toolData.ToolName != tt.expectTool {
+				t.Errorf("Expected ToolName %s, got %s", tt.expectTool, toolData.ToolName)
+			}
+
+			if tt.expectFile != "" && toolData.TargetFile != tt.expectFile {
+				t.Errorf("Expected TargetFile %s, got %s", tt.expectFile, toolData.TargetFile)
+			}
+
+			if tt.expectCmd != "" && toolData.Command != tt.expectCmd {
+				t.Errorf("Expected Command %s, got %s", tt.expectCmd, toolData.Command)
+			}
+		})
+	}
+}

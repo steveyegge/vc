@@ -26,14 +26,26 @@ func TestBuildClaudeCodeCommand_WithoutSandbox(t *testing.T) {
 		t.Fatal("Expected at least one argument (command name)")
 	}
 
-	// Should have command name, permission flag, and prompt (vc-117: always bypass for autonomous operation)
-	if len(cmd.Args) != 3 {
-		t.Errorf("Expected 3 args [command, flag, prompt], got %d: %v", len(cmd.Args), cmd.Args)
+	// Should have command name, --print flag, permission flag, and prompt (vc-q788: Claude Code requires --print)
+	if len(cmd.Args) != 4 {
+		t.Errorf("Expected 4 args [command, --print, permission-flag, prompt], got %d: %v", len(cmd.Args), cmd.Args)
 	}
 
 	// Check the prompt is the last argument
 	if cmd.Args[len(cmd.Args)-1] != prompt {
 		t.Errorf("Expected last arg to be prompt '%s', got '%s'", prompt, cmd.Args[len(cmd.Args)-1])
+	}
+
+	// Verify --print flag is present (vc-q788)
+	hasPrintFlag := false
+	for _, arg := range cmd.Args {
+		if arg == "--print" {
+			hasPrintFlag = true
+			break
+		}
+	}
+	if !hasPrintFlag {
+		t.Error("Expected --print flag for non-interactive execution")
 	}
 
 	// Verify permission bypass flag is always present (vc-117)
@@ -67,14 +79,26 @@ func TestBuildClaudeCodeCommand_WithSandbox(t *testing.T) {
 		t.Fatal("Expected at least one argument (command name)")
 	}
 
-	// Should have command name, permission flag, and prompt (3 args total)
-	if len(cmd.Args) != 3 {
-		t.Errorf("Expected 3 args [command, flag, prompt], got %d: %v", len(cmd.Args), cmd.Args)
+	// Should have command name, --print flag, permission flag, and prompt (4 args total)
+	if len(cmd.Args) != 4 {
+		t.Errorf("Expected 4 args [command, --print, permission-flag, prompt], got %d: %v", len(cmd.Args), cmd.Args)
 	}
 
 	// Check the prompt is the last argument
 	if cmd.Args[len(cmd.Args)-1] != prompt {
 		t.Errorf("Expected last arg to be prompt '%s', got '%s'", prompt, cmd.Args[len(cmd.Args)-1])
+	}
+
+	// Verify --print flag is present (vc-q788)
+	hasPrintFlag := false
+	for _, arg := range cmd.Args {
+		if arg == "--print" {
+			hasPrintFlag = true
+			break
+		}
+	}
+	if !hasPrintFlag {
+		t.Error("Expected --print flag for non-interactive execution")
 	}
 
 	// Verify the permission flag is present
@@ -87,6 +111,49 @@ func TestBuildClaudeCodeCommand_WithSandbox(t *testing.T) {
 	}
 	if !hasPermissionFlag {
 		t.Error("Expected --dangerously-skip-permissions flag when sandbox is present")
+	}
+}
+
+// TestBuildClaudeCodeCommand_WithStreamJSON verifies streaming JSON output (vc-q788)
+func TestBuildClaudeCodeCommand_WithStreamJSON(t *testing.T) {
+	cfg := AgentConfig{
+		Type:       AgentTypeClaudeCode,
+		WorkingDir: "/tmp/test",
+		Issue:      &types.Issue{ID: "vc-1", Title: "Test"},
+		StreamJSON: true,
+		Timeout:    5 * time.Minute,
+	}
+	prompt := "Fix the bug"
+
+	cmd := buildClaudeCodeCommand(cfg, prompt)
+
+	// Should have: [claude, --print, --dangerously-skip-permissions, --verbose, --output-format, stream-json, prompt]
+	if len(cmd.Args) != 7 {
+		t.Errorf("Expected 7 args with StreamJSON, got %d: %v", len(cmd.Args), cmd.Args)
+	}
+
+	// Verify --verbose flag is present (required for stream-json)
+	hasVerbose := false
+	for _, arg := range cmd.Args {
+		if arg == "--verbose" {
+			hasVerbose = true
+			break
+		}
+	}
+	if !hasVerbose {
+		t.Error("Expected --verbose flag when StreamJSON is enabled")
+	}
+
+	// Verify --output-format stream-json
+	hasOutputFormat := false
+	for i, arg := range cmd.Args {
+		if arg == "--output-format" && i+1 < len(cmd.Args) && cmd.Args[i+1] == "stream-json" {
+			hasOutputFormat = true
+			break
+		}
+	}
+	if !hasOutputFormat {
+		t.Error("Expected --output-format stream-json when StreamJSON is enabled")
 	}
 }
 

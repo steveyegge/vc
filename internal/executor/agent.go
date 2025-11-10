@@ -670,9 +670,12 @@ func (a *Agent) convertJSONToEvent(msg AgentMessage) *events.AgentEvent {
 		// Additional Read-specific tracking for file-level granularity
 		if toolName == "read" {
 			// Extract file path from input
+			// Claude Code uses "file_path", Amp uses "path"
 			var filePath string
 			if content.Input != nil {
-				if pathVal, ok := content.Input["path"].(string); ok {
+				if pathVal, ok := content.Input["file_path"].(string); ok {
+					filePath = pathVal
+				} else if pathVal, ok := content.Input["path"].(string); ok {
 					filePath = pathVal
 				}
 			}
@@ -691,11 +694,17 @@ func (a *Agent) convertJSONToEvent(msg AgentMessage) *events.AgentEvent {
 		var targetFile, command, pattern string
 		if content.Input != nil {
 			// Path field (used by Read, edit_file, Grep, etc.)
-			if pathVal, ok := content.Input["path"].(string); ok {
+			// Claude Code uses "file_path", Amp uses "path"
+			if pathVal, ok := content.Input["file_path"].(string); ok {
+				targetFile = pathVal
+			} else if pathVal, ok := content.Input["path"].(string); ok {
 				targetFile = pathVal
 			}
-			// Cmd field (used by Bash)
-			if cmdVal, ok := content.Input["cmd"].(string); ok {
+			// Command field (used by Bash)
+			// Claude Code uses "command", Amp uses "cmd"
+			if cmdVal, ok := content.Input["command"].(string); ok {
+				command = cmdVal
+			} else if cmdVal, ok := content.Input["cmd"].(string); ok {
 				command = cmdVal
 			}
 			// Pattern field (used by Grep, Glob)
@@ -819,8 +828,11 @@ func shouldSkipTool(toolName string) bool {
 }
 
 // buildClaudeCodeCommand constructs the Claude Code CLI command
-func buildClaudeCodeCommand(_ AgentConfig, prompt string) *exec.Cmd {
+func buildClaudeCodeCommand(cfg AgentConfig, prompt string) *exec.Cmd {
 	args := []string{}
+
+	// Use --print mode for non-interactive execution
+	args = append(args, "--print")
 
 	// Always bypass permission checks for autonomous agent operation (vc-117)
 	// This is required for VC to operate autonomously without human intervention
@@ -829,6 +841,12 @@ func buildClaudeCodeCommand(_ AgentConfig, prompt string) *exec.Cmd {
 	// 2. When not sandboxed: VC is designed to work autonomously on its own codebase
 	//    and the results go through quality gates before being committed
 	args = append(args, "--dangerously-skip-permissions")
+
+	// Enable JSON streaming if requested
+	// Note: --output-format stream-json requires --verbose flag
+	if cfg.StreamJSON {
+		args = append(args, "--verbose", "--output-format", "stream-json")
+	}
 
 	// Claude Code uses the message directly
 	args = append(args, prompt)
