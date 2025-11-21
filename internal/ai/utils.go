@@ -275,7 +275,7 @@ func truncateString(s string, maxLen int) string {
 	middleChunk := maxLen / 4    // ~25% for work sample
 	lastChunk := maxLen - firstChunk - middleChunk - 100 // Rest for results (minus markers)
 
-	// Extract chunks
+	// Extract chunks with bounds checking
 	first := s[:firstChunk]
 
 	// Middle chunk from 40% mark (skip early context, get into the work)
@@ -284,9 +284,20 @@ func truncateString(s string, maxLen int) string {
 	if middleEnd > len(s) {
 		middleEnd = len(s)
 	}
+	if middleStart > len(s) {
+		middleStart = len(s)
+	}
 	middle := s[middleStart:middleEnd]
 
-	last := s[len(s)-lastChunk:]
+	// Last chunk - check bounds
+	lastStart := len(s) - lastChunk
+	if lastStart < 0 {
+		lastStart = 0
+	}
+	if lastStart > len(s) {
+		lastStart = len(s)
+	}
+	last := s[lastStart:]
 
 	// Add truncation markers
 	return first + "\n\n[... truncated " + fmt.Sprint(len(s)-maxLen) + " chars ...]\n\n" +
