@@ -35,7 +35,7 @@ type VCStorage struct {
 // NewVCStorage creates a VC storage instance using Beads as the underlying storage
 func NewVCStorage(ctx context.Context, dbPath string) (*VCStorage, error) {
 	// 1. Open Beads storage (creates core tables: issues, dependencies, labels, etc.)
-	beadsStore, err := beadsLib.NewSQLiteStorage(dbPath)
+	beadsStore, err := beadsLib.NewSQLiteStorage(ctx, dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open Beads storage: %w", err)
 	}

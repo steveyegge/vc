@@ -194,22 +194,29 @@ func ValidateDatabaseFreshness(dbPath string) error {
 		return fmt.Errorf("invalid database path: %w", err)
 	}
 
+	// vc-rt48: Support both issues.jsonl (VC) and beads.jsonl (Beads projects)
+	// Try issues.jsonl first, then beads.jsonl
 	jsonlPath := filepath.Join(projectRoot, ".beads", "issues.jsonl")
-
-	// Get modification times for both files
-	dbInfo, err := os.Stat(dbPath)
-	if err != nil {
-		return fmt.Errorf("failed to stat database: %w", err)
+	jsonlInfo, err := os.Stat(jsonlPath)
+	if err != nil && os.IsNotExist(err) {
+		// Try beads.jsonl (Beads projects use this name)
+		jsonlPath = filepath.Join(projectRoot, ".beads", "beads.jsonl")
+		jsonlInfo, err = os.Stat(jsonlPath)
 	}
 
-	jsonlInfo, err := os.Stat(jsonlPath)
+	// Get modification times for both files
+	dbInfo, err2 := os.Stat(dbPath)
+	if err2 != nil {
+		return fmt.Errorf("failed to stat database: %w", err2)
+	}
+
 	if err != nil {
-		// If issues.jsonl doesn't exist, that's OK - database might be authoritative
+		// If neither JSONL file exists, that's OK - database might be authoritative
 		// This can happen in test environments or fresh clones
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return fmt.Errorf("failed to stat issues.jsonl: %w", err)
+		return fmt.Errorf("failed to stat JSONL file: %w", err)
 	}
 
 	// Compare modification times
