@@ -143,6 +143,40 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 					"steps_count": len(assessment.Steps),
 					"risks_count": len(assessment.Risks),
 				})
+
+			// vc-rzqe: Check if AI recommends decomposition
+			if assessment.ShouldDecompose && assessment.DecompositionPlan != nil {
+				fmt.Printf("🔄 AI recommends decomposing %s into child issues\n", issue.ID)
+
+				// Decompose the issue into children
+				childIDs, err := e.supervisor.DecomposeIssue(ctx, e.store, issue, assessment.DecompositionPlan)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to decompose issue: %v (continuing with execution)\n", err)
+				} else {
+					fmt.Printf("✓ Successfully decomposed %s into %d child issues: %v\n", issue.ID, len(childIDs), childIDs)
+
+					// Release the parent issue since children will be worked on instead
+					comment := fmt.Sprintf("Decomposed into %d child issues: %v", len(childIDs), childIDs)
+					if err := e.store.ReleaseIssueAndReopen(ctx, issue.ID, "ai-supervisor", comment); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: failed to release decomposed parent: %v\n", err)
+					}
+
+					// Log decomposition event
+					e.logEvent(ctx, events.EventTypeIssueDecomposed, events.SeverityInfo, issue.ID,
+						fmt.Sprintf("Decomposed %s into %d child issues", issue.ID, len(childIDs)),
+						map[string]interface{}{
+							"child_ids":       childIDs,
+							"child_count":     len(childIDs),
+							"reasoning":       assessment.DecompositionPlan.Reasoning,
+						})
+
+					// End execution metrics - issue was decomposed (not failed)
+					e.getMonitor().EndExecution(false, false)
+
+					// Return nil to indicate success (no error, but no agent spawned either)
+					return nil
+				}
+			}
 		}
 	} else {
 		// AI supervision disabled - assessing state is a no-op

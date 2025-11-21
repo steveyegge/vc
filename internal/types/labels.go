@@ -18,4 +18,12 @@ const (
 	// LabelDiscoveredSupervisor marks issues filed by the AI supervisor (vc-d0r3).
 	// This includes all VC-filed issues to distinguish them from human-filed issues.
 	LabelDiscoveredSupervisor = "discovered:supervisor"
+
+	// LabelDiscoveredDecomposed marks child issues created from task decomposition (vc-rzqe).
+	// These issues are fragments of a larger task that was split to prevent context overflow.
+	LabelDiscoveredDecomposed = "discovered:decomposed"
+
+	// LabelDecomposed marks parent issues that have been decomposed into children (vc-rzqe).
+	// These issues act as coordinators and should auto-close when all children complete.
+	LabelDecomposed = "decomposed"
 )

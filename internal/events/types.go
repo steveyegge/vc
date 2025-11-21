@@ -47,6 +47,8 @@ const (
 	EventTypeAnalysisStarted EventType = "analysis_started"
 	// EventTypeAnalysisCompleted indicates AI analysis phase completed
 	EventTypeAnalysisCompleted EventType = "analysis_completed"
+	// EventTypeIssueDecomposed indicates an issue was decomposed into child issues (vc-rzqe)
+	EventTypeIssueDecomposed EventType = "issue_decomposed"
 	// EventTypeQualityGatesStarted indicates quality gates evaluation started
 	EventTypeQualityGatesStarted EventType = "quality_gates_started"
 	// EventTypeQualityGatesProgress indicates progress during quality gates evaluation

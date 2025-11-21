@@ -13,11 +13,28 @@ import (
 
 // Assessment represents an AI assessment of an issue before execution
 type Assessment struct {
-	Strategy   string   `json:"strategy"`   // High-level strategy for completing the issue
-	Steps      []string `json:"steps"`      // Specific steps to take
-	Risks      []string `json:"risks"`      // Potential risks or challenges
-	Confidence float64  `json:"confidence"` // Confidence score (0.0-1.0)
-	Reasoning  string   `json:"reasoning"`  // Detailed reasoning
+	Strategy         string            `json:"strategy"`           // High-level strategy for completing the issue
+	Steps            []string          `json:"steps"`              // Specific steps to take
+	Risks            []string          `json:"risks"`              // Potential risks or challenges
+	Confidence       float64           `json:"confidence"`         // Confidence score (0.0-1.0)
+	Reasoning        string            `json:"reasoning"`          // Detailed reasoning
+	ShouldDecompose  bool              `json:"should_decompose"`   // Whether this issue should be split into child issues (vc-rzqe)
+	DecompositionPlan *DecompositionPlan `json:"decomposition_plan,omitempty"` // Plan for decomposing into child issues (vc-rzqe)
+}
+
+// DecompositionPlan describes how to break an issue into child issues (vc-rzqe)
+type DecompositionPlan struct {
+	Reasoning  string      `json:"reasoning"`   // Why decomposition is recommended
+	ChildIssues []ChildIssue `json:"child_issues"` // Proposed child issues
+}
+
+// ChildIssue represents a proposed child issue in a decomposition plan (vc-rzqe)
+type ChildIssue struct {
+	Title              string `json:"title"`               // Title for the child issue
+	Description        string `json:"description"`         // Description for the child issue
+	AcceptanceCriteria string `json:"acceptance_criteria"` // Acceptance criteria for the child issue
+	Priority           int    `json:"priority"`            // Priority (0-4)
+	EstimatedMinutes   int    `json:"estimated_minutes"`   // Time estimate
 }
 
 // CompletionAssessment represents AI assessment of whether an epic/mission is complete
@@ -158,6 +175,45 @@ func (s *Supervisor) AssessCompletion(ctx context.Context, issue *types.Issue, c
 
 // buildAssessmentPrompt builds the prompt for assessing an issue before execution
 func (s *Supervisor) buildAssessmentPrompt(issue *types.Issue) string {
+	// Check if this is a baseline issue - baseline test issues are prime candidates for decomposition (vc-rzqe)
+	isBaseline := strings.Contains(issue.ID, "-baseline-")
+
+	decompositionGuidance := ""
+	if isBaseline {
+		decompositionGuidance = `
+
+**TASK DECOMPOSITION ANALYSIS (vc-rzqe)**:
+This is a baseline issue that may involve fixing multiple test failures. Consider whether this should be decomposed:
+
+WHEN TO DECOMPOSE (set should_decompose: true):
+- Multiple independent test failures in different files
+- Estimated work >60 minutes or >3 files to fix
+- Low confidence (<0.7) or high complexity
+- Multiple distinct acceptance criteria that could be separate tasks
+
+WHEN NOT TO DECOMPOSE (set should_decompose: false):
+- Single test failure or closely related failures
+- Simple fix affecting 1-2 files
+- High confidence (>0.8) and straightforward approach
+- Estimated work <60 minutes
+
+If should_decompose is true, provide a decomposition_plan with:
+{
+  "reasoning": "Why decomposition is recommended (e.g., '5 independent test failures across different packages')",
+  "child_issues": [
+    {
+      "title": "Fix TestXxx in package Y",
+      "description": "Detailed description of what needs to be fixed",
+      "acceptance_criteria": "Test passes, related tests still pass",
+      "priority": 2,
+      "estimated_minutes": 30
+    }
+  ]
+}
+
+Each child issue should be independently completable with bounded context (<50K tokens expected).`
+	}
+
 	return fmt.Sprintf(`You are an AI supervisor assessing a coding task before execution. Analyze the following issue and provide a structured assessment.
 
 Issue ID: %s
@@ -173,6 +229,7 @@ Design:
 
 Acceptance Criteria:
 %s
+%s
 
 Please provide your assessment as a JSON object with the following structure:
 {
@@ -180,7 +237,9 @@ Please provide your assessment as a JSON object with the following structure:
   "steps": ["Step 1", "Step 2", ...],
   "risks": ["Risk 1", "Risk 2", ...],
   "confidence": 0.85,
-  "reasoning": "Detailed reasoning about the approach"
+  "reasoning": "Detailed reasoning about the approach",
+  "should_decompose": false,
+  "decomposition_plan": null
 }
 
 Focus on:
@@ -188,10 +247,12 @@ Focus on:
 2. What are the key steps in order?
 3. What could go wrong or needs special attention?
 4. How confident are you this can be completed successfully?
+5. Should this be decomposed into smaller child issues?
 
 IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (`+"`"+`). Just the JSON object.`,
 		issue.ID, issue.Title, issue.IssueType, issue.Priority,
-		issue.Description, issue.Design, issue.AcceptanceCriteria)
+		issue.Description, issue.Design, issue.AcceptanceCriteria,
+		decompositionGuidance)
 }
 
 // buildCompletionPrompt builds the prompt for assessing epic/mission completion

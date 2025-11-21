@@ -18,6 +18,7 @@ import (
 // Uses AI to assess completion based on objectives, not just counting closed children
 // If the epic is closed and is a mission, automatically cleans up the mission sandbox (vc-245)
 // vc-276: Added instanceID parameter to properly attribute events to the executor instance
+// vc-rzqe: Also checks if decomposed parent issues are complete
 func checkEpicCompletion(ctx context.Context, store storage.Storage, supervisor *ai.Supervisor, sandboxMgr sandbox.Manager, instanceID string, issueID string) error {
 	// Get the issue to check its parent
 	issue, err := store.GetIssue(ctx, issueID)
@@ -34,7 +35,7 @@ func checkEpicCompletion(ctx context.Context, store storage.Storage, supervisor 
 		return fmt.Errorf("failed to get dependencies: %w", err)
 	}
 
-	// Find parent epic(s)
+	// Find parent epic(s) and decomposed parents
 	for _, dep := range deps {
 		if dep.IssueType == types.TypeEpic {
 			// Check if all children of this epic are closed
@@ -51,6 +52,29 @@ func checkEpicCompletion(ctx context.Context, store storage.Storage, supervisor 
 					// Log but don't fail - this is best-effort
 					fmt.Printf("Warning: failed to cleanup mission sandbox for %s: %v\n", dep.ID, err)
 				}
+			}
+		}
+
+		// vc-rzqe: Check if parent is a decomposed issue
+		parentLabels, err := store.GetLabels(ctx, dep.ID)
+		if err != nil {
+			fmt.Printf("Warning: failed to get labels for %s: %v\n", dep.ID, err)
+			continue
+		}
+
+		hasDecomposedLabel := false
+		for _, label := range parentLabels {
+			if label == types.LabelDecomposed {
+				hasDecomposedLabel = true
+				break
+			}
+		}
+
+		if hasDecomposedLabel {
+			// Check if all children of this decomposed parent are closed
+			if err := checkAndCloseDecomposedParent(ctx, store, instanceID, dep.ID); err != nil {
+				// Log but don't fail - this is a best-effort check
+				fmt.Printf("Warning: failed to check decomposed parent completion for %s: %v\n", dep.ID, err)
 			}
 		}
 	}
@@ -328,4 +352,77 @@ func logEpicCleanupCompletedEvent(ctx context.Context, store storage.Storage, is
 		// Log error but don't fail execution
 		fmt.Printf("Warning: failed to store epic_cleanup_completed event: %v\n", err)
 	}
+}
+
+// checkAndCloseDecomposedParent checks if a decomposed parent's children are all complete (vc-rzqe)
+// Decomposed parents are automatically closed when all children are closed (no AI assessment needed)
+// This is simpler than epic completion because decomposed issues are coordinators, not true containers
+func checkAndCloseDecomposedParent(ctx context.Context, store storage.Storage, instanceID string, parentID string) error {
+	// Get the parent issue
+	parent, err := store.GetIssue(ctx, parentID)
+	if err != nil {
+		return fmt.Errorf("failed to get parent issue: %w", err)
+	}
+	if parent == nil {
+		return fmt.Errorf("parent issue not found: %s", parentID)
+	}
+
+	// Skip if already closed
+	if parent.Status == types.StatusClosed {
+		return nil
+	}
+
+	// Get all children (issues that depend on this parent)
+	children, err := store.GetDependents(ctx, parentID)
+	if err != nil {
+		return fmt.Errorf("failed to get children: %w", err)
+	}
+
+	// If no children, don't auto-close (shouldn't happen, but be defensive)
+	if len(children) == 0 {
+		return nil
+	}
+
+	// Check if all children are closed
+	allClosed := true
+	for _, child := range children {
+		if child.Status != types.StatusClosed {
+			allClosed = false
+			break
+		}
+	}
+
+	// If all children are closed, close the parent
+	if allClosed {
+		fmt.Printf("All %d children of decomposed parent %s are complete, auto-closing parent\n", len(children), parentID)
+
+		reason := fmt.Sprintf("All %d decomposed child issues completed", len(children))
+		if err := store.CloseIssue(ctx, parentID, reason, "ai-supervisor"); err != nil {
+			return fmt.Errorf("failed to close decomposed parent: %w", err)
+		}
+
+		fmt.Printf("✓ Closed decomposed parent %s: %s\n", parentID, parent.Title)
+
+		// Log decomposed parent completion event
+		event := &events.AgentEvent{
+			ExecutorID: instanceID,
+			IssueID:    parentID,
+			Type:       events.EventTypeIssueDecomposed,
+			Timestamp:  time.Now(),
+			Severity:   events.SeverityInfo,
+			Message:    fmt.Sprintf("Decomposed parent %s auto-closed: all %d children complete", parentID, len(children)),
+			Data: map[string]interface{}{
+				"parent_id":        parentID,
+				"parent_title":     parent.Title,
+				"children_count":   len(children),
+				"completion_mode":  "auto_close",
+			},
+		}
+
+		if err := store.StoreAgentEvent(ctx, event); err != nil {
+			fmt.Printf("Warning: failed to store decomposed parent completion event: %v\n", err)
+		}
+	}
+
+	return nil
 }
