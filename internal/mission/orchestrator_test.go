@@ -73,6 +73,10 @@ func (m *MockStorage) GetIssues(ctx context.Context, ids []string) (map[string]*
 	return result, nil
 }
 
+func (m *MockStorage) GetIssuePrefix(ctx context.Context) (string, error) {
+	return "vc", nil
+}
+
 func (m *MockStorage) GetMission(ctx context.Context, id string) (*types.Mission, error) {
 	issue, err := m.GetIssue(ctx, id)
 	if err != nil {

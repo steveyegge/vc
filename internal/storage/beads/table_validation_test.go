@@ -76,7 +76,7 @@ func TestDatabaseTableMissingDetection(t *testing.T) {
 
 		// Create a database with only Beads core tables (no VC extensions)
 		// by using Beads storage directly
-		beadsStore, err := beadsLib.NewSQLiteStorage(dbPath)
+		beadsStore, err := beadsLib.NewSQLiteStorage(context.Background(), dbPath)
 		if err != nil {
 			t.Fatalf("Failed to create Beads storage: %v", err)
 		}
@@ -294,7 +294,7 @@ func TestPartialSchemaHandling(t *testing.T) {
 		dbPath := filepath.Join(tmpDir, "partial.db")
 
 		// Create database with only core Beads tables
-		beadsStore, err := beadsLib.NewSQLiteStorage(dbPath)
+		beadsStore, err := beadsLib.NewSQLiteStorage(context.Background(), dbPath)
 		if err != nil {
 			t.Fatalf("Failed to create Beads storage: %v", err)
 		}
@@ -336,7 +336,7 @@ func TestPartialSchemaHandling(t *testing.T) {
 		dbPath := filepath.Join(tmpDir, "partial2.db")
 
 		// Create database with only Beads tables
-		beadsStore, err := beadsLib.NewSQLiteStorage(dbPath)
+		beadsStore, err := beadsLib.NewSQLiteStorage(context.Background(), dbPath)
 		if err != nil {
 			t.Fatalf("Failed to create Beads storage: %v", err)
 		}
