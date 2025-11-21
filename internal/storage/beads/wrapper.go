@@ -89,6 +89,20 @@ func (s *VCStorage) GetDB() interface{} {
 	return s.db
 }
 
+// GetIssuePrefix returns the project-specific issue prefix (vc-0bt1)
+// This allows baseline logic and other code to work across different projects
+// Examples: "vc" for VC project, "bd" for Beads project
+func (s *VCStorage) GetIssuePrefix(ctx context.Context) (string, error) {
+	prefix, err := s.Storage.GetConfig(ctx, "issue_prefix")
+	if err != nil {
+		return "", fmt.Errorf("failed to get issue_prefix from config: %w", err)
+	}
+	if prefix == "" {
+		return "", fmt.Errorf("issue_prefix not configured in database")
+	}
+	return prefix, nil
+}
+
 // createVCExtensionTables creates VC-specific tables in the Beads database
 // These tables extend Beads with mission workflow metadata
 // Uses a scoped connection (*sql.Conn) for DDL operations as recommended by Beads

@@ -134,6 +134,7 @@ type Storage interface {
 	// Config
 	GetConfig(ctx context.Context, key string) (string, error)
 	SetConfig(ctx context.Context, key, value string) error
+	GetIssuePrefix(ctx context.Context) (string, error) // vc-0bt1: Get project issue prefix (e.g., "vc", "bd")
 
 	// Lifecycle
 	Close() error

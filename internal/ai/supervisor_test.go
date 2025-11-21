@@ -255,6 +255,9 @@ func (m *mockStorage) GetConfig(ctx context.Context, key string) (string, error)
 func (m *mockStorage) SetConfig(ctx context.Context, key, value string) error {
 	return nil
 }
+func (m *mockStorage) GetIssuePrefix(ctx context.Context) (string, error) {
+	return "vc", nil // vc-0bt1: Default to "vc" prefix for VC project tests
+}
 
 func (m *mockStorage) CleanupEventsByAge(ctx context.Context, retentionDays, criticalRetentionDays, batchSize int) (int, error) {
 	return 0, nil

@@ -326,9 +326,9 @@ func TestHandleBaselineFailure(t *testing.T) {
 	// Verify baseline issues were created
 	// Use generated IDs with stable hashes
 	expectedIssues := []string{
-		GenerateBaselineIssueID("test"),
-		GenerateBaselineIssueID("lint"),
-		GenerateBaselineIssueID("build"),
+		GenerateBaselineIssueID("vc", "test"),
+		GenerateBaselineIssueID("vc", "lint"),
+		GenerateBaselineIssueID("vc", "build"),
 	}
 
 	for _, issueID := range expectedIssues {
@@ -447,9 +447,9 @@ func TestBaselineIssueReopening(t *testing.T) {
 	// Verify baseline issues were created
 	// Use generated IDs with stable hashes
 	expectedIssues := []string{
-		GenerateBaselineIssueID("test"),
-		GenerateBaselineIssueID("lint"),
-		GenerateBaselineIssueID("build"),
+		GenerateBaselineIssueID("vc", "test"),
+		GenerateBaselineIssueID("vc", "lint"),
+		GenerateBaselineIssueID("vc", "build"),
 	}
 
 	for _, issueID := range expectedIssues {

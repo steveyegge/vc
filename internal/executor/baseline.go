@@ -18,20 +18,25 @@ const (
 )
 
 // GenerateBaselineIssueID generates a stable baseline issue ID for a given gate type.
-// Format: vc-{hash}-baseline-{gate} where hash is first 4 chars of SHA256(gate)
+// Format: {prefix}-{hash}-baseline-{gate} where hash is first 4 chars of SHA256(gate)
 //
-// Examples:
+// Examples (prefix="vc"):
 //   - test  -> vc-9f86-baseline-test
 //   - lint  -> vc-b0a3-baseline-lint
 //   - build -> vc-e4c2-baseline-build
 //
+// Examples (prefix="bd"):
+//   - test  -> bd-9f86-baseline-test
+//   - lint  -> bd-b0a3-baseline-lint
+//
 // The hash ensures the ID has a unique component while remaining stable for the same gate.
-func GenerateBaselineIssueID(gateType string) string {
+// vc-0bt1: Accepts prefix parameter to support different project prefixes
+func GenerateBaselineIssueID(prefix, gateType string) string {
 	// Compute stable hash from gate type
 	hash := sha256.Sum256([]byte(gateType))
 	hashPrefix := fmt.Sprintf("%x", hash[:2]) // First 2 bytes = 4 hex chars
 
-	return fmt.Sprintf("vc-%s-baseline-%s", hashPrefix, gateType)
+	return fmt.Sprintf("%s-%s-baseline-%s", prefix, hashPrefix, gateType)
 }
 
 // IsBaselineIssue returns true if the given issue ID is a baseline issue (vc-261).
@@ -39,17 +44,19 @@ func GenerateBaselineIssueID(gateType string) string {
 // they detect failures in the baseline (main branch).
 //
 // Supports both old format (vc-baseline-test) and new format (vc-9f86-baseline-test).
+// vc-0bt1: Accepts any prefix (vc-, bd-, etc.) for cross-project compatibility
 func IsBaselineIssue(issueID string) bool {
-	// Check old format (deprecated)
+	// Check old format (deprecated, vc-specific)
 	if issueID == BaselineTestIssueID ||
 		issueID == BaselineLintIssueID ||
 		issueID == BaselineBuildIssueID {
 		return true
 	}
 
-	// Check new format: vc-{hash}-baseline-{gate}
-	// Pattern: vc-[0-9a-f]{4}-baseline-
-	matched, _ := regexp.MatchString(`^vc-[0-9a-f]{4}-baseline-\w+$`, issueID)
+	// Check new format: {prefix}-{hash}-baseline-{gate}
+	// Pattern: [a-z]+-[0-9a-f]{4}-baseline-\w+
+	// Examples: vc-9f86-baseline-test, bd-9f86-baseline-test
+	matched, _ := regexp.MatchString(`^[a-z]+-[0-9a-f]{4}-baseline-\w+$`, issueID)
 	return matched
 }
 
@@ -57,19 +64,21 @@ func IsBaselineIssue(issueID string) bool {
 // For example:
 //   - "vc-baseline-test" returns "test" (old format)
 //   - "vc-9f86-baseline-test" returns "test" (new format)
+//   - "bd-9f86-baseline-test" returns "test" (new format)
 //
 // Returns empty string if the issue ID is not a baseline issue.
+// vc-0bt1: Works with any prefix (vc-, bd-, etc.) for cross-project compatibility
 func GetGateType(issueID string) string {
 	if !IsBaselineIssue(issueID) {
 		return ""
 	}
 
-	// Try old format first (vc-baseline-{gate})
+	// Try old format first (vc-baseline-{gate} only)
 	if strings.HasPrefix(issueID, "vc-baseline-") {
 		return strings.TrimPrefix(issueID, "vc-baseline-")
 	}
 
-	// Try new format (vc-{hash}-baseline-{gate})
+	// Try new format ({prefix}-{hash}-baseline-{gate})
 	// Extract everything after "baseline-"
 	parts := strings.Split(issueID, "-baseline-")
 	if len(parts) == 2 {
