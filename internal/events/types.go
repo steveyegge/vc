@@ -143,6 +143,8 @@ const (
 	EventTypeGitWorktreeRemoved EventType = "git_worktree_removed"
 	// EventTypeSandboxCleanupCompleted indicates sandbox cleanup completed
 	EventTypeSandboxCleanupCompleted EventType = "sandbox_cleanup_completed"
+	// EventTypeSandboxRebase indicates sandbox branch was rebased against main (vc-sd8r)
+	EventTypeSandboxRebase EventType = "sandbox_rebase"
 
 	// Mission phase transition events (vc-266)
 	// EventTypeMissionCreated indicates a new mission was created

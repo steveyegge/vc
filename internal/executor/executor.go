@@ -937,6 +937,43 @@ func (e *Executor) Start(ctx context.Context) error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to restore self-healing mode: %v\n", err)
 	}
 
+	// Rebase all mission sandboxes on startup (vc-sd8r: Phase 1)
+	// This keeps long-running missions synchronized with upstream changes
+	if e.enableSandboxes {
+		anyRebaseSucceeded, err := e.rebaseAllSandboxes(ctx)
+		if err != nil {
+			// Log warning but don't fail startup - missions can still proceed
+			fmt.Fprintf(os.Stderr, "Warning: failed to rebase sandboxes on startup: %v\n", err)
+		} else if anyRebaseSucceeded && e.preFlightChecker != nil {
+			// Run preflight check to catch rebase-induced breakage (vc-sd8r: Phase 1)
+			// This integrates rebase failures with self-healing mode
+			fmt.Printf("Running preflight check after sandbox rebasing...\n")
+			allPassed, commitHash, err := e.preFlightChecker.CheckBaseline(ctx, e.instanceID)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: preflight check after rebase failed: %v\n", err)
+			} else if !allPassed {
+				// Rebase broke the baseline - enter self-healing mode
+				fmt.Printf("⚠️  Sandbox rebase broke baseline - entering self-healing mode\n")
+
+				// Get detailed gate results
+				results, err := e.preFlightChecker.GetCachedResults(ctx, commitHash)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to get gate results: %v\n", err)
+				} else if results != nil {
+					// Create baseline failure issues (reuse existing preflight logic)
+					if err := e.preFlightChecker.HandleBaselineFailure(ctx, e.instanceID, commitHash, results); err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to handle baseline failure after rebase: %v\n", err)
+					}
+				}
+
+				// Transition to self-healing mode
+				e.transitionToSelfHealing(ctx)
+			} else {
+				fmt.Printf("✓ Baseline still passing after sandbox rebasing\n")
+			}
+		}
+	}
+
 	// Start the event loop
 	go e.eventLoop(ctx)
 
