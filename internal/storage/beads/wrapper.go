@@ -93,7 +93,7 @@ func (s *VCStorage) GetDB() interface{} {
 // This allows baseline logic and other code to work across different projects
 // Examples: "vc" for VC project, "bd" for Beads project
 func (s *VCStorage) GetIssuePrefix(ctx context.Context) (string, error) {
-	prefix, err := s.Storage.GetConfig(ctx, "issue_prefix")
+	prefix, err := s.GetConfig(ctx, "issue_prefix")
 	if err != nil {
 		return "", fmt.Errorf("failed to get issue_prefix from config: %w", err)
 	}
