@@ -638,6 +638,238 @@ ORDER BY date DESC;
 
 ---
 
+## 🔄 Iterative Refinement Metrics Queries (vc-it8m)
+
+When iterative refinement is enabled, VC collects comprehensive metrics about convergence behavior, cost, and quality improvement. These queries analyze refinement effectiveness and validate the 4-5 iteration hypothesis.
+
+### Event Types
+
+Events related to iterative refinement:
+
+1. **`refinement_started`** - When artifact refinement begins
+2. **`refinement_iteration`** - Each refinement iteration (with diff metrics)
+3. **`refinement_converged`** - When AI determines convergence
+4. **`refinement_completed`** - When refinement finishes (converged or maxed out)
+
+### Data Fields
+
+**RefinementIterationData:**
+- `iteration` - Iteration number (1-based)
+- `artifact_type` - Type of artifact being refined (analysis, assessment, etc.)
+- `input_tokens` - Tokens in refinement prompt
+- `output_tokens` - Tokens in AI response
+- `diff_lines` - Lines changed from previous version
+- `diff_percent` - Percentage of artifact changed
+- `duration_ms` - Time for this iteration
+- `convergence_checked` - Whether convergence was checked
+- `converged` - Whether convergence check passed
+
+**RefinementCompletedData:**
+- `artifact_type` - Type of artifact
+- `priority` - Issue priority (P0-P3)
+- `total_iterations` - Total refinement iterations
+- `converged` - Whether AI determined convergence
+- `convergence_reason` - Why refinement stopped (AI convergence, max iterations, timeout, skipped)
+- `total_duration_ms` - Total refinement time
+- `total_input_tokens` - Sum of input tokens
+- `total_output_tokens` - Sum of output tokens
+- `quality_improvement` - Measured quality delta (if tracked)
+- `issues_discovered` - Issues found via this artifact
+
+### Queries
+
+**Convergence rate by artifact type:**
+```sql
+SELECT
+  json_extract(data, '$.artifact_type') as type,
+  COUNT(*) as total,
+  SUM(CASE WHEN json_extract(data, '$.converged') = 1 THEN 1 ELSE 0 END) as converged,
+  ROUND(100.0 * SUM(CASE WHEN json_extract(data, '$.converged') = 1 THEN 1 ELSE 0 END) / COUNT(*), 2) as convergence_rate_pct,
+  ROUND(AVG(json_extract(data, '$.total_iterations')), 2) as avg_iterations
+FROM agent_events
+WHERE type = 'refinement_completed'
+  AND json_extract(data, '$.convergence_reason') != 'skipped (simple)'
+GROUP BY json_extract(data, '$.artifact_type')
+ORDER BY convergence_rate_pct DESC;
+```
+
+**Mean iterations to convergence (P50/P95):**
+```sql
+WITH converged_artifacts AS (
+  SELECT json_extract(data, '$.total_iterations') as iterations
+  FROM agent_events
+  WHERE type = 'refinement_completed'
+    AND json_extract(data, '$.converged') = 1
+  ORDER BY iterations
+),
+total_count AS (
+  SELECT COUNT(*) as cnt FROM converged_artifacts
+)
+SELECT
+  ROUND(AVG(iterations), 2) as mean_iterations,
+  (SELECT iterations FROM converged_artifacts
+   LIMIT 1 OFFSET (SELECT cnt / 2 FROM total_count)) as p50_iterations,
+  (SELECT iterations FROM converged_artifacts
+   LIMIT 1 OFFSET (SELECT cnt * 95 / 100 FROM total_count)) as p95_iterations
+FROM converged_artifacts;
+```
+
+**Cost analysis (tokens and estimated USD):**
+```sql
+SELECT
+  json_extract(data, '$.artifact_type') as type,
+  COUNT(*) as artifacts,
+  SUM(json_extract(data, '$.total_input_tokens')) as total_input_tokens,
+  SUM(json_extract(data, '$.total_output_tokens')) as total_output_tokens,
+  -- Claude Sonnet 4.5: $3/MTok input, $15/MTok output
+  ROUND(
+    (SUM(json_extract(data, '$.total_input_tokens')) * 3.0 / 1000000) +
+    (SUM(json_extract(data, '$.total_output_tokens')) * 15.0 / 1000000),
+    4
+  ) as estimated_cost_usd,
+  ROUND(AVG(json_extract(data, '$.total_duration_ms')) / 1000.0, 2) as avg_duration_sec
+FROM agent_events
+WHERE type = 'refinement_completed'
+GROUP BY json_extract(data, '$.artifact_type')
+ORDER BY estimated_cost_usd DESC;
+```
+
+**Iteration-by-iteration diff metrics:**
+```sql
+SELECT
+  issue_id,
+  json_extract(data, '$.iteration') as iteration,
+  json_extract(data, '$.diff_lines') as diff_lines,
+  ROUND(json_extract(data, '$.diff_percent'), 2) as diff_pct,
+  json_extract(data, '$.duration_ms') as duration_ms,
+  json_extract(data, '$.converged') as converged
+FROM agent_events
+WHERE type = 'refinement_iteration'
+  AND issue_id = 'vc-XXX'
+ORDER BY json_extract(data, '$.iteration');
+```
+
+**Refinement efficiency (artifacts that converged quickly vs slowly):**
+```sql
+SELECT
+  CASE
+    WHEN json_extract(data, '$.total_iterations') <= 3 THEN 'fast (1-3 iter)'
+    WHEN json_extract(data, '$.total_iterations') <= 5 THEN 'medium (4-5 iter)'
+    WHEN json_extract(data, '$.total_iterations') <= 7 THEN 'slow (6-7 iter)'
+    ELSE 'very slow (8+ iter)'
+  END as speed_bucket,
+  COUNT(*) as count,
+  SUM(CASE WHEN json_extract(data, '$.converged') = 1 THEN 1 ELSE 0 END) as converged,
+  ROUND(AVG(json_extract(data, '$.total_duration_ms')) / 1000.0, 2) as avg_duration_sec
+FROM agent_events
+WHERE type = 'refinement_completed'
+  AND json_extract(data, '$.convergence_reason') != 'skipped (simple)'
+GROUP BY speed_bucket
+ORDER BY
+  CASE speed_bucket
+    WHEN 'fast (1-3 iter)' THEN 1
+    WHEN 'medium (4-5 iter)' THEN 2
+    WHEN 'slow (6-7 iter)' THEN 3
+    ELSE 4
+  END;
+```
+
+**Quality improvement tracking:**
+```sql
+SELECT
+  json_extract(data, '$.artifact_type') as type,
+  COUNT(*) as artifacts,
+  ROUND(AVG(json_extract(data, '$.quality_improvement')), 2) as avg_quality_delta,
+  SUM(json_extract(data, '$.issues_discovered')) as total_issues_discovered
+FROM agent_events
+WHERE type = 'refinement_completed'
+  AND json_extract(data, '$.quality_improvement') IS NOT NULL
+GROUP BY json_extract(data, '$.artifact_type');
+```
+
+**Convergence by priority (P0 vs P1 vs P2):**
+```sql
+SELECT
+  json_extract(data, '$.priority') as priority,
+  COUNT(*) as total,
+  SUM(CASE WHEN json_extract(data, '$.converged') = 1 THEN 1 ELSE 0 END) as converged,
+  ROUND(AVG(json_extract(data, '$.total_iterations')), 2) as avg_iterations,
+  ROUND(AVG(json_extract(data, '$.total_duration_ms')) / 1000.0, 2) as avg_duration_sec
+FROM agent_events
+WHERE type = 'refinement_completed'
+  AND json_extract(data, '$.priority') IS NOT NULL
+GROUP BY json_extract(data, '$.priority')
+ORDER BY priority;
+```
+
+**Artifacts that hit max iterations (failed to converge):**
+```sql
+SELECT
+  issue_id,
+  timestamp,
+  json_extract(data, '$.artifact_type') as type,
+  json_extract(data, '$.total_iterations') as iterations,
+  json_extract(data, '$.convergence_reason') as reason
+FROM agent_events
+WHERE type = 'refinement_completed'
+  AND json_extract(data, '$.converged') = 0
+  AND json_extract(data, '$.convergence_reason') = 'max iterations'
+ORDER BY timestamp DESC
+LIMIT 20;
+```
+
+**ROI validation (4-5 iteration hypothesis):**
+```sql
+WITH iteration_buckets AS (
+  SELECT
+    json_extract(data, '$.total_iterations') as iterations,
+    json_extract(data, '$.converged') as converged,
+    json_extract(data, '$.total_input_tokens') + json_extract(data, '$.total_output_tokens') as total_tokens
+  FROM agent_events
+  WHERE type = 'refinement_completed'
+    AND json_extract(data, '$.convergence_reason') != 'skipped (simple)'
+)
+SELECT
+  COUNT(*) as total_artifacts,
+  SUM(CASE WHEN iterations >= 4 AND iterations <= 5 THEN 1 ELSE 0 END) as in_target_range,
+  ROUND(100.0 * SUM(CASE WHEN iterations >= 4 AND iterations <= 5 THEN 1 ELSE 0 END) / COUNT(*), 2) as pct_in_range,
+  ROUND(AVG(iterations), 2) as actual_mean,
+  ROUND(SUM(total_tokens) * 3.0 / 1000000, 4) as total_cost_usd_estimate
+FROM iteration_buckets;
+```
+
+**Recent refinement activity:**
+```sql
+SELECT
+  timestamp,
+  issue_id,
+  message,
+  json_extract(data, '$.artifact_type') as type,
+  json_extract(data, '$.total_iterations') as iterations,
+  json_extract(data, '$.converged') as converged,
+  json_extract(data, '$.convergence_reason') as reason
+FROM agent_events
+WHERE type = 'refinement_completed'
+ORDER BY timestamp DESC
+LIMIT 20;
+```
+
+**Diff size progression (do changes get smaller over iterations?):**
+```sql
+SELECT
+  json_extract(data, '$.iteration') as iteration,
+  COUNT(*) as sample_size,
+  ROUND(AVG(json_extract(data, '$.diff_percent')), 2) as avg_diff_pct,
+  ROUND(AVG(json_extract(data, '$.duration_ms')) / 1000.0, 2) as avg_duration_sec
+FROM agent_events
+WHERE type = 'refinement_iteration'
+  AND timestamp > datetime('now', '-7 days')
+GROUP BY json_extract(data, '$.iteration')
+ORDER BY iteration;
+```
+
+---
+
 ## 🗄️ Event Retention Queries (Future)
 
 **Status:** Not yet implemented. See docs/CONFIGURATION.md for planned event retention features.

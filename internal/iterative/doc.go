@@ -93,7 +93,10 @@
 //	        Context: "Analysis of task completion",
 //	    }
 //
-//	    result, err := Converge(ctx, initial, refiner, config)
+//	    // Optional: collect metrics
+//	    collector := NewInMemoryMetricsCollector()
+//
+//	    result, err := Converge(ctx, initial, refiner, config, collector)
 //	    if err != nil {
 //	        return nil, err
 //	    }
@@ -135,15 +138,30 @@
 // The chained approach provides robust convergence detection: AI for intelligent
 // judgment with diff-based fallback for reliability.
 //
-// # Metrics
+// # Metrics (vc-it8m)
 //
-// ConvergenceResult provides basic metrics:
-//   - Iterations: Number of refinement passes performed
-//   - Converged: Whether AI determined convergence (vs hitting MaxIterations)
-//   - ElapsedTime: Total duration of refinement process
+// The framework provides comprehensive metrics collection via the MetricsCollector interface:
 //
-// Higher-level metrics (quality improvement, cost, false convergence rate)
-// should be tracked by the caller based on these basic metrics.
+//   - **Per-iteration metrics**: Tokens, diff size, duration, convergence checks
+//   - **Per-artifact metrics**: Total iterations, cost, quality improvement
+//   - **Aggregate metrics**: Convergence rates, percentiles, cost analysis
+//
+// Enable metrics collection by passing a collector to Converge():
+//
+//	collector := iterative.NewInMemoryMetricsCollector()
+//	result, err := Converge(ctx, initial, refiner, config, collector)
+//
+//	// Access metrics
+//	agg := collector.GetAggregateMetrics()
+//	fmt.Printf("Convergence rate: %.2f%%\n", agg.ConvergenceRate())
+//	fmt.Printf("Mean iterations: %.2f\n", agg.MeanIterations)
+//	fmt.Printf("Estimated cost: $%.4f\n", agg.EstimatedCostUSD)
+//
+// Metrics enable data-driven tuning of refinement parameters and validation
+// of the 4-5 iteration hypothesis. See docs/ITERATIVE_REFINEMENT_METRICS.md
+// for detailed guidance on interpreting and using metrics.
+//
+// Metrics collection is optional - pass nil to disable.
 //
 // # Design Principles
 //

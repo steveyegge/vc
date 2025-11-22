@@ -54,7 +54,7 @@ func TestConverge_BasicIteration(t *testing.T) {
 		MaxIterations: 5,
 	}
 
-	result, err := Converge(ctx, initial, refiner, config)
+	result, err := Converge(ctx, initial, refiner, config, nil)
 	if err != nil {
 		t.Fatalf("Converge failed: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestConverge_ConvergesEarly(t *testing.T) {
 		MaxIterations: 10,
 	}
 
-	result, err := Converge(ctx, initial, refiner, config)
+	result, err := Converge(ctx, initial, refiner, config, nil)
 	if err != nil {
 		t.Fatalf("Converge failed: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestConverge_MinIterationsEnforced(t *testing.T) {
 		MaxIterations: 10,
 	}
 
-	result, err := Converge(ctx, initial, refiner, config)
+	result, err := Converge(ctx, initial, refiner, config, nil)
 	if err != nil {
 		t.Fatalf("Converge failed: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestConverge_RefineError(t *testing.T) {
 	initial := &Artifact{Type: "test", Content: "initial"}
 	config := RefinementConfig{MinIterations: 2, MaxIterations: 5}
 
-	_, err := Converge(ctx, initial, refiner, config)
+	_, err := Converge(ctx, initial, refiner, config, nil)
 	if err == nil {
 		t.Fatal("Expected error from Refine, got nil")
 	}
@@ -209,7 +209,7 @@ func TestConverge_ContextCancellation(t *testing.T) {
 	initial := &Artifact{Type: "test", Content: "initial"}
 	config := RefinementConfig{MinIterations: 2, MaxIterations: 10}
 
-	_, err := Converge(ctx, initial, refiner, config)
+	_, err := Converge(ctx, initial, refiner, config, nil)
 	if err == nil {
 		t.Fatal("Expected cancellation error, got nil")
 	}
@@ -240,7 +240,7 @@ func TestConverge_Timeout(t *testing.T) {
 		Timeout:       150 * time.Millisecond, // Only allow ~1 iteration
 	}
 
-	_, err := Converge(ctx, initial, refiner, config)
+	_, err := Converge(ctx, initial, refiner, config, nil)
 	if err == nil {
 		t.Fatal("Expected timeout error, got nil")
 	}
@@ -263,7 +263,7 @@ func TestConverge_ConvergenceCheckError(t *testing.T) {
 	initial := &Artifact{Type: "test", Content: "initial"}
 	config := RefinementConfig{MinIterations: 2, MaxIterations: 3}
 
-	result, err := Converge(ctx, initial, refiner, config)
+	result, err := Converge(ctx, initial, refiner, config, nil)
 	// Convergence errors should be logged but not fail the refinement
 	if err != nil {
 		t.Fatalf("Converge should not fail on convergence check error: %v", err)
@@ -304,7 +304,7 @@ func TestConverge_InvalidConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Converge(ctx, initial, refiner, tt.config)
+			_, err := Converge(ctx, initial, refiner, tt.config, nil)
 			if err == nil {
 				t.Fatal("Expected validation error, got nil")
 			}
@@ -333,7 +333,7 @@ func TestConverge_SkipSimple(t *testing.T) {
 		SkipSimple:    true,
 	}
 
-	result, err := Converge(ctx, initial, refiner, config)
+	result, err := Converge(ctx, initial, refiner, config, nil)
 	if err != nil {
 		t.Fatalf("Converge failed: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestConverge_ElapsedTime(t *testing.T) {
 	initial := &Artifact{Type: "test", Content: "initial"}
 	config := RefinementConfig{MinIterations: 2, MaxIterations: 2}
 
-	result, err := Converge(ctx, initial, refiner, config)
+	result, err := Converge(ctx, initial, refiner, config, nil)
 	if err != nil {
 		t.Fatalf("Converge failed: %v", err)
 	}

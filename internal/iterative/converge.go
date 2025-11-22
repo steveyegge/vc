@@ -22,9 +22,13 @@ import (
 // - Timeout (if configured) limits total refinement duration
 // - Errors from refiner are propagated immediately
 //
+// Metrics collection (optional):
+// - Pass a MetricsCollector to collect iteration and artifact metrics
+// - Pass nil to disable metrics collection
+//
 // Returns ConvergenceResult with the final artifact and metadata, or error if
 // refinement failed.
-func Converge(ctx context.Context, initial *Artifact, refiner Refiner, config RefinementConfig) (*ConvergenceResult, error) {
+func Converge(ctx context.Context, initial *Artifact, refiner Refiner, config RefinementConfig, collector MetricsCollector) (*ConvergenceResult, error) {
 	startTime := time.Now()
 
 	// Validate config
@@ -59,11 +63,20 @@ func Converge(ctx context.Context, initial *Artifact, refiner Refiner, config Re
 			return nil, fmt.Errorf("refinement canceled after %d iterations: %w", i-1, err)
 		}
 
+		// Notify metrics collector that iteration is starting
+		if collector != nil {
+			collector.RecordIterationStart(i)
+		}
+
+		iterationStart := time.Now()
+
 		// Perform refinement pass
 		refined, err := refiner.Refine(ctx, current)
 		if err != nil {
 			return nil, fmt.Errorf("refinement failed at iteration %d: %w", i, err)
 		}
+
+		iterationDuration := time.Since(iterationStart)
 
 		// Update previous/current
 		previous = current
@@ -71,38 +84,124 @@ func Converge(ctx context.Context, initial *Artifact, refiner Refiner, config Re
 
 		// Check for skip signal (same object returned on first iteration)
 		if i == 1 && config.SkipSimple && current == previous {
-			return &ConvergenceResult{
+			result := &ConvergenceResult{
 				FinalArtifact: current,
 				Iterations:    0,
 				Converged:     true,
 				ElapsedTime:   time.Since(startTime),
-			}, nil
+			}
+			// Record artifact metrics (if collector provided)
+			if collector != nil {
+				artifactMetrics := &ArtifactMetrics{
+					ArtifactType:      initial.Type,
+					TotalIterations:   0,
+					Converged:         true,
+					ConvergenceReason: "skipped (simple)",
+					TotalDuration:     result.ElapsedTime,
+				}
+				collector.RecordArtifactComplete(result, artifactMetrics)
+			}
+			return result, nil
+		}
+
+		// Calculate diff metrics for this iteration
+		diffLines := 0
+		diffPercent := 0.0
+		if previous != nil {
+			diffLines = countDiffLines(previous.Content, current.Content)
+			totalLines := countLines(current.Content)
+			if totalLines > 0 {
+				diffPercent = (float64(diffLines) / float64(totalLines)) * 100
+			}
 		}
 
 		// After MinIterations, check for convergence
+		var convergedNow bool
+		var convergenceConfidence float64
+		convergenceChecked := false
+
 		if i >= config.MinIterations {
-			convergedNow, err := refiner.CheckConvergence(ctx, current, previous)
+			convergedNow, err = refiner.CheckConvergence(ctx, current, previous)
+			convergenceChecked = true
+			// convergenceConfidence would come from refiner if available
+			// For now, we don't have it (TODO: update Refiner interface in future)
+			convergenceConfidence = 0.0
+
 			if err != nil {
 				// Log error but continue - convergence check is advisory
 				// We'll rely on MaxIterations as fallback
 				// TODO: Add logging when logging infrastructure is available
 				_ = err // Suppress unused variable warning for now
 			} else if convergedNow {
-				return &ConvergenceResult{
+				result := &ConvergenceResult{
 					FinalArtifact: current,
 					Iterations:    i,
 					Converged:     true,
 					ElapsedTime:   time.Since(startTime),
-				}, nil
+				}
+
+				// Record final iteration metrics
+				if collector != nil {
+					iterMetrics := &IterationMetrics{
+						Iteration:          i,
+						DiffLines:          diffLines,
+						DiffPercent:        diffPercent,
+						Duration:           iterationDuration,
+						ConvergenceChecked: convergenceChecked,
+						ConvergedThis:      convergedNow,
+						Confidence:         convergenceConfidence,
+					}
+					collector.RecordIterationEnd(i, iterMetrics)
+
+					// Record artifact completion
+					artifactMetrics := &ArtifactMetrics{
+						ArtifactType:      initial.Type,
+						TotalIterations:   i,
+						Converged:         true,
+						ConvergenceReason: "AI convergence",
+						TotalDuration:     result.ElapsedTime,
+					}
+					collector.RecordArtifactComplete(result, artifactMetrics)
+				}
+
+				return result, nil
 			}
+		}
+
+		// Record iteration metrics (if collector provided)
+		if collector != nil {
+			iterMetrics := &IterationMetrics{
+				Iteration:          i,
+				DiffLines:          diffLines,
+				DiffPercent:        diffPercent,
+				Duration:           iterationDuration,
+				ConvergenceChecked: convergenceChecked,
+				ConvergedThis:      convergedNow,
+				Confidence:         convergenceConfidence,
+			}
+			collector.RecordIterationEnd(i, iterMetrics)
 		}
 	}
 
 	// Reached MaxIterations without AI convergence
-	return &ConvergenceResult{
+	result := &ConvergenceResult{
 		FinalArtifact: current,
 		Iterations:    config.MaxIterations,
 		Converged:     false,
 		ElapsedTime:   time.Since(startTime),
-	}, nil
+	}
+
+	// Record artifact metrics (if collector provided)
+	if collector != nil {
+		artifactMetrics := &ArtifactMetrics{
+			ArtifactType:      initial.Type,
+			TotalIterations:   config.MaxIterations,
+			Converged:         false,
+			ConvergenceReason: "max iterations",
+			TotalDuration:     result.ElapsedTime,
+		}
+		collector.RecordArtifactComplete(result, artifactMetrics)
+	}
+
+	return result, nil
 }
