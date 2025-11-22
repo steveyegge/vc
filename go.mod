@@ -11,7 +11,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/ncruces/go-sqlite3 v0.30.1
 	github.com/spf13/cobra v1.10.1
-	github.com/steveyegge/beads v0.22.0
+	github.com/steveyegge/beads v0.24.1
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/mod v0.30.0
 	golang.org/x/sync v0.17.0
