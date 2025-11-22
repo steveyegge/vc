@@ -1,0 +1,159 @@
+// Package iterative provides a framework for convergent iterative refinement
+// of AI-generated artifacts.
+//
+// # Overview
+//
+// Research shows that LLM-generated work converges to "outstandingly good"
+// quality after approximately 4-5 refinement iterations, across diverse tasks
+// (design, planning, implementation, review). The iterative package provides
+// a simple, composable framework for applying this pattern to any AI-generated
+// artifact.
+//
+// The key insight: LLMs have strong breadth-first generation but limited
+// critique depth in a single pass. Multiple passes enable fresh perspective,
+// recursive refinement, and breadth→depth transition.
+//
+// # Architecture
+//
+// The framework follows Zero Framework Cognition (ZFC) principles:
+//   - Framework handles iteration mechanics (loop, count, timeout)
+//   - AI handles convergence judgment (via Refiner.CheckConvergence)
+//   - Pluggable refiners for different artifact types
+//   - Config-driven min/max iterations with safeguards
+//
+// # Core Types
+//
+// Artifact represents an AI-generated artifact that can be refined. It carries
+// the artifact type, current content, and context for refinement.
+//
+// RefinementConfig controls iteration behavior (min/max iterations, timeout,
+// skip simple tasks).
+//
+// Refiner is the interface for pluggable refinement strategies. Implementations
+// provide domain-specific refinement logic while the framework handles mechanics.
+//
+// # Usage Example
+//
+//	// Define a refiner for analysis artifacts
+//	type AnalysisRefiner struct {
+//	    supervisor ai.Supervisor
+//	}
+//
+//	func (r *AnalysisRefiner) Refine(ctx context.Context, artifact *Artifact) (*Artifact, error) {
+//	    // Use AI supervisor to refine the analysis
+//	    prompt := fmt.Sprintf("Refine this analysis:\n\n%s\n\nContext: %s",
+//	        artifact.Content, artifact.Context)
+//	    refined, err := r.supervisor.Analyze(ctx, prompt)
+//	    if err != nil {
+//	        return nil, err
+//	    }
+//	    return &Artifact{
+//	        Type:    artifact.Type,
+//	        Content: refined,
+//	        Context: artifact.Context,
+//	    }, nil
+//	}
+//
+//	func (r *AnalysisRefiner) CheckConvergence(ctx context.Context, current, previous *Artifact) (bool, error) {
+//	    // Use AI to judge convergence
+//	    prompt := fmt.Sprintf(`Has this artifact converged?
+//
+//	CURRENT: %s
+//	PREVIOUS: %s
+//
+//	Consider:
+//	1. Diff size: Minimal/superficial changes?
+//	2. Completeness: All key concerns addressed?
+//	3. Gaps: Obvious missing elements?
+//	4. Marginal value: Would another iteration help?
+//
+//	Respond JSON: {converged: bool, reasoning: string}`,
+//	        current.Content, previous.Content)
+//
+//	    response, err := r.supervisor.Analyze(ctx, prompt)
+//	    if err != nil {
+//	        return false, err
+//	    }
+//	    // Parse response and return convergence judgment
+//	    // ... (implementation details omitted)
+//	}
+//
+//	// Use the framework
+//	func refineAnalysis(ctx context.Context, rawAnalysis string, supervisor ai.Supervisor) (*Artifact, error) {
+//	    refiner := &AnalysisRefiner{supervisor: supervisor}
+//	    config := RefinementConfig{
+//	        MinIterations: 3,
+//	        MaxIterations: 7,
+//	        Timeout:       5 * time.Minute,
+//	    }
+//
+//	    initial := &Artifact{
+//	        Type:    "analysis",
+//	        Content: rawAnalysis,
+//	        Context: "Analysis of task completion",
+//	    }
+//
+//	    result, err := Converge(ctx, initial, refiner, config)
+//	    if err != nil {
+//	        return nil, err
+//	    }
+//
+//	    log.Printf("Analysis converged after %d iterations (converged=%v, elapsed=%v)",
+//	        result.Iterations, result.Converged, result.ElapsedTime)
+//
+//	    return result.FinalArtifact, nil
+//	}
+//
+// # Convergence Strategies
+//
+// The framework supports multiple convergence detection strategies:
+//
+// 1. AI-driven (primary): AI judges convergence via CheckConvergence prompt
+// 2. Diff-based (fallback): If changes < threshold, assume converged
+// 3. Semantic stability: Compare embeddings of current vs previous
+// 4. Timeout safeguard: Max iterations cap prevents runaway iteration
+//
+// # Metrics
+//
+// ConvergenceResult provides basic metrics:
+//   - Iterations: Number of refinement passes performed
+//   - Converged: Whether AI determined convergence (vs hitting MaxIterations)
+//   - ElapsedTime: Total duration of refinement process
+//
+// Higher-level metrics (quality improvement, cost, false convergence rate)
+// should be tracked by the caller based on these basic metrics.
+//
+// # Design Principles
+//
+// 1. Simple, composable: Core abstraction is ~100 lines of code
+// 2. ZFC compliance: Framework provides mechanics, AI provides judgment
+// 3. Pluggable: Refiner interface allows domain-specific strategies
+// 4. Safe: Built-in safeguards (max iterations, timeout, cancellation)
+// 5. Observable: Returns iteration count and timing metrics
+//
+// # Integration Points
+//
+// This framework can be integrated into various VC workflow phases:
+//
+//   - Tier 1 (High Value): Analysis phase, Issue planning/decomposition
+//   - Tier 2 (Medium Value): Assessment (selective), Pre-flight review
+//   - Tier 3 (Lower Priority): Issue description refinement
+//
+// See the parent epic (vc-x1t4) for detailed integration guidance.
+//
+// # Cost Considerations
+//
+// Typical cost: ~$0.14 per artifact (5 iterations @ ~28K tokens).
+// Latency: 10-25s per artifact.
+// This is negligible compared to agent execution costs (~$1-10 per issue).
+//
+// # Error Handling
+//
+// The framework provides robust error handling:
+//
+//   - Refiner errors are propagated immediately (fail-fast)
+//   - Convergence check errors are logged but don't fail refinement (fallback to MaxIterations)
+//   - Context cancellation is respected at iteration boundaries
+//   - Timeout (if configured) triggers graceful cancellation
+//   - Config validation catches invalid settings before iteration starts
+package iterative
