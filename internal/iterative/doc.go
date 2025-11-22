@@ -125,7 +125,10 @@
 //
 // Example chained detector setup:
 //
-//	aiDetector := iterative.NewAIConvergenceDetector(supervisor, 0.8)
+//	aiDetector, err := iterative.NewAIConvergenceDetector(supervisor, 0.8)
+//	if err != nil {
+//	    return err
+//	}
 //	diffDetector := iterative.NewDiffBasedDetector(5.0)
 //	chainedDetector := iterative.NewChainedDetector(0.7, aiDetector, diffDetector)
 //

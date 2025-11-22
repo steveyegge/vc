@@ -38,14 +38,17 @@ type AIConvergenceDetector struct {
 }
 
 // NewAIConvergenceDetector creates an AI-driven convergence detector
-func NewAIConvergenceDetector(supervisor *ai.Supervisor, minConfidence float64) *AIConvergenceDetector {
+func NewAIConvergenceDetector(supervisor *ai.Supervisor, minConfidence float64) (*AIConvergenceDetector, error) {
+	if supervisor == nil {
+		return nil, fmt.Errorf("supervisor cannot be nil")
+	}
 	if minConfidence <= 0 {
 		minConfidence = 0.8 // Default: require high confidence
 	}
 	return &AIConvergenceDetector{
 		supervisor:    supervisor,
 		MinConfidence: minConfidence,
-	}
+	}, nil
 }
 
 // aiConvergenceResponse is the structured response from the AI

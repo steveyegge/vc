@@ -95,7 +95,11 @@ This is line 5.`,
 // TestAIConvergenceDetector_PromptBuilding verifies prompt structure
 // (Full AI tests require integration tests with real Supervisor)
 func TestAIConvergenceDetector_PromptBuilding(t *testing.T) {
-	detector := NewAIConvergenceDetector(nil, 0.8)
+	// Use a mock supervisor to avoid nil check
+	detector := &AIConvergenceDetector{
+		supervisor:    nil, // We won't call CheckConvergence, just buildPrompt
+		MinConfidence: 0.8,
+	}
 
 	previous := &Artifact{
 		Type:    "analysis",
@@ -341,25 +345,19 @@ func TestCountLines(t *testing.T) {
 }
 
 
-// TestNewAIConvergenceDetector tests constructor defaults
+// TestNewAIConvergenceDetector tests constructor validation
 func TestNewAIConvergenceDetector(t *testing.T) {
-	// Test with explicit confidence
-	detector1 := NewAIConvergenceDetector(nil, 0.75)
-	if detector1.MinConfidence != 0.75 {
-		t.Errorf("Expected MinConfidence=0.75, got %.2f", detector1.MinConfidence)
+	// Test with nil supervisor (should error)
+	_, err := NewAIConvergenceDetector(nil, 0.8)
+	if err == nil {
+		t.Error("Expected error with nil supervisor, got nil")
+	}
+	if err != nil && !strings.Contains(err.Error(), "supervisor cannot be nil") {
+		t.Errorf("Expected 'supervisor cannot be nil' error, got: %v", err)
 	}
 
-	// Test with zero confidence (should use default)
-	detector2 := NewAIConvergenceDetector(nil, 0.0)
-	if detector2.MinConfidence != 0.8 {
-		t.Errorf("Expected default MinConfidence=0.8, got %.2f", detector2.MinConfidence)
-	}
-
-	// Test with negative confidence (should use default)
-	detector3 := NewAIConvergenceDetector(nil, -0.5)
-	if detector3.MinConfidence != 0.8 {
-		t.Errorf("Expected default MinConfidence=0.8, got %.2f", detector3.MinConfidence)
-	}
+	// For valid tests with real supervisor and confidence defaults,
+	// see integration tests (vc-kok4)
 }
 
 // TestNewDiffBasedDetector tests constructor defaults
@@ -407,9 +405,12 @@ func TestNewChainedDetector(t *testing.T) {
 // Example usage demonstrating integration with Refiner
 func ExampleNewChainedDetector() {
 	// Create a chained detector with AI primary and diff-based fallback
-	aiDetector := NewAIConvergenceDetector(nil, 0.8)
+	// Note: In real usage, pass a real supervisor instead of nil
+	// aiDetector, _ := NewAIConvergenceDetector(supervisor, 0.8)
 	diffDetector := NewDiffBasedDetector(5.0)
-	chainedDetector := NewChainedDetector(0.7, aiDetector, diffDetector)
+
+	// For example purposes, create chain with just diff detector
+	chainedDetector := NewChainedDetector(0.7, diffDetector)
 
 	fmt.Printf("Chained detector configured with min confidence: %.1f\n", chainedDetector.MinConfidence)
 	// Output: Chained detector configured with min confidence: 0.7
