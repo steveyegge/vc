@@ -106,12 +106,31 @@
 //
 // # Convergence Strategies
 //
-// The framework supports multiple convergence detection strategies:
+// The framework supports multiple convergence detection strategies via the
+// ConvergenceDetector interface:
 //
-// 1. AI-driven (primary): AI judges convergence via CheckConvergence prompt
-// 2. Diff-based (fallback): If changes < threshold, assume converged
-// 3. Semantic stability: Compare embeddings of current vs previous
-// 4. Timeout safeguard: Max iterations cap prevents runaway iteration
+// 1. **AI-driven (primary)**: AIConvergenceDetector uses AI supervision to judge
+//    convergence by analyzing diff size, completeness, gaps, and marginal value
+//    of further iteration. Returns confidence score (0.0-1.0).
+//
+// 2. **Diff-based (fallback)**: DiffBasedDetector uses simple heuristics - if
+//    changed lines are below a threshold percentage (default 5%), assumes convergence.
+//
+// 3. **Chained (recommended)**: ChainedDetector chains multiple detectors with
+//    fallback logic. Tries AI first, falls back to diff-based if AI fails or
+//    returns low confidence.
+//
+// 4. **Timeout safeguard**: MaxIterations config provides hard limit regardless
+//    of detector strategy.
+//
+// Example chained detector setup:
+//
+//	aiDetector := iterative.NewAIConvergenceDetector(supervisor, 0.8)
+//	diffDetector := iterative.NewDiffBasedDetector(5.0)
+//	chainedDetector := iterative.NewChainedDetector(0.7, aiDetector, diffDetector)
+//
+// The chained approach provides robust convergence detection: AI for intelligent
+// judgment with diff-based fallback for reliability.
 //
 // # Metrics
 //

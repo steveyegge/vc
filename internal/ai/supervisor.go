@@ -173,3 +173,47 @@ func (s *Supervisor) HealthCheck(ctx context.Context) error {
 	}
 	return nil
 }
+
+// CallAPI makes a raw API call to the Anthropic API with the given prompt.
+// This is a low-level method for use by specialized components that need
+// direct access to the API (e.g., convergence detection).
+//
+// Use the higher-level methods (Assess, Analyze, etc.) for standard workflows.
+func (s *Supervisor) CallAPI(ctx context.Context, prompt string, model string, maxTokens int) (*anthropic.Message, error) {
+	if model == "" {
+		model = s.model
+	}
+	if maxTokens == 0 {
+		maxTokens = 4096
+	}
+
+	// Respect concurrency limits (vc-220)
+	if s.concurrencySem != nil {
+		if err := s.concurrencySem.Acquire(ctx, 1); err != nil {
+			return nil, fmt.Errorf("failed to acquire AI concurrency slot: %w", err)
+		}
+		defer s.concurrencySem.Release(1)
+	}
+
+	var response *anthropic.Message
+	err := s.retryWithBackoff(ctx, "api_call", func(attemptCtx context.Context) error {
+		resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(model),
+			MaxTokens: int64(maxTokens),
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			},
+		})
+		if apiErr != nil {
+			return apiErr
+		}
+		response = resp
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("anthropic API call failed: %w", err)
+	}
+
+	return response, nil
+}
