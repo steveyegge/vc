@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"testing"
 )
 
@@ -92,8 +91,10 @@ This is line 5.`,
 	}
 }
 
-// TestAIConvergenceDetector_PromptBuilding verifies prompt structure
-// (Full AI tests require integration tests with real Supervisor)
+// TODO(vc-t9ls): AIConvergenceDetector tests have been moved to internal/ai/analysis_refiner_test.go
+// The AI-specific convergence logic now lives in the ai package to avoid import cycles.
+// This test is commented out to prevent build failures.
+/*
 func TestAIConvergenceDetector_PromptBuilding(t *testing.T) {
 	// Use a mock supervisor to avoid nil check
 	detector := &AIConvergenceDetector{
@@ -132,6 +133,7 @@ func TestAIConvergenceDetector_PromptBuilding(t *testing.T) {
 		}
 	}
 }
+*/
 
 // TestChainedDetector tests the fallback chain
 func TestChainedDetector(t *testing.T) {
@@ -345,7 +347,9 @@ func TestCountLines(t *testing.T) {
 }
 
 
-// TestNewAIConvergenceDetector tests constructor validation
+// TODO(vc-t9ls): TestNewAIConvergenceDetector has been moved to internal/ai package
+// AI-specific convergence testing is now in internal/ai/analysis_refiner_test.go
+/*
 func TestNewAIConvergenceDetector(t *testing.T) {
 	// Test with nil supervisor (should error)
 	_, err := NewAIConvergenceDetector(nil, 0.8)
@@ -359,6 +363,7 @@ func TestNewAIConvergenceDetector(t *testing.T) {
 	// For valid tests with real supervisor and confidence defaults,
 	// see integration tests (vc-kok4)
 }
+*/
 
 // TestNewDiffBasedDetector tests constructor defaults
 func TestNewDiffBasedDetector(t *testing.T) {

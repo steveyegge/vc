@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/steveyegge/vc/internal/iterative"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -105,6 +106,110 @@ func (s *Supervisor) AnalyzeExecutionResult(ctx context.Context, issue *types.Is
 	}
 
 	return &analysis, nil
+}
+
+// AnalyzeExecutionResultWithRefinement performs AI analysis with iterative refinement.
+// This runs multiple refinement passes to catch more discovered issues, punted items,
+// and quality problems that a single pass might miss.
+//
+// Configuration:
+// - MinIterations: 3 (ensures thorough coverage)
+// - MaxIterations: 7 (prevents runaway iteration)
+// - AI-driven convergence: stops when AI determines no more issues to find
+//
+// Returns the refined analysis and metrics about the refinement process.
+func (s *Supervisor) AnalyzeExecutionResultWithRefinement(ctx context.Context, issue *types.Issue, agentOutput string, success bool, collector iterative.MetricsCollector) (*Analysis, *iterative.ConvergenceResult, error) {
+	startTime := time.Now()
+
+	// Perform initial analysis (iteration 0)
+	initialAnalysis, err := s.AnalyzeExecutionResult(ctx, issue, agentOutput, success)
+	if err != nil {
+		return nil, nil, fmt.Errorf("initial analysis failed: %w", err)
+	}
+
+	// Create refiner
+	refiner, err := NewAnalysisRefiner(s, issue, agentOutput, success)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create refiner: %w", err)
+	}
+
+	// Create initial artifact from the analysis
+	initialArtifact := &iterative.Artifact{
+		Type:    "analysis",
+		Content: serializeAnalysis(initialAnalysis),
+		Context: fmt.Sprintf("Initial analysis for issue %s: %s", issue.ID, issue.Title),
+	}
+
+	// Configure refinement
+	config := iterative.RefinementConfig{
+		MinIterations: 3, // Ensure thorough coverage
+		MaxIterations: 7, // Prevent runaway iteration
+		SkipSimple:    false,
+		Timeout:       0, // No timeout - rely on MaxIterations
+	}
+
+	// Run iterative refinement
+	fmt.Printf("Starting analysis refinement for %s (min=%d, max=%d iterations)\n",
+		issue.ID, config.MinIterations, config.MaxIterations)
+
+	result, err := iterative.Converge(ctx, initialArtifact, refiner, config, collector)
+	if err != nil {
+		// If refinement fails, return the initial analysis (better than nothing)
+		fmt.Fprintf(os.Stderr, "warning: refinement failed, using initial analysis: %v\n", err)
+		return initialAnalysis, nil, nil
+	}
+
+	// Parse the final refined analysis from the artifact
+	// We need to extract it from the Context since we can't easily deserialize
+	// the text format back to the struct. Instead, we'll store it in the artifact.
+	// For now, we'll do a final AI call to get the structured analysis.
+	finalPrompt := refiner.buildRefinementPrompt(result.FinalArtifact)
+	finalResponse, err := s.client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     anthropic.Model(s.model),
+		MaxTokens: 4096,
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock(finalPrompt)),
+		},
+	})
+	if err != nil {
+		// If final parse fails, return initial analysis
+		fmt.Fprintf(os.Stderr, "warning: failed to parse final analysis, using initial: %v\n", err)
+		return initialAnalysis, result, nil
+	}
+
+	var finalResponseText string
+	for _, block := range finalResponse.Content {
+		if block.Type == "text" {
+			finalResponseText += block.Text
+		}
+	}
+
+	parseResult := Parse[Analysis](finalResponseText, ParseOptions{
+		Context:   "final refined analysis",
+		LogErrors: boolPtr(true),
+	})
+	if !parseResult.Success {
+		fmt.Fprintf(os.Stderr, "warning: failed to parse final analysis, using initial: %s\n", parseResult.Error)
+		return initialAnalysis, result, nil
+	}
+
+	finalAnalysis := parseResult.Data
+
+	// Log refinement results
+	duration := time.Since(startTime)
+	fmt.Printf("Analysis refinement complete for %s: %d iterations, converged=%v, duration=%v\n",
+		issue.ID, result.Iterations, result.Converged, duration)
+	fmt.Printf("  Initial analysis: %d discovered issues\n", len(initialAnalysis.DiscoveredIssues))
+	fmt.Printf("  Final analysis: %d discovered issues (delta: +%d)\n",
+		len(finalAnalysis.DiscoveredIssues),
+		len(finalAnalysis.DiscoveredIssues)-len(initialAnalysis.DiscoveredIssues))
+
+	// Log AI usage for the final parse
+	if err := s.recordAIUsage(ctx, issue.ID, "analysis_refinement_final", finalResponse.Usage.InputTokens, finalResponse.Usage.OutputTokens, duration); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
+	}
+
+	return &finalAnalysis, result, nil
 }
 
 // buildAnalysisPrompt builds the prompt for analyzing execution results

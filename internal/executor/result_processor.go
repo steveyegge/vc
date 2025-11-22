@@ -12,6 +12,7 @@ import (
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/gates"
+	"github.com/steveyegge/vc/internal/iterative"
 	"github.com/steveyegge/vc/internal/labels"
 	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/types"
@@ -48,24 +49,25 @@ func NewResultsProcessor(cfg *ResultsProcessorConfig) (*ResultsProcessor, error)
 	}
 
 	return &ResultsProcessor{
-		store:              cfg.Store,
-		supervisor:         cfg.Supervisor,
-		deduplicator:       cfg.Deduplicator,
-		gitOps:             cfg.GitOps,
-		messageGen:         cfg.MessageGen,
-		enableQualityGates: cfg.EnableQualityGates,
-		enableAutoCommit:   cfg.EnableAutoCommit,
-		enableAutoPR:       cfg.EnableAutoPR,
-		workingDir:         cfg.WorkingDir,
-		actor:              cfg.Actor,
-		sandbox:            cfg.Sandbox,
-		sandboxManager:     cfg.SandboxManager,
-		executor:           cfg.Executor,
-		watchdogConfig:     cfg.WatchdogConfig,
-		gatesTimeout:       gatesTimeout,
-		dedupBatchSize:     dedupBatchSize,
-		maxIncompleteRetries: maxIncompleteRetries,
-		bootstrapMode:        cfg.BootstrapMode, // vc-b027
+		store:                     cfg.Store,
+		supervisor:                cfg.Supervisor,
+		deduplicator:              cfg.Deduplicator,
+		gitOps:                    cfg.GitOps,
+		messageGen:                cfg.MessageGen,
+		enableQualityGates:        cfg.EnableQualityGates,
+		enableAutoCommit:          cfg.EnableAutoCommit,
+		enableAutoPR:              cfg.EnableAutoPR,
+		enableIterativeRefinement: cfg.EnableIterativeRefinement, // vc-t9ls
+		workingDir:                cfg.WorkingDir,
+		actor:                     cfg.Actor,
+		sandbox:                   cfg.Sandbox,
+		sandboxManager:            cfg.SandboxManager,
+		executor:                  cfg.Executor,
+		watchdogConfig:            cfg.WatchdogConfig,
+		gatesTimeout:              gatesTimeout,
+		dedupBatchSize:            dedupBatchSize,
+		maxIncompleteRetries:      maxIncompleteRetries,
+		bootstrapMode:             cfg.BootstrapMode, // vc-b027
 	}, nil
 }
 
@@ -542,9 +544,45 @@ func (rp *ResultsProcessor) handleStructuredReportAndAnalysis(ctx context.Contex
 
 		analysisStart := time.Now()
 		var err error
-		analysis, err = rp.supervisor.AnalyzeExecutionResult(ctx, issue, agentOutput, agentResult.Success)
-		if rp.executor != nil && rp.executor.monitor != nil {
-			rp.executor.monitor.RecordPhaseDuration("analyze", time.Since(analysisStart))
+
+		// vc-t9ls: Use iterative refinement if enabled
+		if rp.enableIterativeRefinement {
+			// Create metrics collector for this analysis (vc-it8m)
+			collector := iterative.NewInMemoryMetricsCollector()
+
+			var refinementResult *iterative.ConvergenceResult
+			analysis, refinementResult, err = rp.supervisor.AnalyzeExecutionResultWithRefinement(ctx, issue, agentOutput, agentResult.Success, collector)
+
+			if rp.executor != nil && rp.executor.monitor != nil {
+				rp.executor.monitor.RecordPhaseDuration("analyze", time.Since(analysisStart))
+			}
+
+			// Log refinement metrics if successful
+			if err == nil && refinementResult != nil {
+				// Log convergence event (vc-t9ls: activity feed events)
+				rp.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, issue.ID,
+					fmt.Sprintf("Analysis refinement converged after %d iterations", refinementResult.Iterations),
+					map[string]interface{}{
+						"iterations":      refinementResult.Iterations,
+						"converged":       refinementResult.Converged,
+						"elapsed_time_ms": refinementResult.ElapsedTime.Milliseconds(),
+					})
+
+				// Log aggregate metrics
+				aggMetrics := collector.GetAggregateMetrics()
+				if aggMetrics != nil && aggMetrics.TotalArtifacts > 0 {
+					fmt.Printf("📊 Refinement metrics: iterations=%d, converged=%v, estimated_cost=$%.4f\n",
+						refinementResult.Iterations,
+						refinementResult.Converged,
+						aggMetrics.EstimatedCostUSD)
+				}
+			}
+		} else {
+			// Standard single-pass analysis
+			analysis, err = rp.supervisor.AnalyzeExecutionResult(ctx, issue, agentOutput, agentResult.Success)
+			if rp.executor != nil && rp.executor.monitor != nil {
+				rp.executor.monitor.RecordPhaseDuration("analyze", time.Since(analysisStart))
+			}
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: AI analysis failed: %v (continuing without analysis)\n", err)

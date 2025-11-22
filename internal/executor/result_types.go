@@ -20,46 +20,48 @@ const (
 
 // ResultsProcessor handles post-execution results collection and tracker updates
 type ResultsProcessor struct {
-	store              storage.Storage
-	supervisor         *ai.Supervisor
-	deduplicator       deduplication.Deduplicator // Can be nil to disable deduplication
-	gitOps             git.GitOperations
-	messageGen         *git.MessageGenerator
-	enableQualityGates bool
-	enableAutoCommit   bool
-	enableAutoPR       bool
-	workingDir         string
-	actor              string             // The actor performing the update (e.g., "repl", "executor-instance-id")
-	sandbox            *sandbox.Sandbox   // The sandbox being used (can be nil if sandboxing is disabled)
-	sandboxManager     sandbox.Manager    // Sandbox manager for cleanup operations (can be nil if sandboxing is disabled)
-	executor           *Executor          // Reference to parent executor for code review checks (can be nil for REPL)
-	watchdogConfig       *watchdog.WatchdogConfig // Watchdog config for backoff reset (vc-an5o, can be nil)
-	gatesTimeout         time.Duration      // Quality gates timeout (default: 5 minutes)
-	dedupBatchSize       int                // Max deduplication batch size (default: 100) (vc-a80e)
-	maxIncompleteRetries int                // Max retries for incomplete work before escalation (default: 1) (vc-hsfz)
-	bootstrapMode        bool               // Bootstrap mode active (quota crisis) (vc-b027)
+	store                     storage.Storage
+	supervisor                *ai.Supervisor
+	deduplicator              deduplication.Deduplicator // Can be nil to disable deduplication
+	gitOps                    git.GitOperations
+	messageGen                *git.MessageGenerator
+	enableQualityGates        bool
+	enableAutoCommit          bool
+	enableAutoPR              bool
+	enableIterativeRefinement bool   // Enable iterative refinement in analysis phase (vc-t9ls)
+	workingDir                string
+	actor                     string             // The actor performing the update (e.g., "repl", "executor-instance-id")
+	sandbox                   *sandbox.Sandbox   // The sandbox being used (can be nil if sandboxing is disabled)
+	sandboxManager            sandbox.Manager    // Sandbox manager for cleanup operations (can be nil if sandboxing is disabled)
+	executor                  *Executor          // Reference to parent executor for code review checks (can be nil for REPL)
+	watchdogConfig            *watchdog.WatchdogConfig // Watchdog config for backoff reset (vc-an5o, can be nil)
+	gatesTimeout              time.Duration      // Quality gates timeout (default: 5 minutes)
+	dedupBatchSize            int                // Max deduplication batch size (default: 100) (vc-a80e)
+	maxIncompleteRetries      int                // Max retries for incomplete work before escalation (default: 1) (vc-hsfz)
+	bootstrapMode             bool               // Bootstrap mode active (quota crisis) (vc-b027)
 }
 
 // ResultsProcessorConfig holds configuration for the results processor
 type ResultsProcessorConfig struct {
-	Store              storage.Storage
-	Supervisor         *ai.Supervisor             // Can be nil to disable AI analysis
-	Deduplicator       deduplication.Deduplicator // Can be nil to disable deduplication
-	GitOps             git.GitOperations          // Can be nil to disable auto-commit
-	MessageGen         *git.MessageGenerator      // Can be nil to disable auto-commit
-	EnableQualityGates bool
-	EnableAutoCommit   bool
-	EnableAutoPR       bool
-	WorkingDir         string
-	Actor              string           // Actor ID for tracking who made the changes
-	Sandbox            *sandbox.Sandbox // The sandbox being used (can be nil if sandboxing is disabled)
-	SandboxManager     sandbox.Manager  // Sandbox manager for cleanup operations (can be nil if sandboxing is disabled)
-	Executor           *Executor        // Reference to parent executor for code review checks (can be nil for REPL)
-	WatchdogConfig       *watchdog.WatchdogConfig // Watchdog config for backoff reset (vc-an5o, can be nil)
-	GatesTimeout         time.Duration    // Quality gates timeout (default: 5 minutes if zero)
-	DedupBatchSize       int              // Max deduplication batch size (default: 100 if zero) (vc-a80e)
-	MaxIncompleteRetries int              // Max retries for incomplete work before escalation (default: 1 if zero) (vc-hsfz)
-	BootstrapMode        bool             // Bootstrap mode active (quota crisis) (vc-b027)
+	Store                     storage.Storage
+	Supervisor                *ai.Supervisor             // Can be nil to disable AI analysis
+	Deduplicator              deduplication.Deduplicator // Can be nil to disable deduplication
+	GitOps                    git.GitOperations          // Can be nil to disable auto-commit
+	MessageGen                *git.MessageGenerator      // Can be nil to disable auto-commit
+	EnableQualityGates        bool
+	EnableAutoCommit          bool
+	EnableAutoPR              bool
+	EnableIterativeRefinement bool         // Enable iterative refinement in analysis phase (vc-t9ls)
+	WorkingDir                string
+	Actor                     string           // Actor ID for tracking who made the changes
+	Sandbox                   *sandbox.Sandbox // The sandbox being used (can be nil if sandboxing is disabled)
+	SandboxManager            sandbox.Manager  // Sandbox manager for cleanup operations (can be nil if sandboxing is disabled)
+	Executor                  *Executor        // Reference to parent executor for code review checks (can be nil for REPL)
+	WatchdogConfig            *watchdog.WatchdogConfig // Watchdog config for backoff reset (vc-an5o, can be nil)
+	GatesTimeout              time.Duration    // Quality gates timeout (default: 5 minutes if zero)
+	DedupBatchSize            int              // Max deduplication batch size (default: 100 if zero) (vc-a80e)
+	MaxIncompleteRetries      int              // Max retries for incomplete work before escalation (default: 1 if zero) (vc-hsfz)
+	BootstrapMode             bool             // Bootstrap mode active (quota crisis) (vc-b027)
 }
 
 // ProcessingResult contains the outcome of processing agent results

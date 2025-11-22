@@ -6,7 +6,10 @@ import (
 	"math"
 	"strings"
 
-	"github.com/steveyegge/vc/internal/ai"
+	// TODO(vc-t9ls): The AIConvergenceDetector has been moved to the ai package
+	// to avoid import cycles. The general-purpose iterative package should not
+	// depend on the specific ai implementation.
+	// "github.com/steveyegge/vc/internal/ai"
 )
 
 // ConvergenceDetector determines whether an artifact has converged to a stable,
@@ -27,141 +30,9 @@ type ConvergenceDecision struct {
 	Strategy   string  // Which detection strategy was used
 }
 
-// AIConvergenceDetector uses AI supervision to judge convergence.
-// This is the primary strategy - AI considers diff size, completeness,
-// gaps, and marginal value of further iteration.
-type AIConvergenceDetector struct {
-	supervisor *ai.Supervisor
-	// MinConfidence is the minimum confidence threshold (0.0-1.0)
-	// If AI confidence is below this, we treat it as "not converged"
-	MinConfidence float64
-}
-
-// NewAIConvergenceDetector creates an AI-driven convergence detector
-func NewAIConvergenceDetector(supervisor *ai.Supervisor, minConfidence float64) (*AIConvergenceDetector, error) {
-	if supervisor == nil {
-		return nil, fmt.Errorf("supervisor cannot be nil")
-	}
-	if minConfidence <= 0 {
-		minConfidence = 0.8 // Default: require high confidence
-	}
-	return &AIConvergenceDetector{
-		supervisor:    supervisor,
-		MinConfidence: minConfidence,
-	}, nil
-}
-
-// aiConvergenceResponse is the structured response from the AI
-type aiConvergenceResponse struct {
-	Converged  bool    `json:"converged"`            // Has the artifact converged?
-	Confidence float64 `json:"confidence"`           // Confidence in judgment (0.0-1.0)
-	Reasoning  string  `json:"reasoning"`            // Explanation
-	DiffSize   string  `json:"diff_size,omitempty"`  // "minimal", "small", "moderate", "large"
-	Marginal   string  `json:"marginal,omitempty"`   // "none", "low", "medium", "high"
-}
-
-// CheckConvergence uses AI to determine if the artifact has converged
-func (d *AIConvergenceDetector) CheckConvergence(ctx context.Context, current, previous *Artifact) (bool, float64, error) {
-	prompt := d.buildConvergencePrompt(current, previous)
-
-	// Use the AI supervisor's raw message API to get structured response
-	response, err := d.supervisor.CallAPI(ctx, prompt, ai.ModelSonnet, 2048)
-	if err != nil {
-		return false, 0.0, fmt.Errorf("AI convergence check failed: %w", err)
-	}
-
-	// Extract response text
-	var responseText string
-	for _, block := range response.Content {
-		if block.Type == "text" {
-			responseText += block.Text
-		}
-	}
-
-	// Parse the structured response
-	parseResult := ai.Parse[aiConvergenceResponse](responseText, ai.ParseOptions{
-		Context:   "convergence check",
-		LogErrors: boolPtr(true),
-	})
-	if !parseResult.Success {
-		return false, 0.0, fmt.Errorf("failed to parse AI convergence response: %s", parseResult.Error)
-	}
-
-	aiResponse := parseResult.Data
-
-	// Apply confidence threshold
-	if aiResponse.Confidence < d.MinConfidence {
-		// AI is not confident enough - treat as not converged
-		return false, aiResponse.Confidence, nil
-	}
-
-	return aiResponse.Converged, aiResponse.Confidence, nil
-}
-
-// buildConvergencePrompt constructs the AI convergence judgment prompt
-func (d *AIConvergenceDetector) buildConvergencePrompt(current, previous *Artifact) string {
-	// Calculate simple diff metrics for AI context
-	diffLines := countDiffLines(previous.Content, current.Content)
-	totalLines := countLines(current.Content)
-
-	return fmt.Sprintf(`You are judging whether an AI-generated artifact has converged to a stable, high-quality state through iterative refinement.
-
-ARTIFACT TYPE: %s
-
-PREVIOUS VERSION:
-%s
-
-CURRENT VERSION:
-%s
-
-CONTEXT:
-%s
-
-DIFF METRICS:
-- Changed lines: ~%d (out of %d total)
-- Change percentage: ~%.1f%%
-
-YOUR TASK:
-Determine if this artifact has converged (reached stability and high quality) or if another refinement iteration would meaningfully improve it.
-
-Consider these factors:
-1. **Diff size**: Are changes minimal/superficial, or substantive?
-2. **Completeness**: Are all key concerns addressed?
-3. **Gaps**: Are there obvious missing elements or improvements?
-4. **Marginal value**: Would another iteration yield meaningful improvement, or are we at diminishing returns?
-
-IMPORTANT GUIDELINES:
-- Minimal diff + high completeness = likely converged
-- Large substantive changes = NOT converged (artifact still evolving)
-- Small refinements of already-good content = likely converged
-- New sections or restructuring = NOT converged
-- If changes are just stylistic polish = likely converged
-- If changes fix actual gaps or errors = may not be converged yet
-
-Respond with JSON:
-{
-  "converged": true/false,
-  "confidence": 0.0-1.0,
-  "reasoning": "Brief explanation of your judgment",
-  "diff_size": "minimal|small|moderate|large",
-  "marginal": "none|low|medium|high"
-}
-
-Where:
-- converged: true if artifact is stable and high-quality
-- confidence: 0.0-1.0 (how confident are you in this judgment?)
-- reasoning: 1-2 sentences explaining why
-- diff_size: how much changed between versions
-- marginal: expected value of another iteration (none=converged, high=needs more work)`,
-		current.Type,
-		truncateForPrompt(previous.Content, 3000),
-		truncateForPrompt(current.Content, 3000),
-		truncateForPrompt(current.Context, 1000),
-		diffLines,
-		totalLines,
-		float64(diffLines)/float64(maxInt(totalLines, 1))*100,
-	)
-}
+// TODO(vc-t9ls): AIConvergenceDetector has been moved to the ai package to avoid import cycles.
+// The general-purpose iterative package should not depend on the specific ai implementation.
+// See internal/ai/analysis_refiner.go for the AI-based convergence implementation.
 
 // DiffBasedDetector is a fallback convergence detector that uses simple
 // diff size heuristics. If changes are below threshold, assume converged.
