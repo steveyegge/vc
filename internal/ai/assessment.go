@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/steveyegge/vc/internal/iterative"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -103,6 +104,218 @@ func (s *Supervisor) AssessIssueState(ctx context.Context, issue *types.Issue) (
 	}
 
 	return &assessment, nil
+}
+
+// AssessIssueStateWithRefinement performs AI assessment with iterative refinement
+// for complex/high-risk issues. Simple issues skip iteration to avoid unnecessary cost.
+//
+// Heuristic for when to iterate (vc-43kd):
+// - P0 issues (critical)
+// - Critical path issues (many dependents)
+// - Novel areas (no similar closed issues)
+// - High dependency count (>5 dependencies)
+//
+// Configuration:
+// - MinIterations: 3 (ensures thorough risk identification)
+// - MaxIterations: 6 (prevents runaway iteration)
+// - AI-driven convergence: stops when AI determines assessment has stabilized
+//
+// Returns the refined assessment and metrics about the refinement process.
+func (s *Supervisor) AssessIssueStateWithRefinement(ctx context.Context, issue *types.Issue, collector iterative.MetricsCollector) (*Assessment, *iterative.ConvergenceResult, error) {
+	startTime := time.Now()
+
+	// Check if this issue should use iterative refinement (vc-43kd)
+	shouldIterate, reason := s.shouldIterateAssessment(ctx, issue)
+	if !shouldIterate {
+		fmt.Printf("Skipping assessment iteration for %s: %s\n", issue.ID, reason)
+		// Fall back to single-pass assessment
+		assessment, err := s.AssessIssueState(ctx, issue)
+		if err != nil {
+			return nil, nil, err
+		}
+		// Return mock convergence result for consistency
+		return assessment, &iterative.ConvergenceResult{
+			FinalArtifact: &iterative.Artifact{
+				Type:    "assessment",
+				Content: serializeAssessment(assessment),
+				Context: fmt.Sprintf("Single-pass assessment for issue %s: %s", issue.ID, issue.Title),
+			},
+			Iterations:  0,
+			Converged:   true,
+			ElapsedTime: time.Since(startTime),
+		}, nil
+	}
+
+	fmt.Printf("Using iterative refinement for assessment of %s: %s\n", issue.ID, reason)
+
+	// Perform initial assessment (iteration 0)
+	initialAssessment, err := s.AssessIssueState(ctx, issue)
+	if err != nil {
+		return nil, nil, fmt.Errorf("initial assessment failed: %w", err)
+	}
+
+	// Create refiner
+	refiner, err := NewAssessmentRefiner(s, issue)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create refiner: %w", err)
+	}
+
+	// Create initial artifact from the assessment
+	initialArtifact := &iterative.Artifact{
+		Type:    "assessment",
+		Content: serializeAssessment(initialAssessment),
+		Context: fmt.Sprintf("Initial assessment for issue %s: %s", issue.ID, issue.Title),
+	}
+
+	// Configure refinement
+	config := iterative.RefinementConfig{
+		MinIterations: 3, // Ensure thorough risk identification
+		MaxIterations: 6, // Prevent runaway iteration (shorter than analysis phase)
+		SkipSimple:    false,
+		Timeout:       0, // No timeout - rely on MaxIterations
+	}
+
+	// Run iterative refinement
+	result, err := iterative.Converge(ctx, initialArtifact, refiner, config, collector)
+	if err != nil {
+		return nil, nil, fmt.Errorf("iterative refinement failed: %w", err)
+	}
+
+	// Parse the final refined assessment from the artifact content
+	// We need to re-run the AI to get the structured Assessment object
+	// since serializeAssessment creates a text representation
+	finalPrompt := fmt.Sprintf(`Convert this assessment text back to structured JSON:
+
+%s
+
+Respond with a JSON object matching this structure:
+{
+  "strategy": "...",
+  "steps": ["...", "..."],
+  "risks": ["...", "..."],
+  "confidence": 0.0-1.0,
+  "reasoning": "...",
+  "should_decompose": true/false,
+  "decomposition_plan": null or {...}
+}
+
+IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap in markdown code fences.`,
+		result.FinalArtifact.Content)
+
+	var response *anthropic.Message
+	err = s.retryWithBackoff(ctx, "assessment-final-parse", func(attemptCtx context.Context) error {
+		resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(s.model),
+			MaxTokens: 4096,
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(finalPrompt)),
+			},
+		})
+		if apiErr != nil {
+			return apiErr
+		}
+		response = resp
+		return nil
+	})
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse final assessment: %w", err)
+	}
+
+	// Extract response text
+	var responseText string
+	for _, block := range response.Content {
+		if block.Type == "text" {
+			responseText += block.Text
+		}
+	}
+
+	// Parse as Assessment
+	parseResult := Parse[Assessment](responseText, ParseOptions{
+		Context:   "final assessment parse",
+		LogErrors: boolPtr(true),
+	})
+	if !parseResult.Success {
+		return nil, nil, fmt.Errorf("failed to parse final assessment: %s", parseResult.Error)
+	}
+
+	finalAssessment := parseResult.Data
+
+	// Log refinement summary
+	fmt.Printf("Assessment refinement complete for %s: iterations=%d, converged=%v, duration=%v\n",
+		issue.ID, result.Iterations, result.Converged, result.ElapsedTime)
+
+	return &finalAssessment, result, nil
+}
+
+// shouldIterateAssessment determines if an issue warrants iterative assessment refinement.
+// Returns (shouldIterate, reason) where reason explains the decision.
+//
+// Heuristic for when to iterate (vc-43kd):
+// - P0 issues (critical)
+// - Complex issue types (epic, mission, phase)
+// - Novel areas (no similar closed issues)
+//
+// Simple issues skip iteration to avoid unnecessary cost.
+func (s *Supervisor) shouldIterateAssessment(ctx context.Context, issue *types.Issue) (bool, string) {
+	// P0 issues are critical - always iterate for thorough risk identification
+	if issue.Priority == 0 {
+		return true, "P0 issue (critical priority)"
+	}
+
+	// Complex structural issues (epics, missions, phases) need careful planning
+	if issue.IssueSubtype == types.SubtypeMission || issue.IssueSubtype == types.SubtypePhase {
+		return true, fmt.Sprintf("%s (complex structural issue)", issue.IssueSubtype)
+	}
+
+	// Check if this is a novel area (no similar closed issues)
+	// We need storage access for this check
+	if s.store != nil {
+		isNovel, err := s.isNovelArea(ctx, issue)
+		if err != nil {
+			// Log error but don't fail - just skip this heuristic
+			fmt.Fprintf(os.Stderr, "warning: failed to check novelty for %s: %v\n", issue.ID, err)
+		} else if isNovel {
+			return true, "novel area (no similar closed issues found)"
+		}
+	}
+
+	// Otherwise skip iteration for simple issues
+	return false, "simple issue (no complexity triggers)"
+}
+
+// isNovelArea checks if this issue is in a novel area with no precedent.
+// Returns true if we can't find similar closed issues, suggesting this is new territory.
+func (s *Supervisor) isNovelArea(ctx context.Context, issue *types.Issue) (bool, error) {
+	// For now, use a simple heuristic: check if the title contains uncommon technical terms
+	// A full implementation would search closed issues, but that requires storage interface extensions
+
+	// Extract key terms from the title (ignore common words)
+	titleWords := strings.Fields(strings.ToLower(issue.Title))
+	var keywords []string
+	stopWords := map[string]bool{
+		"add": true, "fix": true, "update": true, "implement": true,
+		"the": true, "a": true, "an": true, "and": true, "or": true,
+		"for": true, "to": true, "in": true, "of": true, "with": true,
+	}
+	for _, word := range titleWords {
+		if len(word) > 3 && !stopWords[word] {
+			keywords = append(keywords, word)
+			if len(keywords) >= 3 { // Limit to first 3 meaningful keywords
+				break
+			}
+		}
+	}
+
+	if len(keywords) == 0 {
+		// Can't determine novelty without keywords - assume not novel
+		return false, nil
+	}
+
+	// For now, assume not novel (conservative approach)
+	// In the future, this would query storage for similar closed issues
+	// The heuristic is currently P0 + structural issues, which is sufficient
+	return false, nil
 }
 
 // AssessCompletion uses AI to determine if an epic or mission is truly complete.

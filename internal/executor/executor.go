@@ -94,10 +94,11 @@ type Executor struct {
 	staleThreshold          time.Duration
 	instanceCleanupAge      time.Duration
 	instanceCleanupKeep     int
-	enableAISupervision     bool
-	enableQualityGates      bool
-	enableSandboxes         bool
-	enableHealthMonitoring  bool
+	enableAISupervision       bool
+	enableQualityGates        bool
+	enableSandboxes           bool
+	enableHealthMonitoring    bool
+	enableIterativeRefinement bool // Enable iterative refinement for assessment and analysis (vc-43kd, vc-t9ls)
 	enableQualityGateWorker bool
 	workingDir              string
 
@@ -377,6 +378,9 @@ type Config struct {
 	EnableBootstrapMode     bool     // Enable bootstrap mode during quota crisis (default: false, opt-in)
 	BootstrapModeLabels     []string // Labels that trigger bootstrap mode (default: ["quota-crisis"])
 	BootstrapModeTitleKeywords []string // Title keywords that trigger bootstrap mode (default: ["quota", "budget", "cost", "API limit"])
+
+	// Iterative refinement configuration (vc-43kd, vc-t9ls)
+	EnableIterativeRefinement bool // Enable iterative refinement for assessment and analysis phases (default: true)
 }
 
 // Validate checks the configuration for invalid combinations (vc-q5ve)
@@ -478,6 +482,8 @@ func DefaultConfig() *Config {
 		EnableBootstrapMode:        getEnvBool("VC_ENABLE_BOOTSTRAP_MODE", false),
 		BootstrapModeLabels:        getEnvStringSlice("VC_BOOTSTRAP_MODE_LABELS", []string{"quota-crisis"}),
 		BootstrapModeTitleKeywords: getEnvStringSlice("VC_BOOTSTRAP_MODE_TITLE_KEYWORDS", []string{"quota", "budget", "cost", "API limit"}),
+		// Iterative refinement (vc-43kd, vc-t9ls) - enabled by default
+		EnableIterativeRefinement: getEnvBool("VC_ENABLE_ITERATIVE_REFINEMENT", true),
 	}
 }
 
@@ -554,11 +560,12 @@ func New(cfg *Config) (*Executor, error) {
 		staleThreshold:          staleThreshold,
 		instanceCleanupAge:      instanceCleanupAge,
 		instanceCleanupKeep:     instanceCleanupKeep,
-		enableAISupervision:     cfg.EnableAISupervision,
-		enableQualityGates:      cfg.EnableQualityGates,
-		enableSandboxes:         cfg.EnableSandboxes,
-		enableQualityGateWorker: cfg.EnableQualityGateWorker,
-		workingDir:              workingDir,
+		enableAISupervision:       cfg.EnableAISupervision,
+		enableQualityGates:        cfg.EnableQualityGates,
+		enableSandboxes:           cfg.EnableSandboxes,
+		enableQualityGateWorker:   cfg.EnableQualityGateWorker,
+		enableIterativeRefinement: cfg.EnableIterativeRefinement,
+		workingDir:                workingDir,
 		stopCh:                  make(chan struct{}),
 		doneCh:                  make(chan struct{}),
 		heartbeatStopCh:         make(chan struct{}),

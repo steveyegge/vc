@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/events"
+	"github.com/steveyegge/vc/internal/iterative"
 	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/types"
 )
@@ -95,8 +96,39 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		// Track assessment phase duration
 		assessStart := time.Now()
 		var err error
-		assessment, err = e.supervisor.AssessIssueState(ctx, issue)
-		e.getMonitor().RecordPhaseDuration("assess", time.Since(assessStart))
+
+		// vc-43kd: Use iterative refinement if enabled for complex/high-risk issues
+		if e.enableIterativeRefinement {
+			// Create metrics collector for assessment refinement (vc-it8m)
+			collector := iterative.NewInMemoryMetricsCollector()
+
+			var refinementResult *iterative.ConvergenceResult
+			assessment, refinementResult, err = e.supervisor.AssessIssueStateWithRefinement(ctx, issue, collector)
+
+			e.getMonitor().RecordPhaseDuration("assess", time.Since(assessStart))
+
+			// Log refinement metrics if successful
+			if err == nil && refinementResult != nil {
+				// Log convergence event (vc-43kd: activity feed events)
+				e.logEvent(ctx, events.EventTypeProgress, events.SeverityInfo, issue.ID,
+					fmt.Sprintf("Assessment refinement: iterations=%d, converged=%v, duration=%v",
+						refinementResult.Iterations, refinementResult.Converged, refinementResult.ElapsedTime),
+					map[string]interface{}{
+						"phase":      "assessment",
+						"iterations": refinementResult.Iterations,
+						"converged":  refinementResult.Converged,
+						"duration":   refinementResult.ElapsedTime.String(),
+					})
+
+				// Emit metrics summary (vc-it8m)
+				fmt.Printf("📊 Assessment refinement metrics: iterations=%d, duration=%v, converged=%v\n",
+					refinementResult.Iterations, refinementResult.ElapsedTime, refinementResult.Converged)
+			}
+		} else {
+			// Fall back to single-pass assessment
+			assessment, err = e.supervisor.AssessIssueState(ctx, issue)
+			e.getMonitor().RecordPhaseDuration("assess", time.Since(assessStart))
+		}
 		if err != nil {
 			// Check if context was canceled (shutdown initiated)
 			if ctx.Err() != nil {
