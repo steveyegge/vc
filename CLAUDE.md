@@ -65,9 +65,91 @@ bd update vc-X --notes "Starting work in Claude Code session"
 
 ---
 
+## 🔍 Pre-Landing Review Protocol
+
+**Before running the "land the plane" protocol**, check if the session needs a review iteration.
+
+This applies our own convergence/iteration principles: just as we built iterative refinement for AI artifacts, we should iterate on our own code when it's non-trivial.
+
+### When to Review
+
+Run a review iteration if **ANY** of these apply:
+- Changed >100 lines of code
+- Modified core infrastructure (executor, storage, AI supervisor, types)
+- Priority P0 issue
+- Introduced new patterns or abstractions
+- Uncertain about edge cases or design choices
+- Created new public APIs or interfaces
+
+### Quick Review Check
+
+```bash
+# How much changed this session?
+git diff --stat main
+
+# Changed core files?
+git diff --name-only main | grep -E "(executor|storage|ai|types)"
+
+# Check priority
+bd show vc-XXXX | grep Priority
+```
+
+### Review Iteration Steps
+
+1. **Re-read your implementation** with fresh eyes (at least the core files)
+2. **Ask critical questions:**
+   - Edge cases handled?
+   - Error paths complete?
+   - Tests cover critical paths?
+   - Documentation accurate?
+   - Naming clear and consistent?
+   - Nil checks where needed?
+   - Potential panics or race conditions?
+3. **Check test coverage:**
+   ```bash
+   go test ./path/to/package -cover
+   go tool cover -func=/tmp/cover.out | grep -v "100.0%"
+   ```
+4. **File follow-on issues** for any gaps found (label with `discovered:related`)
+5. **Consider:** Should this be 2+ smaller issues instead?
+
+### Skip Review If:
+
+- Trivial change (<50 lines)
+- Pure documentation updates
+- Test-only changes
+- Simple bug fix with clear, limited scope
+- Refactoring with no logic changes
+
+### Example Review Session
+
+```bash
+# Check what changed
+git diff --stat main
+# Result: 1,238 lines changed across 5 files
+
+# Run review iteration
+# 1. Re-read detector.go
+# 2. Check test coverage
+go test ./internal/iterative -cover
+# Result: 85.4% coverage, but AIConvergenceDetector.CheckConvergence 0%
+
+# 3. File issues for gaps found
+bd create "Add integration tests for AIConvergenceDetector" -p 2 --label discovered:related
+bd create "Add nil check for supervisor" -p 1 -t bug --label discovered:related
+# ... etc
+
+# 4. Fix critical bugs immediately (P0/P1)
+# 5. Document others for later
+```
+
+**Result:** Review iteration on vc-b32j found 5 issues including 1 P1 bug (nil panic). Validates the whole approach!
+
+---
+
 ## 🛬 Landing the Plane: Clean Session Ending
 
-**When the user says "let's land the plane"**, follow this protocol to cleanly end your session:
+**After completing any needed review iteration**, follow this protocol to cleanly end your session:
 
 ### 1. File Remaining Work
 Create beads issues for any follow-up work discovered during the session:
