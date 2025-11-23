@@ -356,6 +356,20 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		}
 	}
 
+	// Phase 2.7: Check for interrupt/resume context (vc-sibm)
+	// If this task was interrupted, load resume context to inject into agent prompt
+	var resumeContext string
+	if e.interruptMgr != nil {
+		resumeBrief, err := e.interruptMgr.CheckAndLoadInterruptContext(ctx, issue.ID)
+		if err != nil {
+			// Log warning but continue - resume context is optional
+			fmt.Fprintf(os.Stderr, "Warning: failed to check interrupt context: %v (continuing without resume context)\n", err)
+		} else if resumeBrief != "" {
+			// We have resume context - will be injected into prompt
+			resumeContext = resumeBrief
+		}
+	}
+
 	// Phase 3: Spawn the coding agent
 	// Check if context was canceled before starting execution (vc-101)
 	if ctx.Err() != nil {
@@ -408,6 +422,11 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		e.releaseIssueWithError(ctx, issue.ID, fmt.Sprintf("Failed to gather context: %v", err))
 		e.getMonitor().EndExecution(false, false)
 		return fmt.Errorf("failed to gather context: %w", err)
+	}
+
+	// Inject resume context if available (vc-sibm)
+	if resumeContext != "" {
+		promptCtx.ResumeHint = resumeContext
 	}
 
 	// Build comprehensive prompt using PromptBuilder

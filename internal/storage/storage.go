@@ -118,6 +118,13 @@ type Storage interface {
 	ReleaseIssueAndReopen(ctx context.Context, issueID, actor, errorComment string) error
 	RecordWatchdogIntervention(ctx context.Context, issueID string) error // vc-165b: Track intervention for backoff
 
+	// Interrupt/Resume Context (vc-00cu, vc-sibm)
+	SaveInterruptMetadata(ctx context.Context, metadata *types.InterruptMetadata) error
+	GetInterruptMetadata(ctx context.Context, issueID string) (*types.InterruptMetadata, error)
+	MarkInterruptResumed(ctx context.Context, issueID string) error
+	DeleteInterruptMetadata(ctx context.Context, issueID string) error
+	ListInterruptedIssues(ctx context.Context) ([]*types.InterruptMetadata, error)
+
 	// Execution History
 	// GetExecutionHistory retrieves all execution history for an issue (no pagination).
 	// Deprecated: Use GetExecutionHistoryPaginated for issues with many attempts.
