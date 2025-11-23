@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/steveyegge/vc/internal/iterative"
@@ -314,19 +315,48 @@ func TestAnalysisRefinerBuildIterationContextEmpty(t *testing.T) {
 	}
 }
 
-// TestDeserializeAnalysis tests the not-implemented path
+// TestDeserializeAnalysis tests deserialization error cases
 func TestDeserializeAnalysis(t *testing.T) {
-	artifact := &iterative.Artifact{
-		Type:    "analysis",
-		Content: "some content",
+	tests := []struct {
+		name        string
+		artifact    *iterative.Artifact
+		expectError string
+	}{
+		{
+			name:        "nil artifact",
+			artifact:    nil,
+			expectError: "artifact cannot be nil",
+		},
+		{
+			name: "wrong type",
+			artifact: &iterative.Artifact{
+				Type:    "assessment",
+				Content: "some content",
+			},
+			expectError: "expected artifact type 'analysis'",
+		},
+		{
+			name: "analysis type - not supported",
+			artifact: &iterative.Artifact{
+				Type:    "analysis",
+				Content: "some content",
+			},
+			expectError: "deserialization from text format is not supported",
+		},
 	}
 
-	analysis, err := deserializeAnalysis(artifact)
-	if err == nil {
-		t.Error("expected error from deserializeAnalysis (not implemented)")
-	}
-	if analysis != nil {
-		t.Error("expected nil analysis from deserializeAnalysis")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			analysis, err := deserializeAnalysis(tt.artifact)
+			if err == nil {
+				t.Errorf("expected error containing '%s', got nil", tt.expectError)
+			} else if !strings.Contains(err.Error(), tt.expectError) {
+				t.Errorf("expected error containing '%s', got: %v", tt.expectError, err)
+			}
+			if analysis != nil {
+				t.Error("expected nil analysis from deserializeAnalysis")
+			}
+		})
 	}
 }
 

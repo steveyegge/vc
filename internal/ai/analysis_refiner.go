@@ -386,12 +386,37 @@ func serializeAnalysis(analysis *Analysis) string {
 	return sb.String()
 }
 
-// deserializeAnalysis extracts an Analysis struct from the artifact content
-// This is needed when we integrate the refiner into the executor
+// deserializeAnalysis extracts an Analysis struct from the artifact content.
+// This parses the text format created by serializeAnalysis() back into a structured Analysis.
+//
+// NOTE: This is NOT currently used in the production code path. The AnalyzeExecutionResultWithRefinement
+// function uses a different approach: it re-calls the AI with the final artifact to get a fresh
+// structured JSON response. This function exists for completeness and testing, but the AI re-parse
+// approach is actually preferred because:
+// 1. It ensures we get a properly structured Analysis (not lossy text parsing)
+// 2. It's more robust against serialization format changes
+// 3. The AI can correct any issues in the serialized form
+//
+// If you're considering using this function, think carefully about whether re-parsing via AI
+// would be more appropriate for your use case.
 func deserializeAnalysis(artifact *iterative.Artifact) (*Analysis, error) {
-	// The artifact content is the serialized form we created above
-	// But we can't reconstruct the full Analysis struct from it easily
-	// Instead, we'll need to pass the original Analysis through the artifact's metadata
-	// For now, this is a placeholder that would be used if we stored JSON in Content
-	return nil, fmt.Errorf("not implemented - use metadata passing instead")
+	if artifact == nil {
+		return nil, fmt.Errorf("artifact cannot be nil")
+	}
+	if artifact.Type != "analysis" {
+		return nil, fmt.Errorf("expected artifact type 'analysis', got '%s'", artifact.Type)
+	}
+
+	// The serialized format is a lossy text representation optimized for human readability
+	// and diff comparison. We cannot reliably reconstruct the full Analysis struct from it
+	// without AI assistance.
+	//
+	// The serialized format contains:
+	// - Truncated strings (Evidence, Reason, Description truncated to 100-200 chars)
+	// - Lost map keys in AcceptanceCriteriaMet (we can't extract criterion names reliably)
+	// - No way to distinguish between missing fields and empty fields
+	//
+	// For these reasons, this function intentionally returns an error directing users
+	// to use the AI-based re-parsing approach instead.
+	return nil, fmt.Errorf("deserialization from text format is not supported - use AI re-parsing via AnalyzeExecutionResultWithRefinement instead (see function comments for details)")
 }
