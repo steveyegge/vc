@@ -533,6 +533,289 @@ The discovered:* taxonomy enables:
 
 ---
 
+## ⏸️ Task Pause/Resume (vc-d25s, vc-sibm, vc-ub00)
+
+VC supports graceful task interruption with full context preservation, allowing you to pause long-running agents and resume them later without losing progress.
+
+### When to Use Pause/Resume
+
+**Common scenarios:**
+- **Budget limits approaching** - Pause before exceeding cost thresholds
+- **Urgent work arrived** - Interrupt current task to prioritize critical issue
+- **Need to board a plane** - Save progress before losing connectivity
+- **Debug agent state** - Pause to inspect what the agent is doing
+- **Executor shutdown** - Gracefully stop work before restarting
+
+### How It Works
+
+**Architecture:**
+1. **RPC Control Server** - Unix socket at `.vc/executor.sock` accepts commands
+2. **Interrupt Checkpoints** - Agent execution checks interrupt flag at safe points
+3. **Context Persistence** - Interrupt metadata saved to database with agent state
+4. **Resume Context Injection** - Saved context briefed to agent on resume
+
+**Flow:**
+```
+User: vc pause vc-123 --reason "need to board plane"
+  ↓
+Control CLI → RPC to executor → Set interrupt flag
+  ↓
+Agent: Checks interrupt at checkpoint → Detects flag
+  ↓
+Executor: Saves agent context + marks issue as interrupted
+  ↓
+Issue: Released back to 'open' status with 'interrupted' label
+```
+
+**Resume flow:**
+```
+User: vc resume vc-123
+  ↓
+Control CLI: Removes 'interrupted' label
+  ↓
+Executor: Claims issue from ready work
+  ↓
+CheckAndLoadInterruptContext: Loads saved metadata
+  ↓
+Agent: Receives resume brief with previous context
+  ↓
+Agent: Continues from where it left off
+```
+
+### Usage
+
+**Pause a running task:**
+```bash
+# Pause with reason
+vc pause vc-123 --reason "budget approaching limit"
+
+# Pause without reason
+vc pause vc-123
+
+# Output:
+# ⏸️  Pause requested for vc-123 (reason: budget approaching limit)
+#    Waiting for agent to reach safe checkpoint...
+# ✓ Saved interrupt context for vc-123
+```
+
+**Resume a paused task:**
+```bash
+vc resume vc-123
+
+# Output:
+# ✓ Issue vc-123 ready for resume
+#   Status: open
+#   The running executor will pick this up automatically.
+```
+
+**Check status:**
+```bash
+vc status
+
+# Shows interrupted issues in separate section:
+# Interrupted Issues (1):
+#   vc-123: Fix authentication bug (interrupted 2h ago)
+#     Reason: budget approaching limit
+#     Resume count: 0
+```
+
+**List all interrupted issues:**
+```bash
+bd list | grep interrupted
+```
+
+### Interrupt Checkpoints
+
+The executor checks for interrupts at safe points during execution:
+
+**Checkpoint locations:**
+- After each agent tool use (Read, Edit, Write, Bash, etc.)
+- Between execution phases (assess → execute → analyze)
+- Before quality gate runs
+- During agent streaming output
+
+**NOT checked during:**
+- Active AI API calls (would waste tokens)
+- File I/O operations (would corrupt state)
+- Git operations (would leave repo in inconsistent state)
+
+This ensures interrupts happen at clean boundaries without data loss.
+
+### Interrupt Metadata Schema
+
+**Saved to `issue_interrupt_metadata` table:**
+```json
+{
+  "issue_id": "vc-123",
+  "interrupted_at": "2025-11-23T10:30:00Z",
+  "interrupted_by": "control-cli",
+  "reason": "budget approaching limit",
+  "executor_instance_id": "uuid-1234",
+  "execution_state": "executing",
+  "context_snapshot": "{\"working_notes\":\"...\",\"todos\":[...]}",
+  "resume_count": 0,
+  "resumed_at": null
+}
+```
+
+**Context snapshot structure:**
+```go
+type AgentContext struct {
+    InterruptedAt   time.Time
+    WorkingNotes    string   // Agent's current thinking
+    ProgressSummary string   // What's been done so far
+    CurrentPhase    string   // "executing", "testing", etc.
+    LastTool        string   // Last tool used
+    LastToolResult  string   // Result of last tool
+    Todos           []string // Remaining work
+    CompletedTodos  []string // Finished tasks
+    Observations    []string // Key insights
+    SessionDuration time.Duration
+}
+```
+
+### Resume Context Brief
+
+When resuming, the agent receives a brief explaining the interruption:
+
+**Example brief:**
+```markdown
+**Task Resumed from Interrupt**
+
+This task was interrupted at 2025-11-23 10:30:00.
+
+**Reason**: budget approaching limit
+**Interrupted by**: control-cli
+**Execution phase**: executing
+
+**Your working notes**:
+Working on authentication fix in auth.go. Need to validate token expiry logic.
+
+**Progress so far**: Fixed token parsing, updated tests, ready to test integration.
+
+**Please continue from where you left off.**
+```
+
+### Configuration
+
+**Socket path (executor config):**
+```go
+cfg := executor.DefaultConfig()
+cfg.ControlSocketPath = ".vc/executor.sock"  // Default
+cfg.EnableControlServer = true               // Default: enabled
+```
+
+**Environment variables:**
+```bash
+# Override socket path
+export VC_CONTROL_SOCKET_PATH="/tmp/vc-executor.sock"
+```
+
+### Troubleshooting
+
+**Socket not found:**
+```
+Error: no running executor found (no control socket)
+Hint: Is the executor running? Try 'vc status' to check.
+```
+
+**Solution:** Start the executor: `vc execute --continuous`
+
+**Permission denied:**
+```
+Error: failed to connect to control socket: permission denied
+```
+
+**Solution:** Check socket file permissions: `ls -l .vc/executor.sock`
+
+**Wrong issue:**
+```
+Error: issue vc-456 is not currently executing (current: vc-123)
+```
+
+**Solution:** Check which issue is running: `vc status`
+
+**No task executing:**
+```
+Error: no task currently executing
+```
+
+**Solution:** The executor is idle. Check ready work: `bd ready`
+
+### Multiple Resume Cycles
+
+Issues can be paused and resumed multiple times. The `resume_count` field tracks this:
+
+```bash
+# First pause
+vc pause vc-123 --reason "lunch break"
+# resume_count: 0
+
+# Resume
+vc resume vc-123
+# resume_count: 1
+
+# Second pause
+vc pause vc-123 --reason "meeting"
+# resume_count: 1 (preserved)
+
+# Second resume
+vc resume vc-123
+# resume_count: 2
+```
+
+Each resume increments the count and updates `resumed_at` timestamp.
+
+### Code References
+
+**Core Implementation:**
+- Interrupt Manager: `internal/executor/executor_interrupt.go:1-270`
+- Control Server: `internal/control/server.go:1-255`
+- CLI Commands: `cmd/vc/pause.go`, `cmd/vc/resume.go`
+- Integration Tests: `internal/executor/pause_resume_integration_test.go`
+
+**Database Schema:**
+- Table: `issue_interrupt_metadata`
+- Functions: `SaveInterruptMetadata`, `GetInterruptMetadata`, `MarkInterruptResumed`
+- Query: `ListInterruptedIssues`
+
+**Executor Integration:**
+- Checkpoint detection: `internal/executor/executor_execution.go`
+- Resume context injection: `CheckAndLoadInterruptContext` called before `executeIssue`
+- Context brief generation: `buildAgentResumeContext`
+
+### Limitations
+
+**Current limitations:**
+- **Agent context extraction** - Context snapshot is basic (no real-time todo list extraction from agent)
+- **Resume via RPC** - `vc resume` doesn't send RPC command, just removes label (executor claims from queue)
+- **Budget integration** - Budget monitor doesn't auto-pause yet (manual pause only)
+- **Multi-executor** - Interrupt metadata doesn't prevent other executors from claiming
+
+**Future enhancements:**
+- Extract full agent state (todos, file diffs, partial edits)
+- Auto-pause when budget thresholds exceeded
+- Distributed locking for multi-executor environments
+- Resume-specific priority boost (interrupted issues first)
+
+### Why This Matters
+
+**Before pause/resume:**
+- Long-running tasks couldn't be stopped gracefully
+- Killing executor lost all agent progress
+- Budget overruns required manual intervention
+- Urgent work required waiting for current task to finish
+
+**After pause/resume:**
+- Graceful interruption at safe checkpoints
+- Full context preservation across restarts
+- Budget-triggered auto-pause (future)
+- Instant priority switching without progress loss
+
+This enables **iterative workflow** where humans can course-correct without losing expensive AI work.
+
+---
+
 ## 🏥 Code Health Monitors
 
 VC includes a suite of AI-powered code health monitors that proactively detect quality issues and technical debt. All monitors follow **Zero Framework Cognition (ZFC)** principles: they collect facts and patterns, then delegate judgment to AI.
