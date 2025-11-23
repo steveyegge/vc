@@ -109,6 +109,23 @@ func (m *mockStorageIntegration) GetDependencies(ctx context.Context, issueID st
 	return nil, nil
 }
 
+// Interrupt/resume methods (pause/resume workflow)
+func (m *mockStorageIntegration) SaveInterruptMetadata(ctx context.Context, metadata *types.InterruptMetadata) error {
+	return nil
+}
+func (m *mockStorageIntegration) GetInterruptMetadata(ctx context.Context, issueID string) (*types.InterruptMetadata, error) {
+	return nil, nil
+}
+func (m *mockStorageIntegration) MarkInterruptResumed(ctx context.Context, issueID string) error {
+	return nil
+}
+func (m *mockStorageIntegration) DeleteInterruptMetadata(ctx context.Context, issueID string) error {
+	return nil
+}
+func (m *mockStorageIntegration) ListInterruptedIssues(ctx context.Context) ([]*types.InterruptMetadata, error) {
+	return nil, nil
+}
+
 // TestConversationalFlows tests end-to-end conversation scenarios
 func TestConversationalFlows(t *testing.T) {
 	// Note: These tests validate tool selection and parameter passing.

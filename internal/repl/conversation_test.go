@@ -284,6 +284,23 @@ func (m *mockStorage) GetDiagnosis(ctx context.Context, issueID string) (*types.
 	return nil, nil
 }
 
+// Interrupt/resume methods (pause/resume workflow)
+func (m *mockStorage) SaveInterruptMetadata(ctx context.Context, metadata *types.InterruptMetadata) error {
+	return nil
+}
+func (m *mockStorage) GetInterruptMetadata(ctx context.Context, issueID string) (*types.InterruptMetadata, error) {
+	return nil, nil
+}
+func (m *mockStorage) MarkInterruptResumed(ctx context.Context, issueID string) error {
+	return nil
+}
+func (m *mockStorage) DeleteInterruptMetadata(ctx context.Context, issueID string) error {
+	return nil
+}
+func (m *mockStorage) ListInterruptedIssues(ctx context.Context) ([]*types.InterruptMetadata, error) {
+	return nil, nil
+}
+
 // TestToolGetStatus tests the get_status tool
 func TestToolGetStatus(t *testing.T) {
 	t.Run("successful status retrieval", func(t *testing.T) {

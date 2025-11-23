@@ -189,3 +189,20 @@ func (m *mockStorage) GetDiagnosis(ctx context.Context, issueID string) (*types.
 func (m *mockStorage) UpdateSelfHealingMode(ctx context.Context, instanceID string, mode string) error {
 	return nil
 }
+
+// Interrupt/resume methods (pause/resume workflow)
+func (m *mockStorage) SaveInterruptMetadata(ctx context.Context, metadata *types.InterruptMetadata) error {
+	return nil
+}
+func (m *mockStorage) GetInterruptMetadata(ctx context.Context, issueID string) (*types.InterruptMetadata, error) {
+	return nil, nil
+}
+func (m *mockStorage) MarkInterruptResumed(ctx context.Context, issueID string) error {
+	return nil
+}
+func (m *mockStorage) DeleteInterruptMetadata(ctx context.Context, issueID string) error {
+	return nil
+}
+func (m *mockStorage) ListInterruptedIssues(ctx context.Context) ([]*types.InterruptMetadata, error) {
+	return nil, nil
+}

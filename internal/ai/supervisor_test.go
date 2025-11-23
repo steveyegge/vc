@@ -291,6 +291,21 @@ func (m *mockStorage) StoreDiagnosis(ctx context.Context, issueID string, diagno
 func (m *mockStorage) GetDiagnosis(ctx context.Context, issueID string) (*TestFailureDiagnosis, error) {
 	return nil, nil
 }
+func (m *mockStorage) DeleteInterruptMetadata(ctx context.Context, issueID string) error {
+	return nil
+}
+func (m *mockStorage) GetInterruptMetadata(ctx context.Context, issueID string) (*types.InterruptMetadata, error) {
+	return nil, nil
+}
+func (m *mockStorage) MarkInterruptResumed(ctx context.Context, issueID string) error {
+	return nil
+}
+func (m *mockStorage) ListInterruptedIssues(ctx context.Context) ([]*types.InterruptMetadata, error) {
+	return nil, nil
+}
+func (m *mockStorage) SaveInterruptMetadata(ctx context.Context, metadata *types.InterruptMetadata) error {
+	return nil
+}
 
 func min(a, b int) int {
 	if a < b {

@@ -307,6 +307,23 @@ func (m *MockStorage) LogStatusChangeFromUpdates(ctx context.Context, issueID st
 	// No-op for tests
 }
 
+// Interrupt/resume methods (pause/resume workflow)
+func (m *MockStorage) SaveInterruptMetadata(ctx context.Context, metadata *types.InterruptMetadata) error {
+	return nil
+}
+func (m *MockStorage) GetInterruptMetadata(ctx context.Context, issueID string) (*types.InterruptMetadata, error) {
+	return nil, nil
+}
+func (m *MockStorage) MarkInterruptResumed(ctx context.Context, issueID string) error {
+	return nil
+}
+func (m *MockStorage) DeleteInterruptMetadata(ctx context.Context, issueID string) error {
+	return nil
+}
+func (m *MockStorage) ListInterruptedIssues(ctx context.Context) ([]*types.InterruptMetadata, error) {
+	return nil, nil
+}
+
 func TestGenerateAndStorePlan_RequiresApproval(t *testing.T) {
 	ctx := context.Background()
 
