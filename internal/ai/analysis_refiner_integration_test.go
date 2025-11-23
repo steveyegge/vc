@@ -68,14 +68,14 @@ Summary: All work completed successfully`
 	}
 
 	ctx := context.Background()
-	converged, err := refiner.CheckConvergence(ctx, current, previous)
+	decision, err := refiner.CheckConvergence(ctx, current, previous)
 	if err != nil {
 		t.Fatalf("CheckConvergence failed: %v", err)
 	}
 
 	// Identical content should converge
-	if !converged {
-		t.Error("Expected convergence for identical artifacts")
+	if !decision.Converged {
+		t.Errorf("Expected convergence for identical artifacts, got: %+v", decision)
 	}
 }
 
@@ -119,13 +119,13 @@ Summary: The agent successfully finished the task`,
 	}
 
 	ctx := context.Background()
-	converged, err := refiner.CheckConvergence(ctx, current, previous)
+	decision, err := refiner.CheckConvergence(ctx, current, previous)
 	if err != nil {
 		t.Fatalf("CheckConvergence failed: %v", err)
 	}
 
 	// Minimal rewording should converge
-	if !converged {
+	if !decision.Converged {
 		t.Error("Expected convergence for minimal rewording")
 	}
 }
@@ -186,13 +186,13 @@ Summary: Work completed but found additional issues in review`,
 	}
 
 	ctx := context.Background()
-	converged, err := refiner.CheckConvergence(ctx, current, previous)
+	decision, err := refiner.CheckConvergence(ctx, current, previous)
 	if err != nil {
 		t.Fatalf("CheckConvergence failed: %v", err)
 	}
 
 	// Finding new issues should NOT converge
-	if converged {
+	if decision.Converged {
 		t.Error("Expected non-convergence when new issues are discovered")
 	}
 }
@@ -232,13 +232,13 @@ func TestCheckConvergence_EmptyDiff(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	converged, err := refiner.CheckConvergence(ctx, current, previous)
+	decision, err := refiner.CheckConvergence(ctx, current, previous)
 	if err != nil {
 		t.Fatalf("CheckConvergence failed: %v", err)
 	}
 
 	// Empty diffs should converge (nothing changing)
-	if !converged {
+	if !decision.Converged {
 		t.Error("Expected convergence for empty diffs")
 	}
 }
@@ -314,13 +314,13 @@ Summary: Comprehensive analysis found significant new work items`,
 	}
 
 	ctx := context.Background()
-	converged, err := refiner.CheckConvergence(ctx, current, previous)
+	decision, err := refiner.CheckConvergence(ctx, current, previous)
 	if err != nil {
 		t.Fatalf("CheckConvergence failed: %v", err)
 	}
 
 	// Large diff with many new issues should NOT converge
-	if converged {
+	if decision.Converged {
 		t.Error("Expected non-convergence for large diff with many new issues")
 	}
 }
@@ -381,13 +381,13 @@ Summary: Task completed successfully with 2 related follow-up items`,
 	}
 
 	ctx := context.Background()
-	converged, err := refiner.CheckConvergence(ctx, current, previous)
+	decision, err := refiner.CheckConvergence(ctx, current, previous)
 	if err != nil {
 		t.Fatalf("CheckConvergence failed: %v", err)
 	}
 
 	// Same semantic content (2 issues, same priorities) should converge
-	if !converged {
+	if !decision.Converged {
 		t.Error("Expected convergence for semantic-only changes (rewording same issues)")
 	}
 }
@@ -433,14 +433,14 @@ Summary: Still unclear if work is complete`,
 	}
 
 	ctx := context.Background()
-	converged, err := refiner.CheckConvergence(ctx, current, previous)
+	decision, err := refiner.CheckConvergence(ctx, current, previous)
 	if err != nil {
 		t.Fatalf("CheckConvergence failed: %v", err)
 	}
 
 	// This test validates that the AI can make a judgment even in ambiguous cases.
 	// We don't assert the result (could go either way), but we verify no error.
-	t.Logf("Convergence judgment for ambiguous case: %v", converged)
+	t.Logf("Convergence judgment for ambiguous case: %+v", decision)
 }
 
 // TestCheckConvergence_JSONParsing tests that AI returns valid JSON
@@ -535,13 +535,13 @@ Summary: Found 2 additional issues on review`,
 	}
 
 	ctx := context.Background()
-	converged, err := refiner.CheckConvergence(ctx, current, previous)
+	decision, err := refiner.CheckConvergence(ctx, current, previous)
 	if err != nil {
 		t.Fatalf("CheckConvergence failed: %v", err)
 	}
 
 	// When we find 2 new issues (C and D), AI should recognize non-convergence
-	if converged {
+	if decision.Converged {
 		t.Error("Expected non-convergence when 2 new issues were discovered")
 	}
 }

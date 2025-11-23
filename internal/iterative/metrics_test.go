@@ -2,6 +2,7 @@ package iterative
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -237,9 +238,15 @@ func TestConverge_WithMetricsCollector(t *testing.T) {
 				Content: artifact.Content + " [refined]",
 			}, nil
 		},
-		checkConvergenceFunc: func(ctx context.Context, current, previous *Artifact) (bool, error) {
+		checkConvergenceFunc: func(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
 			// Converge on 3rd iteration
-			return callCount >= 3, nil
+			converged := callCount >= 3
+			return &ConvergenceDecision{
+				Converged:  converged,
+				Confidence: 0.9,
+				Reasoning:  fmt.Sprintf("Iteration %d/3", callCount),
+				Strategy:   "mock-counter",
+			}, nil
 		},
 	}
 
@@ -318,8 +325,13 @@ func TestConverge_WithMetricsCollector_MaxedOut(t *testing.T) {
 				Content: artifact.Content + " [refined]",
 			}, nil
 		},
-		checkConvergenceFunc: func(ctx context.Context, current, previous *Artifact) (bool, error) {
-			return false, nil // Never converge
+		checkConvergenceFunc: func(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
+			return &ConvergenceDecision{
+				Converged:  false,
+				Confidence: 0.5,
+				Reasoning:  "Never converge",
+				Strategy:   "mock-never",
+			}, nil
 		},
 	}
 

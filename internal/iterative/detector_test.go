@@ -74,18 +74,28 @@ This is line 5.`,
 			previous := &Artifact{Type: "test", Content: tt.previous}
 			current := &Artifact{Type: "test", Content: tt.current}
 
-			converged, confidence, err := detector.CheckConvergence(ctx, current, previous)
+			decision, err := detector.CheckConvergence(ctx, current, previous)
 			if err != nil {
 				t.Fatalf("CheckConvergence failed: %v", err)
 			}
 
-			if converged != tt.wantConverged {
-				t.Errorf("Expected converged=%v, got %v (confidence=%.2f)", tt.wantConverged, converged, confidence)
+			if decision.Converged != tt.wantConverged {
+				t.Errorf("Expected converged=%v, got %v (confidence=%.2f)", tt.wantConverged, decision.Converged, decision.Confidence)
 			}
 
 			// Confidence should be between 0 and 1
-			if confidence < 0.0 || confidence > 1.0 {
-				t.Errorf("Invalid confidence: %.2f (should be 0.0-1.0)", confidence)
+			if decision.Confidence < 0.0 || decision.Confidence > 1.0 {
+				t.Errorf("Invalid confidence: %.2f (should be 0.0-1.0)", decision.Confidence)
+			}
+
+			// Strategy should be set
+			if decision.Strategy != "diff-based" {
+				t.Errorf("Expected strategy='diff-based', got %q", decision.Strategy)
+			}
+
+			// Reasoning should be present
+			if decision.Reasoning == "" {
+				t.Errorf("Expected non-empty reasoning")
 			}
 		})
 	}
@@ -210,14 +220,32 @@ func TestChainedDetector(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock detectors
 			detector1 := &mockDetector{
-				checkFunc: func(ctx context.Context, current, previous *Artifact) (bool, float64, error) {
-					return tt.detector1Conv, tt.detector1Conf, tt.detector1Err
+				strategy: "detector1",
+				checkFunc: func(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
+					if tt.detector1Err != nil {
+						return nil, tt.detector1Err
+					}
+					return &ConvergenceDecision{
+						Converged:  tt.detector1Conv,
+						Confidence: tt.detector1Conf,
+						Reasoning:  "detector1 result",
+						Strategy:   "detector1",
+					}, nil
 				},
 			}
 
 			detector2 := &mockDetector{
-				checkFunc: func(ctx context.Context, current, previous *Artifact) (bool, float64, error) {
-					return tt.detector2Conv, tt.detector2Conf, tt.detector2Err
+				strategy: "detector2",
+				checkFunc: func(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
+					if tt.detector2Err != nil {
+						return nil, tt.detector2Err
+					}
+					return &ConvergenceDecision{
+						Converged:  tt.detector2Conv,
+						Confidence: tt.detector2Conf,
+						Reasoning:  "detector2 result",
+						Strategy:   "detector2",
+					}, nil
 				},
 			}
 
@@ -227,7 +255,7 @@ func TestChainedDetector(t *testing.T) {
 			previous := &Artifact{Type: "test", Content: "prev"}
 			current := &Artifact{Type: "test", Content: "curr"}
 
-			converged, confidence, err := chained.CheckConvergence(ctx, current, previous)
+			decision, err := chained.CheckConvergence(ctx, current, previous)
 
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("Expected error=%v, got: %v", tt.wantErr, err)
@@ -237,12 +265,17 @@ func TestChainedDetector(t *testing.T) {
 				return // Don't check other values if we expected an error
 			}
 
-			if converged != tt.wantConverged {
-				t.Errorf("Expected converged=%v, got %v", tt.wantConverged, converged)
+			if decision.Converged != tt.wantConverged {
+				t.Errorf("Expected converged=%v, got %v", tt.wantConverged, decision.Converged)
 			}
 
-			if confidence != tt.wantConfidence {
-				t.Errorf("Expected confidence=%.2f, got %.2f", tt.wantConfidence, confidence)
+			if decision.Confidence != tt.wantConfidence {
+				t.Errorf("Expected confidence=%.2f, got %.2f", tt.wantConfidence, decision.Confidence)
+			}
+
+			// Verify strategy is set and matches one of the detectors
+			if decision.Strategy != "detector1" && decision.Strategy != "detector2" && decision.Strategy != "chained" {
+				t.Errorf("Expected strategy to be 'detector1', 'detector2', or 'chained', got %q", decision.Strategy)
 			}
 		})
 	}
@@ -250,14 +283,24 @@ func TestChainedDetector(t *testing.T) {
 
 // mockDetector is a test implementation of ConvergenceDetector
 type mockDetector struct {
-	checkFunc func(ctx context.Context, current, previous *Artifact) (bool, float64, error)
+	checkFunc func(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error)
+	strategy  string
 }
 
-func (m *mockDetector) CheckConvergence(ctx context.Context, current, previous *Artifact) (bool, float64, error) {
+func (m *mockDetector) CheckConvergence(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
 	if m.checkFunc != nil {
 		return m.checkFunc(ctx, current, previous)
 	}
-	return false, 0.5, nil // Default: not converged, low confidence
+	strategy := m.strategy
+	if strategy == "" {
+		strategy = "mock"
+	}
+	return &ConvergenceDecision{
+		Converged:  false,
+		Confidence: 0.5,
+		Reasoning:  "Mock detector default",
+		Strategy:   strategy,
+	}, nil
 }
 
 // TestCountDiffLines tests the diff counting helper
@@ -419,6 +462,62 @@ func ExampleNewChainedDetector() {
 
 	fmt.Printf("Chained detector configured with min confidence: %.1f\n", chainedDetector.MinConfidence)
 	// Output: Chained detector configured with min confidence: 0.7
+}
+
+// TestChainedDetector_StrategyTracking tests that ChainedDetector returns the correct strategy
+func TestChainedDetector_StrategyTracking(t *testing.T) {
+	ctx := context.Background()
+
+	// Create two mock detectors with different strategies
+	detector1 := &mockDetector{
+		strategy: "strategy-A",
+		checkFunc: func(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
+			// Low confidence - should fall back to detector2
+			return &ConvergenceDecision{
+				Converged:  true,
+				Confidence: 0.5,
+				Reasoning:  "Low confidence result",
+				Strategy:   "strategy-A",
+			}, nil
+		},
+	}
+
+	detector2 := &mockDetector{
+		strategy: "strategy-B",
+		checkFunc: func(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
+			// High confidence
+			return &ConvergenceDecision{
+				Converged:  false,
+				Confidence: 0.9,
+				Reasoning:  "High confidence result",
+				Strategy:   "strategy-B",
+			}, nil
+		},
+	}
+
+	// Chain with minConfidence=0.7, so detector1 will fall back to detector2
+	chained := NewChainedDetector(0.7, detector1, detector2)
+
+	previous := &Artifact{Type: "test", Content: "prev"}
+	current := &Artifact{Type: "test", Content: "curr"}
+
+	decision, err := chained.CheckConvergence(ctx, current, previous)
+	if err != nil {
+		t.Fatalf("CheckConvergence failed: %v", err)
+	}
+
+	// Should use detector2's result because detector1 had low confidence
+	if decision.Strategy != "strategy-B" {
+		t.Errorf("Expected strategy 'strategy-B', got %q", decision.Strategy)
+	}
+
+	if decision.Confidence != 0.9 {
+		t.Errorf("Expected confidence 0.9, got %.2f", decision.Confidence)
+	}
+
+	if decision.Converged {
+		t.Error("Expected not converged (detector2's result)")
+	}
 }
 
 // TestConvergenceMetrics tests metrics tracking

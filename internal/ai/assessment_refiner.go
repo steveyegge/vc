@@ -89,14 +89,14 @@ func (r *AssessmentRefiner) Refine(ctx context.Context, artifact *iterative.Arti
 }
 
 // CheckConvergence uses AI to determine if the assessment has converged
-func (r *AssessmentRefiner) CheckConvergence(ctx context.Context, current, previous *iterative.Artifact) (bool, error) {
+func (r *AssessmentRefiner) CheckConvergence(ctx context.Context, current, previous *iterative.Artifact) (*iterative.ConvergenceDecision, error) {
 	// Build convergence judgment prompt
 	prompt := r.buildConvergencePrompt(current, previous)
 
 	// Call AI API
 	response, err := r.supervisor.CallAPI(ctx, prompt, ModelSonnet, 2048)
 	if err != nil {
-		return false, fmt.Errorf("AI convergence check failed: %w", err)
+		return nil, fmt.Errorf("AI convergence check failed: %w", err)
 	}
 
 	// Extract response text
@@ -121,17 +121,17 @@ func (r *AssessmentRefiner) CheckConvergence(ctx context.Context, current, previ
 		LogErrors: boolPtr(true),
 	})
 	if !parseResult.Success {
-		return false, fmt.Errorf("failed to parse convergence response: %s", parseResult.Error)
+		return nil, fmt.Errorf("failed to parse convergence response: %s", parseResult.Error)
 	}
 
 	aiResponse := parseResult.Data
 
-	// Apply confidence threshold
-	if aiResponse.Confidence < r.minConfidence {
-		return false, nil // Not confident enough - keep iterating
-	}
-
-	return aiResponse.Converged, nil
+	return &iterative.ConvergenceDecision{
+		Converged:  aiResponse.Converged,
+		Confidence: aiResponse.Confidence,
+		Reasoning:  aiResponse.Reasoning,
+		Strategy:   "AI",
+	}, nil
 }
 
 // buildConvergencePrompt constructs the prompt for convergence judgment

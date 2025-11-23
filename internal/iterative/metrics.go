@@ -53,6 +53,9 @@ type IterationMetrics struct {
 
 	// Confidence is the convergence detector's confidence (0.0-1.0), if checked
 	Confidence float64
+
+	// Strategy is the detector strategy used (e.g., "AI", "diff-based"), if checked
+	Strategy string
 }
 
 // ArtifactMetrics captures metrics for an entire artifact refinement process.

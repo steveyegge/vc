@@ -17,9 +17,9 @@ import (
 // diff-based, semantic similarity) to judge convergence.
 type ConvergenceDetector interface {
 	// CheckConvergence determines if the artifact has stabilized.
-	// Returns true if converged, false if more iteration would help.
-	// confidence is a value between 0.0 and 1.0 indicating detector confidence.
-	CheckConvergence(ctx context.Context, current, previous *Artifact) (converged bool, confidence float64, err error)
+	// Returns a ConvergenceDecision containing the convergence judgment,
+	// confidence level, reasoning, and strategy used.
+	CheckConvergence(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error)
 }
 
 // ConvergenceDecision captures the outcome of a single convergence check
@@ -53,13 +53,18 @@ func NewDiffBasedDetector(maxDiffPercent float64) *DiffBasedDetector {
 }
 
 // CheckConvergence uses diff size to determine convergence
-func (d *DiffBasedDetector) CheckConvergence(ctx context.Context, current, previous *Artifact) (bool, float64, error) {
+func (d *DiffBasedDetector) CheckConvergence(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
 	diffLines := countDiffLines(previous.Content, current.Content)
 	totalLines := countLines(current.Content)
 
 	if totalLines == 0 {
 		// Empty artifact - not converged
-		return false, 1.0, nil
+		return &ConvergenceDecision{
+			Converged:  false,
+			Confidence: 1.0,
+			Reasoning:  "Empty artifact",
+			Strategy:   "diff-based",
+		}, nil
 	}
 
 	changePercent := (float64(diffLines) / float64(totalLines)) * 100
@@ -74,7 +79,14 @@ func (d *DiffBasedDetector) CheckConvergence(ctx context.Context, current, previ
 	distanceFromThreshold := math.Abs(changePercent - d.MaxDiffPercent)
 	confidence := math.Min(1.0, distanceFromThreshold/d.MaxDiffPercent)
 
-	return converged, confidence, nil
+	reasoning := fmt.Sprintf("%.1f%% of lines changed (threshold: %.1f%%)", changePercent, d.MaxDiffPercent)
+
+	return &ConvergenceDecision{
+		Converged:  converged,
+		Confidence: confidence,
+		Reasoning:  reasoning,
+		Strategy:   "diff-based",
+	}, nil
 }
 
 // ChainedDetector chains multiple detectors with fallback logic.
@@ -99,25 +111,25 @@ func NewChainedDetector(minConfidence float64, detectors ...ConvergenceDetector)
 }
 
 // CheckConvergence tries each detector in sequence until one succeeds with sufficient confidence
-func (d *ChainedDetector) CheckConvergence(ctx context.Context, current, previous *Artifact) (bool, float64, error) {
+func (d *ChainedDetector) CheckConvergence(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
 	var lastErr error
-	var lastConfidence float64
+	var lastDecision *ConvergenceDecision
 
 	for i, detector := range d.detectors {
-		converged, confidence, err := detector.CheckConvergence(ctx, current, previous)
+		decision, err := detector.CheckConvergence(ctx, current, previous)
 
 		// If this detector succeeded and has sufficient confidence, use it
-		if err == nil && confidence >= d.MinConfidence {
-			return converged, confidence, nil
+		if err == nil && decision.Confidence >= d.MinConfidence {
+			return decision, nil
 		}
 
-		// Track last error and confidence for fallback
+		// Track last error and decision for fallback
 		lastErr = err
-		lastConfidence = confidence
+		lastDecision = decision
 
 		// If this was the last detector and it failed, return the error
 		if i == len(d.detectors)-1 && err != nil {
-			return false, 0.0, fmt.Errorf("all convergence detectors failed, last error: %w", lastErr)
+			return nil, fmt.Errorf("all convergence detectors failed, last error: %w", lastErr)
 		}
 
 		// Otherwise, try the next detector
@@ -125,7 +137,17 @@ func (d *ChainedDetector) CheckConvergence(ctx context.Context, current, previou
 
 	// All detectors had low confidence - return the last result
 	// (This handles the case where all detectors succeed but with low confidence)
-	return false, lastConfidence, nil
+	if lastDecision != nil {
+		return lastDecision, nil
+	}
+
+	// Shouldn't reach here, but handle gracefully
+	return &ConvergenceDecision{
+		Converged:  false,
+		Confidence: 0.0,
+		Reasoning:  "All detectors had low confidence",
+		Strategy:   "chained",
+	}, nil
 }
 
 // Helper functions

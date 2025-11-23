@@ -77,8 +77,10 @@ type Refiner interface {
 	// on the diff between current and previous versions, completeness, and
 	// marginal value of further iteration.
 	//
-	// Returns true if converged, false if more iteration would help.
-	CheckConvergence(ctx context.Context, current, previous *Artifact) (bool, error)
+	// Returns a ConvergenceDecision containing the convergence judgment,
+	// confidence level, reasoning, and strategy used. This aligns with the
+	// ConvergenceDetector interface for consistency.
+	CheckConvergence(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error)
 }
 
 // ConvergenceResult captures the outcome of a refinement process.

@@ -12,7 +12,7 @@ import (
 // mockRefiner is a test implementation of the Refiner interface
 type mockRefiner struct {
 	refineFunc            func(ctx context.Context, artifact *Artifact) (*Artifact, error)
-	checkConvergenceFunc  func(ctx context.Context, current, previous *Artifact) (bool, error)
+	checkConvergenceFunc  func(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error)
 	refineCalls           int
 	convergenceCheckCalls int
 }
@@ -30,13 +30,18 @@ func (m *mockRefiner) Refine(ctx context.Context, artifact *Artifact) (*Artifact
 	}, nil
 }
 
-func (m *mockRefiner) CheckConvergence(ctx context.Context, current, previous *Artifact) (bool, error) {
+func (m *mockRefiner) CheckConvergence(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
 	m.convergenceCheckCalls++
 	if m.checkConvergenceFunc != nil {
 		return m.checkConvergenceFunc(ctx, current, previous)
 	}
 	// Default: never converge (test MaxIterations)
-	return false, nil
+	return &ConvergenceDecision{
+		Converged:  false,
+		Confidence: 0.5,
+		Reasoning:  "Mock default: not converged",
+		Strategy:   "mock",
+	}, nil
 }
 
 func TestConverge_BasicIteration(t *testing.T) {
@@ -90,10 +95,16 @@ func TestConverge_ConvergesEarly(t *testing.T) {
 
 	// Converge after 3 iterations
 	refiner := &mockRefiner{
-		checkConvergenceFunc: func(ctx context.Context, current, previous *Artifact) (bool, error) {
+		checkConvergenceFunc: func(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
 			// Count refinement iterations by looking at content
 			iterations := strings.Count(current.Content, "refined")
-			return iterations >= 3, nil
+			converged := iterations >= 3
+			return &ConvergenceDecision{
+				Converged:  converged,
+				Confidence: 0.9,
+				Reasoning:  fmt.Sprintf("Iteration %d/3", iterations),
+				Strategy:   "mock-counter",
+			}, nil
 		},
 	}
 
@@ -137,8 +148,13 @@ func TestConverge_MinIterationsEnforced(t *testing.T) {
 
 	// Try to converge immediately (but MinIterations should prevent it)
 	refiner := &mockRefiner{
-		checkConvergenceFunc: func(ctx context.Context, current, previous *Artifact) (bool, error) {
-			return true, nil // Always say converged
+		checkConvergenceFunc: func(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
+			return &ConvergenceDecision{
+				Converged:  true,
+				Confidence: 1.0,
+				Reasoning:  "Always converged",
+				Strategy:   "mock-always",
+			}, nil
 		},
 	}
 
@@ -255,8 +271,8 @@ func TestConverge_ConvergenceCheckError(t *testing.T) {
 
 	convergenceErr := errors.New("convergence check failed")
 	refiner := &mockRefiner{
-		checkConvergenceFunc: func(ctx context.Context, current, previous *Artifact) (bool, error) {
-			return false, convergenceErr
+		checkConvergenceFunc: func(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
+			return nil, convergenceErr
 		},
 	}
 
