@@ -158,15 +158,16 @@ func (ld *LoopDetector) createDiagnosticIssue(ctx context.Context, result *ai.Lo
 	diagnostic := ld.generateDiagnostic(result, recentEvents)
 
 	issue := &types.Issue{
-		ID:          issueID,
-		Title:       fmt.Sprintf("Executor loop detected: %s", result.LoopType),
-		Description: result.DiagnosticSummary,
-		Design:      diagnostic,
-		IssueType:   types.TypeBug,
-		Status:      types.StatusOpen,
-		Priority:    0, // P0 - critical
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:                 issueID,
+		Title:              fmt.Sprintf("Executor loop detected: %s", result.LoopType),
+		Description:        result.DiagnosticSummary,
+		Design:             diagnostic,
+		AcceptanceCriteria: "Loop detector successfully creates diagnostic issue and executor halts gracefully with exit code 42",
+		IssueType:          types.TypeBug,
+		Status:             types.StatusOpen,
+		Priority:           0, // P0 - critical
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 
 	if err := ld.store.CreateIssue(ctx, issue, "loop-detector"); err != nil {
