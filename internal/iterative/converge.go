@@ -3,6 +3,7 @@ package iterative
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 )
 
@@ -126,10 +127,20 @@ func Converge(ctx context.Context, initial *Artifact, refiner Refiner, config Re
 			convergenceChecked = true
 
 			if err != nil {
-				// Log error but continue - convergence check is advisory
-				// We'll rely on MaxIterations as fallback
-				// TODO: Add logging when logging infrastructure is available
-				_ = err // Suppress unused variable warning for now
+				// Log convergence check failure
+				// Convergence checks are advisory - we fall back to MaxIterations
+				// Common causes:
+				// - AI service unavailable/timeout
+				// - Invalid response format from AI
+				// - Context cancellation during check
+				// - Nil detector implementation
+				fmt.Fprintf(os.Stderr, "[CONVERGENCE CHECK FAILED] iteration=%d artifact_type=%s error=%v\n",
+					i, current.Type, err)
+
+				// Record metric if collector provided
+				if collector != nil {
+					collector.RecordConvergenceCheckError(i, err)
+				}
 			} else if decision != nil {
 				convergedNow = decision.Converged
 				convergenceConfidence = decision.Confidence

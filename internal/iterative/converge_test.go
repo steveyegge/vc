@@ -291,6 +291,41 @@ func TestConverge_ConvergenceCheckError(t *testing.T) {
 	}
 }
 
+func TestConverge_ConvergenceCheckErrorWithMetrics(t *testing.T) {
+	ctx := context.Background()
+
+	convergenceErr := errors.New("convergence check failed")
+	refiner := &mockRefiner{
+		checkConvergenceFunc: func(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
+			return nil, convergenceErr
+		},
+	}
+
+	initial := &Artifact{Type: "test", Content: "initial"}
+	config := RefinementConfig{MinIterations: 2, MaxIterations: 3}
+	collector := NewInMemoryMetricsCollector()
+
+	result, err := Converge(ctx, initial, refiner, config, collector)
+	// Convergence errors should be logged but not fail the refinement
+	if err != nil {
+		t.Fatalf("Converge should not fail on convergence check error: %v", err)
+	}
+
+	// Should complete all MaxIterations (fallback when convergence check fails)
+	if result.Iterations != 3 {
+		t.Errorf("Expected 3 iterations, got %d", result.Iterations)
+	}
+
+	// Verify convergence check errors were tracked
+	agg := collector.GetAggregateMetrics()
+	// MinIterations=2, MaxIterations=3, so convergence is checked at iterations 2 and 3
+	// Both checks fail, so we expect 2 errors
+	expectedErrors := 2
+	if agg.ConvergenceCheckErrors != expectedErrors {
+		t.Errorf("Expected %d convergence check errors, got %d", expectedErrors, agg.ConvergenceCheckErrors)
+	}
+}
+
 func TestConverge_InvalidConfig(t *testing.T) {
 	ctx := context.Background()
 	refiner := &mockRefiner{}

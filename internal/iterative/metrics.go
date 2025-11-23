@@ -21,6 +21,10 @@ type MetricsCollector interface {
 	// RecordArtifactComplete is called when the entire refinement process finishes
 	RecordArtifactComplete(result *ConvergenceResult, metrics *ArtifactMetrics)
 
+	// RecordConvergenceCheckError is called when CheckConvergence fails
+	// This tracks convergence detection failures for observability
+	RecordConvergenceCheckError(iteration int, err error)
+
 	// GetAggregateMetrics returns rolled-up statistics across all artifacts
 	GetAggregateMetrics() *AggregateMetrics
 }
@@ -138,6 +142,11 @@ type AggregateMetrics struct {
 	// TotalDuration is the sum of all artifact refinement durations
 	TotalDuration time.Duration
 
+	// ConvergenceCheckErrors is the total number of convergence check failures
+	// When a convergence check fails, the system falls back to MaxIterations
+	// High error rates indicate issues with the convergence detector
+	ConvergenceCheckErrors int
+
 	// ByType breaks down metrics by artifact type
 	ByType map[string]*TypeMetrics
 
@@ -187,6 +196,9 @@ type InMemoryMetricsCollector struct {
 
 	// currentIterations tracks iterations for the current artifact
 	currentIterations []*IterationMetrics
+
+	// convergenceCheckErrors tracks convergence check failures
+	convergenceCheckErrors int
 }
 
 // NewInMemoryMetricsCollector creates a new in-memory metrics collector
@@ -208,6 +220,13 @@ func (m *InMemoryMetricsCollector) RecordIterationEnd(iteration int, metrics *It
 		return
 	}
 	m.currentIterations = append(m.currentIterations, metrics)
+}
+
+// RecordConvergenceCheckError implements MetricsCollector
+func (m *InMemoryMetricsCollector) RecordConvergenceCheckError(iteration int, err error) {
+	m.convergenceCheckErrors++
+	_ = iteration // Unused in this implementation, but available for future use
+	_ = err        // Unused in this implementation, but available for future use
 }
 
 // RecordArtifactComplete implements MetricsCollector
@@ -286,6 +305,9 @@ func (m *InMemoryMetricsCollector) GetAggregateMetrics() *AggregateMetrics {
 		agg.P50Iterations = percentile(iterationCounts, 50)
 		agg.P95Iterations = percentile(iterationCounts, 95)
 	}
+
+	// Include convergence check errors
+	agg.ConvergenceCheckErrors = m.convergenceCheckErrors
 
 	// Estimate cost (Claude Sonnet 4.5 pricing as of Jan 2025: $3/MTok input, $15/MTok output)
 	inputCostPerMToken := 3.0
