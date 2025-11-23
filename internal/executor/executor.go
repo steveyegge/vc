@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/config"
+	"github.com/steveyegge/vc/internal/control"
 	"github.com/steveyegge/vc/internal/cost"
 	"github.com/steveyegge/vc/internal/deduplication"
 	"github.com/steveyegge/vc/internal/events"
@@ -71,6 +72,8 @@ type Executor struct {
 	qaWorker         *QualityGateWorker         // QA worker for quality gate execution (vc-254)
 	costTracker      *cost.Tracker              // Cost budget tracker (vc-e3s7)
 	loopDetector     *LoopDetector              // Loop detector for unproductive patterns (vc-0vfg)
+	controlServer    *control.Server            // Control server for pause/resume commands (vc-00cu)
+	interruptMgr     *InterruptManager          // Interrupt manager for task pause/resume (vc-00cu)
 	config           *Config
 	instanceID       string
 	hostname         string
@@ -381,6 +384,10 @@ type Config struct {
 
 	// Iterative refinement configuration (vc-43kd, vc-t9ls)
 	EnableIterativeRefinement bool // Enable iterative refinement for assessment and analysis phases (default: true)
+
+	// Control server configuration (vc-00cu)
+	EnableControlServer bool   // Enable control server for pause/resume commands (default: true)
+	ControlSocketPath   string // Path to control socket (default: ".vc/executor.sock")
 }
 
 // Validate checks the configuration for invalid combinations (vc-q5ve)
@@ -885,6 +892,43 @@ func New(cfg *Config) (*Executor, error) {
 		}
 	}
 
+	// Initialize interrupt manager (vc-00cu)
+	// Always enabled - manages task pause/resume
+	e.interruptMgr = NewInterruptManager(e)
+
+	// Initialize control server for pause/resume commands (vc-00cu)
+	// Only create server if enabled in config (defaults to enabled)
+	enableControlServer := cfg.EnableControlServer
+	if enableControlServer {
+		// Determine socket path (.vc/executor.sock by default)
+		socketPath := cfg.ControlSocketPath
+		if socketPath == "" {
+			// Default to .vc/executor.sock in working directory
+			socketPath = filepath.Join(workingDir, ".vc", "executor.sock")
+		}
+
+		// Create control server with command handler
+		controlServer, err := control.NewServer(socketPath, func(cmd control.Command) (map[string]interface{}, error) {
+			// Dispatch commands to appropriate handlers
+			ctx := context.Background()
+			switch cmd.Type {
+			case "pause":
+				return e.interruptMgr.HandlePauseCommand(ctx, cmd.IssueID, cmd.Reason)
+			case "status":
+				return e.getExecutorStatus(), nil
+			default:
+				return nil, fmt.Errorf("unknown command type: %s", cmd.Type)
+			}
+		})
+
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to create control server: %v (pause/resume disabled)\n", err)
+		} else {
+			e.controlServer = controlServer
+			fmt.Printf("✓ Control server initialized (socket: %s)\n", socketPath)
+		}
+	}
+
 	return e, nil
 }
 
@@ -994,6 +1038,13 @@ func (e *Executor) Start(ctx context.Context) error {
 		}
 	}
 
+	// Start the control server if initialized (vc-00cu)
+	if e.controlServer != nil {
+		if err := e.controlServer.Start(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to start control server: %v\n", err)
+		}
+	}
+
 	// Start the cleanup loop
 	go e.cleanupLoop(ctx)
 	fmt.Printf("Cleanup: Started stale instance cleanup (check_interval=%v, stale_threshold=%v)\n",
@@ -1062,6 +1113,13 @@ func (e *Executor) Stop(ctx context.Context) error {
 	// Stop unified watchdog if it's running (vc-mq3c)
 	if e.watchdog != nil {
 		e.watchdog.Stop()
+	}
+
+	// Stop control server if it's running (vc-00cu)
+	if e.controlServer != nil {
+		if err := e.controlServer.Stop(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to stop control server: %v\n", err)
+		}
 	}
 
 	// Stop cleanup goroutine

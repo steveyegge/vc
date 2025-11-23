@@ -501,6 +501,27 @@ CREATE TABLE IF NOT EXISTS health_metrics (
     metadata_json TEXT,                  -- Optional JSON for extra context
     recorded_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Interrupt metadata: tracks paused tasks and resume context (vc-00cu)
+-- Enables graceful pause/resume of agent executions with saved context
+CREATE TABLE IF NOT EXISTS vc_interrupt_metadata (
+    issue_id TEXT PRIMARY KEY,
+    interrupted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    interrupted_by TEXT NOT NULL,        -- Who/what triggered the interrupt ("user" | "budget" | "system")
+    reason TEXT,                         -- Optional user-provided reason
+    executor_instance_id TEXT,           -- Executor that was running the task
+    agent_id TEXT,                       -- Agent that was executing
+    execution_state TEXT,                -- State when interrupted ("assessing" | "executing" | "analyzing")
+    last_tool TEXT,                      -- Last tool used by agent
+    working_notes TEXT,                  -- Agent's observations/notes at interrupt time
+    todos_json TEXT,                     -- JSON array of agent's todo list state
+    progress_summary TEXT,               -- Brief summary of work done so far
+    context_snapshot TEXT,               -- JSON blob of full agent context
+    resumed_at DATETIME,                 -- When task was resumed (NULL if not resumed)
+    resume_count INTEGER DEFAULT 0,      -- Number of times this task has been resumed
+    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+    FOREIGN KEY (executor_instance_id) REFERENCES vc_executor_instances(id) ON DELETE SET NULL
+);
 `
 
 // VC-specific extension schema - INDEX DEFINITIONS
@@ -536,6 +557,10 @@ CREATE INDEX IF NOT EXISTS idx_vc_gate_baselines_branch ON vc_gate_baselines(bra
 
 -- Code review checkpoints indexes
 CREATE INDEX IF NOT EXISTS idx_vc_review_checkpoints_timestamp ON vc_review_checkpoints(timestamp);
+
+-- Interrupt metadata indexes
+CREATE INDEX IF NOT EXISTS idx_vc_interrupt_timestamp ON vc_interrupt_metadata(interrupted_at);
+CREATE INDEX IF NOT EXISTS idx_vc_interrupt_executor ON vc_interrupt_metadata(executor_instance_id);
 CREATE INDEX IF NOT EXISTS idx_vc_review_checkpoints_commit ON vc_review_checkpoints(commit_sha);
 
 -- Quota snapshots indexes (vc-7e21)
