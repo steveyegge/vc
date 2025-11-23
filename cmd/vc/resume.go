@@ -57,7 +57,7 @@ automatically detect and load the interrupt metadata.`,
 		}
 
 		// Try to find running executor first (hot resume via RPC)
-		socketPath, socketErr := findExecutorSocket()
+		_, socketErr := findExecutorSocket()
 		if socketErr == nil {
 			// Executor is running - use RPC to trigger resume
 			fmt.Printf("Found running executor, sending resume command...\n")

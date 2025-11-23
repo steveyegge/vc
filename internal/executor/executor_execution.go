@@ -215,6 +215,21 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		fmt.Printf("Skipping AI assessment (supervision disabled)\n")
 	}
 
+	// Checkpoint 1: Check for interrupt after assessment (vc-d25s)
+	if e.interruptMgr != nil && e.interruptMgr.IsInterruptRequested() {
+		fmt.Printf("⏸️  Interrupt detected after assessment - pausing task\n")
+		if err := e.interruptMgr.SaveInterruptContext(ctx, issue, "control-cli", "user requested pause", "after_assessment"); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to save interrupt context: %v\n", err)
+		}
+		// Release issue and mark as open
+		if err := e.store.ReleaseIssueAndReopen(ctx, issue.ID, "executor", "Task paused by user request"); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to release issue: %v\n", err)
+		}
+		e.getMonitor().EndExecution(false, false)
+		e.interruptMgr.ClearInterrupt()
+		return nil
+	}
+
 	// Phase 2: Get or create mission sandbox if enabled
 	var sb *sandbox.Sandbox
 	workingDir := e.workingDir
@@ -471,11 +486,12 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 		StreamJSON: true, // Enable --output-format stream-json for structured events (vc-q788)
 		Timeout:    30 * time.Minute,
 		// Enable event parsing and storage
-		Store:      e.store,
-		ExecutorID: e.instanceID,
-		AgentID:    agentID,
-		Monitor:    e.getMonitor(), // Pass monitor for watchdog visibility (vc-118)
-		Sandbox:    sb,
+		Store:        e.store,
+		ExecutorID:   e.instanceID,
+		AgentID:      agentID,
+		Monitor:      e.getMonitor(), // Pass monitor for watchdog visibility (vc-118)
+		Sandbox:      sb,
+		InterruptMgr: e.interruptMgr, // Pass interrupt manager for graceful pause (vc-d25s)
 	}
 
 	agent, err := SpawnAgent(agentCtx, agentCfg, prompt)
@@ -508,6 +524,21 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 	result, err := agent.Wait(agentCtx)
 	e.getMonitor().RecordPhaseDuration("execute", time.Since(execStart))
 	if err != nil {
+		// Check if this was an interrupt (vc-d25s)
+		if err.Error() == "agent interrupted by user request" {
+			fmt.Printf("⏸️  Agent interrupted during execution - pausing task\n")
+			if err := e.interruptMgr.SaveInterruptContext(ctx, issue, "control-cli", "user requested pause", "during_execution"); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to save interrupt context: %v\n", err)
+			}
+			// Release issue and mark as open
+			if err := e.store.ReleaseIssueAndReopen(ctx, issue.ID, "executor", "Task paused by user request"); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to release issue: %v\n", err)
+			}
+			e.getMonitor().EndExecution(false, false)
+			e.interruptMgr.ClearInterrupt()
+			return nil
+		}
+
 		// Log agent execution failure BEFORE releasing issue
 		e.logEvent(ctx, events.EventTypeAgentCompleted, events.SeverityError, issue.ID,
 			fmt.Sprintf("Agent execution failed: %v", err),
@@ -530,6 +561,21 @@ func (e *Executor) executeIssue(ctx context.Context, issue *types.Issue) error {
 			"duration_ms":  result.Duration.Milliseconds(),
 			"output_lines": len(result.Output),
 		})
+
+	// Checkpoint 3: Check for interrupt before analysis (vc-d25s)
+	if e.interruptMgr != nil && e.interruptMgr.IsInterruptRequested() {
+		fmt.Printf("⏸️  Interrupt detected before analysis - pausing task\n")
+		if err := e.interruptMgr.SaveInterruptContext(ctx, issue, "control-cli", "user requested pause", "before_analysis"); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to save interrupt context: %v\n", err)
+		}
+		// Release issue and mark as open
+		if err := e.store.ReleaseIssueAndReopen(ctx, issue.ID, "executor", "Task paused by user request"); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to release issue: %v\n", err)
+		}
+		e.getMonitor().EndExecution(false, false)
+		e.interruptMgr.ClearInterrupt()
+		return nil
+	}
 
 	// Phase 3: Process results using ResultsProcessor
 	// This handles AI analysis, quality gates, discovered issues, and tracker updates

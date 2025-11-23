@@ -45,6 +45,8 @@ type AgentConfig struct {
 	Monitor    interface{ RecordEvent(eventType string) }
 	// Sandbox context (optional - if nil, agent runs in main workspace)
 	Sandbox    *sandbox.Sandbox
+	// Interrupt manager for graceful pause/resume (optional - if nil, no interrupt checks)
+	InterruptMgr interface{ IsInterruptRequested() bool }
 }
 
 const (
@@ -211,6 +213,9 @@ type Agent struct {
 	recentToolCalls []string       // Recent tool calls for AI loop detection (vc-34cz)
 	loopDetected    atomic.Bool    // Whether an infinite loop was detected (lock-free for monitoring goroutine)
 	loopReason      string         // Reason for loop detection (for error messages)
+
+	// Interrupt state for graceful pause/resume (vc-d25s)
+	interruptDetected atomic.Bool // Whether an interrupt was detected (lock-free for monitoring goroutine)
 }
 
 // SpawnAgent starts a coding agent process with a pre-built prompt
@@ -304,17 +309,29 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, a.config.Timeout)
 	defer cancel()
 
-	// Start a monitoring goroutine to check for circuit breaker triggers
-	// This runs outside the mutex to avoid deadlocks (vc-5783)
+	// Start a monitoring goroutine to check for circuit breaker triggers and interrupts
+	// This runs outside the mutex to avoid deadlocks (vc-5783, vc-d25s)
 	monitorDone := make(chan struct{})
 	go func() {
 		defer close(monitorDone)
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
-		
+
 		for {
 			select {
 			case <-ticker.C:
+				// Checkpoint 2: Check for interrupt request during agent execution (vc-d25s)
+				if a.config.InterruptMgr != nil && a.config.InterruptMgr.IsInterruptRequested() {
+					fmt.Fprintf(os.Stderr, "⏸️  Interrupt detected during agent execution - stopping agent\n")
+					// Set interrupt flag (lock-free atomic write)
+					a.interruptDetected.Store(true)
+					// Kill the agent gracefully
+					if err := a.Kill(); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: failed to kill agent after interrupt: %v\n", err)
+					}
+					return
+				}
+
 				// Check if circuit breaker was triggered (lock-free read via atomic)
 				if a.loopDetected.Load() {
 					// Kill the agent
@@ -354,6 +371,11 @@ func (a *Agent) Wait(ctx context.Context) (*AgentResult, error) {
 		return nil, fmt.Errorf("agent execution canceled (parent context): %w", timeoutCtx.Err())
 	case err := <-errCh:
 		// Process completed
+		// Check if it was killed by interrupt (lock-free atomic read) (vc-d25s)
+		if a.interruptDetected.Load() {
+			return nil, fmt.Errorf("agent interrupted by user request")
+		}
+
 		// Check if it was killed by circuit breaker (lock-free atomic read)
 		if a.loopDetected.Load() {
 			// Read loopReason with mutex protection (it's a string)
