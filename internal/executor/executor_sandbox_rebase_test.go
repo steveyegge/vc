@@ -182,6 +182,13 @@ func TestRebaseSandbox_CleanRebase(t *testing.T) {
 	if err := runGit("init"); err != nil {
 		t.Fatalf("Failed to init repo: %v", err)
 	}
+	// Explicitly set initial branch to 'main' for consistency across git versions
+	if err := runGit("config", "init.defaultBranch", "main"); err != nil {
+		t.Fatalf("Failed to configure default branch: %v", err)
+	}
+	if err := runGit("symbolic-ref", "HEAD", "refs/heads/main"); err != nil {
+		t.Fatalf("Failed to set HEAD to main: %v", err)
+	}
 	if err := runGit("config", "user.email", "test@example.com"); err != nil {
 		t.Fatalf("Failed to configure git: %v", err)
 	}
@@ -228,6 +235,12 @@ func TestRebaseSandbox_CleanRebase(t *testing.T) {
 	}
 	if err := runGit("commit", "-m", "Main branch progress"); err != nil {
 		t.Fatalf("Failed to commit: %v", err)
+	}
+
+	// Set up origin remote pointing to the same repo (simulates cloned sandbox)
+	// In a real scenario, sandboxes are clones with origin pointing to parent
+	if err := runGit("remote", "add", "origin", repoDir); err != nil {
+		t.Fatalf("Failed to add origin remote: %v", err)
 	}
 
 	// Checkout feature branch again (simulating sandbox state)
@@ -407,12 +420,13 @@ func TestListMissionsWithSandboxes_FiltersCorrectly(t *testing.T) {
 	// Create mission with sandbox
 	missionWithSandbox := &types.Mission{
 		Issue: types.Issue{
-			ID:          "vc-test4",
-			Title:       "Mission With Sandbox",
-			Description: "Test",
-			IssueType:   types.TypeEpic,
-			Status:      types.StatusOpen,
-			Priority:    1,
+			ID:           "vc-test4",
+			Title:        "Mission With Sandbox",
+			Description:  "Test",
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypeMission,
+			Status:       types.StatusOpen,
+			Priority:     1,
 		},
 		Goal:        "Test mission with sandbox",
 		SandboxPath: ".sandboxes/mission-test4",
@@ -425,12 +439,13 @@ func TestListMissionsWithSandboxes_FiltersCorrectly(t *testing.T) {
 	// Create mission without sandbox
 	missionWithoutSandbox := &types.Mission{
 		Issue: types.Issue{
-			ID:          "vc-test5",
-			Title:       "Mission Without Sandbox",
-			Description: "Test",
-			IssueType:   types.TypeEpic,
-			Status:      types.StatusOpen,
-			Priority:    1,
+			ID:           "vc-test5",
+			Title:        "Mission Without Sandbox",
+			Description:  "Test",
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypeMission,
+			Status:       types.StatusOpen,
+			Priority:     1,
 		},
 		Goal: "Test mission without sandbox",
 	}
@@ -441,12 +456,13 @@ func TestListMissionsWithSandboxes_FiltersCorrectly(t *testing.T) {
 	// Create closed mission with sandbox (should be filtered out)
 	closedMission := &types.Mission{
 		Issue: types.Issue{
-			ID:          "vc-test6",
-			Title:       "Closed Mission",
-			Description: "Test",
-			IssueType:   types.TypeEpic,
-			Status:      types.StatusClosed,
-			Priority:    1,
+			ID:           "vc-test6",
+			Title:        "Closed Mission",
+			Description:  "Test",
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypeMission,
+			Status:       types.StatusOpen, // Create as open first
+			Priority:     1,
 		},
 		Goal:        "Test closed mission",
 		SandboxPath: ".sandboxes/mission-test6",
@@ -455,6 +471,7 @@ func TestListMissionsWithSandboxes_FiltersCorrectly(t *testing.T) {
 	if err := store.CreateMission(ctx, closedMission, "test"); err != nil {
 		t.Fatalf("Failed to create closed mission: %v", err)
 	}
+	// Now close it properly (which sets ClosedAt timestamp)
 	if err := store.CloseIssue(ctx, closedMission.ID, "test", "test close"); err != nil {
 		t.Fatalf("Failed to close mission: %v", err)
 	}
