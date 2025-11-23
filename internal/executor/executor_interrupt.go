@@ -97,6 +97,18 @@ func (im *InterruptManager) HandlePauseCommand(ctx context.Context, issueID stri
 
 // SaveInterruptContext saves the current agent context for resume
 func (im *InterruptManager) SaveInterruptContext(ctx context.Context, issue *types.Issue, interruptedBy string, reason string, executionState string) error {
+	// Check for existing interrupt metadata to preserve resume count
+	existingMetadata, err := im.executor.store.GetInterruptMetadata(ctx, issue.ID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to get existing interrupt metadata: %v\n", err)
+	}
+
+	resumeCount := 0
+	if existingMetadata != nil {
+		// Preserve existing resume count when re-pausing
+		resumeCount = existingMetadata.ResumeCount
+	}
+
 	// Build interrupt metadata
 	metadata := &types.InterruptMetadata{
 		IssueID:            issue.ID,
@@ -105,7 +117,7 @@ func (im *InterruptManager) SaveInterruptContext(ctx context.Context, issue *typ
 		Reason:             reason,
 		ExecutorInstanceID: im.executor.instanceID,
 		ExecutionState:     executionState,
-		ResumeCount:        0,
+		ResumeCount:        resumeCount,
 	}
 
 	// TODO: Extract agent context from running agent
