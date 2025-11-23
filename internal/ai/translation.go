@@ -282,7 +282,6 @@ func (s *Supervisor) CreateDiscoveredIssues(ctx context.Context, parentIssue *ty
 			IssueType:   types.TypeTask,
 			Status:      types.StatusOpen,
 			Priority:    0, // P0 - critical
-			Assignee:    "ai-supervisor",
 			AcceptanceCriteria: "1. Review parent issue and discovered blockers list\n2. Identify root cause of excessive blocker discovery\n3. Resolve underlying issue or reconfigure AI analysis\n4. Ensure parent issue has clear acceptance criteria",
 		}
 
@@ -393,7 +392,6 @@ func (s *Supervisor) CreateDiscoveredIssues(ctx context.Context, parentIssue *ty
 			IssueType:          issueType,
 			Status:             types.StatusOpen,
 			Priority:           priority, // Use calculated priority (vc-152)
-			Assignee:           "ai-supervisor",
 			AcceptanceCriteria: acceptanceCriteria, // vc-4vot: Include acceptance criteria from AI
 		}
 

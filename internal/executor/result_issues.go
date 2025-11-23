@@ -51,7 +51,6 @@ _This issue was automatically created by AI code review analysis._`,
 		IssueType:          types.TypeTask,
 		Status:             types.StatusOpen,
 		Priority:           1, // P1 - high priority
-		Assignee:           "ai-supervisor",
 		AcceptanceCriteria: acceptanceCriteria,
 	}
 
@@ -153,7 +152,6 @@ _This issue was automatically created by AI code quality analysis (vc-216)._`,
 			IssueType:          issueType,
 			Status:             types.StatusOpen,
 			Priority:           priority,
-			Assignee:           "ai-supervisor",
 			AcceptanceCriteria: acceptanceCriteria,
 		}
 
@@ -269,7 +267,6 @@ _This issue was automatically created by AI test coverage analysis._`,
 			IssueType:          issueType,
 			Status:             types.StatusOpen,
 			Priority:           priority,
-			Assignee:           "ai-supervisor",
 			AcceptanceCriteria: acceptanceCriteria,
 		}
 

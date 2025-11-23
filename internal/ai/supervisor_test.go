@@ -535,8 +535,10 @@ func TestCreateDiscoveredIssues(t *testing.T) {
 					t.Errorf("Issue %d: description should mention parent issue", i)
 				}
 
-				if issue.Assignee != "ai-supervisor" {
-					t.Errorf("Issue %d: got assignee %s, want ai-supervisor", i, issue.Assignee)
+				// vc-3e0o: Assignee should NOT be set at creation time
+				// It should only be set when executor claims work
+				if issue.Assignee != "" {
+					t.Errorf("Issue %d: got assignee %s, want empty (assignee is ephemeral claim state)", i, issue.Assignee)
 				}
 			}
 

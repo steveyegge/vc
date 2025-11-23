@@ -585,6 +585,16 @@ func (s *VCStorage) CloseIssue(ctx context.Context, id string, reason string, ac
 		fmt.Fprintf(os.Stderr, "Warning: failed to clean up execution state for %s: %v\n", id, err)
 	}
 
+	// Clear assignee field on close (vc-3e0o)
+	// Assignee should only be set while work is actively claimed, not persisted on closed issues
+	updates := map[string]interface{}{
+		"assignee": nil, // Clear assignee
+	}
+	if err := s.Storage.UpdateIssue(ctx, id, updates, actor); err != nil {
+		// Log warning but don't fail the close operation
+		fmt.Fprintf(os.Stderr, "Warning: failed to clear assignee for %s: %v\n", id, err)
+	}
+
 	// Delegate to Beads for the actual issue close
 	return s.Storage.CloseIssue(ctx, id, reason, actor)
 }

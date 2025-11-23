@@ -93,7 +93,6 @@ func (h *AgentReportHandler) handleBlocked(ctx context.Context, issue *types.Iss
 			IssueType:   types.TypeTask,
 			Status:      types.StatusOpen,
 			Priority:    issue.Priority, // Inherit priority from parent
-			Assignee:    "ai-supervisor",
 		}
 
 		if err := h.store.CreateIssue(ctx, blockerIssue, h.actor); err != nil {
@@ -159,7 +158,6 @@ func (h *AgentReportHandler) handlePartial(ctx context.Context, issue *types.Iss
 			IssueType:   issue.IssueType, // Inherit type from parent
 			Status:      types.StatusOpen,
 			Priority:    issue.Priority, // Inherit priority
-			Assignee:    "ai-supervisor",
 		}
 
 		if err := h.store.CreateIssue(ctx, followOnIssue, h.actor); err != nil {
@@ -279,7 +277,6 @@ func (h *AgentReportHandler) handleDecomposed(ctx context.Context, issue *types.
 			IssueType:   issueType,
 			Status:      types.StatusOpen,
 			Priority:    priority,
-			Assignee:    "ai-supervisor",
 		}
 
 		if err := h.store.CreateIssue(ctx, childIssue, h.actor); err != nil {
