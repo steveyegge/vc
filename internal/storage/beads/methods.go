@@ -766,6 +766,12 @@ func (s *VCStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) (
 		return nil, err
 	}
 
+	// vc-ob73: Debug logging for work selection (enable with VC_DEBUG_WORK_SELECTION=1)
+	debugWorkSelection := os.Getenv("VC_DEBUG_WORK_SELECTION") != ""
+	if debugWorkSelection {
+		fmt.Fprintf(os.Stderr, "[work-selection] GetReadyWork: Beads returned %d issues\n", len(beadsIssues))
+	}
+
 	// vc-203: Filter out epics - they are tracking/meta issues, not executable work
 	// vc-185: Filter out blocked/in_progress issues - only return truly available work
 	vcIssues := make([]*types.Issue, 0, len(beadsIssues))
@@ -809,6 +815,10 @@ func (s *VCStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) (
 		}
 	}
 
+	if debugWorkSelection {
+		fmt.Fprintf(os.Stderr, "[work-selection] After no-auto-claim filter: %d issues\n", len(filteredIssues))
+	}
+
 	// vc-165b: Filter out issues with active intervention backoff
 	backoffFilteredIssues := make([]*types.Issue, 0, len(filteredIssues))
 	for _, issue := range filteredIssues {
@@ -836,8 +846,27 @@ func (s *VCStorage) GetReadyWork(ctx context.Context, filter types.WorkFilter) (
 		// Otherwise skip this issue - it's in backoff period
 	}
 
+	if debugWorkSelection {
+		fmt.Fprintf(os.Stderr, "[work-selection] After intervention backoff filter: %d issues\n", len(backoffFilteredIssues))
+	}
+
 	// vc-234: Enrich with mission context and filter by mission active state
-	return s.enrichWithMissionContext(ctx, backoffFilteredIssues)
+	result, err := s.enrichWithMissionContext(ctx, backoffFilteredIssues)
+
+	if debugWorkSelection {
+		fmt.Fprintf(os.Stderr, "[work-selection] After mission context enrichment: %d issues\n", len(result))
+		if len(result) > 0 {
+			for i, issue := range result {
+				if i >= 5 {
+					fmt.Fprintf(os.Stderr, "[work-selection]   ... and %d more\n", len(result)-5)
+					break
+				}
+				fmt.Fprintf(os.Stderr, "[work-selection]   - %s: %s (P%d)\n", issue.ID, issue.Title, issue.Priority)
+			}
+		}
+	}
+
+	return result, err
 }
 
 // enrichWithMissionContext populates mission context for each issue and filters out

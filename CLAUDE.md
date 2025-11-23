@@ -45,6 +45,10 @@ This ensures you're always using the latest stable version from the homebrew tap
   ```bash
   export VC_DEBUG_STATUS=1  # Track status changes for debugging (e.g., baseline issues)
   ```
+- **`VC_DEBUG_WORK_SELECTION`**: Log detailed work selection filtering pipeline (vc-ob73)
+  ```bash
+  export VC_DEBUG_WORK_SELECTION=1  # Track GetReadyWork() filter stages and results
+  ```
 
 See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for all configuration options.
 
