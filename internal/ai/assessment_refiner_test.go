@@ -194,28 +194,6 @@ func TestShouldIterateAssessment_Mission(t *testing.T) {
 	}
 }
 
-func TestShouldIterateAssessment_Phase(t *testing.T) {
-	supervisor := &Supervisor{}
-	issue := &types.Issue{
-		ID:           "vc-test",
-		Priority:     2,
-		Title:        "Implementation phase",
-		IssueSubtype: types.SubtypePhase,
-	}
-
-	shouldIterate, triggers, skipReason := supervisor.shouldIterateAssessment(context.Background(), issue)
-
-	if !shouldIterate {
-		t.Error("expected phase issue to trigger iteration")
-	}
-	if len(triggers) == 0 || !contains(triggers[0], "complex structural issue") {
-		t.Errorf("unexpected triggers: %v", triggers)
-	}
-	if skipReason != "" {
-		t.Errorf("expected empty skipReason, got: %s", skipReason)
-	}
-}
-
 func TestShouldIterateAssessment_SimpleIssue(t *testing.T) {
 	supervisor := &Supervisor{}
 	issue := &types.Issue{

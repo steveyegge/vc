@@ -31,7 +31,6 @@ type AgentContext struct {
 	// Execution state
 	LastTool        string            `json:"last_tool,omitempty"`
 	LastToolResult  string            `json:"last_tool_result,omitempty"`
-	CurrentPhase    string            `json:"current_phase,omitempty"`
 
 	// Metadata
 	InterruptedAt   time.Time         `json:"interrupted_at"`

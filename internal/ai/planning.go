@@ -127,9 +127,9 @@ The JSON must be valid and match the exact schema specified above.`, prompt, las
 	return nil, fmt.Errorf("failed to generate valid plan after %d attempts", maxJSONRetries+1)
 }
 
-// RefinePhase breaks a phase down into granular tasks
-// This is called when a phase is ready to execute
-func (s *Supervisor) RefinePhase(ctx context.Context, phase *types.Phase, missionCtx *types.PlanningContext) ([]types.PlannedTask, error) {
+// RefinePhase breaks a planned epic down into granular tasks
+// This is called when a child epic is ready to execute
+func (s *Supervisor) RefinePhase(ctx context.Context, plannedEpic *types.PlannedPhase, missionCtx *types.PlanningContext) ([]types.PlannedTask, error) {
 	// Add overall timeout to prevent indefinite retries
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
@@ -137,11 +137,11 @@ func (s *Supervisor) RefinePhase(ctx context.Context, phase *types.Phase, missio
 	startTime := time.Now()
 
 	// Validate inputs
-	if phase == nil {
-		return nil, fmt.Errorf("phase is required")
+	if plannedEpic == nil {
+		return nil, fmt.Errorf("planned epic is required")
 	}
-	if err := phase.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid phase: %w", err)
+	if err := plannedEpic.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid planned epic: %w", err)
 	}
 	if missionCtx != nil {
 		if err := missionCtx.Validate(); err != nil {
@@ -150,7 +150,7 @@ func (s *Supervisor) RefinePhase(ctx context.Context, phase *types.Phase, missio
 	}
 
 	// Build the refinement prompt
-	prompt := s.buildRefinementPrompt(phase, missionCtx)
+	prompt := s.buildRefinementPrompt(plannedEpic, missionCtx)
 
 	// JSON parse retry loop (max 2 retries for malformed JSON)
 	const maxJSONRetries = 2
@@ -224,11 +224,11 @@ The JSON must be valid and match the exact schema specified above.`, prompt, las
 
 			// Log the refinement
 			duration := time.Since(startTime)
-			fmt.Printf("AI Refinement for phase %s: tasks=%d, duration=%v\n",
-				phase.ID, len(tasks), duration)
+			fmt.Printf("AI Refinement for epic '%s': tasks=%d, duration=%v\n",
+				plannedEpic.Title, len(tasks), duration)
 
 			// Log AI usage
-			if err := s.recordAIUsage(ctx, phase.ID, "refinement", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+			if err := s.recordAIUsage(ctx, plannedEpic.Title, "refinement", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
 			}
 
@@ -271,7 +271,6 @@ func (s *Supervisor) ValidatePlan(ctx context.Context, plan *types.MissionPlan) 
 		name string
 		fn   func(context.Context, *types.MissionPlan) error
 	}{
-		{"phase_count", s.validatePhaseCount},
 		{"plan_size", s.validatePlanSize},
 		{"circular_dependencies", s.validateCircularDependencies},
 		{"dependency_references", s.validateDependencyReferences},
@@ -335,18 +334,6 @@ func (s *Supervisor) runValidatorSafely(ctx context.Context, name string, fn fun
 		fmt.Fprintf(os.Stderr, "Validator %s timed out after %v\n", name, timeout)
 		return err
 	}
-}
-
-// validatePhaseCount checks phase count is within acceptable range
-func (s *Supervisor) validatePhaseCount(ctx context.Context, plan *types.MissionPlan) error {
-	phaseCount := len(plan.Phases)
-	if phaseCount < 1 {
-		return fmt.Errorf("plan must have at least 1 phase (got %d)", phaseCount)
-	}
-	if phaseCount > 15 {
-		return fmt.Errorf("plan has too many phases (%d); consider breaking into multiple missions", phaseCount)
-	}
-	return nil
 }
 
 // validatePlanSize enforces limits on plan size to prevent timeouts
@@ -798,8 +785,8 @@ IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (`
 		failedAttemptsSection)
 }
 
-// buildRefinementPrompt builds the prompt for refining a phase into tasks
-func (s *Supervisor) buildRefinementPrompt(phase *types.Phase, missionCtx *types.PlanningContext) string {
+// buildRefinementPrompt builds the prompt for refining a planned epic into tasks
+func (s *Supervisor) buildRefinementPrompt(plannedEpic *types.PlannedPhase, missionCtx *types.PlanningContext) string {
 	// Build mission context if available
 	missionSection := ""
 	if missionCtx != nil && missionCtx.Mission != nil {
@@ -810,18 +797,18 @@ Goal: %s
 `, missionCtx.Mission.Title, missionCtx.Mission.Goal)
 	}
 
-	return fmt.Sprintf(`You are refining a phase of a software development mission into granular, executable tasks.
+	return fmt.Sprintf(`You are refining a child epic of a software development mission into granular, executable tasks.
 
 %s
-PHASE TO REFINE:
-Phase: %s
+EPIC TO REFINE:
+Title: %s
 Strategy: %s
 
 Description:
 %s
 
 YOUR TASK:
-Break this phase down into 5-20 granular tasks. Each task should be:
+Break this epic down into 5-20 granular tasks. Each task should be:
 - Small enough to complete in 30 minutes to 2 hours
 - Concrete and actionable (not vague)
 - Testable with clear acceptance criteria
@@ -878,9 +865,9 @@ GUIDELINES:
 
 IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (`+"```"+`). Just the JSON object.`,
 		missionSection,
-		phase.Title,
-		phase.Strategy,
-		phase.Description)
+		plannedEpic.Title,
+		plannedEpic.Strategy,
+		plannedEpic.Description)
 }
 
 // buildConvergencePrompt builds the prompt for assessing whether a mission plan has converged

@@ -350,7 +350,7 @@ const vcExtensionTableSchema = `
 -- Mission state (maps issue_id → mission metadata)
 CREATE TABLE IF NOT EXISTS vc_mission_state (
     issue_id TEXT PRIMARY KEY,
-    subtype TEXT NOT NULL CHECK(subtype IN ('mission', 'phase', 'review')),
+    subtype TEXT NOT NULL CHECK(subtype IN ('mission', 'review')),
     sandbox_path TEXT,           -- '.sandboxes/mission-300/'
     branch_name TEXT,            -- 'mission/vc-300-user-auth'
     iteration_count INTEGER DEFAULT 0,
@@ -358,8 +358,6 @@ CREATE TABLE IF NOT EXISTS vc_mission_state (
     gates_status TEXT CHECK(gates_status IN ('pending', 'running', 'passed', 'failed')),
     goal TEXT,                   -- High-level mission goal
     context TEXT,                -- Additional planning context
-    phase_count INTEGER DEFAULT 0,       -- Number of phases in plan
-    current_phase INTEGER DEFAULT 0,     -- Current phase being executed (0-indexed)
     approval_required BOOLEAN DEFAULT FALSE,  -- Requires human approval before execution
     approved_at DATETIME,        -- When plan was approved
     approved_by TEXT,            -- Who approved the plan

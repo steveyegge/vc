@@ -62,7 +62,7 @@ func TestValidatePlan(t *testing.T) {
 			name: "plan with too many phases",
 			plan: &types.MissionPlan{
 				MissionID:       "vc-1",
-				Phases:          makePhases(20),
+				Phases:          makePhases(21), // Exceeds default limit of 20
 				Strategy:        "Test",
 				EstimatedEffort: "1 year",
 				Confidence:      0.5,
@@ -271,7 +271,6 @@ func TestBuildPlanningPrompt(t *testing.T) {
 		},
 		Goal:       "Build a working feature X",
 		Context:    "This is a critical feature",
-		PhaseCount: 0,
 	}
 
 	tests := []struct {
@@ -352,33 +351,26 @@ func TestBuildPlanningPrompt(t *testing.T) {
 
 func TestBuildRefinementPrompt(t *testing.T) {
 	now := time.Now()
-	phase := &types.Phase{
-		Issue: types.Issue{
-			ID:          "vc-101",
-			Title:       "Phase 1: Foundation",
-			Description: "Build the foundational components",
-			IssueType:   types.TypeEpic,
-			Status:      types.StatusOpen,
-			Priority:    0,
-			CreatedAt:   now,
-			UpdatedAt:   now,
-		},
-		MissionID:   "vc-100",
-		PhaseNumber: 1,
-		Strategy:    "Start with core data structures",
+	plannedEpic := &types.PlannedPhase{
+		PhaseNumber:  1,
+		Title:        "Foundation Epic",
+		Description:  "Build the foundational components",
+		Strategy:     "Start with core data structures",
+		Tasks:        []string{"Implement core types", "Add validation"},
+		Dependencies: []int{},
 	}
 
 	tests := []struct {
 		name         string
-		phase        *types.Phase
+		plannedEpic  *types.PlannedPhase
 		missionCtx   *types.PlanningContext
 		wantInPrompt []string
 	}{
 		{
-			name:  "basic phase",
-			phase: phase,
+			name:        "basic planned epic",
+			plannedEpic: plannedEpic,
 			wantInPrompt: []string{
-				"Phase 1: Foundation",
+				"Foundation Epic",
 				"Start with core data structures",
 				"Build the foundational components",
 				"5-20 granular tasks",
@@ -386,8 +378,8 @@ func TestBuildRefinementPrompt(t *testing.T) {
 			},
 		},
 		{
-			name:  "phase with mission context",
-			phase: phase,
+			name:        "planned epic with mission context",
+			plannedEpic: plannedEpic,
 			missionCtx: &types.PlanningContext{
 				Mission: &types.Mission{
 					Issue: types.Issue{
@@ -412,7 +404,7 @@ func TestBuildRefinementPrompt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &Supervisor{}
-			prompt := s.buildRefinementPrompt(tt.phase, tt.missionCtx)
+			prompt := s.buildRefinementPrompt(tt.plannedEpic, tt.missionCtx)
 
 			for _, want := range tt.wantInPrompt {
 				if !strings.Contains(prompt, want) {

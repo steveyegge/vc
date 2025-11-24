@@ -198,9 +198,9 @@ func (s *VCStorage) GetMission(ctx context.Context, id string) (*types.Mission, 
 
 	err = s.db.QueryRowContext(ctx, `
 		SELECT sandbox_path, branch_name, iteration_count, gates_status,
-		       goal, context, phase_count, current_phase, approval_required, approved_at, approved_by
+		       goal, context, approval_required, approved_at, approved_by
 		FROM vc_mission_state
-		WHERE issue_id = ? AND subtype IN ('mission', 'phase')
+		WHERE issue_id = ? AND subtype = 'mission'
 	`, id).Scan(
 		&sandboxPath,
 		&branchName,
@@ -208,8 +208,6 @@ func (s *VCStorage) GetMission(ctx context.Context, id string) (*types.Mission, 
 		&gatesStatus,
 		&goal,
 		&context,
-		&mission.PhaseCount,
-		&mission.CurrentPhase,
 		&mission.ApprovalRequired,
 		&approvedAt,
 		&approvedBy,
@@ -249,74 +247,6 @@ func (s *VCStorage) GetMission(ctx context.Context, id string) (*types.Mission, 
 	}
 
 	return &mission, nil
-}
-
-// GetMissionByPhase retrieves a mission by phase ID (vc-60)
-// Navigates from phase to parent mission via parent-child dependencies
-// Uses recursive CTE for single-query navigation instead of N iterations
-func (s *VCStorage) GetMissionByPhase(ctx context.Context, phaseID string) (*types.Mission, error) {
-	// First verify this is actually a phase
-	var subtype sql.NullString
-	err := s.db.QueryRowContext(ctx, `
-		SELECT subtype FROM vc_mission_state WHERE issue_id = ?
-	`, phaseID).Scan(&subtype)
-
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("issue %s not found in vc_mission_state table (not a mission or phase)", phaseID)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to query issue subtype: %w", err)
-	}
-	if !subtype.Valid {
-		return nil, fmt.Errorf("issue %s has NULL subtype in vc_mission_state (expected 'phase')", phaseID)
-	}
-	if subtype.String != string(types.SubtypePhase) {
-		return nil, fmt.Errorf("issue %s has wrong subtype: '%s' (expected 'phase')", phaseID, subtype.String)
-	}
-
-	// Use recursive CTE to walk parent-child dependencies upward to find mission
-	query := `
-		WITH RECURSIVE parent_chain AS (
-		  -- Base case: start with the phase's immediate parents
-		  SELECT d.issue_id, d.depends_on_id, 1 as depth
-		  FROM dependencies d
-		  WHERE d.issue_id = ? AND d.type = ?
-
-		  UNION ALL
-
-		  -- Recursive case: walk up to parent's parents
-		  SELECT d.issue_id, d.depends_on_id, p.depth + 1
-		  FROM dependencies d
-		  JOIN parent_chain p ON d.issue_id = p.depends_on_id
-		  WHERE d.type = ? AND p.depth < 10  -- Prevent infinite loops
-		)
-		-- Find the first mission epic in the parent chain
-		SELECT i.id
-		FROM issues i
-		JOIN parent_chain p ON i.id = p.depends_on_id
-		LEFT JOIN vc_mission_state m ON i.id = m.issue_id
-		WHERE i.issue_type = ?
-		  AND m.subtype = ?
-		ORDER BY p.depth ASC  -- Closest parent first
-		LIMIT 1
-	`
-
-	var missionID string
-	err = s.db.QueryRowContext(ctx, query,
-		phaseID, types.DepParentChild, // Base case parameters
-		types.DepParentChild, // Recursive case parameter
-		types.TypeEpic, types.SubtypeMission, // WHERE clause parameters
-	).Scan(&missionID)
-
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("phase %s is not part of a mission (no parent-child dependency to mission epic)", phaseID)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to query mission for phase %s: %w", phaseID, err)
-	}
-
-	// Now retrieve the full mission using GetMission
-	return s.GetMission(ctx, missionID)
 }
 
 // CreateIssue creates an issue in Beads + VC extension table if needed
@@ -368,13 +298,13 @@ func (s *VCStorage) CreateMission(ctx context.Context, mission *types.Mission, a
 
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE vc_mission_state
-		SET goal = ?, context = ?, phase_count = ?, current_phase = ?,
+		SET goal = ?, context = ?,
 		    approval_required = ?, approved_at = ?, approved_by = ?,
 		    sandbox_path = ?, branch_name = ?,
 		    iteration_count = ?, gates_status = ?,
 		    updated_at = ?
 		WHERE issue_id = ?
-	`, mission.Goal, mission.Context, mission.PhaseCount, mission.CurrentPhase,
+	`, mission.Goal, mission.Context,
 		mission.ApprovalRequired, mission.ApprovedAt, mission.ApprovedBy,
 		mission.SandboxPath, mission.BranchName,
 		mission.IterationCount, gatesStatus,
@@ -402,7 +332,6 @@ func (s *VCStorage) CreateMission(ctx context.Context, mission *types.Mission, a
 		MissionID:        mission.ID,
 		ParentEpicID:     parentEpicID,
 		Goal:             mission.Goal,
-		PhaseCount:       mission.PhaseCount,
 		ApprovalRequired: mission.ApprovalRequired,
 		Actor:            actor,
 	}
@@ -413,12 +342,11 @@ func (s *VCStorage) CreateMission(ctx context.Context, mission *types.Mission, a
 		Timestamp: time.Now(),
 		IssueID:   mission.ID,
 		Severity:  events.SeverityInfo,
-		Message:   fmt.Sprintf("Mission created: %s (goal: %s, phases: %d)", mission.ID, mission.Goal, mission.PhaseCount),
+		Message:   fmt.Sprintf("Mission created: %s (goal: %s)", mission.ID, mission.Goal),
 		Data: map[string]interface{}{
 			"mission_id":        eventData.MissionID,
 			"parent_epic_id":    eventData.ParentEpicID,
 			"goal":              eventData.Goal,
-			"phase_count":       eventData.PhaseCount,
 			"approval_required": eventData.ApprovalRequired,
 			"actor":             eventData.Actor,
 		},
@@ -448,8 +376,6 @@ func (s *VCStorage) UpdateMission(ctx context.Context, id string, updates map[st
 		"context":           nil,
 		"sandbox_path":      nil,
 		"branch_name":       nil,
-		"phase_count":       nil,
-		"current_phase":     nil,
 		"approval_required": nil,
 		"iteration_count":   nil,
 		"gates_status":      nil,
@@ -483,8 +409,6 @@ func (s *VCStorage) UpdateMission(ctx context.Context, id string, updates map[st
 			"context":           true,
 			"sandbox_path":      true,
 			"branch_name":       true,
-			"phase_count":       true,
-			"current_phase":     true,
 			"approval_required": true,
 			"iteration_count":   true,
 			"gates_status":      true,
@@ -545,10 +469,6 @@ func (s *VCStorage) UpdateMission(ctx context.Context, id string, updates map[st
 				oldValue = oldMission.Status
 			case "priority":
 				oldValue = oldMission.Priority
-			case "phase_count":
-				oldValue = oldMission.PhaseCount
-			case "current_phase":
-				oldValue = oldMission.CurrentPhase
 			case "approval_required":
 				oldValue = oldMission.ApprovalRequired
 			case "iteration_count":

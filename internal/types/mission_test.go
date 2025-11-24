@@ -28,8 +28,6 @@ func TestMission_Validate(t *testing.T) {
 				},
 				Goal:       "Build feature X end-to-end",
 				Context:    "Additional context",
-				PhaseCount: 3,
-				CurrentPhase: 0,
 			},
 			wantErr: false,
 		},
@@ -47,7 +45,6 @@ func TestMission_Validate(t *testing.T) {
 					UpdatedAt:   now,
 				},
 				Goal:       "",
-				PhaseCount: 3,
 			},
 			wantErr: true,
 		},
@@ -65,44 +62,6 @@ func TestMission_Validate(t *testing.T) {
 					UpdatedAt:   now,
 				},
 				Goal:       "Build feature",
-				PhaseCount: 3,
-			},
-			wantErr: true,
-		},
-		{
-			name: "negative phase count",
-			mission: &Mission{
-				Issue: Issue{
-					ID:          "vc-1",
-					Title:       "Test",
-					Description: "Test",
-					IssueType:   TypeEpic,
-					Status:      StatusOpen,
-					Priority:    0,
-					CreatedAt:   now,
-					UpdatedAt:   now,
-				},
-				Goal:       "Build feature",
-				PhaseCount: -1,
-			},
-			wantErr: true,
-		},
-		{
-			name: "current phase exceeds phase count",
-			mission: &Mission{
-				Issue: Issue{
-					ID:          "vc-1",
-					Title:       "Test",
-					Description: "Test",
-					IssueType:   TypeEpic,
-					Status:      StatusOpen,
-					Priority:    0,
-					CreatedAt:   now,
-					UpdatedAt:   now,
-				},
-				Goal:         "Build feature",
-				PhaseCount:   3,
-				CurrentPhase: 4,
 			},
 			wantErr: true,
 		},
@@ -120,7 +79,6 @@ func TestMission_Validate(t *testing.T) {
 					UpdatedAt:   now,
 				},
 				Goal:             "Build feature",
-				PhaseCount:       3,
 				ApprovalRequired: true,
 				ApprovedAt:       &now,
 				ApprovedBy:       "",
@@ -181,120 +139,6 @@ func TestMission_IsApproved(t *testing.T) {
 	}
 }
 
-func TestPhase_Validate(t *testing.T) {
-	now := time.Now()
-
-	tests := []struct {
-		name    string
-		phase   *Phase
-		wantErr bool
-	}{
-		{
-			name: "valid phase",
-			phase: &Phase{
-				Issue: Issue{
-					ID:          "vc-2",
-					Title:       "Phase 1: Foundation",
-					Description: "Build the foundation",
-					IssueType:   TypeEpic,
-					Status:      StatusOpen,
-					Priority:    0,
-					CreatedAt:   now,
-					UpdatedAt:   now,
-				},
-				MissionID:   "vc-1",
-				PhaseNumber: 1,
-				Strategy:    "Build core infrastructure first",
-			},
-			wantErr: false,
-		},
-		{
-			name: "phase without mission ID",
-			phase: &Phase{
-				Issue: Issue{
-					ID:          "vc-2",
-					Title:       "Phase 1",
-					Description: "Test",
-					IssueType:   TypeEpic,
-					Status:      StatusOpen,
-					Priority:    0,
-					CreatedAt:   now,
-					UpdatedAt:   now,
-				},
-				MissionID:   "",
-				PhaseNumber: 1,
-				Strategy:    "Test strategy",
-			},
-			wantErr: true,
-		},
-		{
-			name: "phase with invalid phase number",
-			phase: &Phase{
-				Issue: Issue{
-					ID:          "vc-2",
-					Title:       "Phase",
-					Description: "Test",
-					IssueType:   TypeEpic,
-					Status:      StatusOpen,
-					Priority:    0,
-					CreatedAt:   now,
-					UpdatedAt:   now,
-				},
-				MissionID:   "vc-1",
-				PhaseNumber: 0,
-				Strategy:    "Test strategy",
-			},
-			wantErr: true,
-		},
-		{
-			name: "phase without strategy",
-			phase: &Phase{
-				Issue: Issue{
-					ID:          "vc-2",
-					Title:       "Phase 1",
-					Description: "Test",
-					IssueType:   TypeEpic,
-					Status:      StatusOpen,
-					Priority:    0,
-					CreatedAt:   now,
-					UpdatedAt:   now,
-				},
-				MissionID:   "vc-1",
-				PhaseNumber: 1,
-				Strategy:    "",
-			},
-			wantErr: true,
-		},
-		{
-			name: "phase with wrong issue type",
-			phase: &Phase{
-				Issue: Issue{
-					ID:          "vc-2",
-					Title:       "Phase 1",
-					Description: "Test",
-					IssueType:   TypeTask,
-					Status:      StatusOpen,
-					Priority:    0,
-					CreatedAt:   now,
-					UpdatedAt:   now,
-				},
-				MissionID:   "vc-1",
-				PhaseNumber: 1,
-				Strategy:    "Test strategy",
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.phase.Validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Phase.Validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
 
 func TestPlannedPhase_Validate(t *testing.T) {
 	tests := []struct {
@@ -547,7 +391,6 @@ func TestPlanningContext_Validate(t *testing.T) {
 			UpdatedAt:   now,
 		},
 		Goal:       "Test goal",
-		PhaseCount: 3,
 	}
 
 	tests := []struct {

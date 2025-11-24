@@ -132,7 +132,6 @@ func (im *InterruptManager) SaveInterruptContext(ctx context.Context, issue *typ
 	agentContext := types.AgentContext{
 		InterruptedAt:  time.Now(),
 		WorkingNotes:   fmt.Sprintf("Task interrupted at %s", executionState),
-		CurrentPhase:   executionState,
 	}
 
 	// Serialize context

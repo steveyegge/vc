@@ -539,8 +539,6 @@ type MissionCreatedData struct {
 	ParentEpicID string `json:"parent_epic_id,omitempty"`
 	// Goal is the high-level goal for the mission
 	Goal string `json:"goal"`
-	// PhaseCount is the number of phases planned
-	PhaseCount int `json:"phase_count"`
 	// ApprovalRequired indicates if human approval is needed
 	ApprovalRequired bool `json:"approval_required"`
 	// Actor is who created the mission (user, executor ID, etc.)

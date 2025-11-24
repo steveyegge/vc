@@ -145,44 +145,43 @@ func (o *Orchestrator) CreatePhasesFromPlan(ctx context.Context, missionID strin
 		return nil, fmt.Errorf("phase structure validation failed: %w", err)
 	}
 
-	// Create each phase as a child epic
+	// Create each planned epic as a child epic
 	for _, plannedPhase := range plan.Phases {
-		phase := &types.Issue{
+		childEpic := &types.Issue{
 			Title:              plannedPhase.Title,
 			Description:        plannedPhase.Description,
 			IssueType:          types.TypeEpic,
-			IssueSubtype:       types.SubtypePhase, // Explicitly mark as phase
 			Status:             types.StatusOpen,
 			Priority:           mission.Priority, // Inherit from parent mission
 			Design:             fmt.Sprintf("Strategy: %s\n\nTasks:\n%s", plannedPhase.Strategy, joinTasks(plannedPhase.Tasks)),
-			AcceptanceCriteria: fmt.Sprintf("Complete all tasks for this phase:\n%s", joinTasks(plannedPhase.Tasks)),
+			AcceptanceCriteria: fmt.Sprintf("Complete all tasks for this epic:\n%s", joinTasks(plannedPhase.Tasks)),
 		}
 
-		// Create the phase issue
-		if err := o.store.CreateIssue(ctx, phase, actor); err != nil {
+		// Create the child epic issue
+		if err := o.store.CreateIssue(ctx, childEpic, actor); err != nil {
 			cleanup()
-			return nil, fmt.Errorf("failed to create phase %d: %w", plannedPhase.PhaseNumber, err)
+			return nil, fmt.Errorf("failed to create child epic %d: %w", plannedPhase.PhaseNumber, err)
 		}
 
-		phaseID := phase.ID
-		phaseIDs = append(phaseIDs, phaseID)
+		epicID := childEpic.ID
+		phaseIDs = append(phaseIDs, epicID)
 
-		// Add parent-child dependency: phase depends on mission
+		// Add parent-child dependency: child epic depends on mission
 		dep := &types.Dependency{
-			IssueID:     phaseID,
+			IssueID:     epicID,
 			DependsOnID: missionID,
 			Type:        types.DepParentChild,
 		}
 		if err := o.store.AddDependency(ctx, dep, actor); err != nil {
 			cleanup()
-			return nil, fmt.Errorf("failed to add parent-child dependency for phase %s: %w", phaseID, err)
+			return nil, fmt.Errorf("failed to add parent-child dependency for epic %s: %w", epicID, err)
 		}
 
-		// Add blocks dependencies to other phases
-		// plannedPhase.Dependencies contains phase numbers (1-indexed)
-		// We need to convert to phase IDs
+		// Add blocks dependencies to other child epics
+		// plannedPhase.Dependencies contains epic numbers (1-indexed)
+		// We need to convert to epic IDs
 		for _, depPhaseNum := range plannedPhase.Dependencies {
-			// Basic validation: phase numbers must be valid
+			// Basic validation: epic numbers must be valid
 			if depPhaseNum < 1 || depPhaseNum > len(plan.Phases) {
 				cleanup()
 				return nil, fmt.Errorf("invalid phase dependency: phase %d depends on non-existent phase %d", plannedPhase.PhaseNumber, depPhaseNum)
@@ -194,15 +193,15 @@ func (o *Orchestrator) CreatePhasesFromPlan(ctx context.Context, missionID strin
 			}
 			depPhaseID := phaseIDs[depPhaseNum-1]
 
-			// Create blocks dependency: current phase blocks on dependency phase
+			// Create blocks dependency: current epic blocks on dependency epic
 			blocksDep := &types.Dependency{
-				IssueID:     phaseID,
+				IssueID:     epicID,
 				DependsOnID: depPhaseID,
 				Type:        types.DepBlocks,
 			}
 			if err := o.store.AddDependency(ctx, blocksDep, actor); err != nil {
 				cleanup()
-				return nil, fmt.Errorf("failed to add blocks dependency for phase %s: %w", phaseID, err)
+				return nil, fmt.Errorf("failed to add blocks dependency for epic %s: %w", epicID, err)
 			}
 		}
 	}

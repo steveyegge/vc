@@ -143,8 +143,8 @@ func buildDisplayMessage(event *events.AgentEvent) string {
 		return "Sandbox cleanup failed"
 
 	case events.EventTypeMissionCreated:
-		phaseCount := getIntField(event.Data, "phase_count")
-		return fmt.Sprintf("Mission created: %d phases", phaseCount)
+		goal := getStringField(event.Data, "goal", "")
+		return fmt.Sprintf("Mission created: %s", truncateString(goal, 50))
 
 	case events.EventTypeEpicCompleted:
 		epicTitle := truncateString(getStringField(event.Data, "epic_title", ""), 50)
@@ -376,14 +376,14 @@ func extractEventMetadata(event *events.AgentEvent) string {
 		fields = []string{branchName, duration, success}
 
 	case events.EventTypeMissionCreated:
-		// mission_created: phase_count | approval_required | actor
-		phaseCount := fmt.Sprintf("%d phases", getIntField(event.Data, "phase_count"))
+		// mission_created: goal | approval_required | actor
+		goal := truncateString(getStringField(event.Data, "goal", ""), 30)
 		approvalReq := "no approval"
 		if getBoolField(event.Data, "approval_required", false) {
 			approvalReq = "approval needed"
 		}
 		actor := truncateString(getStringField(event.Data, "actor", ""), 20)
-		fields = []string{phaseCount, approvalReq, actor}
+		fields = []string{goal, approvalReq, actor}
 
 	case events.EventTypeEpicCompleted:
 		// epic_completed: children_completed | completion_method | confidence

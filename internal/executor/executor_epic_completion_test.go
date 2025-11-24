@@ -256,31 +256,28 @@ func TestCheckEpicCompletion_NestedEpics(t *testing.T) {
 		t.Fatalf("Failed to create mission: %v", err)
 	}
 
-	// Create a phase epic (child of mission)
-	phase := &types.Mission{
-		Issue: types.Issue{
-			Title:        "Phase 1: Basic auth",
-			Status:       types.StatusOpen,
-			Priority:     1,
-			IssueType:    types.TypeEpic,
-			IssueSubtype: "phase",
-		},
+	// Create a child epic (previously called "phase")
+	childEpic := &types.Issue{
+		Title:     "Phase 1: Basic auth",
+		Status:    types.StatusOpen,
+		Priority:  1,
+		IssueType: types.TypeEpic,
 	}
-	if err := store.CreateMission(ctx, phase, "test"); err != nil {
-		t.Fatalf("Failed to create phase: %v", err)
+	if err := store.CreateIssue(ctx, childEpic, "test"); err != nil {
+		t.Fatalf("Failed to create child epic: %v", err)
 	}
 
-	// Link phase to mission
-	phaseDep := &types.Dependency{
-		IssueID:     phase.ID,
+	// Link child epic to mission
+	epicDep := &types.Dependency{
+		IssueID:     childEpic.ID,
 		DependsOnID: mission.ID,
 		Type:        types.DepParentChild,
 	}
-	if err := store.AddDependency(ctx, phaseDep, "test"); err != nil {
-		t.Fatalf("Failed to add phase dependency: %v", err)
+	if err := store.AddDependency(ctx, epicDep, "test"); err != nil {
+		t.Fatalf("Failed to add epic dependency: %v", err)
 	}
 
-	// Create a task (child of phase)
+	// Create a task (child of childEpic)
 	task := &types.Issue{
 		Title:     "Implement login",
 		Status:    types.StatusOpen,
@@ -292,10 +289,10 @@ func TestCheckEpicCompletion_NestedEpics(t *testing.T) {
 		t.Fatalf("Failed to create task: %v", err)
 	}
 
-	// Link task to phase
+	// Link task to child epic
 	taskDep := &types.Dependency{
 		IssueID:     task.ID,
-		DependsOnID: phase.ID,
+		DependsOnID: childEpic.ID,
 		Type:        types.DepParentChild,
 	}
 	if err := store.AddDependency(ctx, taskDep, "test"); err != nil {
@@ -313,37 +310,37 @@ func TestCheckEpicCompletion_NestedEpics(t *testing.T) {
 		t.Fatalf("Failed to get task: %v", err)
 	}
 
-	// Check epic completion - should cascade up: phase → mission
+	// Check epic completion - should cascade up: childEpic → mission
 	err = exec.checkEpicCompletion(ctx, task)
 	if err != nil {
 		t.Errorf("checkEpicCompletion failed: %v", err)
 	}
 
-	// Verify phase has needs-quality-gates label
-	phaseLabels, err := store.GetLabels(ctx, phase.ID)
+	// Verify child epic has needs-quality-gates label
+	childEpicLabels, err := store.GetLabels(ctx, childEpic.ID)
 	if err != nil {
-		t.Fatalf("Failed to get phase labels: %v", err)
+		t.Fatalf("Failed to get child epic labels: %v", err)
 	}
 
-	hasPhaseLabel := false
-	for _, label := range phaseLabels {
+	hasChildEpicLabel := false
+	for _, label := range childEpicLabels {
 		if label == "needs-quality-gates" {
-			hasPhaseLabel = true
+			hasChildEpicLabel = true
 			break
 		}
 	}
 
-	if !hasPhaseLabel {
-		t.Error("Phase should have needs-quality-gates label (task complete)")
+	if !hasChildEpicLabel {
+		t.Error("Child epic should have needs-quality-gates label (task complete)")
 	}
 
 	// Note: The mission does NOT automatically get the label because IsEpicComplete
-	// checks if children are StatusClosed, and the phase is still StatusOpen (even though it's complete).
+	// checks if children are StatusClosed, and the child epic is still StatusOpen (even though it's complete).
 	// This is a known limitation - epic completion checking is one level deep.
 	// Future enhancement (vc-236): Make IsEpicComplete recursively check nested epics.
 
-	// For now, verify the phase got the label (which is correct behavior)
-	t.Log("✓ Nested epic completion detected for phase epic")
+	// For now, verify the child epic got the label (which is correct behavior)
+	t.Log("✓ Nested epic completion detected for child epic")
 	t.Log("  Note: Mission-level completion requires manual verification (known limitation)")
 }
 

@@ -730,49 +730,49 @@ func TestExtractEventMetadata_MissionCreated(t *testing.T) {
 		{
 			name: "all fields present with approval",
 			data: map[string]interface{}{
-				"phase_count":       3,
+				"goal":              "Build user authentication",
 				"approval_required": true,
 				"actor":             "user@example.com",
 			},
-			expected: "3 phases | approval needed | user@example.com",
+			expected: "Build user authentication | approval needed | user@example.com",
 		},
 		{
 			name: "all fields present without approval",
 			data: map[string]interface{}{
-				"phase_count":       3,
+				"goal":              "Build user authentication",
 				"approval_required": false,
 				"actor":             "user@example.com",
 			},
-			expected: "3 phases | no approval | user@example.com",
+			expected: "Build user authentication | no approval | user@example.com",
 		},
 		{
-			name: "missing phase_count",
 			data: map[string]interface{}{
+				"goal":              "",
 				"approval_required": true,
 				"actor":             "user@example.com",
 			},
-			expected: "0 phases | approval needed | user@example.com",
+			expected: "approval needed | user@example.com",
 		},
 		{
 			name: "missing approval_required defaults to false",
 			data: map[string]interface{}{
-				"phase_count": 3,
-				"actor":       "user@example.com",
+				"goal":  "Build user authentication",
+				"actor": "user@example.com",
 			},
-			expected: "3 phases | no approval | user@example.com",
+			expected: "Build user authentication | no approval | user@example.com",
 		},
 		{
 			name: "missing actor",
 			data: map[string]interface{}{
-				"phase_count":       3,
+				"goal":              "Build user authentication",
 				"approval_required": true,
 			},
-			expected: "3 phases | approval needed",
+			expected: "Build user authentication | approval needed",
 		},
 		{
 			name:     "all fields missing",
 			data:     map[string]interface{}{},
-			expected: "0 phases | no approval",
+			expected: "no approval",
 		},
 	}
 
@@ -1214,10 +1214,10 @@ func TestBuildDisplayMessage(t *testing.T) {
 				Type:    events.EventTypeMissionCreated,
 				Message: "Mission created",
 				Data: map[string]interface{}{
-					"phase_count": 4,
+					"goal": "Build user authentication system",
 				},
 			},
-			expected: "Mission created: 4 phases",
+			expected: "Mission created: Build user authentication system",
 		},
 		{
 			name: "epic_completed",

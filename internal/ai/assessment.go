@@ -310,8 +310,8 @@ func (s *Supervisor) shouldIterateAssessment(ctx context.Context, issue *types.I
 		triggers = append(triggers, "P0 priority")
 	}
 
-	// Complex structural issues (epics, missions, phases) need careful planning
-	if issue.IssueSubtype == types.SubtypeMission || issue.IssueSubtype == types.SubtypePhase {
+	// Complex structural issues (missions) need careful planning
+	if issue.IssueSubtype == types.SubtypeMission {
 		triggers = append(triggers, fmt.Sprintf("%s (complex structural issue)", issue.IssueSubtype))
 	}
 
@@ -574,17 +574,15 @@ func (s *Supervisor) buildCompletionPrompt(issue *types.Issue, children []*types
 	switch issue.IssueSubtype {
 	case types.SubtypeMission:
 		issueTypeStr = "mission"
-	case types.SubtypePhase:
-		issueTypeStr = "phase"
 	default:
 		issueTypeStr = "epic"
 	}
 
-	// Add guidance for all structural containers (epics, missions, phases)
+	// Add guidance for all structural containers (epics and missions)
 	// When all children are closed, the burden of proof shifts to finding concrete gaps
 	structuralGuidance := `
 IMPORTANT PRINCIPLE:
-Epics, missions, and phases are structural containers that organize work into logical groupings.
+Epics and missions are structural containers that organize work into logical groupings.
 When ALL children are closed, this strongly indicates the parent's objectives are met,
 UNLESS there is clear evidence that the acceptance criteria were not satisfied.
 

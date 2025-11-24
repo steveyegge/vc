@@ -58,9 +58,6 @@ func (m *mockStorageIntegration) IsEpicComplete(ctx context.Context, epicID stri
 func (m *mockStorageIntegration) GetMissionForTask(ctx context.Context, taskID string) (*types.MissionContext, error) {
 	return nil, fmt.Errorf("not implemented in mock")
 }
-func (m *mockStorageIntegration) GetMissionByPhase(ctx context.Context, phaseID string) (*types.Mission, error) {
-	return nil, fmt.Errorf("not implemented in mock")
-}
 
 func (m *mockStorageIntegration) ClaimIssue(ctx context.Context, issueID, executorInstanceID string) error {
 	if m.claimedIssues == nil {

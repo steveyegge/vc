@@ -432,8 +432,8 @@ func (m *mockSupervisor) GeneratePlan(ctx context.Context, planningCtx *types.Pl
 	}, nil
 }
 
-// RefinePhase returns mock tasks for a phase
-func (m *mockSupervisor) RefinePhase(ctx context.Context, phase *types.Phase, missionCtx *types.PlanningContext) ([]types.PlannedTask, error) {
+// RefinePhase returns mock tasks for a planned epic
+func (m *mockSupervisor) RefinePhase(ctx context.Context, plannedPhase *types.PlannedPhase, missionCtx *types.PlanningContext) ([]types.PlannedTask, error) {
 	return []types.PlannedTask{
 		{
 			Title:              "Implement core function",

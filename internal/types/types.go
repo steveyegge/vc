@@ -18,7 +18,7 @@ type Issue struct {
 	Status             Status           `json:"status"`
 	Priority           int              `json:"priority"`
 	IssueType          IssueType        `json:"issue_type"`
-	IssueSubtype       IssueSubtype     `json:"issue_subtype,omitempty"` // mission, phase, or empty for normal issues
+	IssueSubtype       IssueSubtype     `json:"issue_subtype,omitempty"` // mission or empty for normal issues
 	Assignee           string           `json:"assignee,omitempty"`
 	EstimatedMinutes   *int             `json:"estimated_minutes,omitempty"`
 	CreatedAt          time.Time        `json:"created_at"`
@@ -114,15 +114,14 @@ func (t IssueType) IsValid() bool {
 type IssueSubtype string
 
 const (
-	SubtypeMission IssueSubtype = "mission" // Top-level epic with multiple phase children
-	SubtypePhase   IssueSubtype = "phase"   // Phase epic within a mission
-	SubtypeNormal  IssueSubtype = ""        // Normal issue (not a mission or phase)
+	SubtypeMission IssueSubtype = "mission" // Top-level epic for missions
+	SubtypeNormal  IssueSubtype = ""        // Normal issue (not a mission)
 )
 
 // IsValid checks if the issue subtype value is valid
 func (s IssueSubtype) IsValid() bool {
 	switch s {
-	case SubtypeMission, SubtypePhase, SubtypeNormal:
+	case SubtypeMission, SubtypeNormal:
 		return true
 	}
 	return false

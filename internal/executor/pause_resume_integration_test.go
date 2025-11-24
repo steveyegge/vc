@@ -527,7 +527,6 @@ func TestInterruptContextSerialization(t *testing.T) {
 		InterruptedAt:   time.Now(),
 		WorkingNotes:    "Working on pause/resume tests",
 		ProgressSummary: "Completed basic tests, working on edge cases",
-		CurrentPhase:    "executing",
 		LastTool:        "Edit",
 		LastToolResult:  "File updated successfully",
 		Todos:           []string{"Write test case 5", "Write test case 6", "Run all tests"},

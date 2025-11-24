@@ -26,7 +26,7 @@ func (m *MockPlanner) GeneratePlan(ctx context.Context, planningCtx *types.Plann
 	return m.plan, nil
 }
 
-func (m *MockPlanner) RefinePhase(ctx context.Context, phase *types.Phase, missionCtx *types.PlanningContext) ([]types.PlannedTask, error) {
+func (m *MockPlanner) RefinePhase(ctx context.Context, plannedPhase *types.PlannedPhase, missionCtx *types.PlanningContext) ([]types.PlannedTask, error) {
 	return nil, nil
 }
 
@@ -229,9 +229,6 @@ func (m *MockStorage) GetReadyDependentsOfBlockedBaselines(ctx context.Context, 
 }
 func (m *MockStorage) IsEpicComplete(ctx context.Context, epicID string) (bool, error) { return false, nil }
 func (m *MockStorage) GetMissionForTask(ctx context.Context, taskID string) (*types.MissionContext, error) {
-	return nil, errors.New("not implemented in mock")
-}
-func (m *MockStorage) GetMissionByPhase(ctx context.Context, phaseID string) (*types.Mission, error) {
 	return nil, errors.New("not implemented in mock")
 }
 func (m *MockStorage) GetMissionsNeedingGates(ctx context.Context) ([]*types.Issue, error) {

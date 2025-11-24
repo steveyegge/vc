@@ -153,10 +153,7 @@ func TestMultipleValidatorFailures(t *testing.T) {
 		t.Fatal("Expected validation error, got nil")
 	}
 
-	// Should mention both validator failures
-	if !strings.Contains(err.Error(), "phase_count") {
-		t.Errorf("Error should mention phase_count validator, got: %v", err)
-	}
+	// Should mention validator failure
 	if !strings.Contains(err.Error(), "task_counts") {
 		t.Errorf("Error should mention task_counts validator, got: %v", err)
 	}
