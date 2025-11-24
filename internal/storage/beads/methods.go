@@ -262,13 +262,16 @@ func (s *VCStorage) GetMissionByPhase(ctx context.Context, phaseID string) (*typ
 	`, phaseID).Scan(&subtype)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("issue %s is not a mission or phase", phaseID)
+		return nil, fmt.Errorf("issue %s not found in vc_mission_state table (not a mission or phase)", phaseID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query issue subtype: %w", err)
 	}
-	if !subtype.Valid || subtype.String != string(types.SubtypePhase) {
-		return nil, fmt.Errorf("issue %s is not a phase (subtype: %s)", phaseID, subtype.String)
+	if !subtype.Valid {
+		return nil, fmt.Errorf("issue %s has NULL subtype in vc_mission_state (expected 'phase')", phaseID)
+	}
+	if subtype.String != string(types.SubtypePhase) {
+		return nil, fmt.Errorf("issue %s has wrong subtype: '%s' (expected 'phase')", phaseID, subtype.String)
 	}
 
 	// Use recursive CTE to walk parent-child dependencies upward to find mission

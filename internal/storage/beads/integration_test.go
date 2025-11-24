@@ -3039,6 +3039,79 @@ func TestGetMissionByPhase(t *testing.T) {
 			phase.ID, mission.ID)
 		t.Logf("  Hierarchy: task %s → phase %s → mission %s", task.ID, phase.ID, mission.ID)
 	})
+
+	// vc-sluq: Test improved error messages
+	t.Run("error message for non-existent issue", func(t *testing.T) {
+		_, err := store.GetMissionByPhase(ctx, "vc-nonexistent")
+		if err == nil {
+			t.Error("Expected error for non-existent issue")
+		} else {
+			errMsg := err.Error()
+			if !strings.Contains(errMsg, "not found in vc_mission_state table") {
+				t.Errorf("Error message should mention 'not found in vc_mission_state table', got: %s", errMsg)
+			}
+			t.Logf("✓ Correct error for non-existent issue: %v", err)
+		}
+	})
+
+	t.Run("error message for task without subtype", func(t *testing.T) {
+		// Create a regular task (won't be in vc_mission_state)
+		task := &types.Issue{
+			Title:              "Task Without Subtype",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
+		}
+		if err := store.CreateIssue(ctx, task, "test"); err != nil {
+			t.Fatalf("Failed to create task: %v", err)
+		}
+
+		_, err := store.GetMissionByPhase(ctx, task.ID)
+		if err == nil {
+			t.Error("Expected error for task without subtype")
+		} else {
+			errMsg := err.Error()
+			if !strings.Contains(errMsg, "not found in vc_mission_state table") {
+				t.Errorf("Error message should mention 'not found in vc_mission_state table', got: %s", errMsg)
+			}
+			t.Logf("✓ Correct error for task without subtype: %v", err)
+		}
+	})
+
+	t.Run("error message for mission (wrong subtype)", func(t *testing.T) {
+		// Create a mission and try to use it as a phase
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission (Not Phase)",
+				Status:       types.StatusOpen,
+				Priority:     0,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal: "Test mission",
+		}
+		if err := store.CreateMission(ctx, mission, "test"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		_, err := store.GetMissionByPhase(ctx, mission.ID)
+		if err == nil {
+			t.Error("Expected error when using mission ID as phase")
+		} else {
+			errMsg := err.Error()
+			if !strings.Contains(errMsg, "has wrong subtype") {
+				t.Errorf("Error message should mention 'has wrong subtype', got: %s", errMsg)
+			}
+			if !strings.Contains(errMsg, "'mission'") {
+				t.Errorf("Error message should show actual subtype 'mission', got: %s", errMsg)
+			}
+			if !strings.Contains(errMsg, "expected 'phase'") {
+				t.Errorf("Error message should mention expected 'phase', got: %s", errMsg)
+			}
+			t.Logf("✓ Correct error for wrong subtype (mission instead of phase): %v", err)
+		}
+	})
 }
 
 // TestGetReadyWorkWithMissionContext tests mission context enrichment (vc-234)
