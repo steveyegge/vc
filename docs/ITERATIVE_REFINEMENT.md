@@ -631,6 +631,429 @@ See [docs/QUERIES.md](QUERIES.md) for SQL queries to analyze refinement performa
 - vc-qfm4: Assessment phase refinement (Tier 2)
 - vc-yfz7: Issue breakdown refinement (Tier 3)
 
+## Troubleshooting
+
+This section helps you diagnose and fix common issues with iterative refinement convergence.
+
+### Problem: Low Convergence Rate (<70%)
+
+**Symptom**: Many artifacts hitting `MaxIterations` instead of reaching AI-determined convergence.
+
+**Diagnosis**:
+```bash
+# Check convergence rate from metrics
+# Look for: ConvergenceRate < 70%, ConvergedIterations vs TotalIterations
+
+# Example metrics output:
+# Convergence rate: 45.2% (28/62 artifacts)
+# Mean iterations: 6.8 (close to MaxIterations=7)
+```
+
+**Possible Causes**:
+
+1. **MaxIterations too low** - Artifacts need more iterations to stabilize
+   - **Solution**: Increase `MaxIterations` from 7 to 10-12 in `RefinementConfig`
+   - **When to use**: If most artifacts are making meaningful progress in later iterations
+   - **Trade-off**: Higher cost per artifact
+
+2. **MinIterations too high** - Forcing iterations even when artifact is already good
+   - **Solution**: Lower `MinIterations` from 3 to 2
+   - **When to use**: If early iterations show minimal changes (diff < 5%)
+   - **Trade-off**: May skip fresh perspectives that could find issues
+
+3. **AI confidence threshold too high** - Convergence detector is too strict
+   - **Solution**: Lower `ConfidenceThreshold` from 0.85 to 0.80 in `AnalysisRefiner`
+   - **When to use**: If diff-based fallback is being used frequently (>20%)
+   - **Trade-off**: May accept lower-quality convergence
+
+4. **Content churn from AI** - AI keeps reformatting/rephrasing without semantic changes
+   - **Solution**: Enable advanced diff options to ignore harmless changes:
+     ```go
+     detector := iterative.NewDiffBasedDetectorWithOptions(
+         5.0,  // maxDiffPercent
+         true, // ignoreWhitespace - ignore pure formatting
+         true, // ignoreComments - ignore doc-only changes
+         true, // semanticRestructuring - detect refactoring patterns
+     )
+     ```
+   - **When to use**: If diffs show mostly whitespace/comment changes, or equal insertions/deletions (refactoring)
+   - **Trade-off**: May miss intentional formatting or documentation improvements
+
+**Example Investigation**:
+```bash
+# 1. Check strategy distribution (are we falling back to diff-based?)
+sqlite3 .beads/beads.db <<SQL
+SELECT
+  json_extract(data, '$.strategy') as strategy,
+  COUNT(*) as count,
+  ROUND(AVG(json_extract(data, '$.confidence')), 2) as avg_confidence
+FROM agent_events
+WHERE type = 'convergence_check'
+GROUP BY strategy
+ORDER BY count DESC;
+SQL
+
+# Expected: AI strategy dominates (>80%)
+# If diff-based appears frequently (>20%), AI detector is struggling
+
+# 2. Look at artifacts that maxed out (what's causing churn?)
+# Find recent non-converged refinement sessions in activity feed
+tail -100 .vc/activity_feed.jsonl | grep "converged.*false"
+
+# 3. Enable debug logging to see full refinement prompts
+export VC_DEBUG_PROMPTS=1
+# Then run executor and inspect what AI is changing between iterations
+```
+
+### Problem: Too Many Iterations (Expensive)
+
+**Symptom**: Artifacts taking 6-7 iterations consistently, high costs.
+
+**Diagnosis**:
+```bash
+# Check mean iterations and cost from metrics
+# Look for: MeanIterations > 5, high estimated_cost per artifact
+```
+
+**Possible Causes**:
+
+1. **MinIterations too high for simple artifacts**
+   - **Solution**: Enable selectivity for assessment refinement (already implemented)
+   - **For custom refiners**: Implement `SkipSimple` logic or selectivity heuristics
+   - **Trade-off**: May skip iteration for artifacts that could benefit
+
+2. **AI keeps finding new issues (good but expensive)**
+   - **Solution**: This is working as intended! To reduce cost:
+     - Lower `MaxIterations` from 7 to 5-6
+     - Accept that later iterations find diminishing returns
+   - **When to use**: When budget is constrained and 80/20 rule applies
+   - **Trade-off**: May miss 10-20% of discovered issues found in later iterations
+
+3. **Convergence check is too slow to detect stability**
+   - **Solution**: Lower AI confidence threshold to allow earlier convergence acceptance
+   - **Trade-off**: May stop iterating while meaningful improvements remain
+
+**Cost Optimization Strategy**:
+```go
+// For analysis (always iterate, but cap iterations)
+analysisConfig := iterative.RefinementConfig{
+    MinIterations: 3,  // Ensure fresh perspectives
+    MaxIterations: 5,  // Reduce from 7 to cap cost
+    SkipSimple:    false,
+}
+
+// For assessment (use selectivity)
+assessmentConfig := iterative.RefinementConfig{
+    MinIterations: 3,
+    MaxIterations: 6,
+    SkipSimple:    false,
+}
+// + shouldIterateAssessment() heuristic (already implemented)
+```
+
+**Expected Cost Savings**:
+- Analysis refinement: ~30% reduction (7→5 iterations max)
+- Assessment refinement: ~70% reduction (selectivity skips simple issues)
+- Total: ~50% reduction in refinement costs
+
+### Problem: Diff-Based Fallback Triggered Frequently
+
+**Symptom**: Metrics show `diff-based` strategy used >20% of the time.
+
+**Diagnosis**:
+```sql
+-- Check strategy distribution
+SELECT
+  json_extract(data, '$.strategy') as strategy,
+  COUNT(*) as count
+FROM agent_events
+WHERE type = 'convergence_check'
+GROUP BY strategy;
+
+-- If diff-based > 20% of total, investigate why AI detector is failing
+```
+
+**Possible Causes**:
+
+1. **AI API errors** - Network issues, rate limits, API downtime
+   - **Solution**: Check logs for API errors
+   - **Fix**: Retry logic, exponential backoff, or use ChainedDetector for graceful fallback
+   - **Example**:
+     ```go
+     // Use chained detector for robust fallback
+     aiDetector := &AnalysisRefiner{...}
+     diffDetector := iterative.NewDiffBasedDetector(5.0)
+     detector := iterative.NewChainedDetector(0.7, aiDetector, diffDetector)
+     ```
+
+2. **AI confidence below threshold** - Detector isn't confident in its judgment
+   - **Solution**: Lower `MinConfidence` in `ChainedDetector` from 0.7 to 0.6
+   - **Trade-off**: Accept lower-confidence AI judgments instead of falling back
+
+3. **AI detector implementation issue** - Bug in convergence check logic
+   - **Solution**: Check `internal/ai/analysis_refiner.go:CheckConvergence()` for errors
+   - **Debug**: Enable `VC_DEBUG_PROMPTS=1` to see convergence check prompts/responses
+
+**Recommended Setup** (for reliability):
+```go
+// Chained detector with AI-first, diff-based fallback
+aiDetector := &AnalysisRefiner{
+    Supervisor: supervisor,
+    ConfidenceThreshold: 0.80, // Lower than default for more acceptance
+}
+diffDetector := iterative.NewDiffBasedDetectorWithOptions(
+    5.0,  // 5% threshold
+    true, // ignoreWhitespace
+    true, // ignoreComments
+    true, // semanticRestructuring
+)
+chainedDetector := iterative.NewChainedDetector(
+    0.65, // Lower confidence threshold to prefer AI when possible
+    aiDetector,
+    diffDetector,
+)
+```
+
+### Problem: AI Keeps Reformatting Code Without Semantic Changes
+
+**Symptom**: Large diffs (10-20% changes) but mostly indentation, comment additions, or code reordering.
+
+**Diagnosis**:
+```bash
+# Look at recent diffs between iterations
+# Check for patterns like:
+# - Whitespace-only changes (indentation, spacing)
+# - Comment additions/improvements
+# - Equal insertions and deletions (refactoring, reordering)
+
+# Example: Enable verbose logging to see actual diffs
+export VC_DEBUG_PROMPTS=1
+# Then inspect iteration-to-iteration changes
+```
+
+**Solution**: Enable advanced diff options to ignore harmless changes
+
+**Option 1: Ignore Whitespace Changes**
+```go
+detector := iterative.NewDiffBasedDetectorWithOptions(
+    5.0,  // maxDiffPercent
+    true, // ignoreWhitespace ← ENABLE THIS
+    false,
+    false,
+)
+```
+
+**When to use**:
+- AI frequently reformats code (indentation, spacing)
+- Whitespace changes don't affect artifact quality
+- You want to focus on semantic changes only
+
+**Trade-off**: May miss intentional formatting fixes (e.g., aligning code for readability)
+
+**Option 2: Ignore Comment Changes**
+```go
+detector := iterative.NewDiffBasedDetectorWithOptions(
+    5.0,
+    false,
+    true, // ignoreComments ← ENABLE THIS
+    false,
+)
+```
+
+**When to use**:
+- AI frequently adds/improves documentation
+- Comment changes shouldn't prevent convergence
+- You want documentation improvements but not count them as convergence blockers
+
+**Trade-off**: May miss important documentation that should be reviewed
+
+**Option 3: Detect Semantic Restructuring**
+```go
+detector := iterative.NewDiffBasedDetectorWithOptions(
+    5.0,
+    false,
+    false,
+    true, // semanticRestructuring ← ENABLE THIS
+)
+```
+
+**When to use**:
+- AI frequently refactors code (extract function, reorder blocks)
+- Equal or near-equal insertions/deletions (suggests restructuring, not new logic)
+- Refactoring patterns are common in your artifacts
+
+**How it works**:
+- When a diff hunk has equal deletions and insertions (70%+ overlap), it's weighted at 50%
+- Example: 10 deletions + 10 insertions = weighted as 10 lines changed (instead of 20)
+- Reflects that balanced changes often preserve semantics
+
+**Trade-off**: May undercount real logic changes that happen to have balanced del/ins
+
+**Recommended Combination** (for AI-heavy refinement):
+```go
+// Enable all three for maximum robustness to harmless changes
+detector := iterative.NewDiffBasedDetectorWithOptions(
+    5.0,  // maxDiffPercent
+    true, // ignoreWhitespace - AI often reformats
+    true, // ignoreComments - AI often improves docs
+    true, // semanticRestructuring - AI often refactors
+)
+```
+
+**Expected Impact**:
+- Convergence rate: +20-30% (fewer false non-convergences due to formatting)
+- Mean iterations: -1 to -2 (converges faster when ignoring harmless changes)
+- Cost: -15-25% (fewer unnecessary iterations)
+
+### Problem: Understanding Metrics for Tuning
+
+**Key Metrics to Monitor**:
+
+**1. Convergence Rate** (target: >70%)
+```
+ConvergenceRate = ArtifactsConverged / (ArtifactsConverged + ArtifactsMaxedOut) * 100
+```
+- **Good**: 75-90% (most artifacts reach AI-determined convergence)
+- **Warning**: 50-75% (some artifacts struggling to converge)
+- **Critical**: <50% (configuration likely needs tuning)
+
+**2. Mean Iterations** (target: 3-5 for analysis, 2-4 for assessment)
+```
+MeanIterations = TotalIterations / TotalArtifacts
+```
+- **Good**: 3-5 (balanced thoroughness and efficiency)
+- **Warning**: 5-7 (artifacts taking many iterations, check if necessary)
+- **Critical**: >7 (likely hitting MaxIterations frequently, expensive)
+
+**3. Strategy Distribution** (target: AI >80%, diff-based <20%)
+```
+SELECT strategy, COUNT(*) FROM convergence_checks GROUP BY strategy
+```
+- **Good**: AI 90%+, diff-based 5-10% (AI detector working reliably)
+- **Warning**: AI 70-80%, diff-based 20-30% (AI detector struggling)
+- **Critical**: diff-based >30% (AI detector not working, investigate API/confidence)
+
+**4. Quality Improvement** (discovered issues delta)
+```
+Discovered Issues Delta = Final Issues - Initial Issues
+```
+- **Good**: 20-30% improvement (refinement finding meaningful new issues)
+- **Warning**: 10-20% improvement (refinement helping but marginal)
+- **Critical**: <10% improvement (not worth the cost, consider disabling)
+
+**Tuning Decision Tree**:
+```
+Start with default settings:
+  MinIterations: 3, MaxIterations: 7, ConfidenceThreshold: 0.85
+
+If ConvergenceRate < 70%:
+  → Check Strategy Distribution
+    If diff-based > 20%:
+      → Lower ConfidenceThreshold to 0.80
+      → Or use ChainedDetector with MinConfidence: 0.65
+    Else:
+      → Increase MaxIterations to 10
+      → Or enable advanced diff options (ignoreWhitespace, etc.)
+
+If MeanIterations > 6:
+  → Check Quality Improvement
+    If delta > 20%:
+      → This is working! Accept the cost or cap MaxIterations lower
+    Else:
+      → Lower MinIterations to 2
+      → Or enable selectivity heuristics
+
+If Strategy shows diff-based > 30%:
+  → Check logs for AI API errors
+  → Lower MinConfidence in ChainedDetector
+  → Or fix AI detector implementation
+```
+
+### Problem: Common Convergence Check Failures
+
+**Error: "Empty artifact"**
+```
+Converged: false
+Confidence: 1.0
+Reasoning: "Empty artifact"
+```
+**Cause**: Current artifact has no content
+**Solution**: Check why artifact is empty - likely a bug in refiner implementation
+
+**Error: "All convergence detectors failed"**
+```
+Error: all convergence detectors failed, last error: context deadline exceeded
+```
+**Cause**: AI API timeout or network issue
+**Solution**:
+- Use ChainedDetector for graceful fallback
+- Increase API timeout in supervisor config
+- Check network connectivity
+
+**Low Confidence (<0.5)**
+```
+Converged: true
+Confidence: 0.42
+Reasoning: "4.8% of lines changed (threshold: 5.0%)"
+```
+**Cause**: Change percentage very close to threshold (4.8% vs 5.0%)
+**Solution**:
+- This is expected near the threshold
+- If concerning, adjust threshold away from typical change percentages
+- Or use AI detector which doesn't have sharp threshold behavior
+
+**Strategy Mismatch**
+```
+Strategy: "chained"
+Converged: true
+Confidence: 0.68
+Reasoning: "8.2% of lines changed (threshold: 5.0%)"
+```
+**Interpretation**: AI detector likely failed or had low confidence, fell back to diff-based
+**What to check**:
+- Are there AI API errors in logs?
+- Is MinConfidence too high for ChainedDetector?
+- Should you lower AI ConfidenceThreshold?
+
+### Quick Reference: Configuration Settings
+
+| Setting | Default | Low Convergence | Too Expensive | AI Reformatting |
+|---------|---------|----------------|---------------|-----------------|
+| MinIterations | 3 | Keep at 3 | Lower to 2 | Keep at 3 |
+| MaxIterations | 7 | Raise to 10 | Lower to 5 | Keep at 7 |
+| ConfidenceThreshold | 0.85 | Lower to 0.80 | Keep at 0.85 | Keep at 0.85 |
+| ChainedDetector MinConfidence | 0.70 | Lower to 0.65 | Keep at 0.70 | Keep at 0.70 |
+| IgnoreWhitespace | false | Try true | Keep false | **Enable (true)** |
+| IgnoreComments | false | Try true | Keep false | **Enable (true)** |
+| SemanticRestructuring | false | Try true | Keep false | **Enable (true)** |
+
+**Example Tuning for Low Convergence Rate**:
+```go
+config := iterative.RefinementConfig{
+    MinIterations: 3,
+    MaxIterations: 10,  // Increased from 7
+    SkipSimple:    false,
+}
+
+refiner := ai.NewAnalysisRefiner(supervisor, 0.80) // Lowered from 0.85
+
+detector := iterative.NewDiffBasedDetectorWithOptions(
+    5.0,
+    true,  // ignoreWhitespace
+    true,  // ignoreComments
+    true,  // semanticRestructuring
+)
+```
+
+**Example Tuning for Cost Reduction**:
+```go
+config := iterative.RefinementConfig{
+    MinIterations: 2,   // Lowered from 3
+    MaxIterations: 5,   // Lowered from 7
+    SkipSimple:    true, // Enable if applicable
+}
+```
+
 ## See Also
 
 - [internal/iterative/doc.go](../internal/iterative/doc.go): Package documentation
