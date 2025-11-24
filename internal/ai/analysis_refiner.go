@@ -303,7 +303,7 @@ func (r *AnalysisRefiner) buildIterationContext(artifact *iterative.Artifact, re
 	}
 
 	// Add summary of what this iteration found
-	context.WriteString(fmt.Sprintf("Previous iteration found:\n"))
+	context.WriteString("Previous iteration found:\n")
 	context.WriteString(fmt.Sprintf("- Completed: %v\n", refinedAnalysis.Completed))
 	context.WriteString(fmt.Sprintf("- Discovered issues: %d\n", len(refinedAnalysis.DiscoveredIssues)))
 	context.WriteString(fmt.Sprintf("- Punted items: %d\n", len(refinedAnalysis.PuntedItems)))
@@ -328,7 +328,7 @@ func serializeAnalysis(analysis *Analysis) string {
 	sb.WriteString(fmt.Sprintf("Confidence: %.2f\n\n", analysis.Confidence))
 
 	if analysis.ScopeValidation != nil {
-		sb.WriteString(fmt.Sprintf("Scope Validation:\n"))
+		sb.WriteString("Scope Validation:\n")
 		sb.WriteString(fmt.Sprintf("  On Task: %v\n", analysis.ScopeValidation.OnTask))
 		sb.WriteString(fmt.Sprintf("  Explanation: %s\n\n", analysis.ScopeValidation.Explanation))
 	}
@@ -399,6 +399,8 @@ func serializeAnalysis(analysis *Analysis) string {
 //
 // If you're considering using this function, think carefully about whether re-parsing via AI
 // would be more appropriate for your use case.
+//
+//nolint:unparam // Function intentionally always returns nil to document unsupported operation
 func deserializeAnalysis(artifact *iterative.Artifact) (*Analysis, error) {
 	if artifact == nil {
 		return nil, fmt.Errorf("artifact cannot be nil")

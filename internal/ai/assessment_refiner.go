@@ -280,7 +280,7 @@ func (r *AssessmentRefiner) buildIterationContext(artifact *iterative.Artifact, 
 	}
 
 	// Add summary of what this iteration found
-	context.WriteString(fmt.Sprintf("Previous iteration:\n"))
+	context.WriteString("Previous iteration:\n")
 	context.WriteString(fmt.Sprintf("- Strategy: %s\n", truncateString(refinedAssessment.Strategy, 100)))
 	context.WriteString(fmt.Sprintf("- Steps: %d\n", len(refinedAssessment.Steps)))
 	context.WriteString(fmt.Sprintf("- Risks: %d\n", len(refinedAssessment.Risks)))

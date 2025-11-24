@@ -194,17 +194,6 @@ func maxInt(a, b int) int {
 	return b
 }
 
-func truncateForPrompt(text string, maxChars int) string {
-	if len(text) <= maxChars {
-		return text
-	}
-	return text[:maxChars] + "... (truncated)"
-}
-
-func boolPtr(b bool) *bool {
-	return &b
-}
-
 // ConvergenceMetrics tracks convergence detection performance for analysis
 // and tuning. Callers can optionally record metrics during refinement.
 type ConvergenceMetrics struct {

@@ -286,7 +286,9 @@ func (s *Supervisor) shouldIterateAssessment(ctx context.Context, issue *types.I
 
 // isNovelArea checks if this issue is in a novel area with no precedent.
 // Returns true if we can't find similar closed issues, suggesting this is new territory.
-func (s *Supervisor) isNovelArea(ctx context.Context, issue *types.Issue) (bool, error) {
+//
+//nolint:unparam // ctx will be used in full implementation for storage queries
+func (s *Supervisor) isNovelArea(_ context.Context, issue *types.Issue) (bool, error) {
 	// For now, use a simple heuristic: check if the title contains uncommon technical terms
 	// A full implementation would search closed issues, but that requires storage interface extensions
 

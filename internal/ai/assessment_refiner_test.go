@@ -57,8 +57,7 @@ func TestNewAssessmentRefiner(t *testing.T) {
 				}
 				if refiner == nil {
 					t.Errorf("expected refiner but got nil")
-				}
-				if refiner.minConfidence != 0.80 {
+				} else if refiner.minConfidence != 0.80 {
 					t.Errorf("expected minConfidence 0.80, got %.2f", refiner.minConfidence)
 				}
 			}
