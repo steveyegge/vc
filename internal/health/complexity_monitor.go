@@ -146,8 +146,8 @@ func (m *ComplexityMonitor) Check(ctx context.Context, codebase CodebaseContext)
 	// 3. Build AI prompt with context
 	prompt := m.buildAIPrompt(complexFunctions, codebase)
 
-	// 4. Call AI to evaluate complexity
-	response, err := m.Supervisor.CallAI(ctx, prompt, "complexity_evaluation", ai.ModelSonnet, 4096)
+	// 4. Call AI to evaluate complexity (vc-35: use environment-configurable model)
+	response, err := m.Supervisor.CallAI(ctx, prompt, "complexity_evaluation", ai.GetDefaultModel(), 4096)
 	if err != nil {
 		return nil, fmt.Errorf("AI evaluation failed: %w", err)
 	}

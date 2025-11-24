@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/steveyegge/vc/internal/ai"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"
 	"golang.org/x/time/rate"
@@ -466,7 +467,8 @@ func (a *DependencyAuditor) countVersionsBehind(current, latest string) int {
 func (a *DependencyAuditor) evaluateVulnerabilities(ctx context.Context, vulns []vulnerability) (*vulnerabilityEvaluation, error) {
 	prompt := a.buildVulnerabilityPrompt(vulns)
 
-	resp, err := a.Supervisor.CallAI(ctx, prompt, "evaluate_vulnerabilities", "claude-sonnet-4-20250514", 4096)
+	// vc-35: Use environment-configurable model (security analysis requires complex reasoning)
+	resp, err := a.Supervisor.CallAI(ctx, prompt, "evaluate_vulnerabilities", ai.GetDefaultModel(), 4096)
 	if err != nil {
 		return nil, fmt.Errorf("AI evaluation failed: %w", err)
 	}
@@ -494,7 +496,8 @@ func (a *DependencyAuditor) evaluateVulnerabilities(ctx context.Context, vulns [
 func (a *DependencyAuditor) evaluateOutdated(ctx context.Context, outdated []outdatedDependency) (*outdatedEvaluation, error) {
 	prompt := a.buildOutdatedPrompt(outdated)
 
-	resp, err := a.Supervisor.CallAI(ctx, prompt, "evaluate_outdated", "claude-sonnet-4-20250514", 4096)
+	// vc-35: Use environment-configurable model (dependency analysis requires complex reasoning)
+	resp, err := a.Supervisor.CallAI(ctx, prompt, "evaluate_outdated", ai.GetDefaultModel(), 4096)
 	if err != nil {
 		return nil, fmt.Errorf("AI evaluation failed: %w", err)
 	}
