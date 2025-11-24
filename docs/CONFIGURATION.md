@@ -276,6 +276,66 @@ export VC_QUALITY_GATES_TIMEOUT=1m
 
 ---
 
+## 🛡️ Validator Resilience Configuration (vc-e5qn)
+
+VC's planning system uses multiple validators to check mission plans. Each validator runs with panic recovery and timeouts to prevent one bad validator from killing the entire validation pipeline.
+
+### Validator Timeout
+
+**Default:** 30 seconds per validator
+
+```bash
+# Override per-validator timeout
+export VC_VALIDATOR_TIMEOUT=60s  # Allow 1 minute per validator
+```
+
+**Valid values:** Any Go duration string (e.g., `10s`, `1m`, `90s`)
+
+### Validator Behavior
+
+Each validator runs with the following protections:
+
+1. **Panic Recovery:**
+   - Panics are caught and logged
+   - Validation continues with other validators
+   - Panic is reported as a validation error
+
+2. **Timeout Protection:**
+   - Each validator gets its own timeout context
+   - Prevents infinite loops or hangs
+   - Timeout is reported as a validation error
+
+3. **Fault Isolation:**
+   - One validator failure doesn't block others
+   - All validators run to completion
+   - Combined error report shows all failures
+
+### Validators
+
+The following validators run on every mission plan:
+
+- **phase_count:** Checks phase count is within acceptable range (1-15 phases)
+- **circular_dependencies:** Detects circular dependencies in phases
+- **task_counts:** Validates each phase has reasonable task count (1-50 tasks)
+- **phase_structure_ai:** AI-driven validation of phase dependencies and ordering (advisory only)
+
+**Note:** The AI validator is advisory only and will log warnings but not block validation on failure (e.g., network issues, API errors).
+
+### Example Error Output
+
+```bash
+# Multiple validator failures
+Error: validation failed: phase_count: plan has too many phases (20); consider breaking into multiple missions; task_counts: phase 1 (Setup) has too many tasks (60); break it down further
+
+# Validator timeout
+Error: validation failed: circular_dependencies: validator timeout after 30s
+
+# Validator panic
+Error: validation failed: phase_structure_ai: validator panic: runtime error: invalid memory address or nil pointer dereference
+```
+
+---
+
 ## 🐛 Debug Environment Variables
 
 **Debug Prompts:**

@@ -262,7 +262,81 @@ func (s *Supervisor) ValidatePlan(ctx context.Context, plan *types.MissionPlan) 
 		return err
 	}
 
-	// Additional validation rules
+	// Run validators with panic recovery and timeouts
+	// Collect validation errors but allow all validators to run
+	var validationErrors []string
+
+	// Define validators as a slice of functions for easier iteration
+	validators := []struct {
+		name string
+		fn   func(context.Context, *types.MissionPlan) error
+	}{
+		{"phase_count", s.validatePhaseCount},
+		{"circular_dependencies", s.validateCircularDependencies},
+		{"task_counts", s.validateTaskCounts},
+		{"phase_structure_ai", s.validatePhaseStructureWrapper},
+	}
+
+	// Run each validator with panic recovery and timeout
+	for _, validator := range validators {
+		if err := s.runValidatorSafely(ctx, validator.name, func(ctx context.Context) error {
+			return validator.fn(ctx, plan)
+		}); err != nil {
+			validationErrors = append(validationErrors, fmt.Sprintf("%s: %s", validator.name, err.Error()))
+		}
+	}
+
+	// If any validators failed, return combined error
+	if len(validationErrors) > 0 {
+		return fmt.Errorf("validation failed: %s", strings.Join(validationErrors, "; "))
+	}
+
+	return nil
+}
+
+// runValidatorSafely runs a validator with panic recovery and timeout
+func (s *Supervisor) runValidatorSafely(ctx context.Context, name string, fn func(context.Context) error) (err error) {
+	// Default timeout is 30 seconds per validator (configurable via environment)
+	timeout := 30 * time.Second
+	if envTimeout := os.Getenv("VC_VALIDATOR_TIMEOUT"); envTimeout != "" {
+		if parsed, parseErr := time.ParseDuration(envTimeout); parseErr == nil {
+			timeout = parsed
+		}
+	}
+
+	// Create timeout context for this validator
+	validatorCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Channel for validator result
+	done := make(chan error, 1)
+
+	// Run validator in goroutine with panic recovery
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				done <- fmt.Errorf("validator panic: %v", r)
+			}
+		}()
+		done <- fn(validatorCtx)
+	}()
+
+	// Wait for result or timeout
+	select {
+	case err = <-done:
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Validator %s failed: %v\n", name, err)
+		}
+		return err
+	case <-validatorCtx.Done():
+		err = fmt.Errorf("validator timeout after %v", timeout)
+		fmt.Fprintf(os.Stderr, "Validator %s timed out after %v\n", name, timeout)
+		return err
+	}
+}
+
+// validatePhaseCount checks phase count is within acceptable range
+func (s *Supervisor) validatePhaseCount(ctx context.Context, plan *types.MissionPlan) error {
 	phaseCount := len(plan.Phases)
 	if phaseCount < 1 {
 		return fmt.Errorf("plan must have at least 1 phase (got %d)", phaseCount)
@@ -270,13 +344,19 @@ func (s *Supervisor) ValidatePlan(ctx context.Context, plan *types.MissionPlan) 
 	if phaseCount > 15 {
 		return fmt.Errorf("plan has too many phases (%d); consider breaking into multiple missions", phaseCount)
 	}
+	return nil
+}
 
-	// Check for circular dependencies
+// validateCircularDependencies checks for circular dependencies in phases
+func (s *Supervisor) validateCircularDependencies(ctx context.Context, plan *types.MissionPlan) error {
 	if err := checkCircularDependencies(plan.Phases); err != nil {
 		return fmt.Errorf("circular dependencies detected: %w", err)
 	}
+	return nil
+}
 
-	// Validate each phase has reasonable task count
+// validateTaskCounts checks each phase has reasonable task count
+func (s *Supervisor) validateTaskCounts(ctx context.Context, plan *types.MissionPlan) error {
 	for i, phase := range plan.Phases {
 		taskCount := len(phase.Tasks)
 		if taskCount == 0 {
@@ -286,7 +366,29 @@ func (s *Supervisor) ValidatePlan(ctx context.Context, plan *types.MissionPlan) 
 			return fmt.Errorf("phase %d (%s) has too many tasks (%d); break it down further", i+1, phase.Title, taskCount)
 		}
 	}
+	return nil
+}
 
+// validatePhaseStructureWrapper wraps ValidatePhaseStructure to match validator interface
+func (s *Supervisor) validatePhaseStructureWrapper(ctx context.Context, plan *types.MissionPlan) error {
+	// Skip AI validation for single phase plans (optimization)
+	if len(plan.Phases) == 1 {
+		return nil
+	}
+
+	// Skip AI validation if supervisor is not initialized (e.g., in tests)
+	if s == nil || s.client == nil {
+		return nil
+	}
+
+	// AI validator might fail (network issues, API errors, etc.)
+	// Log warning but don't block validation on AI failure
+	if err := s.ValidatePhaseStructure(ctx, plan.Phases); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: AI phase structure validation failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Continuing validation (AI validation is advisory only)\n")
+		// Return nil to continue validation - AI failures are non-blocking
+		return nil
+	}
 	return nil
 }
 
