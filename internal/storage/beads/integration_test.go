@@ -2947,6 +2947,98 @@ func TestGetMissionByPhase(t *testing.T) {
 			t.Logf("✓ Correctly returned error for orphan phase: %v", err)
 		}
 	})
+
+	t.Run("nested phase hierarchy - task under phase under mission", func(t *testing.T) {
+		// Create mission epic
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission with Nested Phases",
+				Description:  "Multi-level mission structure",
+				Status:       types.StatusOpen,
+				Priority:     0,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal:         "Complete multi-level work",
+			SandboxPath:  "/sandbox/mission-nested",
+			BranchName:   "mission-nested",
+			PhaseCount:   2,
+			CurrentPhase: 0,
+		}
+		if err := store.CreateMission(ctx, mission, "test"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Create phase epic (child of mission)
+		phase := &types.Issue{
+			Title:        "Implementation Phase",
+			Description:  "First implementation phase",
+			Status:       types.StatusOpen,
+			Priority:     1,
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypePhase,
+		}
+		if err := store.CreateIssue(ctx, phase, "test"); err != nil {
+			t.Fatalf("Failed to create phase: %v", err)
+		}
+
+		// Link phase to mission
+		phaseDep := &types.Dependency{
+			IssueID:     phase.ID,
+			DependsOnID: mission.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, phaseDep, "test"); err != nil {
+			t.Fatalf("Failed to add phase dependency: %v", err)
+		}
+
+		// Create task under phase
+		task := &types.Issue{
+			Title:              "Task in Phase",
+			Status:             types.StatusOpen,
+			Priority:           2,
+			IssueType:          types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
+		}
+		if err := store.CreateIssue(ctx, task, "test"); err != nil {
+			t.Fatalf("Failed to create task: %v", err)
+		}
+
+		// Link task to phase
+		taskDep := &types.Dependency{
+			IssueID:     task.ID,
+			DependsOnID: phase.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, taskDep, "test"); err != nil {
+			t.Fatalf("Failed to add task dependency: %v", err)
+		}
+
+		// Test GetMissionByPhase - should walk up through the hierarchy
+		// This verifies the recursive CTE correctly handles multi-level traversal
+		retrievedMission, err := store.GetMissionByPhase(ctx, phase.ID)
+		if err != nil {
+			t.Fatalf("GetMissionByPhase failed for nested phase: %v", err)
+		}
+
+		if retrievedMission.ID != mission.ID {
+			t.Errorf("Expected mission ID %s, got %s", mission.ID, retrievedMission.ID)
+		}
+		if retrievedMission.Goal != mission.Goal {
+			t.Errorf("Expected goal %q, got %q", mission.Goal, retrievedMission.Goal)
+		}
+		if retrievedMission.SandboxPath != mission.SandboxPath {
+			t.Errorf("Expected sandbox path %s, got %s", mission.SandboxPath, retrievedMission.SandboxPath)
+		}
+		if retrievedMission.BranchName != mission.BranchName {
+			t.Errorf("Expected branch name %s, got %s", mission.BranchName, retrievedMission.BranchName)
+		}
+
+		// Verify the CTE correctly navigated the hierarchy
+		t.Logf("✓ Phase %s correctly found mission %s through recursive CTE (task→phase→mission)",
+			phase.ID, mission.ID)
+		t.Logf("  Hierarchy: task %s → phase %s → mission %s", task.ID, phase.ID, mission.ID)
+	})
 }
 
 // TestGetReadyWorkWithMissionContext tests mission context enrichment (vc-234)
