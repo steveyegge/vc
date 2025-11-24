@@ -159,13 +159,16 @@ func TestShouldIterateAssessment_P0Issue(t *testing.T) {
 		Title:    "Critical bug",
 	}
 
-	shouldIterate, reason := supervisor.shouldIterateAssessment(context.Background(), issue)
+	shouldIterate, triggers, skipReason := supervisor.shouldIterateAssessment(context.Background(), issue)
 
 	if !shouldIterate {
 		t.Error("expected P0 issue to trigger iteration")
 	}
-	if reason != "P0 issue (critical priority)" {
-		t.Errorf("unexpected reason: %s", reason)
+	if len(triggers) == 0 || triggers[0] != "P0 priority" {
+		t.Errorf("unexpected triggers: %v", triggers)
+	}
+	if skipReason != "" {
+		t.Errorf("expected empty skipReason, got: %s", skipReason)
 	}
 }
 
@@ -178,13 +181,16 @@ func TestShouldIterateAssessment_Mission(t *testing.T) {
 		IssueSubtype: types.SubtypeMission,
 	}
 
-	shouldIterate, reason := supervisor.shouldIterateAssessment(context.Background(), issue)
+	shouldIterate, triggers, skipReason := supervisor.shouldIterateAssessment(context.Background(), issue)
 
 	if !shouldIterate {
 		t.Error("expected mission issue to trigger iteration")
 	}
-	if !contains(reason, "complex structural issue") {
-		t.Errorf("unexpected reason: %s", reason)
+	if len(triggers) == 0 || !contains(triggers[0], "complex structural issue") {
+		t.Errorf("unexpected triggers: %v", triggers)
+	}
+	if skipReason != "" {
+		t.Errorf("expected empty skipReason, got: %s", skipReason)
 	}
 }
 
@@ -197,13 +203,16 @@ func TestShouldIterateAssessment_Phase(t *testing.T) {
 		IssueSubtype: types.SubtypePhase,
 	}
 
-	shouldIterate, reason := supervisor.shouldIterateAssessment(context.Background(), issue)
+	shouldIterate, triggers, skipReason := supervisor.shouldIterateAssessment(context.Background(), issue)
 
 	if !shouldIterate {
 		t.Error("expected phase issue to trigger iteration")
 	}
-	if !contains(reason, "complex structural issue") {
-		t.Errorf("unexpected reason: %s", reason)
+	if len(triggers) == 0 || !contains(triggers[0], "complex structural issue") {
+		t.Errorf("unexpected triggers: %v", triggers)
+	}
+	if skipReason != "" {
+		t.Errorf("expected empty skipReason, got: %s", skipReason)
 	}
 }
 
@@ -216,13 +225,16 @@ func TestShouldIterateAssessment_SimpleIssue(t *testing.T) {
 		IssueType: types.TypeTask,
 	}
 
-	shouldIterate, reason := supervisor.shouldIterateAssessment(context.Background(), issue)
+	shouldIterate, triggers, skipReason := supervisor.shouldIterateAssessment(context.Background(), issue)
 
 	if shouldIterate {
-		t.Errorf("expected simple issue to skip iteration, but got: %s", reason)
+		t.Errorf("expected simple issue to skip iteration, but got triggers: %v", triggers)
 	}
-	if !contains(reason, "simple issue") {
-		t.Errorf("unexpected reason: %s", reason)
+	if len(triggers) != 0 {
+		t.Errorf("expected no triggers, got: %v", triggers)
+	}
+	if !contains(skipReason, "simple issue") {
+		t.Errorf("unexpected skipReason: %s", skipReason)
 	}
 }
 
@@ -455,4 +467,119 @@ func TestSerializeAssessmentMinimal(t *testing.T) {
 	if contains(serialized, "Risks (") {
 		t.Error("expected no risks section when empty")
 	}
+}
+
+// TestSelectivityMetrics tests that selectivity metrics are correctly recorded (vc-642z)
+func TestSelectivityMetrics(t *testing.T) {
+	t.Run("skipped artifact records skip reason", func(t *testing.T) {
+		collector := iterative.NewInMemoryMetricsCollector()
+
+		// Record a skipped artifact
+		metrics := &iterative.ArtifactMetrics{
+			ArtifactType:     "assessment",
+			Priority:         "P2",
+			TotalIterations:  0,
+			Converged:        true,
+			ConvergenceReason: "selectivity skip",
+			IterationSkipped: true,
+			SkipReason:       "simple issue (no complexity triggers)",
+		}
+
+		collector.RecordArtifactComplete(&iterative.ConvergenceResult{
+			Iterations:  0,
+			Converged:   true,
+		}, metrics)
+
+		agg := collector.GetAggregateMetrics()
+
+		// Verify skip metrics
+		if agg.SkippedArtifacts != 1 {
+			t.Errorf("expected 1 skipped artifact, got %d", agg.SkippedArtifacts)
+		}
+		if agg.IteratedArtifacts != 0 {
+			t.Errorf("expected 0 iterated artifacts, got %d", agg.IteratedArtifacts)
+		}
+
+		// Verify skip reason tracking
+		skipCount, ok := agg.BySelectivityReason["simple issue (no complexity triggers)"]
+		if !ok || skipCount != 1 {
+			t.Errorf("expected skip reason count of 1, got %d", skipCount)
+		}
+	})
+
+	t.Run("iterated artifact records triggers", func(t *testing.T) {
+		collector := iterative.NewInMemoryMetricsCollector()
+
+		// Record an iterated artifact with triggers
+		metrics := &iterative.ArtifactMetrics{
+			ArtifactType:        "assessment",
+			Priority:            "P0",
+			TotalIterations:     4,
+			Converged:           true,
+			ConvergenceReason:   "AI convergence",
+			IterationSkipped:    false,
+			SelectivityTriggers: []string{"P0 priority", "mission (complex structural issue)"},
+		}
+
+		collector.RecordArtifactComplete(&iterative.ConvergenceResult{
+			Iterations:  4,
+			Converged:   true,
+		}, metrics)
+
+		agg := collector.GetAggregateMetrics()
+
+		// Verify iteration metrics
+		if agg.SkippedArtifacts != 0 {
+			t.Errorf("expected 0 skipped artifacts, got %d", agg.SkippedArtifacts)
+		}
+		if agg.IteratedArtifacts != 1 {
+			t.Errorf("expected 1 iterated artifact, got %d", agg.IteratedArtifacts)
+		}
+
+		// Verify trigger tracking (each trigger counted independently)
+		p0Count, ok := agg.BySelectivityTrigger["P0 priority"]
+		if !ok || p0Count != 1 {
+			t.Errorf("expected P0 priority trigger count of 1, got %d", p0Count)
+		}
+
+		missionCount, ok := agg.BySelectivityTrigger["mission (complex structural issue)"]
+		if !ok || missionCount != 1 {
+			t.Errorf("expected mission trigger count of 1, got %d", missionCount)
+		}
+	})
+
+	t.Run("mixed artifacts track both skip and iterate", func(t *testing.T) {
+		collector := iterative.NewInMemoryMetricsCollector()
+
+		// Record 2 skipped and 1 iterated
+		collector.RecordArtifactComplete(&iterative.ConvergenceResult{}, &iterative.ArtifactMetrics{
+			ArtifactType:     "assessment",
+			IterationSkipped: true,
+			SkipReason:       "simple issue (no complexity triggers)",
+		})
+
+		collector.RecordArtifactComplete(&iterative.ConvergenceResult{}, &iterative.ArtifactMetrics{
+			ArtifactType:     "assessment",
+			IterationSkipped: true,
+			SkipReason:       "simple issue (no complexity triggers)",
+		})
+
+		collector.RecordArtifactComplete(&iterative.ConvergenceResult{}, &iterative.ArtifactMetrics{
+			ArtifactType:        "assessment",
+			IterationSkipped:    false,
+			SelectivityTriggers: []string{"P0 priority"},
+		})
+
+		agg := collector.GetAggregateMetrics()
+
+		if agg.SkippedArtifacts != 2 {
+			t.Errorf("expected 2 skipped artifacts, got %d", agg.SkippedArtifacts)
+		}
+		if agg.IteratedArtifacts != 1 {
+			t.Errorf("expected 1 iterated artifact, got %d", agg.IteratedArtifacts)
+		}
+		if agg.TotalArtifacts != 3 {
+			t.Errorf("expected 3 total artifacts, got %d", agg.TotalArtifacts)
+		}
+	})
 }

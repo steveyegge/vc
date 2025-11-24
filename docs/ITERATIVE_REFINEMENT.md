@@ -451,12 +451,45 @@ Environment variable: `VC_ENABLE_ITERATIVE_REFINEMENT=true` (default: true)
 - Convergence check results
 - Duration
 
-**Selectivity Metrics:**
-- Iteration rate by priority (P0 vs P1-P3)
-- Iteration rate by dependency count
-- Iteration rate by novelty
-- Average iterations for iterated issues
-- Cost savings from skipping simple issues
+**Selectivity Metrics (vc-642z):**
+
+The metrics collector tracks selectivity decisions to measure the effectiveness of the heuristic:
+
+- **SkippedArtifacts**: Count of assessments where iteration was skipped
+- **IteratedArtifacts**: Count of assessments that went through iteration
+- **BySelectivityReason**: Map of skip reasons to counts
+  - Example: `{"simple issue (no complexity triggers)": 42}`
+- **BySelectivityTrigger**: Map of iteration triggers to counts
+  - Example: `{"P0 priority": 8, "mission (complex structural issue)": 5}`
+  - Note: Counts may sum > IteratedArtifacts since one artifact can have multiple triggers
+
+**Artifact-level metrics:**
+
+Each `ArtifactMetrics` contains:
+- **IterationSkipped**: boolean indicating if iteration was skipped
+- **SkipReason**: explanation for skip (e.g., "simple issue (no complexity triggers)")
+- **SelectivityTriggers**: list of heuristics that triggered iteration (e.g., ["P0 priority", "mission (complex structural issue)"])
+
+**Analysis queries:**
+
+```go
+// Get selectivity statistics
+agg := collector.GetAggregateMetrics()
+
+// Skip rate
+skipRate := float64(agg.SkippedArtifacts) / float64(agg.TotalArtifacts) * 100
+fmt.Printf("Skip rate: %.1f%% (%d/%d)\n", skipRate, agg.SkippedArtifacts, agg.TotalArtifacts)
+
+// Most common skip reasons
+for reason, count := range agg.BySelectivityReason {
+    fmt.Printf("  %s: %d\n", reason, count)
+}
+
+// Most common iteration triggers
+for trigger, count := range agg.BySelectivityTrigger {
+    fmt.Printf("  %s: %d\n", trigger, count)
+}
+```
 
 **Example Output:**
 
@@ -464,12 +497,21 @@ Environment variable: `VC_ENABLE_ITERATIVE_REFINEMENT=true` (default: true)
 Skipping assessment iteration for vc-abc: simple issue (no complexity triggers)
 AI Assessment for vc-abc: confidence=0.82, duration=2.1s
 
-Using iterative refinement for assessment of vc-xyz: P0 issue (critical priority)
+Using iterative refinement for assessment of vc-xyz: ["P0 priority"]
 📊 Assessment refinement metrics: iterations=4, duration=12.3s, converged=true
   - Iteration 1: duration=2.8s, content_length=1240
   - Iteration 2: duration=3.1s, content_length=1580
   - Iteration 3: duration=3.2s, content_length=1612
   - Iteration 4: duration=3.2s, content_length=1620
+
+Selectivity Statistics:
+  Skip rate: 68.2% (45/66)
+  Skip reasons:
+    simple issue (no complexity triggers): 45
+  Iteration triggers:
+    P0 priority: 12
+    mission (complex structural issue): 6
+    phase (complex structural issue): 3
 ```
 
 ### Activity Feed Events

@@ -125,14 +125,34 @@ func (s *Supervisor) AssessIssueStateWithRefinement(ctx context.Context, issue *
 	startTime := time.Now()
 
 	// Check if this issue should use iterative refinement (vc-43kd)
-	shouldIterate, reason := s.shouldIterateAssessment(ctx, issue)
+	shouldIterate, triggers, skipReason := s.shouldIterateAssessment(ctx, issue)
 	if !shouldIterate {
-		fmt.Printf("Skipping assessment iteration for %s: %s\n", issue.ID, reason)
+		fmt.Printf("Skipping assessment iteration for %s: %s\n", issue.ID, skipReason)
 		// Fall back to single-pass assessment
 		assessment, err := s.AssessIssueState(ctx, issue)
 		if err != nil {
 			return nil, nil, err
 		}
+
+		// Record metrics for skipped iteration (vc-642z)
+		if collector != nil {
+			metrics := &iterative.ArtifactMetrics{
+				ArtifactType:     "assessment",
+				Priority:         fmt.Sprintf("P%d", issue.Priority),
+				TotalIterations:  0,
+				Converged:        true,
+				ConvergenceReason: "selectivity skip",
+				TotalDuration:    time.Since(startTime),
+				IterationSkipped: true,
+				SkipReason:       skipReason,
+			}
+			collector.RecordArtifactComplete(&iterative.ConvergenceResult{
+				Iterations:  0,
+				Converged:   true,
+				ElapsedTime: time.Since(startTime),
+			}, metrics)
+		}
+
 		// Return mock convergence result for consistency
 		return assessment, &iterative.ConvergenceResult{
 			FinalArtifact: &iterative.Artifact{
@@ -146,7 +166,7 @@ func (s *Supervisor) AssessIssueStateWithRefinement(ctx context.Context, issue *
 		}, nil
 	}
 
-	fmt.Printf("Using iterative refinement for assessment of %s: %s\n", issue.ID, reason)
+	fmt.Printf("Using iterative refinement for assessment of %s: %v\n", issue.ID, triggers)
 
 	// Perform initial assessment (iteration 0)
 	initialAssessment, err := s.AssessIssueState(ctx, issue)
@@ -179,6 +199,23 @@ func (s *Supervisor) AssessIssueStateWithRefinement(ctx context.Context, issue *
 	result, err := iterative.Converge(ctx, initialArtifact, refiner, config, collector)
 	if err != nil {
 		return nil, nil, fmt.Errorf("iterative refinement failed: %w", err)
+	}
+
+	// Update metrics with selectivity triggers (vc-642z)
+	if collector != nil {
+		// The collector has already recorded artifact metrics via Converge
+		// We need to update the most recent artifact with selectivity triggers
+		if memCollector, ok := collector.(*iterative.InMemoryMetricsCollector); ok {
+			artifacts := memCollector.GetArtifacts()
+			if len(artifacts) > 0 {
+				lastMetrics := artifacts[len(artifacts)-1]
+				// Only update if this is the assessment artifact we just processed
+				if lastMetrics.ArtifactType == "assessment" {
+					lastMetrics.SelectivityTriggers = triggers
+					lastMetrics.Priority = fmt.Sprintf("P%d", issue.Priority)
+				}
+			}
+		}
 	}
 
 	// Parse the final refined assessment from the artifact content
@@ -249,7 +286,15 @@ IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap in markdown code fences.`,
 }
 
 // shouldIterateAssessment determines if an issue warrants iterative assessment refinement.
-// Returns (shouldIterate, reason) where reason explains the decision.
+// Returns (shouldIterate, triggers, skipReason).
+//
+// If shouldIterate is true:
+//   - triggers contains the list of heuristics that matched
+//   - skipReason is empty
+//
+// If shouldIterate is false:
+//   - triggers is empty
+//   - skipReason explains why iteration was skipped
 //
 // Heuristic for when to iterate (vc-43kd):
 // - P0 issues (critical)
@@ -257,15 +302,17 @@ IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap in markdown code fences.`,
 // - Novel areas (no similar closed issues)
 //
 // Simple issues skip iteration to avoid unnecessary cost.
-func (s *Supervisor) shouldIterateAssessment(ctx context.Context, issue *types.Issue) (bool, string) {
+func (s *Supervisor) shouldIterateAssessment(ctx context.Context, issue *types.Issue) (bool, []string, string) {
+	var triggers []string
+
 	// P0 issues are critical - always iterate for thorough risk identification
 	if issue.Priority == 0 {
-		return true, "P0 issue (critical priority)"
+		triggers = append(triggers, "P0 priority")
 	}
 
 	// Complex structural issues (epics, missions, phases) need careful planning
 	if issue.IssueSubtype == types.SubtypeMission || issue.IssueSubtype == types.SubtypePhase {
-		return true, fmt.Sprintf("%s (complex structural issue)", issue.IssueSubtype)
+		triggers = append(triggers, fmt.Sprintf("%s (complex structural issue)", issue.IssueSubtype))
 	}
 
 	// Check if this is a novel area (no similar closed issues)
@@ -276,12 +323,17 @@ func (s *Supervisor) shouldIterateAssessment(ctx context.Context, issue *types.I
 			// Log error but don't fail - just skip this heuristic
 			fmt.Fprintf(os.Stderr, "warning: failed to check novelty for %s: %v\n", issue.ID, err)
 		} else if isNovel {
-			return true, "novel area (no similar closed issues found)"
+			triggers = append(triggers, "novel area (no similar closed issues)")
 		}
 	}
 
+	// If we found any triggers, iterate
+	if len(triggers) > 0 {
+		return true, triggers, ""
+	}
+
 	// Otherwise skip iteration for simple issues
-	return false, "simple issue (no complexity triggers)"
+	return false, nil, "simple issue (no complexity triggers)"
 }
 
 // isNovelArea checks if this issue is in a novel area with no precedent.

@@ -102,6 +102,19 @@ type ArtifactMetrics struct {
 	// (e.g., via analysis phase discovering follow-on work)
 	IssuesDiscovered int
 
+	// IterationSkipped indicates whether refinement was skipped by selectivity heuristic
+	// (assessment phase only - analysis always iterates)
+	IterationSkipped bool
+
+	// SkipReason explains why iteration was skipped (if IterationSkipped is true)
+	// Examples: "simple issue (no complexity triggers)", "P2 issue with <5 deps"
+	SkipReason string
+
+	// SelectivityTriggers lists the heuristic triggers that caused iteration to occur
+	// Examples: ["P0 priority", "critical path (>5 dependents)"]
+	// Empty if iteration was skipped or artifact type doesn't use selectivity
+	SelectivityTriggers []string
+
 	// Iterations contains the per-iteration metrics
 	Iterations []*IterationMetrics
 }
@@ -155,6 +168,25 @@ type AggregateMetrics struct {
 
 	// ByComplexity breaks down metrics by complexity
 	ByComplexity map[string]*TypeMetrics
+
+	// SkippedArtifacts is the count of artifacts where iteration was skipped
+	// by selectivity heuristic (assessment phase only)
+	SkippedArtifacts int
+
+	// IteratedArtifacts is the count of artifacts that went through iteration
+	// (either because selectivity triggered or no selectivity check)
+	IteratedArtifacts int
+
+	// BySelectivityReason tracks how many artifacts were skipped for each reason
+	// Key: skip reason (e.g., "simple issue (no complexity triggers)")
+	// Value: count of artifacts skipped for that reason
+	BySelectivityReason map[string]int
+
+	// BySelectivityTrigger tracks how many artifacts iterated for each trigger
+	// Key: trigger reason (e.g., "P0 priority", "critical path (>5 dependents)")
+	// Value: count of artifacts that iterated due to that trigger
+	// Note: An artifact can have multiple triggers, so counts may sum > IteratedArtifacts
+	BySelectivityTrigger map[string]int
 }
 
 // TypeMetrics provides aggregate statistics for a specific artifact type,
@@ -250,16 +282,20 @@ func (m *InMemoryMetricsCollector) RecordArtifactComplete(result *ConvergenceRes
 func (m *InMemoryMetricsCollector) GetAggregateMetrics() *AggregateMetrics {
 	if len(m.artifacts) == 0 {
 		return &AggregateMetrics{
-			ByType:       make(map[string]*TypeMetrics),
-			ByPriority:   make(map[string]*TypeMetrics),
-			ByComplexity: make(map[string]*TypeMetrics),
+			ByType:               make(map[string]*TypeMetrics),
+			ByPriority:           make(map[string]*TypeMetrics),
+			ByComplexity:         make(map[string]*TypeMetrics),
+			BySelectivityReason:  make(map[string]int),
+			BySelectivityTrigger: make(map[string]int),
 		}
 	}
 
 	agg := &AggregateMetrics{
-		ByType:       make(map[string]*TypeMetrics),
-		ByPriority:   make(map[string]*TypeMetrics),
-		ByComplexity: make(map[string]*TypeMetrics),
+		ByType:               make(map[string]*TypeMetrics),
+		ByPriority:           make(map[string]*TypeMetrics),
+		ByComplexity:         make(map[string]*TypeMetrics),
+		BySelectivityReason:  make(map[string]int),
+		BySelectivityTrigger: make(map[string]int),
 	}
 
 	// Collect iteration counts for percentile calculation
@@ -278,6 +314,20 @@ func (m *InMemoryMetricsCollector) GetAggregateMetrics() *AggregateMetrics {
 			iterationCounts = append(iterationCounts, artifact.TotalIterations)
 		} else {
 			agg.MaxedOutArtifacts++
+		}
+
+		// Track selectivity metrics
+		if artifact.IterationSkipped {
+			agg.SkippedArtifacts++
+			if artifact.SkipReason != "" {
+				agg.BySelectivityReason[artifact.SkipReason]++
+			}
+		} else {
+			agg.IteratedArtifacts++
+			// Track each selectivity trigger (an artifact can have multiple)
+			for _, trigger := range artifact.SelectivityTriggers {
+				agg.BySelectivityTrigger[trigger]++
+			}
 		}
 
 		// Aggregate by type
