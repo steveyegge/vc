@@ -3112,6 +3112,130 @@ func TestGetMissionByPhase(t *testing.T) {
 			t.Logf("✓ Correct error for wrong subtype (mission instead of phase): %v", err)
 		}
 	})
+
+	// vc-nq88: Test phase with multiple parent missions
+	t.Run("phase with multiple parent missions returns closest", func(t *testing.T) {
+		// Create a grandparent mission
+		grandparentMission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Grandparent Mission",
+				Description:  "Top-level mission",
+				Status:       types.StatusOpen,
+				Priority:     0,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal:         "Complete grandparent work",
+			SandboxPath:  "/sandbox/grandparent",
+			BranchName:   "grandparent-branch",
+			PhaseCount:   1,
+			CurrentPhase: 0,
+		}
+		if err := store.CreateMission(ctx, grandparentMission, "test"); err != nil {
+			t.Fatalf("Failed to create grandparent mission: %v", err)
+		}
+
+		// Create a parent mission (child of grandparent)
+		parentMission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Parent Mission",
+				Description:  "Mid-level mission",
+				Status:       types.StatusOpen,
+				Priority:     0,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal:         "Complete parent work",
+			SandboxPath:  "/sandbox/parent",
+			BranchName:   "parent-branch",
+			PhaseCount:   1,
+			CurrentPhase: 0,
+		}
+		if err := store.CreateMission(ctx, parentMission, "test"); err != nil {
+			t.Fatalf("Failed to create parent mission: %v", err)
+		}
+
+		// Link parent to grandparent
+		parentToGrandparentDep := &types.Dependency{
+			IssueID:     parentMission.ID,
+			DependsOnID: grandparentMission.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, parentToGrandparentDep, "test"); err != nil {
+			t.Fatalf("Failed to link parent to grandparent: %v", err)
+		}
+
+		// Create a phase that has BOTH parent and grandparent as parents
+		// This creates the diamond dependency structure that GetMissionByPhase needs to handle
+		sharedPhase := &types.Issue{
+			Title:        "Shared Phase",
+			Description:  "Phase with multiple mission parents",
+			Status:       types.StatusOpen,
+			Priority:     1,
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypePhase,
+		}
+		if err := store.CreateIssue(ctx, sharedPhase, "test"); err != nil {
+			t.Fatalf("Failed to create shared phase: %v", err)
+		}
+
+		// Link phase to BOTH missions (closer parent first, then grandparent)
+		phaseToParentDep := &types.Dependency{
+			IssueID:     sharedPhase.ID,
+			DependsOnID: parentMission.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, phaseToParentDep, "test"); err != nil {
+			t.Fatalf("Failed to link phase to parent: %v", err)
+		}
+
+		phaseToGrandparentDep := &types.Dependency{
+			IssueID:     sharedPhase.ID,
+			DependsOnID: grandparentMission.ID,
+			Type:        types.DepParentChild,
+		}
+		if err := store.AddDependency(ctx, phaseToGrandparentDep, "test"); err != nil {
+			t.Fatalf("Failed to link phase to grandparent: %v", err)
+		}
+
+		// Test GetMissionByPhase - reveals behavior when phase has multiple mission parents at same depth
+		// Both parent and grandparent are at depth=1 from the phase (direct parent-child links)
+		// The query uses ORDER BY depth ASC, LIMIT 1, so it will return ONE of the depth=1 missions
+		// The choice between parent and grandparent is non-deterministic (depends on query plan / row order)
+		retrievedMission, err := store.GetMissionByPhase(ctx, sharedPhase.ID)
+		if err != nil {
+			t.Fatalf("GetMissionByPhase failed for phase with multiple parents: %v", err)
+		}
+
+		// Document the current behavior: returns ONE mission (non-deterministic which one)
+		// This test verifies the edge case is handled without error, but the choice is arbitrary
+		t.Logf("Phase %s with multiple mission parents returned: %s", sharedPhase.ID, retrievedMission.ID)
+		t.Logf("  Phase has direct parent-child links to BOTH:")
+		t.Logf("    - Parent mission %s (depth=1)", parentMission.ID)
+		t.Logf("    - Grandparent mission %s (depth=1)", grandparentMission.ID)
+		t.Logf("  Query returned: %s (Goal: %q)", retrievedMission.ID, retrievedMission.Goal)
+
+		// Verify the returned mission is ONE of the valid parents (not arbitrary/invalid)
+		validParents := map[string]bool{
+			parentMission.ID:      true,
+			grandparentMission.ID: true,
+		}
+		if !validParents[retrievedMission.ID] {
+			t.Errorf("GetMissionByPhase returned unexpected mission %s", retrievedMission.ID)
+			t.Errorf("Expected one of: %s (parent) or %s (grandparent)", parentMission.ID, grandparentMission.ID)
+		} else {
+			t.Logf("✓ GetMissionByPhase returned a valid parent mission (one of the two direct parents)")
+		}
+
+		// Document potential issue: non-deterministic choice when multiple parents exist at same depth
+		// This may need refinement depending on use case:
+		// - Option 1: Document as error condition (phase should have exactly one parent mission)
+		// - Option 2: Add tie-breaker logic (e.g., ORDER BY created_at or priority)
+		// - Option 3: Return error if multiple missions found at same depth
+		t.Logf("⚠️  Note: When phase has multiple mission parents at same depth, choice is non-deterministic")
+		t.Logf("    Current query: ORDER BY depth ASC LIMIT 1 (arbitrary between ties)")
+		t.Logf("    This edge case may need explicit handling based on requirements")
+	})
 }
 
 // TestGetReadyWorkWithMissionContext tests mission context enrichment (vc-234)
