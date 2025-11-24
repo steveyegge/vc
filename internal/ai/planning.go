@@ -273,6 +273,7 @@ func (s *Supervisor) ValidatePlan(ctx context.Context, plan *types.MissionPlan) 
 	}{
 		{"phase_count", s.validatePhaseCount},
 		{"circular_dependencies", s.validateCircularDependencies},
+		{"dependency_references", s.validateDependencyReferences},
 		{"task_counts", s.validateTaskCounts},
 		{"phase_structure_ai", s.validatePhaseStructureWrapper},
 	}
@@ -352,6 +353,27 @@ func (s *Supervisor) validateCircularDependencies(ctx context.Context, plan *typ
 	if err := checkCircularDependencies(plan.Phases); err != nil {
 		return fmt.Errorf("circular dependencies detected: %w", err)
 	}
+	return nil
+}
+
+// validateDependencyReferences checks that all dependency IDs reference existing phases/tasks
+func (s *Supervisor) validateDependencyReferences(ctx context.Context, plan *types.MissionPlan) error {
+	// Build set of valid phase numbers
+	validPhaseNumbers := make(map[int]bool)
+	for _, phase := range plan.Phases {
+		validPhaseNumbers[phase.PhaseNumber] = true
+	}
+
+	// Check phase dependencies
+	for _, phase := range plan.Phases {
+		for _, depPhaseNum := range phase.Dependencies {
+			if !validPhaseNumbers[depPhaseNum] {
+				return fmt.Errorf("phase %d (%s) has invalid dependency: phase %d does not exist",
+					phase.PhaseNumber, phase.Title, depPhaseNum)
+			}
+		}
+	}
+
 	return nil
 }
 

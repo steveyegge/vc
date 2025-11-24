@@ -40,7 +40,7 @@ func TestValidatorTimeout(t *testing.T) {
 
 	// Create a validator that hangs
 	hangingValidator := func(ctx context.Context) error {
-		// This will hang until context is cancelled
+		// This will hang until context is canceled
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
