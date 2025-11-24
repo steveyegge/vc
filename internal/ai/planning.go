@@ -973,6 +973,173 @@ func formatPhaseTitles(phases []types.PlannedPhase) string {
 	return strings.Join(titles, ", ")
 }
 
+// ParseDescription parses a freeform text description into structured Goal and Constraints
+// This is used for 'vc plan new' to extract planning context from natural language
+func (s *Supervisor) ParseDescription(ctx context.Context, description string) (goal string, constraints []string, err error) {
+	// Add timeout to prevent indefinite retries
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	startTime := time.Now()
+
+	// Validate input
+	description = strings.TrimSpace(description)
+	if description == "" {
+		return "", nil, fmt.Errorf("description cannot be empty")
+	}
+
+	// Build the parsing prompt
+	prompt := s.buildDescriptionParsingPrompt(description)
+
+	// JSON parse retry loop (max 2 retries for malformed JSON)
+	const maxJSONRetries = 2
+	var lastParseError string
+	var response *anthropic.Message
+
+	for jsonRetry := 0; jsonRetry <= maxJSONRetries; jsonRetry++ {
+		// If this is a retry, add clarification to the prompt
+		currentPrompt := prompt
+		if jsonRetry > 0 {
+			currentPrompt = fmt.Sprintf(`%s
+
+IMPORTANT - Previous Response Had JSON Parse Error:
+Your previous response failed to parse with error: %s
+
+Please ensure your response is ONLY raw JSON (no markdown fences, no extra text).
+The JSON must be valid and match the exact schema specified above.`, prompt, lastParseError)
+			fmt.Printf("⚠️  JSON parse failed (attempt %d/%d), retrying with clarified prompt\n", jsonRetry, maxJSONRetries+1)
+		}
+
+		// Call Anthropic API with retry logic (for network/rate limit errors)
+		err := s.retryWithBackoff(ctx, "description-parsing", func(attemptCtx context.Context) error {
+			resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+				Model:     anthropic.Model(s.model),
+				MaxTokens: 2048,
+				Messages: []anthropic.MessageParam{
+					anthropic.NewUserMessage(anthropic.NewTextBlock(currentPrompt)),
+				},
+			})
+			if apiErr != nil {
+				return apiErr
+			}
+			response = resp
+			return nil
+		})
+
+		if err != nil {
+			return "", nil, fmt.Errorf("anthropic API call failed: %w", err)
+		}
+
+		// Extract the text content from the response
+		var responseText string
+		for _, block := range response.Content {
+			if block.Type == "text" {
+				responseText += block.Text
+			}
+		}
+
+		// Parse the response as JSON using resilient parser
+		type parsedDescription struct {
+			Goal        string   `json:"goal"`
+			Constraints []string `json:"constraints"`
+		}
+		parseResult := Parse[parsedDescription](responseText, ParseOptions{
+			Context:   "description parsing response",
+			LogErrors: boolPtr(true),
+		})
+
+		// If parse succeeded, return the result
+		if parseResult.Success {
+			parsed := parseResult.Data
+
+			// Validate we got a goal
+			if strings.TrimSpace(parsed.Goal) == "" {
+				return "", nil, fmt.Errorf("AI failed to extract a goal from the description")
+			}
+
+			// Log the parsing
+			duration := time.Since(startTime)
+			fmt.Printf("AI Description Parsing: goal extracted, %d constraints, duration=%v\n",
+				len(parsed.Constraints), duration)
+
+			// Log AI usage to events
+			if err := s.recordAIUsage(ctx, "description-parsing", "description-parsing", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
+			}
+
+			return parsed.Goal, parsed.Constraints, nil
+		}
+
+		// Parse failed - save error for retry
+		lastParseError = parseResult.Error
+		fmt.Fprintf(os.Stderr, "JSON parse error (attempt %d/%d): %s\n", jsonRetry+1, maxJSONRetries+1, lastParseError)
+		fmt.Fprintf(os.Stderr, "Response preview: %s\n", truncateString(responseText, 200))
+
+		// If we've exhausted retries, fail
+		if jsonRetry == maxJSONRetries {
+			fmt.Fprintf(os.Stderr, "Full AI description parsing response (final attempt): %s\n", responseText)
+			return "", nil, fmt.Errorf("failed to parse description response after %d attempts: %s (response: %s)",
+				maxJSONRetries+1, lastParseError, truncateString(responseText, 500))
+		}
+
+		// Brief pause before JSON retry (not exponential, just 1 second)
+		time.Sleep(1 * time.Second)
+	}
+
+	// Should never reach here, but for safety
+	return "", nil, fmt.Errorf("failed to parse description after %d attempts", maxJSONRetries+1)
+}
+
+// buildDescriptionParsingPrompt builds the prompt for parsing a freeform description
+func (s *Supervisor) buildDescriptionParsingPrompt(description string) string {
+	return fmt.Sprintf(`You are parsing a freeform mission description into structured planning components.
+
+USER DESCRIPTION:
+%s
+
+YOUR TASK:
+Extract the following from the description:
+1. **Goal**: The high-level objective or outcome the user wants to achieve
+2. **Constraints**: Any non-functional requirements, limitations, or quality criteria
+
+GUIDELINES:
+- Goal should be a clear, concise statement of what success looks like
+- Constraints are things like: performance requirements, compatibility needs, test coverage targets, time limits, etc.
+- If no explicit constraints are mentioned, return an empty array
+- Be generous in extracting implicit constraints from context
+
+EXAMPLES:
+
+Input: "Improve test coverage from 46%% to 80%%. Must not slow down test suite beyond 5s baseline."
+Output:
+{
+  "goal": "Improve test coverage from 46%% to 80%%",
+  "constraints": ["Test suite runtime must stay under 5 seconds"]
+}
+
+Input: "Add user authentication with OAuth2. Need to support GitHub and Google providers."
+Output:
+{
+  "goal": "Add user authentication with OAuth2",
+  "constraints": ["Support GitHub OAuth provider", "Support Google OAuth provider"]
+}
+
+Input: "Refactor the database layer to use connection pooling."
+Output:
+{
+  "goal": "Refactor the database layer to use connection pooling",
+  "constraints": []
+}
+
+Return JSON in this format:
+{
+  "goal": "Clear statement of the objective",
+  "constraints": ["Constraint 1", "Constraint 2"]
+}
+
+IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences. Just the JSON object.`, description)
+}
+
 // checkCircularDependencies detects circular dependencies in phases
 func checkCircularDependencies(phases []types.PlannedPhase) error {
 	// Build adjacency list

@@ -2,11 +2,17 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/vc/internal/ai"
+	"github.com/steveyegge/vc/internal/types"
 )
 
 var planCmd = &cobra.Command{
@@ -53,20 +59,114 @@ var planNewCmd = &cobra.Command{
 	Use:   "new <description>",
 	Short: "Create a new mission plan from a freeform description",
 	Long: `Create a new mission plan from a natural language description.
-This creates both the plan and the mission issue in the tracker.`,
+This creates an ephemeral mission plan (identified by UUID) in draft status.`,
 	Args: cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		description := args[0]
+		// Join all args to support multi-word descriptions without quotes
+		description := strings.Join(args, " ")
 
-		// TODO: Implement plan creation from description (vc-26hh)
-		// This should:
-		// 1. Use AI to parse the description into a mission
-		// 2. Generate a draft plan
-		// 3. Store both in the database
+		ctx := context.Background()
 
-		yellow := color.New(color.FgYellow).SprintFunc()
-		fmt.Printf("\n%s Creating plan from: %s\n", yellow("⚠"), description)
-		fmt.Printf("%s 'vc plan new' not yet implemented (see vc-26hh)\n\n", yellow("⚠"))
+		// Validate description length (minimum 10 words per acceptance criteria)
+		words := strings.Fields(description)
+		if len(words) < 10 {
+			fmt.Fprintf(os.Stderr, "Error: description too short (got %d words, need at least 10)\n", len(words))
+			fmt.Fprintf(os.Stderr, "Provide a more detailed description of what you want to accomplish.\n")
+			os.Exit(1)
+		}
+
+		green := color.New(color.FgGreen).SprintFunc()
+		cyan := color.New(color.FgCyan).SprintFunc()
+		gray := color.New(color.FgHiBlack).SprintFunc()
+
+		fmt.Printf("\n%s Parsing description with AI...\n", cyan("🤖"))
+
+		// Initialize AI supervisor
+		supervisor, err := ai.NewSupervisor(&ai.Config{
+			Model: "claude-sonnet-4-5-20250929",
+			Store: store,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to initialize AI supervisor: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Parse description using AI to extract Goal and Constraints
+		goal, constraints, err := supervisor.ParseDescription(ctx, description)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to parse description: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Display parsed results
+		fmt.Printf("\n%s Extracted Goal:\n", green("✓"))
+		fmt.Printf("  %s\n", goal)
+		if len(constraints) > 0 {
+			fmt.Printf("\n%s Extracted Constraints:\n", green("✓"))
+			for _, constraint := range constraints {
+				fmt.Printf("  • %s\n", constraint)
+			}
+		}
+
+		// Generate UUID for ephemeral mission
+		missionID := "plan-" + generateShortUUID()
+
+		fmt.Printf("\n%s Generating initial plan...\n", cyan("🤖"))
+
+		// Create ephemeral Mission object (not persisted to Beads yet)
+		mission := &types.Mission{
+			Issue: types.Issue{
+				ID:          missionID,
+				Title:       goal, // Use goal as title
+				Description: description,
+				IssueType:   types.TypeEpic,
+				Status:      types.StatusOpen,
+				Priority:    1,
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
+			},
+			Goal:    goal,
+			Context: description,
+		}
+
+		// Build planning context
+		planningCtx := &types.PlanningContext{
+			Mission:     mission,
+			Constraints: constraints,
+		}
+
+		// Generate the plan using AI planner
+		plan, err := supervisor.GeneratePlan(ctx, planningCtx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to generate plan: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Set plan metadata
+		plan.Status = "draft"
+		plan.GeneratedAt = time.Now()
+
+		// Store plan in database with status='draft'
+		iteration, err := store.StorePlan(ctx, plan, 0)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to store plan: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Display success message
+		fmt.Printf("\n%s Plan created successfully!\n", green("✓"))
+		fmt.Printf("\n%s Mission: %s\n", gray("├─"), missionID)
+		fmt.Printf("%s Status: %s\n", gray("├─"), plan.Status)
+		fmt.Printf("%s Iteration: %d\n", gray("├─"), iteration)
+		fmt.Printf("%s Phases: %d\n", gray("├─"), len(plan.Phases))
+		fmt.Printf("%s Estimated Effort: %s\n", gray("├─"), plan.EstimatedEffort)
+		fmt.Printf("%s Confidence: %.0f%%\n", gray("└─"), plan.Confidence*100)
+
+		fmt.Printf("\n%s Next steps:\n", cyan("📋"))
+		fmt.Printf("  • Review: %s\n", cyan(fmt.Sprintf("vc plan show %s", missionID)))
+		fmt.Printf("  • Refine: %s\n", gray(fmt.Sprintf("vc plan refine %s", missionID)))
+		fmt.Printf("  • Approve: %s\n", gray(fmt.Sprintf("vc plan approve %s (creates Beads issues)", missionID)))
+		fmt.Println()
 	},
 }
 
@@ -221,6 +321,17 @@ func getStatusColor(status string) func(...interface{}) string {
 	default:
 		return color.New(color.FgWhite).SprintFunc()
 	}
+}
+
+// generateShortUUID generates a short UUID for ephemeral mission IDs
+// Format: 8 hex characters (e.g., "a3f7c2e1")
+func generateShortUUID() string {
+	bytes := make([]byte, 4)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to timestamp-based ID if random fails
+		return fmt.Sprintf("%x", time.Now().UnixNano()&0xFFFFFFFF)
+	}
+	return hex.EncodeToString(bytes)
 }
 
 func init() {

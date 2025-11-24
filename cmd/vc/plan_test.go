@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -162,5 +163,71 @@ func TestPlanListCommand(t *testing.T) {
 		if plan.Status == "approved" {
 			t.Errorf("ListDraftPlans returned approved plan: %s", plan.MissionID)
 		}
+	}
+}
+
+// TestGenerateShortUUID tests the UUID generation helper (vc-26hh)
+func TestGenerateShortUUID(t *testing.T) {
+	// Test that UUID is generated
+	uuid1 := generateShortUUID()
+	if uuid1 == "" {
+		t.Error("Expected non-empty UUID")
+	}
+
+	// Test that UUID is 8 hex characters
+	if len(uuid1) != 8 {
+		t.Errorf("Expected UUID length 8, got %d", len(uuid1))
+	}
+
+	// Test that UUID is hexadecimal
+	for _, c := range uuid1 {
+		if !strings.ContainsRune("0123456789abcdef", c) {
+			t.Errorf("UUID contains non-hex character: %c", c)
+		}
+	}
+
+	// Test that subsequent UUIDs are different
+	uuid2 := generateShortUUID()
+	if uuid1 == uuid2 {
+		t.Error("Expected different UUIDs, got same value")
+	}
+
+	// Test many UUIDs to ensure randomness
+	seen := make(map[string]bool)
+	for i := 0; i < 100; i++ {
+		uuid := generateShortUUID()
+		if seen[uuid] {
+			t.Errorf("Duplicate UUID detected: %s", uuid)
+		}
+		seen[uuid] = true
+	}
+}
+
+// TestGetStatusColor tests the status color helper (vc-26hh)
+func TestGetStatusColor(t *testing.T) {
+	tests := []struct {
+		status string
+		want   string // Expected color name (for debugging)
+	}{
+		{"draft", "yellow"},
+		{"refining", "cyan"},
+		{"validated", "green"},
+		{"approved", "blue"},
+		{"unknown", "white"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			colorFn := getStatusColor(tt.status)
+			if colorFn == nil {
+				t.Error("Expected non-nil color function")
+			}
+
+			// Test that it can format a string
+			result := colorFn(tt.status)
+			if result == "" {
+				t.Error("Expected non-empty colored string")
+			}
+		})
 	}
 }
