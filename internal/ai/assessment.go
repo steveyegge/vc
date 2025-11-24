@@ -509,12 +509,35 @@ Please provide your assessment as a JSON object with the following structure:
   "decomposition_plan": null
 }
 
+ACCEPTANCE CRITERIA FORMAT:
+When assessing this issue, verify that acceptance criteria use WHEN...THEN... scenarios.
+If the issue lacks WHEN...THEN... criteria, consider whether decomposition would help clarify requirements.
+
+GOOD EXAMPLES:
+- WHEN creating an issue THEN it persists to SQLite database
+- WHEN reading non-existent issue THEN NotFoundError is returned
+- WHEN transaction fails THEN retry 3 times with exponential backoff
+- WHEN executor shuts down gracefully THEN all in-progress work is checkpointed
+- WHEN plan validation detects circular dependencies THEN it rejects the plan with clear error
+
+BAD EXAMPLES (too vague):
+- Test storage thoroughly
+- Handle errors properly
+- Make it robust
+- Add good test coverage
+
+Each acceptance criterion should specify:
+1. A triggering condition (WHEN...)
+2. An observable outcome (THEN...)
+3. Specific, measurable behavior (not vague goals)
+
 Focus on:
 1. What's the best approach to tackle this issue?
 2. What are the key steps in order?
 3. What could go wrong or needs special attention?
 4. How confident are you this can be completed successfully?
 5. Should this be decomposed into smaller child issues?
+6. Are the acceptance criteria concrete and testable (using WHEN...THEN... format)?
 
 IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (`+"`"+`). Just the JSON object.`,
 		issue.ID, issue.Title, issue.IssueType, issue.Priority,
