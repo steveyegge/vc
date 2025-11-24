@@ -43,6 +43,74 @@ If actual data diverges significantly, adjust `MinIterations` and `MaxIterations
 
 ---
 
+## 🎯 Strategy Metrics
+
+**What:** Which convergence detection strategy was used for each artifact.
+
+**Available Strategies:**
+- **`"AI"`** - AI-driven convergence detection (primary strategy for analysis/assessment)
+- **`"diff-based"`** - Simple line-diff heuristics (fallback when AI fails)
+- **`"chained"`** - Meta-strategy that chains multiple detectors with fallback
+
+For detailed explanation of each strategy, see [ITERATIVE_REFINEMENT.md - Convergence Detection Strategies](ITERATIVE_REFINEMENT.md#convergence-detection-strategies).
+
+**Metrics:**
+- **Strategy distribution** - Count of each strategy used across all convergence checks
+- **Average confidence by strategy** - Typical confidence level for each strategy
+- **Fallback rate** - % of times diff-based strategy was used (indicates AI reliability)
+
+**SQL query:**
+```sql
+SELECT
+  json_extract(data, '$.strategy') as strategy,
+  COUNT(*) as count,
+  ROUND(AVG(json_extract(data, '$.confidence')), 2) as avg_confidence,
+  ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM agent_events WHERE type = 'convergence_check'), 2) as percentage
+FROM agent_events
+WHERE type = 'convergence_check'
+GROUP BY strategy
+ORDER BY count DESC;
+```
+
+**Expected healthy distribution:**
+```
+strategy     | count | avg_confidence | percentage
+-------------|-------|----------------|------------
+AI           | 234   | 0.87           | 95.12
+diff-based   | 12    | 0.72           | 4.88
+chained      | 0     | 0.00           | 0.00
+```
+
+**Interpreting strategy patterns:**
+
+| Pattern | Meaning | Action |
+|---------|---------|--------|
+| AI >90% | AI detection working well | ✅ No action needed |
+| diff-based 5-10% | Occasional API issues or low confidence | ⚠️ Monitor, acceptable fallback rate |
+| diff-based >20% | Frequent AI failures | 🚨 Investigate API reliability or lower MinConfidence |
+| chained is common | Using ChainedDetector | ℹ️ Check if fallback logic is working as intended |
+| Strategy shift over time | Detector behavior changing | 📊 Monitor for regressions or improvements |
+
+**Tracking strategy over time:**
+```sql
+-- Strategy distribution by day
+SELECT
+  date(timestamp) as day,
+  json_extract(data, '$.strategy') as strategy,
+  COUNT(*) as count
+FROM agent_events
+WHERE type = 'convergence_check'
+GROUP BY day, strategy
+ORDER BY day DESC, count DESC;
+```
+
+**Cost implications by strategy:**
+- **AI strategy**: ~$0.001-0.002 per convergence check (requires API call)
+- **diff-based strategy**: $0.000 per check (local computation only)
+- **chained strategy**: Variable (depends on which detector succeeds)
+
+If diff-based fallback is triggered frequently (>20%), you're saving on AI costs but may be getting lower-quality convergence detection.
+
 ## 📈 Core Metrics
 
 ### Convergence Metrics
@@ -54,16 +122,19 @@ If actual data diverges significantly, adjust `MinIterations` and `MaxIterations
 - **Mean iterations** - Average iterations across all artifacts
 - **P50/P95 iterations** - Median and 95th percentile (shows distribution)
 - **Artifacts maxed out** - Count that hit MaxIterations without converging
+- **Strategy distribution** - Breakdown of which convergence detector was used (AI, diff-based, chained)
 
 **Good convergence:**
 - Convergence rate: >80% (most artifacts converge naturally)
 - Mean iterations: 4-5 (hypothesis validated)
 - P95 < 8 (few outliers)
+- AI strategy dominates: >90% (AI-based detection working well)
 
 **Bad convergence (investigate):**
 - Convergence rate: <60% (AI detector may be too strict, or MaxIterations too low)
 - Mean iterations: >7 (wasting cost on diminishing returns)
 - P95 > 10 (some artifacts never stabilize - check for bugs or complexity issues)
+- Diff-based strategy frequent: >20% (AI detector failing or low confidence - investigate API issues)
 
 ### Cost Metrics
 

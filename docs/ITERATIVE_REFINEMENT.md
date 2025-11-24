@@ -144,35 +144,219 @@ Starting analysis refinement for vc-abc (min=3, max=7 iterations)
 - Complex tasks: ~30-50% improvement (more work to discover)
 - Average: ~25% improvement (meets target)
 
-## AI-Driven Convergence
+## Convergence Detection Strategies
 
-The system uses AI to determine when an artifact has converged, avoiding both:
-- **Premature stopping**: Missing valuable insights from additional iterations
-- **Wasteful iteration**: Continuing when marginal value is low
+The iterative refinement system supports multiple convergence detection strategies, each with different trade-offs between accuracy, cost, and reliability.
 
-### Convergence Prompt
+### Available Strategies
 
+#### 1. AI Strategy (`"AI"`)
+
+**What it is:** Uses AI to judge whether the artifact has reached a stable, high-quality state by comparing the current iteration against the previous iteration.
+
+**When it's used:**
+- Primary strategy for analysis refinement (via `AnalysisRefiner`)
+- Primary strategy for assessment refinement (via `AssessmentRefiner`)
+- Any time `Refiner.CheckConvergence()` is called with an AI-backed refiner
+
+**How it works:**
 The AI considers:
 1. **Diff size**: Are changes minimal or substantive?
-2. **Completeness**: Have we thoroughly analyzed the agent output?
+2. **Completeness**: Have we thoroughly analyzed/assessed the content?
 3. **Gaps**: Are there obvious things we're missing?
-4. **Marginal value**: Would another iteration find meaningful new issues?
+4. **Marginal value**: Would another iteration find meaningful improvements?
 
-### Confidence Threshold
+The AI returns a structured judgment:
+- `Converged`: true/false (whether the artifact is stable)
+- `Confidence`: 0.0-1.0 (confidence in the judgment)
+- `Reasoning`: Human-readable explanation
+- `Strategy`: "AI" (identifies this detector was used)
 
-**Analysis refinement**: High threshold (0.85)
-- Analysis is critical for work discovery
-- False negatives (missing issues) are costly
-- False positives (extra iterations) are cheap
+**Confidence thresholds:**
+- **Analysis refinement**: 0.85 (high threshold - analysis is critical for work discovery)
+- **Assessment refinement**: 0.80 (slightly lower - assessment is more exploratory)
 
-**Assessment refinement**: Slightly lower threshold (0.80)
-- Assessment is more exploratory
-- Finding better strategies is valuable but not critical
-- Selectivity heuristic already filters out simple cases
+**Pros:**
+- Most intelligent and accurate convergence detection
+- Understands semantic similarity, not just textual diffs
+- Can judge quality improvements beyond simple change metrics
+
+**Cons:**
+- Requires AI API call for every convergence check (adds latency and cost)
+- Can fail if API is unavailable or rate-limited
+- Confidence may vary based on artifact complexity
+
+#### 2. Diff-Based Strategy (`"diff-based"`)
+
+**What it is:** A simple, deterministic fallback that uses line-diff heuristics to judge convergence.
+
+**When it's used:**
+- Fallback when AI-based detection fails or is unavailable
+- Primary strategy when using `DiffBasedDetector` directly
+- Part of chained detection (second layer after AI)
+
+**How it works:**
+1. Counts the number of lines that changed between previous and current iterations
+2. Computes change percentage: `(changed_lines / total_lines) * 100`
+3. Compares against threshold (default: 5%)
+4. Returns `Converged: true` if change percentage < threshold
+
+**Confidence calculation:**
+- High confidence when far from threshold (e.g., 1% change or 20% change)
+- Low confidence when near threshold (e.g., 4.8% change)
+- Formula: `min(1.0, distance_from_threshold / threshold)`
+
+**Configuration:**
+```go
+detector := iterative.NewDiffBasedDetector(5.0) // 5% threshold
+```
+
+**Pros:**
+- Fast and deterministic (no API calls)
+- No cost (no tokens consumed)
+- Always available (no network dependency)
+
+**Cons:**
+- Crude heuristic - doesn't understand semantic meaning
+- May produce false convergence (small textual changes but quality improved)
+- May produce false non-convergence (reformatting with no semantic change)
+
+**Example interpretation:**
+```
+Strategy: "diff-based"
+Converged: true
+Confidence: 0.76
+Reasoning: "3.2% of lines changed (threshold: 5.0%)"
+```
+→ Changes are small, likely converged
+
+#### 3. Chained Strategy (`"chained"`)
+
+**What it is:** A meta-strategy that chains multiple detectors with fallback logic.
+
+**When it's used:**
+- When you want robust convergence detection with graceful degradation
+- When AI-based detection might fail (network issues, rate limits)
+- When you want to try AI first but fall back to diff-based
+
+**How it works:**
+1. Tries the first detector in the chain (typically AI)
+2. If it succeeds and confidence ≥ MinConfidence threshold, use that result
+3. If it fails or confidence is too low, try the next detector
+4. Continues until a detector succeeds with sufficient confidence
+5. If all detectors fail, returns the last result (even if low confidence)
+
+**Configuration:**
+```go
+// Try AI first, fall back to diff-based if AI fails or has low confidence
+aiDetector := &AnalysisRefiner{...} // Implements CheckConvergence
+diffDetector := iterative.NewDiffBasedDetector(5.0)
+
+chainedDetector := iterative.NewChainedDetector(
+    0.7, // MinConfidence threshold
+    aiDetector,
+    diffDetector,
+)
+```
+
+**Confidence threshold:**
+- Default: 0.7 (require reasonably high confidence)
+- Lower threshold → more likely to accept results from later detectors
+- Higher threshold → more likely to fall through the chain
+
+**Pros:**
+- Robust to AI API failures (graceful fallback)
+- Balances quality (AI) with reliability (diff-based)
+- Can accept lower-confidence results from fallback detectors
+
+**Cons:**
+- More complex configuration (need to set up multiple detectors)
+- May add latency if AI detector is slow and diff detector is eventually used
+- Strategy field always shows "chained" (doesn't show which detector actually decided)
+
+**Example interpretation:**
+```
+Strategy: "chained"
+Converged: true
+Confidence: 0.68
+Reasoning: "8.2% of lines changed (threshold: 5.0%)"
+```
+→ AI detector likely failed or had confidence < 0.7, fell back to diff-based detector
+
+### Interpreting Strategy in Metrics
+
+The `ConvergenceDecision.Strategy` field is tracked in metrics to understand which detectors are being used in practice.
+
+**In convergence metrics:**
+```go
+metrics := iterative.NewConvergenceMetrics()
+// ... during refinement ...
+metrics.RecordCheck(decision.Converged, decision.Strategy)
+
+// Later:
+fmt.Printf("AI strategy used: %d times\n", metrics.DetectorStrategyUsed["AI"])
+fmt.Printf("Diff-based used: %d times\n", metrics.DetectorStrategyUsed["diff-based"])
+fmt.Printf("Chained used: %d times\n", metrics.DetectorStrategyUsed["chained"])
+```
+
+**What different patterns mean:**
+
+| Pattern | Interpretation | Action |
+|---------|---------------|--------|
+| AI strategy dominates (>90%) | AI-based detection is working well | No action needed |
+| Diff-based appears frequently (>20%) | AI detector is failing or has low confidence | Investigate AI API issues or lower MinConfidence |
+| Chained strategy is common | Fallback logic is being triggered | Check if AI detector needs tuning or API is unstable |
+| Strategy distribution changes over time | Detector behavior is evolving | Monitor for regressions or improvements |
+
+**SQL query to analyze strategy distribution:**
+```sql
+SELECT
+  json_extract(data, '$.strategy') as strategy,
+  COUNT(*) as count,
+  ROUND(AVG(json_extract(data, '$.confidence')), 2) as avg_confidence
+FROM agent_events
+WHERE type = 'convergence_check'
+GROUP BY strategy
+ORDER BY count DESC;
+```
+
+**Expected results in a healthy system:**
+```
+strategy     | count | avg_confidence
+-------------|-------|---------------
+AI           | 234   | 0.87
+diff-based   | 12    | 0.72
+chained      | 0     | 0.00
+```
+
+This shows:
+- AI strategy is working most of the time (234/246 = 95%)
+- Diff-based fallback triggered occasionally (12/246 = 5%)
+- Chained strategy not in use (we're using AI directly, not via ChainedDetector)
+
+### Strategy Selection Guidelines
+
+**Use AI strategy when:**
+- Artifact quality is critical (analysis, assessment)
+- You have reliable AI API access
+- Cost and latency are acceptable
+- You want the most accurate convergence detection
+
+**Use diff-based strategy when:**
+- AI API is unavailable or unreliable
+- Cost/latency must be minimized
+- Simple heuristics are sufficient for your artifacts
+- You're in a degraded fallback mode
+
+**Use chained strategy when:**
+- You want best-of-both-worlds (AI accuracy + diff-based reliability)
+- AI API may be flaky (network issues, rate limits)
+- You want graceful degradation
+- You're willing to accept lower-confidence results from fallback detectors
 
 ### Fallback Safety
 
-If convergence check fails, the system falls back to MaxIterations limit.
+If convergence check fails entirely (all detectors error out), the system falls back to the MaxIterations limit to prevent runaway iteration.
 
 ## Import Cycle Resolution
 
