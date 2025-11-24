@@ -757,6 +757,27 @@ GENERATE A JSON PLAN WITH THIS STRUCTURE:
   "confidence": 0.85
 }
 
+ACCEPTANCE CRITERIA FORMAT:
+Use WHEN...THEN... scenarios for all acceptance criteria.
+
+GOOD EXAMPLES:
+- WHEN creating an issue THEN it persists to SQLite database
+- WHEN reading non-existent issue THEN NotFoundError is returned
+- WHEN transaction fails THEN retry 3 times with exponential backoff
+- WHEN executor shuts down gracefully THEN all in-progress work is checkpointed
+- WHEN plan validation detects circular dependencies THEN it rejects the plan with clear error
+
+BAD EXAMPLES (too vague):
+- Test storage thoroughly
+- Handle errors properly
+- Make it robust
+- Add good test coverage
+
+Each acceptance criterion should specify:
+1. A triggering condition (WHEN...)
+2. An observable outcome (THEN...)
+3. Specific, measurable behavior (not vague goals)
+
 IMPORTANT GUIDELINES:
 - Generate 2-10 phases (prefer fewer, larger phases over many tiny ones)
 - Phase numbers start at 1 and must be sequential
@@ -766,6 +787,7 @@ IMPORTANT GUIDELINES:
 - Estimated effort should be realistic: "3 days", "1 week", "2 weeks"
 - Confidence should reflect uncertainty (0.0-1.0)
 - Consider technical dependencies, logical ordering, and risk
+- ALL acceptance criteria must use WHEN...THEN... format (as shown above)
 
 IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (`+"```"+`). Just the JSON object.`,
 		mission.ID, mission.Title, mission.Goal,
@@ -829,12 +851,28 @@ GENERATE A JSON RESPONSE WITH THIS STRUCTURE:
   ]
 }
 
+ACCEPTANCE CRITERIA FORMAT:
+Use WHEN...THEN... scenarios for all acceptance criteria.
+
+GOOD EXAMPLES:
+- WHEN calling Refine() THEN it stores new iteration with incremented number
+- WHEN convergence detected (diff < 5%%) THEN CheckConvergence returns true
+- WHEN test suite runs THEN all tests pass in under 5 seconds
+- WHEN function receives nil input THEN it returns ErrInvalidInput
+
+BAD EXAMPLES (too vague):
+- Test thoroughly
+- Handle edge cases
+- Make it robust
+
+Each criterion should specify a trigger (WHEN) and outcome (THEN).
+
 GUIDELINES:
 - Dependencies array contains task TITLES (not IDs) of tasks in this same list
 - Priority: 0=P0 (critical), 1=P1 (high), 2=P2 (medium), 3=P3 (low)
 - Type: "task", "bug", "feature", "chore"
 - Estimated minutes should be realistic (15-120 minutes typical)
-- Acceptance criteria should be specific and measurable
+- Acceptance criteria MUST use WHEN...THEN... format (see examples above)
 - Include tests as separate tasks
 - Order tasks logically (dependencies should reference earlier tasks)
 
@@ -843,6 +881,96 @@ IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (`
 		phase.Title,
 		phase.Strategy,
 		phase.Description)
+}
+
+// buildConvergencePrompt builds the prompt for assessing whether a mission plan has converged
+func (s *Supervisor) buildConvergencePrompt(previous, current *types.MissionPlan) string {
+	// Count total tasks
+	prevTasks := countTotalTasks(previous)
+	currTasks := countTotalTasks(current)
+
+	// Serialize plans to JSON for comparison
+	prevJSON := fmt.Sprintf(`{
+  "phases": %d,
+  "total_tasks": %d,
+  "estimated_effort": "%s",
+  "confidence": %.2f,
+  "phase_titles": [%s]
+}`, len(previous.Phases), prevTasks, previous.EstimatedEffort, previous.Confidence,
+		formatPhaseTitles(previous.Phases))
+
+	currJSON := fmt.Sprintf(`{
+  "phases": %d,
+  "total_tasks": %d,
+  "estimated_effort": "%s",
+  "confidence": %.2f,
+  "phase_titles": [%s]
+}`, len(current.Phases), currTasks, current.EstimatedEffort, current.Confidence,
+		formatPhaseTitles(current.Phases))
+
+	return fmt.Sprintf(`You are assessing whether a mission plan has converged to a stable, high-quality state.
+
+PREVIOUS PLAN:
+%s
+
+CURRENT PLAN:
+%s
+
+TASK:
+Determine if the plan has converged. A plan is converged when:
+1. Structural changes are minimal (< 5%% diff in phase count, task count)
+2. The plan is complete and addresses all requirements
+3. Further iteration would provide minimal marginal value
+
+CONVERGENCE CRITERIA:
+- Diff < 5%% AND completeness high → converged
+- Diff > 20%% OR major structural changes → not converged
+- 5-20%% diff → requires judgment (is it just polishing or substantive improvement?)
+
+Assess:
+1. **Diff Percentage**: How much changed between iterations? (0-100%%)
+2. **Completeness**: Does the current plan feel thorough and complete?
+3. **Marginal Value**: Would another iteration add meaningful value?
+4. **Stability**: Are changes stabilizing (small tweaks) or still evolving (major shifts)?
+
+Return JSON:
+{
+  "converged": true/false,
+  "confidence": 0.0-1.0,
+  "reasoning": "Clear explanation of convergence assessment",
+  "diff_percentage": 0.0-100.0,
+  "major_changes": ["list of significant changes from previous to current"]
+}
+
+Guidelines:
+- Be pragmatic: some missions converge quickly, others need many iterations
+- Focus on marginal value: is the plan good enough, or will iteration improve it significantly?
+- Consider completeness, not just diff: a 3%% diff could mean incomplete if gaps remain
+- Major changes: new phases, removed phases, significant strategy shifts, reordering
+
+IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences. Just the JSON object.`,
+		prevJSON, currJSON)
+}
+
+// countTotalTasks counts all tasks across all phases
+func countTotalTasks(plan *types.MissionPlan) int {
+	total := 0
+	for _, phase := range plan.Phases {
+		total += len(phase.Tasks)
+	}
+	return total
+}
+
+// formatPhaseTitles formats phase titles for JSON display
+func formatPhaseTitles(phases []types.PlannedPhase) string {
+	if len(phases) == 0 {
+		return ""
+	}
+	titles := make([]string, len(phases))
+	for i, phase := range phases {
+		titles[i] = fmt.Sprintf(`"%s"`, phase.Title)
+	}
+	return strings.Join(titles, ", ")
 }
 
 // checkCircularDependencies detects circular dependencies in phases
