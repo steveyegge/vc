@@ -491,6 +491,167 @@ func TestListDraftPlans(t *testing.T) {
 	}
 }
 
+// TestGetPlan_NotFound tests that GetPlan returns nil for non-existent plans (vc-94c8)
+func TestGetPlan_NotFound(t *testing.T) {
+	ctx := context.Background()
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	// Query non-existent plan - should return (nil, 0, nil) NOT an error
+	plan, iteration, err := store.GetPlan(ctx, "non-existent-mission")
+	if err != nil {
+		t.Errorf("GetPlan should not return error for non-existent plan, got: %v", err)
+	}
+	if plan != nil {
+		t.Errorf("Expected nil plan for non-existent mission, got: %+v", plan)
+	}
+	if iteration != 0 {
+		t.Errorf("Expected iteration=0 for non-existent plan, got: %d", iteration)
+	}
+}
+
+// TestStorePlan_InvalidPlan tests that StorePlan validates plan structure (vc-94c8)
+func TestStorePlan_InvalidPlan(t *testing.T) {
+	ctx := context.Background()
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	testCases := []struct {
+		name string
+		plan *types.MissionPlan
+	}{
+		{
+			name: "nil plan",
+			plan: nil,
+		},
+		{
+			name: "empty mission_id",
+			plan: &types.MissionPlan{
+				MissionID:       "",
+				Phases:          []types.PlannedPhase{{PhaseNumber: 1, Title: "P1", Description: "D", Strategy: "S", Tasks: []string{"t1"}, EstimatedEffort: "1d"}},
+				Strategy:        "Strategy",
+				EstimatedEffort: "1w",
+				Confidence:      0.8,
+			},
+		},
+		{
+			name: "no phases",
+			plan: &types.MissionPlan{
+				MissionID:       "mission-1",
+				Phases:          []types.PlannedPhase{},
+				Strategy:        "Strategy",
+				EstimatedEffort: "1w",
+				Confidence:      0.8,
+			},
+		},
+		{
+			name: "invalid confidence",
+			plan: &types.MissionPlan{
+				MissionID:       "mission-1",
+				Phases:          []types.PlannedPhase{{PhaseNumber: 1, Title: "P1", Description: "D", Strategy: "S", Tasks: []string{"t1"}, EstimatedEffort: "1d"}},
+				Strategy:        "Strategy",
+				EstimatedEffort: "1w",
+				Confidence:      1.5, // > 1.0
+			},
+		},
+		{
+			name: "negative expectedIteration",
+			plan: &types.MissionPlan{
+				MissionID:       "mission-1",
+				Phases:          []types.PlannedPhase{{PhaseNumber: 1, Title: "P1", Description: "D", Strategy: "S", Tasks: []string{"t1"}, EstimatedEffort: "1d"}},
+				Strategy:        "Strategy",
+				EstimatedEffort: "1w",
+				Confidence:      0.8,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			expectedIteration := 0
+			if tc.name == "negative expectedIteration" {
+				expectedIteration = -1
+			}
+
+			_, err := store.StorePlan(ctx, tc.plan, expectedIteration)
+			if err == nil {
+				t.Errorf("Expected StorePlan to return error for %s, but got nil", tc.name)
+			}
+		})
+	}
+}
+
+// TestDeletePlan_Idempotent tests that DeletePlan is idempotent (vc-94c8)
+func TestDeletePlan_Idempotent(t *testing.T) {
+	ctx := context.Background()
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	// Delete non-existent plan - should succeed (no error)
+	err := store.DeletePlan(ctx, "non-existent-mission")
+	if err != nil {
+		t.Errorf("DeletePlan should be idempotent for non-existent plan, got error: %v", err)
+	}
+
+	// Create a plan
+	mission := &types.Mission{
+		Issue: types.Issue{
+			Title:       "Test Mission",
+			Description: "Test",
+			IssueType:   types.TypeEpic,
+			Status:      types.StatusOpen,
+			Priority:    1,
+		},
+		Goal: "Test",
+	}
+	if err := store.CreateMission(ctx, mission, "test"); err != nil {
+		t.Fatalf("Failed to create mission: %v", err)
+	}
+
+	plan := &types.MissionPlan{
+		MissionID: mission.ID,
+		Phases: []types.PlannedPhase{
+			{
+				PhaseNumber:     1,
+				Title:           "Phase 1",
+				Description:     "First phase",
+				Strategy:        "Strategy",
+				Tasks:           []string{"task1"},
+				EstimatedEffort: "1 week",
+			},
+		},
+		Strategy:        "Strategy",
+		Risks:           []string{},
+		EstimatedEffort: "1 week",
+		Confidence:      0.8,
+		GeneratedAt:     time.Now(),
+		GeneratedBy:     "test",
+		Status:          "draft",
+	}
+	if _, err := store.StorePlan(ctx, plan, 0); err != nil {
+		t.Fatalf("StorePlan failed: %v", err)
+	}
+
+	// Delete once
+	if err := store.DeletePlan(ctx, mission.ID); err != nil {
+		t.Fatalf("First DeletePlan failed: %v", err)
+	}
+
+	// Delete again - should succeed (idempotent)
+	if err := store.DeletePlan(ctx, mission.ID); err != nil {
+		t.Errorf("Second DeletePlan should be idempotent, got error: %v", err)
+	}
+
+	// Verify plan is gone
+	retrieved, _, err := store.GetPlan(ctx, mission.ID)
+	if err != nil {
+		t.Fatalf("GetPlan failed: %v", err)
+	}
+	if retrieved != nil {
+		t.Errorf("Expected nil after deletion, got: %+v", retrieved)
+	}
+}
+
 // TestStorePlan_TransactionRollback tests that failed operations don't corrupt data
 func TestStorePlan_TransactionRollback(t *testing.T) {
 	ctx := context.Background()

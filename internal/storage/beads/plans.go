@@ -11,9 +11,90 @@ import (
 	"github.com/steveyegge/vc/internal/types"
 )
 
-// ErrStaleIteration is returned when attempting to update a plan with a stale iteration number
-// This indicates a concurrent modification race - another process updated the plan first
-var ErrStaleIteration = errors.New("plan iteration mismatch: concurrent modification detected")
+// Error contracts for plan storage operations (vc-94c8)
+//
+// ERROR HIERARCHY:
+//
+// ErrStaleIteration - Concurrent modification detected
+//   Returned by: StorePlan(expectedIteration > 0) when iteration doesn't match
+//   Action: Refetch plan and retry with updated iteration
+//   Sentinel: Use errors.Is() to detect
+//
+// ErrPlanNotFound - Plan does not exist
+//   Returned by: Never (GetPlan returns nil instead for backward compatibility)
+//   Note: GetPlan(non-existent) returns (nil, 0, nil) not an error
+//   Rationale: Allows callers to distinguish "not found" from "database error"
+//
+// ErrInvalidMissionID - Mission ID is invalid or malformed
+//   Returned by: Currently not used (validation done at application layer)
+//   Note: Plan operations accept any string mission_id
+//   Rationale: Mission ID validation belongs in Mission.Validate(), not storage layer
+//
+// ErrInvalidPlan - Plan validation failed
+//   Returned by: StorePlan when plan.Validate() fails
+//   Wrapped error: Contains underlying validation failure from types.MissionPlan.Validate()
+//   Action: Fix plan structure and retry
+//
+// Generic errors (wrapped with context):
+//   - "failed to marshal plan JSON" - JSON encoding error
+//   - "failed to begin transaction" - Database connection error
+//   - "failed to query plan" - Database query error
+//   - "failed to unmarshal plan JSON" - JSON decoding error (data corruption)
+//   - "failed to insert/update plan" - Database write error
+//   - "failed to commit transaction" - Database commit error
+//   - "failed to delete plan" - Database delete error
+//
+// IDEMPOTENCY GUARANTEES:
+//
+// GetPlan:
+//   - Always safe to call multiple times
+//   - Returns consistent results for same mission_id
+//   - Returns (nil, 0, nil) for non-existent plans (NOT an error)
+//
+// StorePlan:
+//   - NOT idempotent: each call increments iteration
+//   - With expectedIteration=0: CREATE or FORCE UPDATE (ignores current iteration)
+//   - With expectedIteration>0: UPDATE only if current iteration matches
+//   - Transactional: either fully succeeds or fully rolls back
+//
+// DeletePlan:
+//   - Idempotent: safe to call multiple times
+//   - Deleting non-existent plan succeeds (no error)
+//   - Removes ALL data for mission (all iterations when history exists)
+//
+// ERROR HANDLING EXAMPLES:
+//
+//   // Check if plan exists (no error on not found)
+//   plan, iteration, err := store.GetPlan(ctx, missionID)
+//   if err != nil {
+//       return fmt.Errorf("database error: %w", err)
+//   }
+//   if plan == nil {
+//       // Plan doesn't exist - this is NOT an error
+//       return nil
+//   }
+//
+//   // Handle concurrent modification
+//   newIter, err := store.StorePlan(ctx, refinedPlan, currentIteration)
+//   if errors.Is(err, ErrStaleIteration) {
+//       // Someone else updated the plan, refetch and retry
+//       plan, iteration, _ := store.GetPlan(ctx, missionID)
+//       // ... merge changes and retry ...
+//   } else if err != nil {
+//       return fmt.Errorf("failed to store plan: %w", err)
+//   }
+//
+//   // Validate plan before storing
+//   if err := plan.Validate(); err != nil {
+//       return fmt.Errorf("invalid plan: %w", err)
+//   }
+//   iteration, err := store.StorePlan(ctx, plan, 0)
+
+var (
+	// ErrStaleIteration is returned when attempting to update a plan with a stale iteration number
+	// This indicates a concurrent modification race - another process updated the plan first
+	ErrStaleIteration = errors.New("plan iteration mismatch: concurrent modification detected")
+)
 
 // StorePlan stores or updates a mission plan with optimistic locking (vc-un1o, vc-gxfn)
 //
