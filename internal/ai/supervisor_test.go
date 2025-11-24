@@ -161,6 +161,9 @@ func (m *mockStorage) IsEpicComplete(ctx context.Context, epicID string) (bool, 
 func (m *mockStorage) GetMissionForTask(ctx context.Context, taskID string) (*types.MissionContext, error) {
 	return nil, errors.New("not implemented in mock")
 }
+func (m *mockStorage) GetMissionByPhase(ctx context.Context, phaseID string) (*types.Mission, error) {
+	return nil, errors.New("not implemented in mock")
+}
 func (m *mockStorage) GetMissionsNeedingGates(ctx context.Context) ([]*types.Issue, error) {
 	return nil, nil
 }

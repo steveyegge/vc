@@ -2818,6 +2818,137 @@ func TestGetMissionForTask(t *testing.T) {
 	})
 }
 
+// TestGetMissionByPhase tests phase-to-mission navigation (vc-60)
+func TestGetMissionByPhase(t *testing.T) {
+	ctx := context.Background()
+
+	// Create temporary database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	t.Run("phase directly under mission", func(t *testing.T) {
+		// Create mission epic with subtype='mission'
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:        "Mission with 3 Phases",
+				Description:  "Multi-phase mission for testing",
+				Status:       types.StatusOpen,
+				Priority:     0,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypeMission,
+			},
+			Goal:         "Complete the mission in 3 phases",
+			SandboxPath:  "/sandbox/mission-test",
+			BranchName:   "mission-test",
+			PhaseCount:   3,
+			CurrentPhase: 0,
+		}
+		if err := store.CreateMission(ctx, mission, "test"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Create 3 phase epics
+		phases := make([]*types.Issue, 3)
+		for i := 0; i < 3; i++ {
+			phases[i] = &types.Issue{
+				Title:        fmt.Sprintf("Phase %d", i+1),
+				Description:  fmt.Sprintf("Phase %d implementation", i+1),
+				Status:       types.StatusOpen,
+				Priority:     1,
+				IssueType:    types.TypeEpic,
+				IssueSubtype: types.SubtypePhase,
+			}
+			if err := store.CreateIssue(ctx, phases[i], "test"); err != nil {
+				t.Fatalf("Failed to create phase %d: %v", i+1, err)
+			}
+
+			// Add parent-child dependency (phase depends on mission)
+			dep := &types.Dependency{
+				IssueID:     phases[i].ID,
+				DependsOnID: mission.ID,
+				Type:        types.DepParentChild,
+			}
+			if err := store.AddDependency(ctx, dep, "test"); err != nil {
+				t.Fatalf("Failed to add dependency for phase %d: %v", i+1, err)
+			}
+		}
+
+		// Test GetMissionByPhase for phase 2 (middle phase)
+		retrievedMission, err := store.GetMissionByPhase(ctx, phases[1].ID)
+		if err != nil {
+			t.Fatalf("GetMissionByPhase failed for phase 2: %v", err)
+		}
+
+		if retrievedMission.ID != mission.ID {
+			t.Errorf("Expected mission ID %s, got %s", mission.ID, retrievedMission.ID)
+		}
+		if retrievedMission.Goal != mission.Goal {
+			t.Errorf("Expected goal %q, got %q", mission.Goal, retrievedMission.Goal)
+		}
+		if retrievedMission.SandboxPath != mission.SandboxPath {
+			t.Errorf("Expected sandbox path %s, got %s", mission.SandboxPath, retrievedMission.SandboxPath)
+		}
+		if retrievedMission.BranchName != mission.BranchName {
+			t.Errorf("Expected branch name %s, got %s", mission.BranchName, retrievedMission.BranchName)
+		}
+		if retrievedMission.PhaseCount != mission.PhaseCount {
+			t.Errorf("Expected phase count %d, got %d", mission.PhaseCount, retrievedMission.PhaseCount)
+		}
+		t.Logf("✓ Phase %s correctly found mission %s", phases[1].ID, mission.ID)
+	})
+
+	t.Run("error when ID is not a phase", func(t *testing.T) {
+		// Create a regular task (not a phase)
+		task := &types.Issue{
+			Title:     "Regular Task",
+			Status:    types.StatusOpen,
+			Priority:  2,
+			IssueType: types.TypeTask,
+			AcceptanceCriteria: "Test acceptance criteria",
+		}
+		if err := store.CreateIssue(ctx, task, "test"); err != nil {
+			t.Fatalf("Failed to create task: %v", err)
+		}
+
+		// Try to get mission by task ID (should fail)
+		_, err := store.GetMissionByPhase(ctx, task.ID)
+		if err == nil {
+			t.Error("Expected error when calling GetMissionByPhase with non-phase ID")
+		} else {
+			t.Logf("✓ Correctly returned error for non-phase issue: %v", err)
+		}
+	})
+
+	t.Run("error when phase has no parent mission", func(t *testing.T) {
+		// Create a phase epic without linking it to a mission
+		orphanPhase := &types.Issue{
+			Title:        "Orphan Phase",
+			Description:  "Phase not linked to any mission",
+			Status:       types.StatusOpen,
+			Priority:     1,
+			IssueType:    types.TypeEpic,
+			IssueSubtype: types.SubtypePhase,
+		}
+		if err := store.CreateIssue(ctx, orphanPhase, "test"); err != nil {
+			t.Fatalf("Failed to create orphan phase: %v", err)
+		}
+
+		// Try to get mission (should fail - no parent mission)
+		_, err := store.GetMissionByPhase(ctx, orphanPhase.ID)
+		if err == nil {
+			t.Error("Expected error when phase has no parent mission")
+		} else {
+			t.Logf("✓ Correctly returned error for orphan phase: %v", err)
+		}
+	})
+}
+
 // TestGetReadyWorkWithMissionContext tests mission context enrichment (vc-234)
 func TestGetReadyWorkWithMissionContext(t *testing.T) {
 	ctx := context.Background()

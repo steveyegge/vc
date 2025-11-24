@@ -70,6 +70,7 @@ type Storage interface {
 
 	// Mission Context (vc-233)
 	GetMissionForTask(ctx context.Context, taskID string) (*types.MissionContext, error)
+	GetMissionByPhase(ctx context.Context, phaseID string) (*types.Mission, error) // vc-60: Navigate from phase to parent mission
 
 	// Quality Gate Workers (vc-252)
 	GetMissionsNeedingGates(ctx context.Context) ([]*types.Issue, error)

@@ -251,6 +251,71 @@ func (s *VCStorage) GetMission(ctx context.Context, id string) (*types.Mission, 
 	return &mission, nil
 }
 
+// GetMissionByPhase retrieves a mission by phase ID (vc-60)
+// Navigates from phase to parent mission via parent-child dependencies
+// Uses recursive CTE for single-query navigation instead of N iterations
+func (s *VCStorage) GetMissionByPhase(ctx context.Context, phaseID string) (*types.Mission, error) {
+	// First verify this is actually a phase
+	var subtype sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT subtype FROM vc_mission_state WHERE issue_id = ?
+	`, phaseID).Scan(&subtype)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("issue %s is not a mission or phase", phaseID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query issue subtype: %w", err)
+	}
+	if !subtype.Valid || subtype.String != string(types.SubtypePhase) {
+		return nil, fmt.Errorf("issue %s is not a phase (subtype: %s)", phaseID, subtype.String)
+	}
+
+	// Use recursive CTE to walk parent-child dependencies upward to find mission
+	query := `
+		WITH RECURSIVE parent_chain AS (
+		  -- Base case: start with the phase's immediate parents
+		  SELECT d.issue_id, d.depends_on_id, 1 as depth
+		  FROM dependencies d
+		  WHERE d.issue_id = ? AND d.type = ?
+
+		  UNION ALL
+
+		  -- Recursive case: walk up to parent's parents
+		  SELECT d.issue_id, d.depends_on_id, p.depth + 1
+		  FROM dependencies d
+		  JOIN parent_chain p ON d.issue_id = p.depends_on_id
+		  WHERE d.type = ? AND p.depth < 10  -- Prevent infinite loops
+		)
+		-- Find the first mission epic in the parent chain
+		SELECT i.id
+		FROM issues i
+		JOIN parent_chain p ON i.id = p.depends_on_id
+		LEFT JOIN vc_mission_state m ON i.id = m.issue_id
+		WHERE i.issue_type = ?
+		  AND m.subtype = ?
+		ORDER BY p.depth ASC  -- Closest parent first
+		LIMIT 1
+	`
+
+	var missionID string
+	err = s.db.QueryRowContext(ctx, query,
+		phaseID, types.DepParentChild, // Base case parameters
+		types.DepParentChild, // Recursive case parameter
+		types.TypeEpic, types.SubtypeMission, // WHERE clause parameters
+	).Scan(&missionID)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("phase %s is not part of a mission (no parent-child dependency to mission epic)", phaseID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query mission for phase %s: %w", phaseID, err)
+	}
+
+	// Now retrieve the full mission using GetMission
+	return s.GetMission(ctx, missionID)
+}
+
 // CreateIssue creates an issue in Beads + VC extension table if needed
 func (s *VCStorage) CreateIssue(ctx context.Context, issue *types.Issue, actor string) error {
 	// Validate issue fields including acceptance_criteria requirements (vc-e3j2)
