@@ -27,68 +27,104 @@ func (s *Supervisor) GeneratePlan(ctx context.Context, planningCtx *types.Planni
 	// Build the planning prompt
 	prompt := s.buildPlanningPrompt(planningCtx)
 
-	// Call Anthropic API with retry logic
+	// JSON parse retry loop (max 2 retries for malformed JSON)
+	const maxJSONRetries = 2
+	var lastParseError string
 	var response *anthropic.Message
-	err := s.retryWithBackoff(ctx, "planning", func(attemptCtx context.Context) error {
-		resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
-			Model:     anthropic.Model(s.model),
-			MaxTokens: 8192, // Larger token limit for complex plans
-			Messages: []anthropic.MessageParam{
-				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-			},
+
+	for jsonRetry := 0; jsonRetry <= maxJSONRetries; jsonRetry++ {
+		// If this is a retry, add clarification to the prompt
+		currentPrompt := prompt
+		if jsonRetry > 0 {
+			currentPrompt = fmt.Sprintf(`%s
+
+IMPORTANT - Previous Response Had JSON Parse Error:
+Your previous response failed to parse with error: %s
+
+Please ensure your response is ONLY raw JSON (no markdown fences, no extra text).
+The JSON must be valid and match the exact schema specified above.`, prompt, lastParseError)
+			fmt.Printf("⚠️  JSON parse failed (attempt %d/%d), retrying with clarified prompt\n", jsonRetry, maxJSONRetries+1)
+		}
+
+		// Call Anthropic API with retry logic (for network/rate limit errors)
+		err := s.retryWithBackoff(ctx, "planning", func(attemptCtx context.Context) error {
+			resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+				Model:     anthropic.Model(s.model),
+				MaxTokens: 8192, // Larger token limit for complex plans
+				Messages: []anthropic.MessageParam{
+					anthropic.NewUserMessage(anthropic.NewTextBlock(currentPrompt)),
+				},
+			})
+			if apiErr != nil {
+				return apiErr
+			}
+			response = resp
+			return nil
 		})
-		if apiErr != nil {
-			return apiErr
+
+		if err != nil {
+			return nil, fmt.Errorf("anthropic API call failed: %w", err)
 		}
-		response = resp
-		return nil
-	})
 
-	if err != nil {
-		return nil, fmt.Errorf("anthropic API call failed: %w", err)
-	}
-
-	// Extract the text content from the response
-	var responseText string
-	for _, block := range response.Content {
-		if block.Type == "text" {
-			responseText += block.Text
+		// Extract the text content from the response
+		var responseText string
+		for _, block := range response.Content {
+			if block.Type == "text" {
+				responseText += block.Text
+			}
 		}
+
+		// Parse the response as JSON using resilient parser
+		parseResult := Parse[types.MissionPlan](responseText, ParseOptions{
+			Context:   "mission plan response",
+			LogErrors: boolPtr(true),
+		})
+
+		// If parse succeeded, continue with validation
+		if parseResult.Success {
+			plan := parseResult.Data
+
+			// Set metadata
+			plan.MissionID = planningCtx.Mission.ID
+			plan.GeneratedAt = time.Now()
+			plan.GeneratedBy = "ai-planner"
+
+			// Validate the generated plan
+			if err := s.ValidatePlan(ctx, &plan); err != nil {
+				return nil, fmt.Errorf("generated plan failed validation: %w", err)
+			}
+
+			// Log the plan generation
+			duration := time.Since(startTime)
+			fmt.Printf("AI Planning for %s: phases=%d, confidence=%.2f, effort=%s, duration=%v\n",
+				planningCtx.Mission.ID, len(plan.Phases), plan.Confidence, plan.EstimatedEffort, duration)
+
+			// Log AI usage to events
+			if err := s.recordAIUsage(ctx, planningCtx.Mission.ID, "planning", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
+			}
+
+			return &plan, nil
+		}
+
+		// Parse failed - save error for retry
+		lastParseError = parseResult.Error
+		fmt.Fprintf(os.Stderr, "JSON parse error (attempt %d/%d): %s\n", jsonRetry+1, maxJSONRetries+1, lastParseError)
+		fmt.Fprintf(os.Stderr, "Response preview: %s\n", truncateString(responseText, 200))
+
+		// If we've exhausted retries, fail
+		if jsonRetry == maxJSONRetries {
+			fmt.Fprintf(os.Stderr, "Full AI planning response (final attempt): %s\n", responseText)
+			return nil, fmt.Errorf("failed to parse mission plan response after %d attempts: %s (response: %s)",
+				maxJSONRetries+1, lastParseError, truncateString(responseText, 500))
+		}
+
+		// Brief pause before JSON retry (not exponential, just 1 second)
+		time.Sleep(1 * time.Second)
 	}
 
-	// Parse the response as JSON using resilient parser
-	parseResult := Parse[types.MissionPlan](responseText, ParseOptions{
-		Context:   "mission plan response",
-		LogErrors: boolPtr(true),
-	})
-	if !parseResult.Success {
-		// Log full response for debugging, but truncate in error message
-		fmt.Fprintf(os.Stderr, "Full AI planning response: %s\n", responseText)
-		return nil, fmt.Errorf("failed to parse mission plan response: %s (response: %s)", parseResult.Error, truncateString(responseText, 500))
-	}
-	plan := parseResult.Data
-
-	// Set metadata
-	plan.MissionID = planningCtx.Mission.ID
-	plan.GeneratedAt = time.Now()
-	plan.GeneratedBy = "ai-planner"
-
-	// Validate the generated plan
-	if err := s.ValidatePlan(ctx, &plan); err != nil {
-		return nil, fmt.Errorf("generated plan failed validation: %w", err)
-	}
-
-	// Log the plan generation
-	duration := time.Since(startTime)
-	fmt.Printf("AI Planning for %s: phases=%d, confidence=%.2f, effort=%s, duration=%v\n",
-		planningCtx.Mission.ID, len(plan.Phases), plan.Confidence, plan.EstimatedEffort, duration)
-
-	// Log AI usage to events
-	if err := s.recordAIUsage(ctx, planningCtx.Mission.ID, "planning", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
-	}
-
-	return &plan, nil
+	// Should never reach here, but for safety
+	return nil, fmt.Errorf("failed to generate valid plan after %d attempts", maxJSONRetries+1)
 }
 
 // RefinePhase breaks a phase down into granular tasks
@@ -116,71 +152,107 @@ func (s *Supervisor) RefinePhase(ctx context.Context, phase *types.Phase, missio
 	// Build the refinement prompt
 	prompt := s.buildRefinementPrompt(phase, missionCtx)
 
-	// Call Anthropic API with retry logic
+	// JSON parse retry loop (max 2 retries for malformed JSON)
+	const maxJSONRetries = 2
+	var lastParseError string
 	var response *anthropic.Message
-	err := s.retryWithBackoff(ctx, "refinement", func(attemptCtx context.Context) error {
-		resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
-			Model:     anthropic.Model(s.model),
-			MaxTokens: 8192,
-			Messages: []anthropic.MessageParam{
-				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-			},
+
+	for jsonRetry := 0; jsonRetry <= maxJSONRetries; jsonRetry++ {
+		// If this is a retry, add clarification to the prompt
+		currentPrompt := prompt
+		if jsonRetry > 0 {
+			currentPrompt = fmt.Sprintf(`%s
+
+IMPORTANT - Previous Response Had JSON Parse Error:
+Your previous response failed to parse with error: %s
+
+Please ensure your response is ONLY raw JSON (no markdown fences, no extra text).
+The JSON must be valid and match the exact schema specified above.`, prompt, lastParseError)
+			fmt.Printf("⚠️  JSON parse failed (attempt %d/%d), retrying with clarified prompt\n", jsonRetry, maxJSONRetries+1)
+		}
+
+		// Call Anthropic API with retry logic (for network/rate limit errors)
+		err := s.retryWithBackoff(ctx, "refinement", func(attemptCtx context.Context) error {
+			resp, apiErr := s.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+				Model:     anthropic.Model(s.model),
+				MaxTokens: 8192,
+				Messages: []anthropic.MessageParam{
+					anthropic.NewUserMessage(anthropic.NewTextBlock(currentPrompt)),
+				},
+			})
+			if apiErr != nil {
+				return apiErr
+			}
+			response = resp
+			return nil
 		})
-		if apiErr != nil {
-			return apiErr
+
+		if err != nil {
+			return nil, fmt.Errorf("anthropic API call failed: %w", err)
 		}
-		response = resp
-		return nil
-	})
 
-	if err != nil {
-		return nil, fmt.Errorf("anthropic API call failed: %w", err)
-	}
-
-	// Extract the text content from the response
-	var responseText string
-	for _, block := range response.Content {
-		if block.Type == "text" {
-			responseText += block.Text
+		// Extract the text content from the response
+		var responseText string
+		for _, block := range response.Content {
+			if block.Type == "text" {
+				responseText += block.Text
+			}
 		}
-	}
 
-	// Parse the response - expecting {"tasks": [...]}
-	type refinementResponse struct {
-		Tasks []types.PlannedTask `json:"tasks"`
-	}
-	parseResult := Parse[refinementResponse](responseText, ParseOptions{
-		Context:   "phase refinement response",
-		LogErrors: boolPtr(true),
-	})
-	if !parseResult.Success {
-		// Log full response for debugging, but truncate in error message
-		fmt.Fprintf(os.Stderr, "Full AI refinement response: %s\n", responseText)
-		return nil, fmt.Errorf("failed to parse refinement response: %s (response: %s)", parseResult.Error, truncateString(responseText, 500))
-	}
-	tasks := parseResult.Data.Tasks
-
-	// Validate tasks
-	if len(tasks) == 0 {
-		return nil, fmt.Errorf("refinement produced no tasks")
-	}
-	for i, task := range tasks {
-		if err := task.Validate(); err != nil {
-			return nil, fmt.Errorf("task %d invalid: %w", i+1, err)
+		// Parse the response - expecting {"tasks": [...]}
+		type refinementResponse struct {
+			Tasks []types.PlannedTask `json:"tasks"`
 		}
+		parseResult := Parse[refinementResponse](responseText, ParseOptions{
+			Context:   "phase refinement response",
+			LogErrors: boolPtr(true),
+		})
+
+		// If parse succeeded, continue with validation
+		if parseResult.Success {
+			tasks := parseResult.Data.Tasks
+
+			// Validate tasks
+			if len(tasks) == 0 {
+				return nil, fmt.Errorf("refinement produced no tasks")
+			}
+			for i, task := range tasks {
+				if err := task.Validate(); err != nil {
+					return nil, fmt.Errorf("task %d invalid: %w", i+1, err)
+				}
+			}
+
+			// Log the refinement
+			duration := time.Since(startTime)
+			fmt.Printf("AI Refinement for phase %s: tasks=%d, duration=%v\n",
+				phase.ID, len(tasks), duration)
+
+			// Log AI usage
+			if err := s.recordAIUsage(ctx, phase.ID, "refinement", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
+			}
+
+			return tasks, nil
+		}
+
+		// Parse failed - save error for retry
+		lastParseError = parseResult.Error
+		fmt.Fprintf(os.Stderr, "JSON parse error (attempt %d/%d): %s\n", jsonRetry+1, maxJSONRetries+1, lastParseError)
+		fmt.Fprintf(os.Stderr, "Response preview: %s\n", truncateString(responseText, 200))
+
+		// If we've exhausted retries, fail
+		if jsonRetry == maxJSONRetries {
+			fmt.Fprintf(os.Stderr, "Full AI refinement response (final attempt): %s\n", responseText)
+			return nil, fmt.Errorf("failed to parse refinement response after %d attempts: %s (response: %s)",
+				maxJSONRetries+1, lastParseError, truncateString(responseText, 500))
+		}
+
+		// Brief pause before JSON retry (not exponential, just 1 second)
+		time.Sleep(1 * time.Second)
 	}
 
-	// Log the refinement
-	duration := time.Since(startTime)
-	fmt.Printf("AI Refinement for phase %s: tasks=%d, duration=%v\n",
-		phase.ID, len(tasks), duration)
-
-	// Log AI usage
-	if err := s.recordAIUsage(ctx, phase.ID, "refinement", response.Usage.InputTokens, response.Usage.OutputTokens, duration); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to log AI usage: %v\n", err)
-	}
-
-	return tasks, nil
+	// Should never reach here, but for safety
+	return nil, fmt.Errorf("failed to refine phase after %d attempts", maxJSONRetries+1)
 }
 
 // ValidatePlan checks if a generated plan is valid and executable
