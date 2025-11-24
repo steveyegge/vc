@@ -392,6 +392,12 @@ func (s *Supervisor) validatePlanSize(ctx context.Context, plan *types.MissionPl
 	return nil
 }
 
+// CalculateDependencyDepthExported is a public wrapper for calculateDependencyDepth
+// Exported for use in integration tests
+func CalculateDependencyDepthExported(phases []types.PlannedPhase) int {
+	return calculateDependencyDepth(phases)
+}
+
 // calculateDependencyDepth computes the maximum dependency depth in the phase graph
 // Depth is the longest path from a phase with no dependencies to any phase
 func calculateDependencyDepth(phases []types.PlannedPhase) int {
