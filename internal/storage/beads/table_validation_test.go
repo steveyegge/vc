@@ -56,6 +56,7 @@ func TestDatabaseTableMissingDetection(t *testing.T) {
 			"vc_execution_history",
 			"vc_gate_baselines",
 			"vc_review_checkpoints",
+			"vc_mission_plans",
 		}
 
 		for _, tableName := range vcTables {
@@ -396,4 +397,142 @@ func indexExists(ctx context.Context, db *sql.DB, indexName string) (bool, error
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// TestMissionPlansTableSchema validates the vc_mission_plans table structure (vc-680s)
+func TestMissionPlansTableSchema(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("mission_plans table has all required columns", func(t *testing.T) {
+		// Create temporary database
+		tmpDir := t.TempDir()
+		dbPath := filepath.Join(tmpDir, "test.db")
+
+		// Initialize VC storage
+		store, err := NewVCStorage(ctx, dbPath)
+		if err != nil {
+			t.Fatalf("Failed to create VC storage: %v", err)
+		}
+		defer func() { _ = store.Close() }()
+
+		// Verify all required columns exist
+		requiredColumns := []string{
+			"mission_id",
+			"plan_json",
+			"iteration",
+			"status",
+			"created_at",
+			"updated_at",
+			"approved_at",
+		}
+
+		for _, col := range requiredColumns {
+			exists, err := columnExists(ctx, store.db, "vc_mission_plans", col)
+			if err != nil {
+				t.Fatalf("Failed to check column %s: %v", col, err)
+			}
+			if !exists {
+				t.Errorf("Required column %s missing from vc_mission_plans", col)
+			}
+		}
+	})
+
+	t.Run("mission_plans table has required indexes", func(t *testing.T) {
+		// Create temporary database
+		tmpDir := t.TempDir()
+		dbPath := filepath.Join(tmpDir, "test.db")
+
+		// Initialize VC storage
+		store, err := NewVCStorage(ctx, dbPath)
+		if err != nil {
+			t.Fatalf("Failed to create VC storage: %v", err)
+		}
+		defer func() { _ = store.Close() }()
+
+		// Verify required indexes exist
+		requiredIndexes := []string{
+			"idx_vc_mission_plans_status",
+			"idx_vc_mission_plans_updated",
+		}
+
+		for _, idx := range requiredIndexes {
+			exists, err := indexExists(ctx, store.db, idx)
+			if err != nil {
+				t.Fatalf("Failed to check index %s: %v", idx, err)
+			}
+			if !exists {
+				t.Errorf("Required index %s missing from vc_mission_plans", idx)
+			}
+		}
+	})
+
+	t.Run("mission_plans status column has CHECK constraint", func(t *testing.T) {
+		// Create temporary database
+		tmpDir := t.TempDir()
+		dbPath := filepath.Join(tmpDir, "test.db")
+
+		// Initialize VC storage
+		store, err := NewVCStorage(ctx, dbPath)
+		if err != nil {
+			t.Fatalf("Failed to create VC storage: %v", err)
+		}
+		defer func() { _ = store.Close() }()
+
+		// Try to insert plan with invalid status - should fail
+		_, err = store.db.ExecContext(ctx, `
+			INSERT INTO vc_mission_plans (mission_id, plan_json, iteration, status, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, "test-mission", "{}", 1, "invalid_status", "2024-01-01", "2024-01-01")
+
+		if err == nil {
+			t.Error("Expected CHECK constraint violation for invalid status, but insert succeeded")
+		}
+	})
+
+	t.Run("mission_plans mission_id has unique constraint", func(t *testing.T) {
+		// Create temporary database
+		tmpDir := t.TempDir()
+		dbPath := filepath.Join(tmpDir, "test.db")
+
+		// Initialize VC storage
+		store, err := NewVCStorage(ctx, dbPath)
+		if err != nil {
+			t.Fatalf("Failed to create VC storage: %v", err)
+		}
+		defer func() { _ = store.Close() }()
+
+		// Create a mission first (required by FK constraint)
+		mission := &types.Mission{
+			Issue: types.Issue{
+				Title:       "Test Mission",
+				Description: "Test mission",
+				IssueType:   types.TypeEpic,
+				Status:      types.StatusOpen,
+				Priority:    1,
+			},
+			Goal: "Test goal",
+		}
+		if err := store.CreateMission(ctx, mission, "test"); err != nil {
+			t.Fatalf("Failed to create mission: %v", err)
+		}
+
+		// Insert first plan
+		_, err = store.db.ExecContext(ctx, `
+			INSERT INTO vc_mission_plans (mission_id, plan_json, iteration, status, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, mission.ID, "{}", 1, "draft", "2024-01-01", "2024-01-01")
+		if err != nil {
+			t.Fatalf("Failed to insert first plan: %v", err)
+		}
+
+		// Try to insert duplicate mission_id - should fail
+		_, err = store.db.ExecContext(ctx, `
+			INSERT INTO vc_mission_plans (mission_id, plan_json, iteration, status, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, mission.ID, "{}", 2, "draft", "2024-01-02", "2024-01-02")
+
+		if err == nil {
+			t.Error("Expected PRIMARY KEY constraint violation for duplicate mission_id, but insert succeeded")
+		}
+	})
 }
