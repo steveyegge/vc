@@ -6,6 +6,10 @@ import (
 	"math"
 	"strings"
 
+	"github.com/hexops/gotextdiff"
+	"github.com/hexops/gotextdiff/myers"
+	"github.com/hexops/gotextdiff/span"
+
 	// TODO(vc-t9ls): The AIConvergenceDetector has been moved to the ai package
 	// to avoid import cycles. The general-purpose iterative package should not
 	// depend on the specific ai implementation.
@@ -34,8 +38,9 @@ type ConvergenceDecision struct {
 // The general-purpose iterative package should not depend on the specific ai implementation.
 // See internal/ai/analysis_refiner.go for the AI-based convergence implementation.
 
-// DiffBasedDetector is a fallback convergence detector that uses simple
-// diff size heuristics. If changes are below threshold, assume converged.
+// DiffBasedDetector is a fallback convergence detector that uses the Myers
+// diff algorithm (same algorithm used by git and gopls) for accurate change
+// detection. If changes are below threshold, assume converged.
 type DiffBasedDetector struct {
 	// MaxDiffPercent is the maximum percentage of changed lines to consider converged
 	// Default: 5% (if less than 5% of lines changed, consider converged)
@@ -160,31 +165,51 @@ func countLines(text string) int {
 }
 
 func countDiffLines(prev, current string) int {
-	// Simple line-by-line comparison
-	// A real implementation would use a proper diff algorithm,
-	// but this is good enough for convergence heuristics
-	prevLines := strings.Split(prev, "\n")
-	currentLines := strings.Split(current, "\n")
+	// Use Myers diff algorithm (same algorithm used by git and gopls)
+	// This properly handles line reordering, insertions, and deletions
+	// without being fooled by simple position changes
 
-	// Count lines that differ
-	maxLines := maxInt(len(prevLines), len(currentLines))
+	// Normalize trailing newlines to avoid spurious diffs
+	// The diff algorithm is sensitive to whether the last line has a newline
+	prevNorm := normalizeNewlines(prev)
+	currentNorm := normalizeNewlines(current)
+
+	edits := myers.ComputeEdits(span.URIFromPath("prev"), prevNorm, currentNorm)
+	unified := gotextdiff.ToUnified("prev", "current", prevNorm, edits)
+
+	// Count "changed regions" from the unified diff
+	// For each hunk, we count the max of deletions vs insertions
+	// This gives us a count that matches intuitive understanding:
+	// - Changed line: 1 delete + 1 insert = max(1,1) = 1
+	// - Added lines: 0 deletes + N inserts = max(0,N) = N
+	// - Removed lines: N deletes + 0 inserts = max(N,0) = N
 	diffCount := 0
-
-	for i := 0; i < maxLines; i++ {
-		prevLine := ""
-		currentLine := ""
-		if i < len(prevLines) {
-			prevLine = strings.TrimSpace(prevLines[i])
+	for _, hunk := range unified.Hunks {
+		deletions := 0
+		insertions := 0
+		for _, line := range hunk.Lines {
+			if line.Kind == gotextdiff.Delete {
+				deletions++
+			} else if line.Kind == gotextdiff.Insert {
+				insertions++
+			}
 		}
-		if i < len(currentLines) {
-			currentLine = strings.TrimSpace(currentLines[i])
-		}
-		if prevLine != currentLine {
-			diffCount++
-		}
+		// Take the max - this counts a "changed line" as 1, not 2
+		diffCount += maxInt(deletions, insertions)
 	}
 
 	return diffCount
+}
+
+// normalizeNewlines ensures consistent trailing newline handling
+// Empty strings stay empty, non-empty strings get exactly one trailing newline
+func normalizeNewlines(s string) string {
+	if s == "" {
+		return s
+	}
+	// Remove any trailing newlines, then add exactly one
+	s = strings.TrimRight(s, "\n")
+	return s + "\n"
 }
 
 func maxInt(a, b int) int {

@@ -80,14 +80,21 @@ if converged && confidence >= 0.8 {
 
 ## DiffBasedDetector
 
-A simple fallback strategy that uses line-diff heuristics.
+A fallback strategy that uses Myers diff algorithm (same algorithm used by git and gopls) for accurate change detection.
 
 ### How It Works
 
-Compares current and previous versions line-by-line:
-- Counts changed lines
-- Calculates change percentage
+Uses the Myers diff algorithm to compute differences:
+- Computes optimal edit sequence between previous and current versions
+- Counts changed lines from the unified diff output
+- Handles line reordering intelligently (doesn't count moved lines as multiple changes)
+- Calculates change percentage relative to total lines
 - If change % < threshold, assumes converged
+
+**Key improvement over naive line-by-line comparison:**
+- Line reordering is detected accurately (moved lines don't inflate diff count)
+- Structural changes (like refactoring) are measured by actual content changes
+- Whitespace-only changes are counted precisely
 
 ### Configuration
 

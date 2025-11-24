@@ -365,6 +365,146 @@ func TestCountDiffLines(t *testing.T) {
 	}
 }
 
+// TestCountDiffLines_Reordering tests that Myers algorithm properly handles line reordering
+// This is the key improvement over the naive line-by-line comparison
+func TestCountDiffLines_Reordering(t *testing.T) {
+	tests := []struct {
+		name     string
+		prev     string
+		current  string
+		wantDiff int
+		comment  string
+	}{
+		{
+			name: "simple swap",
+			prev: `line1
+line2
+line3`,
+			current: `line1
+line3
+line2`,
+			wantDiff: 1,
+			comment:  "Myers sees this as moving line2 down = 1 change region",
+		},
+		{
+			name: "block reordering",
+			prev: `section A
+content A1
+content A2
+section B
+content B1
+content B2`,
+			current: `section B
+content B1
+content B2
+section A
+content A1
+content A2`,
+			wantDiff: 3,
+			comment:  "Myers sees this as moving a 3-line block = max(3 del, 3 ins) = 3",
+		},
+		{
+			name: "reorder with modification",
+			prev: `line1
+line2
+line3`,
+			current: `line3
+line2 modified
+line1`,
+			wantDiff: 2,
+			comment:  "Myers optimizes: line2 changed in place, line1/line3 swapped",
+		},
+		{
+			name: "identical content different order",
+			prev: `apple
+banana
+cherry`,
+			current: `cherry
+banana
+apple`,
+			wantDiff: 2,
+			comment:  "First and last swapped, middle unchanged",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			diff := countDiffLines(tt.prev, tt.current)
+			if diff != tt.wantDiff {
+				t.Errorf("Expected diff=%d, got %d\nComment: %s", tt.wantDiff, diff, tt.comment)
+			}
+		})
+	}
+}
+
+// TestCountDiffLines_StructuralChanges tests complex structural changes
+func TestCountDiffLines_StructuralChanges(t *testing.T) {
+	tests := []struct {
+		name     string
+		prev     string
+		current  string
+		wantDiff int
+		comment  string
+	}{
+		{
+			name: "indentation change",
+			prev: `function foo() {
+  return 42;
+}`,
+			current: `function foo() {
+    return 42;
+}`,
+			wantDiff: 1,
+			comment:  "Only the indented line changed",
+		},
+		{
+			name: "whitespace normalization",
+			prev: `line1
+line2	tab
+line3`,
+			current: `line1
+line2 tab
+line3`,
+			wantDiff: 1,
+			comment:  "Only line2 changed (tab to space)",
+		},
+		{
+			name: "code refactoring",
+			prev: `function calculate(x) {
+  let result = x * 2;
+  result = result + 10;
+  return result;
+}`,
+			current: `function calculate(x) {
+  return x * 2 + 10;
+}`,
+			wantDiff: 3,
+			comment:  "Refactored 3 lines into 1 (3 deletes, 1 insert = max 3)",
+		},
+		{
+			name: "comment addition",
+			prev: `function foo() {
+  return 42;
+}`,
+			current: `// Returns the answer
+function foo() {
+  return 42;
+}`,
+			wantDiff: 1,
+			comment:  "Added one comment line",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			diff := countDiffLines(tt.prev, tt.current)
+			if diff != tt.wantDiff {
+				t.Errorf("Expected diff=%d, got %d\nComment: %s", tt.wantDiff, diff, tt.comment)
+			}
+		})
+	}
+}
+
 // TestCountLines tests the line counting helper
 func TestCountLines(t *testing.T) {
 	tests := []struct {
