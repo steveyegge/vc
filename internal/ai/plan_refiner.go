@@ -20,12 +20,60 @@ type PlanRefiner struct {
 	currentIter   int
 }
 
+// PlanningCostMetrics tracks cost and performance metrics for a planning cycle
+type PlanningCostMetrics struct {
+	Iterations      int
+	TotalTokens     int
+	InputTokens     int
+	OutputTokens    int
+	EstimatedCostUSD float64
+	TotalDuration   int64 // milliseconds
+}
+
 // NewPlanRefiner creates a new plan refiner.
 func NewPlanRefiner(supervisor *Supervisor, planningCtx *types.PlanningContext) *PlanRefiner {
 	return &PlanRefiner{
 		supervisor:  supervisor,
 		planningCtx: planningCtx,
 		currentIter: 0,
+	}
+}
+
+// ComputePlanningCost calculates the cost metrics from an iterative convergence result.
+// This extracts token counts and duration from the metrics collector and returns
+// human-readable cost information.
+//
+// Note: Token tracking happens through the Supervisor's recordAIUsage() method,
+// which logs all AI calls to the agent_events table. The MetricsCollector in the
+// iterative framework currently doesn't capture token counts (the Refiner interface
+// doesn't provide a way to pass them back). For detailed token metrics, query the
+// agent_events table filtered by issue_id and event_type='ai_usage'.
+func ComputePlanningCost(result *iterative.ConvergenceResult, metrics *iterative.ArtifactMetrics) *PlanningCostMetrics {
+	if metrics == nil {
+		return &PlanningCostMetrics{
+			Iterations:    result.Iterations,
+			TotalDuration: result.ElapsedTime.Milliseconds(),
+		}
+	}
+
+	// If metrics are available and populated with token counts, calculate cost
+	// Otherwise, callers should query agent_events for token metrics
+	var estimatedCost float64
+	if metrics.TotalInputTokens > 0 || metrics.TotalOutputTokens > 0 {
+		// Claude Sonnet 4.5 pricing (as of Jan 2025): $3/MTok input, $15/MTok output
+		inputCostPerMToken := 3.0
+		outputCostPerMToken := 15.0
+		estimatedCost = (float64(metrics.TotalInputTokens)/1_000_000)*inputCostPerMToken +
+			(float64(metrics.TotalOutputTokens)/1_000_000)*outputCostPerMToken
+	}
+
+	return &PlanningCostMetrics{
+		Iterations:       result.Iterations,
+		TotalTokens:      metrics.TotalInputTokens + metrics.TotalOutputTokens,
+		InputTokens:      metrics.TotalInputTokens,
+		OutputTokens:     metrics.TotalOutputTokens,
+		EstimatedCostUSD: estimatedCost,
+		TotalDuration:    result.ElapsedTime.Milliseconds(),
 	}
 }
 
@@ -177,6 +225,108 @@ func (r *PlanRefiner) CheckConvergence(ctx context.Context, current, previous *i
 		Reasoning:  result.Reasoning,
 		Strategy:   "ai-analysis", // Using AI to analyze diff
 	}, nil
+}
+
+// IncorporateFeedback takes human feedback and uses AI to update the plan accordingly.
+// This allows humans to guide the refinement process with specific concerns or requests.
+func (r *PlanRefiner) IncorporateFeedback(ctx context.Context, currentPlan *types.MissionPlan, feedback string) (*types.MissionPlan, error) {
+	// Build feedback incorporation prompt
+	prompt := r.buildFeedbackPrompt(currentPlan, feedback)
+
+	// Call AI with retry logic
+	var response *anthropic.Message
+	err := r.supervisor.retryWithBackoff(ctx, "feedback-incorporation", func(attemptCtx context.Context) error {
+		resp, apiErr := r.supervisor.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(r.supervisor.model),
+			MaxTokens: 8192,
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			},
+		})
+		if apiErr != nil {
+			return apiErr
+		}
+		response = resp
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("anthropic API call failed: %w", err)
+	}
+
+	// Extract text from response
+	var responseText string
+	for _, block := range response.Content {
+		if block.Type == "text" {
+			responseText += block.Text
+		}
+	}
+
+	// Parse the updated plan
+	parseResult := Parse[types.MissionPlan](responseText, ParseOptions{
+		Context:   "feedback incorporation response",
+		LogErrors: boolPtr(true),
+	})
+
+	if !parseResult.Success {
+		return nil, fmt.Errorf("failed to parse updated plan: %s (response: %s)",
+			parseResult.Error, truncateString(responseText, 200))
+	}
+
+	updatedPlan := parseResult.Data
+
+	// Validate the updated plan
+	if err := r.supervisor.ValidatePlan(ctx, &updatedPlan); err != nil {
+		return nil, fmt.Errorf("updated plan failed validation: %w", err)
+	}
+
+	return &updatedPlan, nil
+}
+
+// buildFeedbackPrompt builds the prompt for incorporating human feedback
+func (r *PlanRefiner) buildFeedbackPrompt(currentPlan *types.MissionPlan, feedback string) string {
+	// Serialize current plan for the prompt
+	planJSON, _ := json.MarshalIndent(currentPlan, "", "  ")
+
+	return fmt.Sprintf(`You are incorporating human feedback into a mission plan.
+
+CURRENT PLAN:
+%s
+
+HUMAN FEEDBACK:
+%s
+
+YOUR TASK:
+Update the plan to address all points in the human feedback while maintaining coherence.
+
+REQUIREMENTS:
+1. **Address All Feedback**: Ensure every point raised is addressed in the updated plan
+2. **Maintain Coherence**: Keep the plan logically consistent and well-structured
+3. **Preserve Good Parts**: Don't change aspects that weren't criticized
+4. **Explain Changes**: Update descriptions/strategy to reflect changes made
+5. **Keep WHEN...THEN... Format**: All acceptance criteria must use scenario format
+
+Return the updated plan as a JSON object matching the same structure:
+{
+  "mission_id": "...",
+  "phases": [...],
+  "strategy": "...",
+  "risks": [...],
+  "estimated_effort": "...",
+  "confidence": 0.0-1.0,
+  "generated_at": "...",
+  "generated_by": "ai-planner",
+  "status": "refining"
+}
+
+IMPORTANT GUIDELINES:
+- Make substantive changes to address feedback, not just cosmetic tweaks
+- If feedback conflicts with plan requirements, prioritize requirements
+- Update confidence based on uncertainty after changes
+- Status should be "refining" after feedback incorporation
+
+IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences. Just the JSON object.`,
+		string(planJSON), feedback)
 }
 
 // buildRefinementPrompt builds the prompt for refining a plan
