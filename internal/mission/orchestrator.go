@@ -50,6 +50,12 @@ type PlanResult struct {
 
 // GenerateAndStorePlan generates a mission plan and handles approval workflow
 func (o *Orchestrator) GenerateAndStorePlan(ctx context.Context, mission *types.Mission, planningCtx *types.PlanningContext) (*PlanResult, error) {
+	// PRE-FLIGHT CHECK (vc-vdab): Prevent generating plan for in_progress issues
+	// This prevents creating duplicate work when the executor is already working on the issue.
+	if mission.Status == types.StatusInProgress {
+		return nil, fmt.Errorf("cannot generate plan for issue %s: issue is already in_progress (being worked on by executor)", mission.ID)
+	}
+
 	// Generate the plan using AI
 	plan, err := o.planner.GeneratePlan(ctx, planningCtx)
 	if err != nil {

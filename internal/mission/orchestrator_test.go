@@ -3,6 +3,7 @@ package mission
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -868,5 +869,141 @@ func TestCheckMissionCompletion_PartialProgress(t *testing.T) {
 	// Verify progress comment was added
 	if len(store.comments) == 0 {
 		t.Error("Expected progress comment to be added")
+	}
+}
+
+// TestGenerateAndStorePlan_InProgressValidation tests that plan generation
+// is rejected when the issue status is in_progress (vc-vdab)
+func TestGenerateAndStorePlan_InProgressValidation(t *testing.T) {
+	ctx := context.Background()
+
+	// Create mock dependencies
+	store := NewMockStorage()
+	mockPlan := &types.MissionPlan{
+		MissionID: "test-mission",
+		Phases: []types.PlannedPhase{
+			{
+				PhaseNumber:     1,
+				Title:           "Phase 1",
+				Description:     "Test phase",
+				Strategy:        "Test",
+				Tasks:           []string{"Task 1"},
+				EstimatedEffort: "1 week",
+			},
+		},
+		Strategy:        "Test strategy",
+		EstimatedEffort: "1 week",
+		Confidence:      0.8,
+	}
+	planner := &MockPlanner{plan: mockPlan}
+
+	orchestrator, err := NewOrchestrator(&Config{
+		Store:        store,
+		Planner:      planner,
+		SkipApproval: false,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create orchestrator: %v", err)
+	}
+
+	// Create a mission with status=in_progress (being worked on by executor)
+	mission := &types.Mission{
+		Issue: types.Issue{
+			ID:        "test-mission",
+			Title:     "Test Mission",
+			IssueType: types.TypeEpic,
+			Status:    types.StatusInProgress, // KEY: in_progress status
+		},
+		ApprovalRequired: false,
+	}
+
+	planningCtx := &types.PlanningContext{
+		Mission: mission,
+	}
+
+	// Attempt to generate plan - should fail with clear error
+	result, err := orchestrator.GenerateAndStorePlan(ctx, mission, planningCtx)
+
+	// Verify error is returned
+	if err == nil {
+		t.Fatal("Expected error when generating plan for in_progress issue, got nil")
+	}
+
+	// Verify error message explains the problem
+	expectedErrMsg := "cannot generate plan for issue test-mission: issue is already in_progress"
+	if !strings.Contains(err.Error(), expectedErrMsg) {
+		t.Errorf("Expected error message to contain %q, got: %v", expectedErrMsg, err)
+	}
+
+	// Verify result is nil on error
+	if result != nil {
+		t.Errorf("Expected nil result on error, got: %+v", result)
+	}
+}
+
+// TestGenerateAndStorePlan_OpenStatusAllowed tests that plan generation
+// succeeds normally when the issue status is open
+func TestGenerateAndStorePlan_OpenStatusAllowed(t *testing.T) {
+	ctx := context.Background()
+
+	// Create mock dependencies
+	store := NewMockStorage()
+	mockPlan := &types.MissionPlan{
+		MissionID: "test-mission",
+		Phases: []types.PlannedPhase{
+			{
+				PhaseNumber:     1,
+				Title:           "Phase 1",
+				Description:     "Test phase",
+				Strategy:        "Test",
+				Tasks:           []string{"Task 1"},
+				EstimatedEffort: "1 week",
+			},
+		},
+		Strategy:        "Test strategy",
+		EstimatedEffort: "1 week",
+		Confidence:      0.8,
+	}
+	planner := &MockPlanner{plan: mockPlan}
+
+	orchestrator, err := NewOrchestrator(&Config{
+		Store:        store,
+		Planner:      planner,
+		SkipApproval: true, // Auto-approve for simpler test
+	})
+	if err != nil {
+		t.Fatalf("Failed to create orchestrator: %v", err)
+	}
+
+	// Create a mission with status=open (normal case)
+	mission := &types.Mission{
+		Issue: types.Issue{
+			ID:        "test-mission",
+			Title:     "Test Mission",
+			IssueType: types.TypeEpic,
+			Status:    types.StatusOpen, // KEY: open status is allowed
+		},
+		ApprovalRequired: false,
+	}
+
+	planningCtx := &types.PlanningContext{
+		Mission: mission,
+	}
+
+	// Generate plan - should succeed
+	result, err := orchestrator.GenerateAndStorePlan(ctx, mission, planningCtx)
+	if err != nil {
+		t.Fatalf("Failed to generate plan for open issue: %v", err)
+	}
+
+	// Verify plan was generated
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+	if result.Plan == nil {
+		t.Error("Expected plan to be generated")
+	}
+	if !result.AutoApproved {
+		t.Error("Expected plan to be auto-approved")
 	}
 }
