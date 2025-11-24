@@ -272,6 +272,7 @@ func (s *Supervisor) ValidatePlan(ctx context.Context, plan *types.MissionPlan) 
 		fn   func(context.Context, *types.MissionPlan) error
 	}{
 		{"phase_count", s.validatePhaseCount},
+		{"plan_size", s.validatePlanSize},
 		{"circular_dependencies", s.validateCircularDependencies},
 		{"dependency_references", s.validateDependencyReferences},
 		{"task_counts", s.validateTaskCounts},
@@ -346,6 +347,118 @@ func (s *Supervisor) validatePhaseCount(ctx context.Context, plan *types.Mission
 		return fmt.Errorf("plan has too many phases (%d); consider breaking into multiple missions", phaseCount)
 	}
 	return nil
+}
+
+// validatePlanSize enforces limits on plan size to prevent timeouts
+// Checks: max phases, max tasks per phase, max total tasks, max dependency depth
+func (s *Supervisor) validatePlanSize(ctx context.Context, plan *types.MissionPlan) error {
+	// Get configurable limits from environment (with defaults)
+	maxPhases := getEnvInt("VC_MAX_PLAN_PHASES", 20)
+	maxPhaseTasks := getEnvInt("VC_MAX_PHASE_TASKS", 30)
+	maxDependencyDepth := getEnvInt("VC_MAX_DEPENDENCY_DEPTH", 10)
+
+	// Check phase count
+	phaseCount := len(plan.Phases)
+	if phaseCount > maxPhases {
+		return fmt.Errorf("plan has too many phases (%d > %d limit); risk of timeout during validation",
+			phaseCount, maxPhases)
+	}
+
+	// Check tasks per phase and count total tasks
+	totalTasks := 0
+	for _, phase := range plan.Phases {
+		taskCount := len(phase.Tasks)
+		totalTasks += taskCount
+		if taskCount > maxPhaseTasks {
+			return fmt.Errorf("phase %d (%s) has too many tasks (%d > %d limit); risk of timeout during refinement",
+				phase.PhaseNumber, phase.Title, taskCount, maxPhaseTasks)
+		}
+	}
+
+	// Check total tasks (max is computed from limits)
+	maxTotalTasks := maxPhases * maxPhaseTasks
+	if totalTasks > maxTotalTasks {
+		return fmt.Errorf("plan has too many total tasks (%d > %d limit); risk of timeout during approval",
+			totalTasks, maxTotalTasks)
+	}
+
+	// Check dependency depth using topological analysis
+	depth := calculateDependencyDepth(plan.Phases)
+	if depth > maxDependencyDepth {
+		return fmt.Errorf("plan has excessive dependency depth (%d > %d limit); risk of pathological dependency graph",
+			depth, maxDependencyDepth)
+	}
+
+	return nil
+}
+
+// calculateDependencyDepth computes the maximum dependency depth in the phase graph
+// Depth is the longest path from a phase with no dependencies to any phase
+func calculateDependencyDepth(phases []types.PlannedPhase) int {
+	// Build phase number to index map
+	phaseIndex := make(map[int]int)
+	for i, phase := range phases {
+		phaseIndex[phase.PhaseNumber] = i
+	}
+
+	// Memoization for depth calculation
+	depths := make(map[int]int)
+
+	// Recursive depth calculation with memoization
+	var computeDepth func(phaseNum int) int
+	computeDepth = func(phaseNum int) int {
+		// Check if already computed
+		if d, ok := depths[phaseNum]; ok {
+			return d
+		}
+
+		// Get phase
+		idx, exists := phaseIndex[phaseNum]
+		if !exists {
+			return 0 // Invalid phase number, treat as depth 0
+		}
+		phase := phases[idx]
+
+		// Base case: no dependencies
+		if len(phase.Dependencies) == 0 {
+			depths[phaseNum] = 1
+			return 1
+		}
+
+		// Recursive case: 1 + max(depth of dependencies)
+		maxDepth := 0
+		for _, depNum := range phase.Dependencies {
+			depDepth := computeDepth(depNum)
+			if depDepth > maxDepth {
+				maxDepth = depDepth
+			}
+		}
+
+		depths[phaseNum] = maxDepth + 1
+		return maxDepth + 1
+	}
+
+	// Find maximum depth across all phases
+	maxDepth := 0
+	for _, phase := range phases {
+		depth := computeDepth(phase.PhaseNumber)
+		if depth > maxDepth {
+			maxDepth = depth
+		}
+	}
+
+	return maxDepth
+}
+
+// getEnvInt gets an integer from environment variable with default fallback
+func getEnvInt(key string, defaultValue int) int {
+	if val := os.Getenv(key); val != "" {
+		if parsed, err := fmt.Sscanf(val, "%d", &defaultValue); err == nil && parsed == 1 {
+			return defaultValue
+		}
+		fmt.Fprintf(os.Stderr, "Warning: invalid integer for %s: %s (using default %d)\n", key, val, defaultValue)
+	}
+	return defaultValue
 }
 
 // validateCircularDependencies checks for circular dependencies in phases

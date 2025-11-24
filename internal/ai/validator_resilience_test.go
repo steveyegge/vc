@@ -164,6 +164,10 @@ func TestMultipleValidatorFailures(t *testing.T) {
 
 // TestCycleDetectorPathological verifies cycle detector doesn't hang on complex graphs
 func TestCycleDetectorPathological(t *testing.T) {
+	// Override dependency depth limit for this test to allow the complex graph
+	// We're testing cycle detection performance, not size limits
+	t.Setenv("VC_MAX_DEPENDENCY_DEPTH", "20")
+
 	s := &Supervisor{}
 
 	// Create a complex but valid dependency graph

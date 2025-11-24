@@ -315,11 +315,89 @@ Each validator runs with the following protections:
 The following validators run on every mission plan:
 
 - **phase_count:** Checks phase count is within acceptable range (1-15 phases)
+- **plan_size:** Enforces plan size limits to prevent timeouts (configurable)
 - **circular_dependencies:** Detects circular dependencies in phases
+- **dependency_references:** Validates all dependency IDs reference existing phases
 - **task_counts:** Validates each phase has reasonable task count (1-50 tasks)
 - **phase_structure_ai:** AI-driven validation of phase dependencies and ordering (advisory only)
 
 **Note:** The AI validator is advisory only and will log warnings but not block validation on failure (e.g., network issues, API errors).
+
+### Plan Size Limits (vc-r3an)
+
+To prevent timeouts during refinement, validation, and approval, VC enforces configurable limits on plan size:
+
+**Default Limits:**
+- Max phases per plan: **20**
+- Max tasks per phase: **30**
+- Max total tasks: **600** (computed as max_phases × max_tasks_per_phase)
+- Max dependency depth: **10** levels
+
+**Environment Variables:**
+
+```bash
+# Maximum number of phases in a mission plan
+# Default: 20
+export VC_MAX_PLAN_PHASES=20
+
+# Maximum number of tasks per phase
+# Default: 30
+export VC_MAX_PHASE_TASKS=30
+
+# Maximum dependency depth (longest dependency chain)
+# Default: 10
+export VC_MAX_DEPENDENCY_DEPTH=10
+```
+
+**Why These Limits?**
+
+1. **Refinement Timeout Risk:** Plans with >30 tasks per phase may exceed the 5-minute refinement timeout
+2. **Validation Hang Risk:** Plans with >50 phases may cause cycle detector to hang
+3. **Approval Timeout Risk:** Plans with >600 total tasks may exceed database transaction timeout
+4. **Pathological Graphs:** Dependency depth >10 suggests overly complex dependency chains
+
+**Validation Errors:**
+
+```bash
+# Too many phases
+Error: validation failed: plan_size: plan has too many phases (25 > 20 limit); risk of timeout during validation
+
+# Phase with too many tasks
+Error: validation failed: plan_size: phase 1 (Setup) has too many tasks (35 > 30 limit); risk of timeout during refinement
+
+# Excessive dependency depth
+Error: validation failed: plan_size: plan has excessive dependency depth (12 > 10 limit); risk of pathological dependency graph
+```
+
+**Custom Limits:**
+
+For larger missions, you can increase limits:
+
+```bash
+# Allow larger plans
+export VC_MAX_PLAN_PHASES=30
+export VC_MAX_PHASE_TASKS=50
+export VC_MAX_DEPENDENCY_DEPTH=15
+```
+
+For stricter validation during testing:
+
+```bash
+# Enforce smaller plans
+export VC_MAX_PLAN_PHASES=10
+export VC_MAX_PHASE_TASKS=15
+export VC_MAX_DEPENDENCY_DEPTH=5
+```
+
+**Dependency Depth Calculation:**
+
+Dependency depth is the longest path from a phase with no dependencies to any phase. For example:
+
+- Linear chain (1 → 2 → 3): depth = 3
+- Diamond (1 → 2,3 → 4): depth = 3
+- Complex graph (1 → 2 → 3 → 4 → 5): depth = 5
+
+This prevents pathological dependency graphs that could cause performance issues in cycle detection and topological sorting.
 
 ### Example Error Output
 

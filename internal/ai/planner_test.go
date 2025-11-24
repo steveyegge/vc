@@ -448,3 +448,331 @@ func makeTasks(count int) []string {
 	return tasks
 }
 
+func TestValidatePlanSize(t *testing.T) {
+	tests := []struct {
+		name    string
+		plan    *types.MissionPlan
+		envVars map[string]string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid plan within limits",
+			plan: &types.MissionPlan{
+				MissionID: "vc-1",
+				Phases: []types.PlannedPhase{
+					{
+						PhaseNumber:     1,
+						Title:           "Phase 1",
+						Description:     "Test",
+						Strategy:        "Test",
+						Tasks:           makeTasks(10),
+						EstimatedEffort: "1w",
+					},
+					{
+						PhaseNumber:     2,
+						Title:           "Phase 2",
+						Description:     "Test",
+						Strategy:        "Test",
+						Tasks:           makeTasks(5),
+						Dependencies:    []int{1},
+						EstimatedEffort: "1w",
+					},
+				},
+				Strategy:        "Test",
+				EstimatedEffort: "2w",
+				Confidence:      0.8,
+			},
+			wantErr: false,
+		},
+		{
+			name: "too many phases (exceeds default limit of 20)",
+			plan: &types.MissionPlan{
+				MissionID:       "vc-1",
+				Phases:          makePhases(25),
+				Strategy:        "Test",
+				EstimatedEffort: "25w",
+				Confidence:      0.5,
+			},
+			wantErr: true,
+			errMsg:  "too many phases",
+		},
+		{
+			name: "phase with too many tasks (exceeds default limit of 30)",
+			plan: &types.MissionPlan{
+				MissionID: "vc-1",
+				Phases: []types.PlannedPhase{
+					{
+						PhaseNumber:     1,
+						Title:           "Huge Phase",
+						Description:     "Test",
+						Strategy:        "Test",
+						Tasks:           makeTasks(35),
+						EstimatedEffort: "1w",
+					},
+				},
+				Strategy:        "Test",
+				EstimatedEffort: "1w",
+				Confidence:      0.8,
+			},
+			wantErr: true,
+			errMsg:  "too many tasks",
+		},
+		{
+			name: "too many total tasks (20 phases * 30 tasks = 600 > default limit)",
+			plan: &types.MissionPlan{
+				MissionID: "vc-1",
+				Phases: func() []types.PlannedPhase {
+					phases := make([]types.PlannedPhase, 20)
+					for i := 0; i < 20; i++ {
+						phases[i] = types.PlannedPhase{
+							PhaseNumber:     i + 1,
+							Title:           fmt.Sprintf("Phase %d", i+1),
+							Description:     "Test",
+							Strategy:        "Test",
+							Tasks:           makeTasks(30), // 20 * 30 = 600 tasks
+							EstimatedEffort: "1w",
+						}
+					}
+					return phases
+				}(),
+				Strategy:        "Test",
+				EstimatedEffort: "20w",
+				Confidence:      0.5,
+			},
+			wantErr: false, // 600 = 20*30 is exactly at limit
+		},
+		{
+			name: "excessive dependency depth (> 10 levels)",
+			plan: &types.MissionPlan{
+				MissionID: "vc-1",
+				Phases: func() []types.PlannedPhase {
+					// Create 12 phases in a chain: 1 -> 2 -> 3 -> ... -> 12
+					phases := make([]types.PlannedPhase, 12)
+					for i := 0; i < 12; i++ {
+						phase := types.PlannedPhase{
+							PhaseNumber:     i + 1,
+							Title:           fmt.Sprintf("Phase %d", i+1),
+							Description:     "Test",
+							Strategy:        "Test",
+							Tasks:           []string{"Task 1"},
+							EstimatedEffort: "1w",
+						}
+						if i > 0 {
+							phase.Dependencies = []int{i} // Depends on previous phase
+						}
+						phases[i] = phase
+					}
+					return phases
+				}(),
+				Strategy:        "Test",
+				EstimatedEffort: "12w",
+				Confidence:      0.5,
+			},
+			wantErr: true,
+			errMsg:  "excessive dependency depth",
+		},
+		{
+			name: "custom limits via environment (smaller limits)",
+			plan: &types.MissionPlan{
+				MissionID: "vc-1",
+				Phases: []types.PlannedPhase{
+					{
+						PhaseNumber:     1,
+						Title:           "Phase 1",
+						Description:     "Test",
+						Strategy:        "Test",
+						Tasks:           makeTasks(8), // Would be OK with default (30), but exceeds custom limit (5)
+						EstimatedEffort: "1w",
+					},
+				},
+				Strategy:        "Test",
+				EstimatedEffort: "1w",
+				Confidence:      0.8,
+			},
+			envVars: map[string]string{
+				"VC_MAX_PLAN_PHASES":      "10",
+				"VC_MAX_PHASE_TASKS":      "5",
+				"VC_MAX_DEPENDENCY_DEPTH": "3",
+			},
+			wantErr: true,
+			errMsg:  "too many tasks",
+		},
+		{
+			name: "valid plan with custom larger limits",
+			plan: &types.MissionPlan{
+				MissionID: "vc-1",
+				Phases: []types.PlannedPhase{
+					{
+						PhaseNumber:     1,
+						Title:           "Large Phase",
+						Description:     "Test",
+						Strategy:        "Test",
+						Tasks:           makeTasks(45), // Exceeds default (30), OK with custom (50)
+						EstimatedEffort: "1w",
+					},
+				},
+				Strategy:        "Test",
+				EstimatedEffort: "1w",
+				Confidence:      0.8,
+			},
+			envVars: map[string]string{
+				"VC_MAX_PHASE_TASKS": "50",
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set environment variables for this test
+			for k, v := range tt.envVars {
+				t.Setenv(k, v)
+			}
+
+			s := &Supervisor{}
+			err := s.validatePlanSize(context.Background(), tt.plan)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validatePlanSize() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr && tt.errMsg != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("validatePlanSize() error = %v, want error containing %q", err, tt.errMsg)
+				}
+			}
+		})
+	}
+}
+
+func TestCalculateDependencyDepth(t *testing.T) {
+	tests := []struct {
+		name      string
+		phases    []types.PlannedPhase
+		wantDepth int
+	}{
+		{
+			name: "no dependencies",
+			phases: []types.PlannedPhase{
+				{PhaseNumber: 1, Title: "P1", Description: "Test", Strategy: "Test", Tasks: []string{"T1"}, EstimatedEffort: "1w"},
+				{PhaseNumber: 2, Title: "P2", Description: "Test", Strategy: "Test", Tasks: []string{"T2"}, EstimatedEffort: "1w"},
+			},
+			wantDepth: 1, // Each phase has depth 1 (no deps)
+		},
+		{
+			name: "linear chain (1 -> 2 -> 3)",
+			phases: []types.PlannedPhase{
+				{PhaseNumber: 1, Title: "P1", Description: "Test", Strategy: "Test", Tasks: []string{"T1"}, EstimatedEffort: "1w"},
+				{PhaseNumber: 2, Title: "P2", Description: "Test", Strategy: "Test", Tasks: []string{"T2"}, Dependencies: []int{1}, EstimatedEffort: "1w"},
+				{PhaseNumber: 3, Title: "P3", Description: "Test", Strategy: "Test", Tasks: []string{"T3"}, Dependencies: []int{2}, EstimatedEffort: "1w"},
+			},
+			wantDepth: 3, // P1=1, P2=2, P3=3
+		},
+		{
+			name: "diamond (1 -> 2,3 -> 4)",
+			phases: []types.PlannedPhase{
+				{PhaseNumber: 1, Title: "P1", Description: "Test", Strategy: "Test", Tasks: []string{"T1"}, EstimatedEffort: "1w"},
+				{PhaseNumber: 2, Title: "P2", Description: "Test", Strategy: "Test", Tasks: []string{"T2"}, Dependencies: []int{1}, EstimatedEffort: "1w"},
+				{PhaseNumber: 3, Title: "P3", Description: "Test", Strategy: "Test", Tasks: []string{"T3"}, Dependencies: []int{1}, EstimatedEffort: "1w"},
+				{PhaseNumber: 4, Title: "P4", Description: "Test", Strategy: "Test", Tasks: []string{"T4"}, Dependencies: []int{2, 3}, EstimatedEffort: "1w"},
+			},
+			wantDepth: 3, // P1=1, P2=P3=2, P4=3
+		},
+		{
+			name: "complex graph with depth 5",
+			phases: []types.PlannedPhase{
+				{PhaseNumber: 1, Title: "P1", Description: "Test", Strategy: "Test", Tasks: []string{"T1"}, EstimatedEffort: "1w"},
+				{PhaseNumber: 2, Title: "P2", Description: "Test", Strategy: "Test", Tasks: []string{"T2"}, Dependencies: []int{1}, EstimatedEffort: "1w"},
+				{PhaseNumber: 3, Title: "P3", Description: "Test", Strategy: "Test", Tasks: []string{"T3"}, Dependencies: []int{1}, EstimatedEffort: "1w"},
+				{PhaseNumber: 4, Title: "P4", Description: "Test", Strategy: "Test", Tasks: []string{"T4"}, Dependencies: []int{2, 3}, EstimatedEffort: "1w"},
+				{PhaseNumber: 5, Title: "P5", Description: "Test", Strategy: "Test", Tasks: []string{"T5"}, Dependencies: []int{4}, EstimatedEffort: "1w"},
+			},
+			wantDepth: 4, // P1=1, P2=P3=2, P4=3, P5=4
+		},
+		{
+			name: "long chain (depth 10)",
+			phases: func() []types.PlannedPhase {
+				phases := make([]types.PlannedPhase, 10)
+				for i := 0; i < 10; i++ {
+					phase := types.PlannedPhase{
+						PhaseNumber:     i + 1,
+						Title:           fmt.Sprintf("P%d", i+1),
+						Description:     "Test",
+						Strategy:        "Test",
+						Tasks:           []string{"T1"},
+						EstimatedEffort: "1w",
+					}
+					if i > 0 {
+						phase.Dependencies = []int{i}
+					}
+					phases[i] = phase
+				}
+				return phases
+			}(),
+			wantDepth: 10,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			depth := calculateDependencyDepth(tt.phases)
+			if depth != tt.wantDepth {
+				t.Errorf("calculateDependencyDepth() = %d, want %d", depth, tt.wantDepth)
+			}
+		})
+	}
+}
+
+func TestGetEnvInt(t *testing.T) {
+	tests := []struct {
+		name         string
+		key          string
+		envValue     string
+		defaultValue int
+		want         int
+	}{
+		{
+			name:         "environment variable not set",
+			key:          "TEST_VAR_NOTSET",
+			defaultValue: 42,
+			want:         42,
+		},
+		{
+			name:         "environment variable set to valid int",
+			key:          "TEST_VAR_VALID",
+			envValue:     "123",
+			defaultValue: 42,
+			want:         123,
+		},
+		{
+			name:         "environment variable set to invalid value",
+			key:          "TEST_VAR_INVALID",
+			envValue:     "not-a-number",
+			defaultValue: 42,
+			want:         42, // Should fall back to default
+		},
+		{
+			name:         "environment variable set to empty string",
+			key:          "TEST_VAR_EMPTY",
+			envValue:     "",
+			defaultValue: 42,
+			want:         42, // Should fall back to default
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				t.Setenv(tt.key, tt.envValue)
+			}
+
+			got := getEnvInt(tt.key, tt.defaultValue)
+			if got != tt.want {
+				t.Errorf("getEnvInt(%q, %d) = %d, want %d", tt.key, tt.defaultValue, got, tt.want)
+			}
+		})
+	}
+}
+
