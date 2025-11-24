@@ -41,25 +41,83 @@ type ConvergenceDecision struct {
 // DiffBasedDetector is a fallback convergence detector that uses the Myers
 // diff algorithm (same algorithm used by git and gopls) for accurate change
 // detection. If changes are below threshold, assume converged.
+//
+// Advanced Features for Code Restructuring:
+//
+// The detector supports three optional modes to handle common AI refinement patterns:
+//
+// 1. IgnoreWhitespace: Normalizes whitespace before diffing to ignore pure formatting changes.
+//    Use case: AI often reformats code (indentation, spacing) without semantic changes.
+//    Tradeoff: May miss intentional formatting fixes. Enable when formatting is not critical.
+//
+// 2. IgnoreComments: Filters out comment-only changes from the diff count.
+//    Use case: AI frequently adds/improves documentation without changing logic.
+//    Tradeoff: May miss important documentation updates. Enable when doc changes shouldn't
+//    prevent convergence.
+//
+// 3. SemanticRestructuring: Applies heuristics to detect code restructuring that preserves
+//    semantics (refactoring, reordering). When a hunk has equal deletions and insertions
+//    (70%+ overlap), it's weighted at 50% to reflect potential semantic equivalence.
+//    Use case: AI often refactors code (extract function, reorder blocks) without changing behavior.
+//    Tradeoff: May undercount real logic changes that happen to have balanced del/ins.
+//    Enable when refactoring patterns are common.
+//
+// Recommendation: Start with default settings (all false). Enable options only if you observe
+// convergence issues due to harmless reformatting/restructuring. The AI-based detector is
+// better at true semantic understanding; this detector is a fast fallback.
 type DiffBasedDetector struct {
 	// MaxDiffPercent is the maximum percentage of changed lines to consider converged
 	// Default: 5% (if less than 5% of lines changed, consider converged)
 	MaxDiffPercent float64
+
+	// IgnoreWhitespace controls whether pure whitespace changes are ignored
+	// When true, lines that differ only in whitespace are not counted as changes
+	IgnoreWhitespace bool
+
+	// IgnoreComments controls whether comment-only changes are ignored
+	// When true, lines that appear to be comment additions/removals are weighted less
+	IgnoreComments bool
+
+	// SemanticRestructuring controls whether to apply heuristics for detecting
+	// code restructuring that preserves semantics (e.g., refactoring, reordering)
+	// When true, certain structural changes are weighted less in diff calculations
+	SemanticRestructuring bool
 }
 
-// NewDiffBasedDetector creates a diff-based convergence detector
+// NewDiffBasedDetector creates a diff-based convergence detector with default settings
 func NewDiffBasedDetector(maxDiffPercent float64) *DiffBasedDetector {
 	if maxDiffPercent <= 0 {
 		maxDiffPercent = 5.0 // Default: 5% change threshold
 	}
 	return &DiffBasedDetector{
-		MaxDiffPercent: maxDiffPercent,
+		MaxDiffPercent:        maxDiffPercent,
+		IgnoreWhitespace:      false,
+		IgnoreComments:        false,
+		SemanticRestructuring: false,
+	}
+}
+
+// NewDiffBasedDetectorWithOptions creates a diff-based convergence detector with custom options
+func NewDiffBasedDetectorWithOptions(maxDiffPercent float64, ignoreWhitespace, ignoreComments, semanticRestructuring bool) *DiffBasedDetector {
+	if maxDiffPercent <= 0 {
+		maxDiffPercent = 5.0 // Default: 5% change threshold
+	}
+	return &DiffBasedDetector{
+		MaxDiffPercent:        maxDiffPercent,
+		IgnoreWhitespace:      ignoreWhitespace,
+		IgnoreComments:        ignoreComments,
+		SemanticRestructuring: semanticRestructuring,
 	}
 }
 
 // CheckConvergence uses diff size to determine convergence
 func (d *DiffBasedDetector) CheckConvergence(ctx context.Context, current, previous *Artifact) (*ConvergenceDecision, error) {
-	diffLines := countDiffLines(previous.Content, current.Content)
+	opts := diffOptions{
+		ignoreWhitespace:      d.IgnoreWhitespace,
+		ignoreComments:        d.IgnoreComments,
+		semanticRestructuring: d.SemanticRestructuring,
+	}
+	diffLines := countDiffLinesWithOptions(previous.Content, current.Content, opts)
 	totalLines := countLines(current.Content)
 
 	if totalLines == 0 {
@@ -84,7 +142,7 @@ func (d *DiffBasedDetector) CheckConvergence(ctx context.Context, current, previ
 	distanceFromThreshold := math.Abs(changePercent - d.MaxDiffPercent)
 	confidence := math.Min(1.0, distanceFromThreshold/d.MaxDiffPercent)
 
-	reasoning := fmt.Sprintf("%.1f%% of lines changed (threshold: %.1f%%)", changePercent, d.MaxDiffPercent)
+	reasoning := buildReasoningString(changePercent, d.MaxDiffPercent, opts)
 
 	return &ConvergenceDecision{
 		Converged:  converged,
@@ -92,6 +150,24 @@ func (d *DiffBasedDetector) CheckConvergence(ctx context.Context, current, previ
 		Reasoning:  reasoning,
 		Strategy:   "diff-based",
 	}, nil
+}
+
+func buildReasoningString(changePercent, threshold float64, opts diffOptions) string {
+	base := fmt.Sprintf("%.1f%% of lines changed (threshold: %.1f%%)", changePercent, threshold)
+	var flags []string
+	if opts.ignoreWhitespace {
+		flags = append(flags, "ignoring whitespace")
+	}
+	if opts.ignoreComments {
+		flags = append(flags, "ignoring comments")
+	}
+	if opts.semanticRestructuring {
+		flags = append(flags, "detecting semantic restructuring")
+	}
+	if len(flags) > 0 {
+		return fmt.Sprintf("%s [%s]", base, strings.Join(flags, ", "))
+	}
+	return base
 }
 
 // ChainedDetector chains multiple detectors with fallback logic.
@@ -164,7 +240,20 @@ func countLines(text string) int {
 	return strings.Count(text, "\n") + 1
 }
 
+// diffOptions controls how diffs are computed and what changes to consider significant
+type diffOptions struct {
+	ignoreWhitespace      bool
+	ignoreComments        bool
+	semanticRestructuring bool
+}
+
+// countDiffLines is a backward-compatible wrapper that uses default options
 func countDiffLines(prev, current string) int {
+	return countDiffLinesWithOptions(prev, current, diffOptions{})
+}
+
+// countDiffLinesWithOptions computes the diff with customizable handling of different change types
+func countDiffLinesWithOptions(prev, current string, opts diffOptions) int {
 	// Use Myers diff algorithm (same algorithm used by git and gopls)
 	// This properly handles line reordering, insertions, and deletions
 	// without being fooled by simple position changes
@@ -173,6 +262,12 @@ func countDiffLines(prev, current string) int {
 	// The diff algorithm is sensitive to whether the last line has a newline
 	prevNorm := normalizeNewlines(prev)
 	currentNorm := normalizeNewlines(current)
+
+	// Apply whitespace normalization if requested
+	if opts.ignoreWhitespace {
+		prevNorm = normalizeWhitespace(prevNorm)
+		currentNorm = normalizeWhitespace(currentNorm)
+	}
 
 	edits := myers.ComputeEdits(span.URIFromPath("prev"), prevNorm, currentNorm)
 	unified := gotextdiff.ToUnified("prev", "current", prevNorm, edits)
@@ -187,15 +282,43 @@ func countDiffLines(prev, current string) int {
 	for _, hunk := range unified.Hunks {
 		deletions := 0
 		insertions := 0
+		commentOnlyDeletions := 0
+		commentOnlyInsertions := 0
+
 		for _, line := range hunk.Lines {
-			if line.Kind == gotextdiff.Delete {
+			switch line.Kind {
+			case gotextdiff.Delete:
 				deletions++
-			} else if line.Kind == gotextdiff.Insert {
+				if opts.ignoreComments && isCommentLine(line.Content) {
+					commentOnlyDeletions++
+				}
+			case gotextdiff.Insert:
 				insertions++
+				if opts.ignoreComments && isCommentLine(line.Content) {
+					commentOnlyInsertions++
+				}
 			}
 		}
-		// Take the max - this counts a "changed line" as 1, not 2
-		diffCount += maxInt(deletions, insertions)
+
+		// If ignoring comments, subtract comment-only changes
+		if opts.ignoreComments {
+			deletions -= commentOnlyDeletions
+			insertions -= commentOnlyInsertions
+		}
+
+		// Apply semantic restructuring heuristics if enabled
+		// If a hunk has equal deletions and insertions, it might be a refactoring
+		// Weight it at 50% to reflect potential semantic equivalence
+		hunkDiff := maxInt(deletions, insertions)
+		if opts.semanticRestructuring && deletions > 0 && insertions > 0 {
+			// Equal or near-equal del/ins suggests restructuring, not new logic
+			ratio := float64(minInt(deletions, insertions)) / float64(maxInt(deletions, insertions))
+			if ratio > 0.7 { // If 70%+ overlap, likely restructuring
+				hunkDiff = int(float64(hunkDiff) * 0.5) // Weight at 50%
+			}
+		}
+
+		diffCount += hunkDiff
 	}
 
 	return diffCount
@@ -217,6 +340,53 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// normalizeWhitespace collapses all whitespace sequences to single spaces
+// and trims leading/trailing whitespace on each line. This allows detection
+// of pure indentation/formatting changes.
+func normalizeWhitespace(text string) string {
+	lines := strings.Split(text, "\n")
+	var normalized []string
+	for _, line := range lines {
+		// Trim leading and trailing whitespace
+		trimmed := strings.TrimSpace(line)
+		// Collapse internal whitespace sequences to single spaces
+		fields := strings.Fields(trimmed)
+		normalized = append(normalized, strings.Join(fields, " "))
+	}
+	return strings.Join(normalized, "\n")
+}
+
+// isCommentLine attempts to detect if a line is a comment
+// This is a simple heuristic that works for many languages:
+// - Starts with // (C-style, Go, Rust, etc.)
+// - Starts with # (Python, Ruby, Shell, etc.)
+// - Starts with -- (SQL, Lua, etc.)
+// - Contains /* or */ (C-style block comments)
+// - Starts with * (continuation of block comment)
+func isCommentLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return false
+	}
+
+	// Check common comment prefixes
+	commentPrefixes := []string{"//", "#", "--", "/*", "*/", "*"}
+	for _, prefix := range commentPrefixes {
+		if strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // ConvergenceMetrics tracks convergence detection performance for analysis

@@ -567,6 +567,35 @@ func TestNewDiffBasedDetector(t *testing.T) {
 	if detector3.MaxDiffPercent != 5.0 {
 		t.Errorf("Expected default MaxDiffPercent=5.0, got %.2f", detector3.MaxDiffPercent)
 	}
+
+	// Test default options
+	if detector1.IgnoreWhitespace {
+		t.Error("Expected IgnoreWhitespace=false by default")
+	}
+	if detector1.IgnoreComments {
+		t.Error("Expected IgnoreComments=false by default")
+	}
+	if detector1.SemanticRestructuring {
+		t.Error("Expected SemanticRestructuring=false by default")
+	}
+}
+
+// TestNewDiffBasedDetectorWithOptions tests constructor with custom options
+func TestNewDiffBasedDetectorWithOptions(t *testing.T) {
+	detector := NewDiffBasedDetectorWithOptions(10.0, true, true, true)
+
+	if detector.MaxDiffPercent != 10.0 {
+		t.Errorf("Expected MaxDiffPercent=10.0, got %.2f", detector.MaxDiffPercent)
+	}
+	if !detector.IgnoreWhitespace {
+		t.Error("Expected IgnoreWhitespace=true")
+	}
+	if !detector.IgnoreComments {
+		t.Error("Expected IgnoreComments=true")
+	}
+	if !detector.SemanticRestructuring {
+		t.Error("Expected SemanticRestructuring=true")
+	}
 }
 
 // TestNewChainedDetector tests constructor defaults
@@ -752,5 +781,323 @@ func TestConvergenceMetrics_EdgeCases(t *testing.T) {
 
 	if metrics.MeanIterationsToConvergence() != 0.0 {
 		t.Errorf("Expected MeanIterationsToConvergence=0.0 for empty metrics, got %.2f", metrics.MeanIterationsToConvergence())
+	}
+}
+
+// TestDiffBasedDetector_WhitespaceHandling tests whitespace normalization
+func TestDiffBasedDetector_WhitespaceHandling(t *testing.T) {
+	tests := []struct {
+		name             string
+		prev             string
+		current          string
+		ignoreWhitespace bool
+		wantConverged    bool
+	}{
+		{
+			name: "pure indentation change - not ignored",
+			prev: `function foo() {
+  return 42;
+}`,
+			current: `function foo() {
+    return 42;
+}`,
+			ignoreWhitespace: false,
+			wantConverged:    false, // Different indentation = change
+		},
+		{
+			name: "pure indentation change - ignored",
+			prev: `function foo() {
+  return 42;
+}`,
+			current: `function foo() {
+    return 42;
+}`,
+			ignoreWhitespace: true,
+			wantConverged:    true, // Same after normalization
+		},
+		{
+			name: "mixed whitespace - ignored",
+			prev: "line1\t\t\nline2   \nline3",
+			current: "line1\nline2\nline3",
+			ignoreWhitespace: true,
+			wantConverged:    true,
+		},
+		{
+			name: "actual content change - still detected",
+			prev: "function foo() { return 42; }",
+			current: "function bar() { return 43; }",
+			ignoreWhitespace: true,
+			wantConverged:    false, // Real change detected even with normalization
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			detector := NewDiffBasedDetectorWithOptions(15.0, tt.ignoreWhitespace, false, false)
+			ctx := context.Background()
+
+			previous := &Artifact{Type: "test", Content: tt.prev}
+			current := &Artifact{Type: "test", Content: tt.current}
+
+			decision, err := detector.CheckConvergence(ctx, current, previous)
+			if err != nil {
+				t.Fatalf("CheckConvergence failed: %v", err)
+			}
+
+			if decision.Converged != tt.wantConverged {
+				t.Errorf("Expected converged=%v, got %v (reasoning: %s)", tt.wantConverged, decision.Converged, decision.Reasoning)
+			}
+		})
+	}
+}
+
+// TestDiffBasedDetector_CommentHandling tests comment detection and filtering
+func TestDiffBasedDetector_CommentHandling(t *testing.T) {
+	tests := []struct {
+		name           string
+		prev           string
+		current        string
+		ignoreComments bool
+		wantConverged  bool
+	}{
+		{
+			name: "comment addition - not ignored",
+			prev: `function foo() {
+  return 42;
+}`,
+			current: `// Returns the answer
+function foo() {
+  return 42;
+}`,
+			ignoreComments: false,
+			wantConverged:  false,
+		},
+		{
+			name: "comment addition - ignored",
+			prev: `function foo() {
+  return 42;
+}`,
+			current: `// Returns the answer
+function foo() {
+  return 42;
+}`,
+			ignoreComments: true,
+			wantConverged:  true,
+		},
+		{
+			name: "multiple comment types",
+			prev: `code line 1
+code line 2`,
+			current: `# Python comment
+code line 1
+// C-style comment
+code line 2
+-- SQL comment`,
+			ignoreComments: true,
+			wantConverged:  true,
+		},
+		{
+			name: "code change with comments - still detected",
+			prev: `function foo() {
+  return 42;
+}`,
+			current: `// Returns the answer
+function bar() {
+  return 43;
+}`,
+			ignoreComments: true,
+			wantConverged:  false, // Real code change still detected
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			detector := NewDiffBasedDetectorWithOptions(25.0, false, tt.ignoreComments, false)
+			ctx := context.Background()
+
+			previous := &Artifact{Type: "test", Content: tt.prev}
+			current := &Artifact{Type: "test", Content: tt.current}
+
+			decision, err := detector.CheckConvergence(ctx, current, previous)
+			if err != nil {
+				t.Fatalf("CheckConvergence failed: %v", err)
+			}
+
+			if decision.Converged != tt.wantConverged {
+				t.Errorf("Expected converged=%v, got %v (reasoning: %s)", tt.wantConverged, decision.Converged, decision.Reasoning)
+			}
+		})
+	}
+}
+
+// TestDiffBasedDetector_SemanticRestructuring tests restructuring detection
+func TestDiffBasedDetector_SemanticRestructuring(t *testing.T) {
+	tests := []struct {
+		name              string
+		prev              string
+		current           string
+		semanticRestructuring bool
+		wantConverged     bool
+	}{
+		{
+			name: "refactoring - not weighted",
+			prev: `function calculate(x) {
+  let result = x * 2;
+  result = result + 10;
+  return result;
+}`,
+			current: `function calculate(x) {
+  return x * 2 + 10;
+}`,
+			semanticRestructuring: false,
+			wantConverged:         false, // Counted as significant change
+		},
+		{
+			name: "refactoring - weighted as restructuring",
+			prev: `function calculate(x) {
+  let result = x * 2;
+  result = result + 10;
+  return result;
+}`,
+			current: `function calculate(x) {
+  return x * 2 + 10;
+}`,
+			semanticRestructuring: true,
+			wantConverged:         false, // Still significant even with weighting (50% of high change)
+		},
+		{
+			name: "reordering blocks",
+			prev: `section A
+content A1
+content A2
+section B
+content B1
+content B2`,
+			current: `section B
+content B1
+content B2
+section A
+content A1
+content A2`,
+			semanticRestructuring: true,
+			wantConverged:         true, // Equal del/ins weighted as restructuring
+		},
+		{
+			name: "small refactoring with semantic detection",
+			prev: `line1
+line2
+line3
+line4
+line5
+line6
+line7
+line8
+line9
+line10`,
+			current: `line1
+line3
+line2
+line4
+line5
+line6
+line7
+line8
+line9
+line10`,
+			semanticRestructuring: true,
+			wantConverged:         true, // 2 lines moved (1 del + 1 ins = 2, weighted to 1 = 10%)
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			detector := NewDiffBasedDetectorWithOptions(30.0, false, false, tt.semanticRestructuring)
+			ctx := context.Background()
+
+			previous := &Artifact{Type: "test", Content: tt.prev}
+			current := &Artifact{Type: "test", Content: tt.current}
+
+			decision, err := detector.CheckConvergence(ctx, current, previous)
+			if err != nil {
+				t.Fatalf("CheckConvergence failed: %v", err)
+			}
+
+			if decision.Converged != tt.wantConverged {
+				t.Errorf("Expected converged=%v, got %v (reasoning: %s)", tt.wantConverged, decision.Converged, decision.Reasoning)
+			}
+		})
+	}
+}
+
+// TestIsCommentLine tests comment detection heuristic
+func TestIsCommentLine(t *testing.T) {
+	tests := []struct {
+		line       string
+		isComment  bool
+	}{
+		{"// C-style comment", true},
+		{"  // Indented comment", true},
+		{"# Python comment", true},
+		{"  # Shell comment", true},
+		{"-- SQL comment", true},
+		{"/* Block start */", true},
+		{"  * Block continuation", true},
+		{"actual code line", false},
+		{"const x = 5 // not a comment line", false}, // Inline comment doesn't count
+		{"", false},
+		{"   ", false}, // Just whitespace
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			result := isCommentLine(tt.line)
+			if result != tt.isComment {
+				t.Errorf("isCommentLine(%q) = %v, want %v", tt.line, result, tt.isComment)
+			}
+		})
+	}
+}
+
+// TestNormalizeWhitespace tests whitespace normalization
+func TestNormalizeWhitespace(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "collapse multiple spaces",
+			input:    "a    b    c",
+			expected: "a b c",
+		},
+		{
+			name:     "trim leading/trailing",
+			input:    "  a  b  ",
+			expected: "a b",
+		},
+		{
+			name:     "preserve newlines",
+			input:    "line1\nline2\nline3",
+			expected: "line1\nline2\nline3",
+		},
+		{
+			name:     "normalize indentation",
+			input:    "  indented\n    more indented",
+			expected: "indented\nmore indented",
+		},
+		{
+			name:     "tabs to spaces",
+			input:    "a\t\tb\tc",
+			expected: "a b c",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := normalizeWhitespace(tt.input)
+			if result != tt.expected {
+				t.Errorf("normalizeWhitespace(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
 	}
 }
