@@ -129,6 +129,23 @@ func (m *mockStorageIntegration) ListInterruptedIssues(ctx context.Context) ([]*
 	return nil, nil
 }
 
+// Mission Plans (vc-un1o, vc-gxfn, vc-d295)
+func (m *mockStorageIntegration) StorePlan(ctx context.Context, plan *types.MissionPlan, expectedIteration int) (int, error) {
+	return 1, nil
+}
+func (m *mockStorageIntegration) GetPlan(ctx context.Context, missionID string) (*types.MissionPlan, int, error) {
+	return nil, 0, nil
+}
+func (m *mockStorageIntegration) GetPlanHistory(ctx context.Context, missionID string) ([]*types.MissionPlan, error) {
+	return nil, nil
+}
+func (m *mockStorageIntegration) DeletePlan(ctx context.Context, missionID string) error {
+	return nil
+}
+func (m *mockStorageIntegration) ListDraftPlans(ctx context.Context) ([]*types.MissionPlan, error) {
+	return nil, nil
+}
+
 // TestConversationalFlows tests end-to-end conversation scenarios
 func TestConversationalFlows(t *testing.T) {
 	// Note: These tests validate tool selection and parameter passing.

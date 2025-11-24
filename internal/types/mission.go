@@ -109,6 +109,7 @@ type MissionPlan struct {
 	Confidence   float64         `json:"confidence"`   // Confidence score (0.0-1.0)
 	GeneratedAt  time.Time       `json:"generated_at"` // When the plan was generated
 	GeneratedBy  string          `json:"generated_by"` // Who/what generated the plan (e.g., "ai-planner")
+	Status       string          `json:"status"`       // Plan status: "draft", "refining", "validated", "approved"
 }
 
 // Validate checks if the mission plan has valid field values

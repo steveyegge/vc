@@ -327,6 +327,23 @@ func (m *MockStorage) ListInterruptedIssues(ctx context.Context) ([]*types.Inter
 	return nil, nil
 }
 
+// Mission Plans (vc-un1o, vc-gxfn, vc-d295)
+func (m *MockStorage) StorePlan(ctx context.Context, plan *types.MissionPlan, expectedIteration int) (int, error) {
+	return 1, nil
+}
+func (m *MockStorage) GetPlan(ctx context.Context, missionID string) (*types.MissionPlan, int, error) {
+	return nil, 0, nil
+}
+func (m *MockStorage) GetPlanHistory(ctx context.Context, missionID string) ([]*types.MissionPlan, error) {
+	return nil, nil
+}
+func (m *MockStorage) DeletePlan(ctx context.Context, missionID string) error {
+	return nil
+}
+func (m *MockStorage) ListDraftPlans(ctx context.Context) ([]*types.MissionPlan, error) {
+	return nil, nil
+}
+
 func TestGenerateAndStorePlan_RequiresApproval(t *testing.T) {
 	ctx := context.Background()
 

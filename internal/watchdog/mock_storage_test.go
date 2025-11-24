@@ -209,3 +209,20 @@ func (m *mockStorage) DeleteInterruptMetadata(ctx context.Context, issueID strin
 func (m *mockStorage) ListInterruptedIssues(ctx context.Context) ([]*types.InterruptMetadata, error) {
 	return nil, nil
 }
+
+// Mission Plans (vc-un1o, vc-gxfn, vc-d295)
+func (m *mockStorage) StorePlan(ctx context.Context, plan *types.MissionPlan, expectedIteration int) (int, error) {
+	return 1, nil
+}
+func (m *mockStorage) GetPlan(ctx context.Context, missionID string) (*types.MissionPlan, int, error) {
+	return nil, 0, nil
+}
+func (m *mockStorage) GetPlanHistory(ctx context.Context, missionID string) ([]*types.MissionPlan, error) {
+	return nil, nil
+}
+func (m *mockStorage) DeletePlan(ctx context.Context, missionID string) error {
+	return nil
+}
+func (m *mockStorage) ListDraftPlans(ctx context.Context) ([]*types.MissionPlan, error) {
+	return nil, nil
+}

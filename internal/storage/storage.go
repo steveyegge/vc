@@ -9,6 +9,10 @@ import (
 	"github.com/steveyegge/vc/internal/types"
 )
 
+// ErrStaleIteration is re-exported from the beads package for convenience
+// It's returned when attempting to update a plan with a stale iteration number
+var ErrStaleIteration = beads.ErrStaleIteration
+
 // Storage defines the interface for issue storage backends
 //
 // IMPORTANT: When adding methods to this interface, you MUST update ALL mock implementations.
@@ -143,6 +147,25 @@ type Storage interface {
 	GetConfig(ctx context.Context, key string) (string, error)
 	SetConfig(ctx context.Context, key, value string) error
 	GetIssuePrefix(ctx context.Context) (string, error) // vc-0bt1: Get project issue prefix (e.g., "vc", "bd")
+
+	// Mission Plans - ephemeral plan storage with concurrency control (vc-un1o, vc-gxfn, vc-d295)
+	// StorePlan stores or updates a mission plan using optimistic locking to prevent concurrent modification races
+	// If expectedIteration > 0, it will only update if the current iteration matches (returns ErrStaleIteration on mismatch)
+	// If expectedIteration == 0, it will create a new plan or force-update regardless of iteration
+	// Returns the new iteration number on success
+	StorePlan(ctx context.Context, plan *types.MissionPlan, expectedIteration int) (int, error)
+
+	// GetPlan retrieves the latest plan for a mission (returns nil if no plan exists)
+	GetPlan(ctx context.Context, missionID string) (*types.MissionPlan, int, error) // plan, iteration, error
+
+	// GetPlanHistory retrieves all historical iterations of a plan ordered by iteration DESC
+	GetPlanHistory(ctx context.Context, missionID string) ([]*types.MissionPlan, error)
+
+	// DeletePlan removes all plan data for a mission (all iterations)
+	DeletePlan(ctx context.Context, missionID string) error
+
+	// ListDraftPlans retrieves all plans with status not 'approved' (for cleanup/monitoring)
+	ListDraftPlans(ctx context.Context) ([]*types.MissionPlan, error)
 
 	// Lifecycle
 	Close() error

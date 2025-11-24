@@ -522,6 +522,20 @@ CREATE TABLE IF NOT EXISTS vc_interrupt_metadata (
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
     FOREIGN KEY (executor_instance_id) REFERENCES vc_executor_instances(id) ON DELETE SET NULL
 );
+
+-- Mission plans: ephemeral plan storage before approval (vc-un1o, vc-gxfn)
+-- Plans are drafted, refined, validated, then approved and converted to issues
+-- This table uses optimistic locking to handle concurrent refinement operations
+CREATE TABLE IF NOT EXISTS vc_mission_plans (
+    mission_id TEXT PRIMARY KEY,             -- Mission issue ID (vc-xxx)
+    plan_json TEXT NOT NULL,                 -- Full MissionPlan as JSON
+    iteration INTEGER NOT NULL DEFAULT 1,    -- Refinement iteration number (for optimistic locking)
+    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'refining', 'validated', 'approved')),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    approved_at DATETIME,                    -- When approved (NULL if not approved)
+    FOREIGN KEY (mission_id) REFERENCES issues(id) ON DELETE CASCADE
+);
 `
 
 // VC-specific extension schema - INDEX DEFINITIONS
@@ -566,6 +580,10 @@ CREATE INDEX IF NOT EXISTS idx_vc_review_checkpoints_commit ON vc_review_checkpo
 -- Quota snapshots indexes (vc-7e21)
 CREATE INDEX IF NOT EXISTS idx_vc_quota_snapshots_timestamp ON vc_quota_snapshots(timestamp);
 CREATE INDEX IF NOT EXISTS idx_vc_quota_snapshots_window ON vc_quota_snapshots(window_start);
+
+-- Mission plans indexes (vc-un1o)
+CREATE INDEX IF NOT EXISTS idx_vc_mission_plans_status ON vc_mission_plans(status);
+CREATE INDEX IF NOT EXISTS idx_vc_mission_plans_updated ON vc_mission_plans(updated_at);
 
 -- Quota operations indexes (vc-7e21)
 CREATE INDEX IF NOT EXISTS idx_vc_quota_operations_timestamp ON vc_quota_operations(timestamp);
