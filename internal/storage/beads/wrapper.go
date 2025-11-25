@@ -876,6 +876,101 @@ func vcIssueToBeads(vi *types.Issue) *beadsLib.Issue {
 	}
 }
 
+// Convert VC Dependency to Beads Dependency
+func vcDependencyToBeads(vd *types.Dependency) *beadsLib.Dependency {
+	if vd == nil {
+		return nil
+	}
+	return &beadsLib.Dependency{
+		IssueID:     vd.IssueID,
+		DependsOnID: vd.DependsOnID,
+		Type:        beadsLib.DependencyType(vd.Type),
+		CreatedAt:   vd.CreatedAt,
+		CreatedBy:   vd.CreatedBy,
+	}
+}
+
+// ======================================================================
+// TRANSACTION WRAPPER (vc-3hjg)
+// ======================================================================
+
+// VCTransaction wraps beadsLib.Transaction to accept VC types instead of Beads types.
+// This provides a type-safe interface for VC code to use transactions without
+// needing to know about Beads internal types.
+type VCTransaction struct {
+	tx beadsLib.Transaction
+}
+
+// CreateIssue creates an issue within the transaction using VC types
+func (t *VCTransaction) CreateIssue(ctx context.Context, issue *types.Issue, actor string) error {
+	beadsIssue := vcIssueToBeads(issue)
+	err := t.tx.CreateIssue(ctx, beadsIssue, actor)
+	if err == nil && beadsIssue.ID != "" {
+		// Copy generated ID back to VC issue
+		issue.ID = beadsIssue.ID
+	}
+	return err
+}
+
+// AddDependency adds a dependency within the transaction using VC types
+func (t *VCTransaction) AddDependency(ctx context.Context, dep *types.Dependency, actor string) error {
+	beadsDep := vcDependencyToBeads(dep)
+	return t.tx.AddDependency(ctx, beadsDep, actor)
+}
+
+// AddLabel adds a label to an issue within the transaction
+func (t *VCTransaction) AddLabel(ctx context.Context, issueID, label, actor string) error {
+	return t.tx.AddLabel(ctx, issueID, label, actor)
+}
+
+// RemoveLabel removes a label from an issue within the transaction
+func (t *VCTransaction) RemoveLabel(ctx context.Context, issueID, label, actor string) error {
+	return t.tx.RemoveLabel(ctx, issueID, label, actor)
+}
+
+// UpdateIssue updates an issue within the transaction
+func (t *VCTransaction) UpdateIssue(ctx context.Context, id string, updates map[string]interface{}, actor string) error {
+	return t.tx.UpdateIssue(ctx, id, updates, actor)
+}
+
+// CloseIssue closes an issue within the transaction
+func (t *VCTransaction) CloseIssue(ctx context.Context, id string, reason string, actor string) error {
+	return t.tx.CloseIssue(ctx, id, reason, actor)
+}
+
+// DeleteIssue deletes an issue within the transaction
+func (t *VCTransaction) DeleteIssue(ctx context.Context, id string) error {
+	return t.tx.DeleteIssue(ctx, id)
+}
+
+// GetIssue retrieves an issue within the transaction (for read-your-writes)
+func (t *VCTransaction) GetIssue(ctx context.Context, id string) (*types.Issue, error) {
+	beadsIssue, err := t.tx.GetIssue(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return beadsIssueToVC(beadsIssue), nil
+}
+
+// RemoveDependency removes a dependency within the transaction
+func (t *VCTransaction) RemoveDependency(ctx context.Context, issueID, dependsOnID string, actor string) error {
+	return t.tx.RemoveDependency(ctx, issueID, dependsOnID, actor)
+}
+
+// RunInVCTransaction executes a function within a database transaction using VC types.
+// This wraps Beads' RunInTransaction to provide a VC-type-aware interface.
+//
+// All operations within the transaction either succeed together (commit)
+// or fail together (rollback).
+//
+// vc-3hjg: Added for atomic plan approval workflow
+func (s *VCStorage) RunInVCTransaction(ctx context.Context, fn func(tx *VCTransaction) error) error {
+	return s.Storage.RunInTransaction(ctx, func(beadsTx beadsLib.Transaction) error {
+		vcTx := &VCTransaction{tx: beadsTx}
+		return fn(vcTx)
+	})
+}
+
 // ======================================================================
 // GATE BASELINE METHODS (vc-198: Preflight quality gates cache)
 // ======================================================================

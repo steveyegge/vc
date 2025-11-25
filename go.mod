@@ -5,13 +5,14 @@ go 1.25.0
 toolchain go1.25.3
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.18.0
+	github.com/anthropics/anthropic-sdk-go v1.18.1
 	github.com/chzyer/readline v1.5.1
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
+	github.com/hexops/gotextdiff v1.0.3
 	github.com/ncruces/go-sqlite3 v0.30.1
 	github.com/spf13/cobra v1.10.1
-	github.com/steveyegge/beads v0.24.1
+	github.com/steveyegge/beads v0.24.5
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/mod v0.30.0
 	golang.org/x/sync v0.17.0
@@ -23,7 +24,6 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
-	github.com/hexops/gotextdiff v1.0.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -37,7 +37,7 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/tetratelabs/wazero v1.10.0 // indirect
+	github.com/tetratelabs/wazero v1.10.1 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect

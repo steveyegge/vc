@@ -13,6 +13,27 @@ import (
 // It's returned when attempting to update a plan with a stale iteration number
 var ErrStaleIteration = beads.ErrStaleIteration
 
+// VCTransaction provides atomic multi-operation support within a database transaction.
+// Operations within a transaction either all succeed (commit) or all fail (rollback).
+//
+// VCTransaction wraps Beads transactions to accept VC types instead of Beads types,
+// providing a type-safe interface for VC code to use transactions.
+//
+// Example:
+//
+//	err := store.RunInVCTransaction(ctx, func(tx *storage.VCTransaction) error {
+//	    if err := tx.CreateIssue(ctx, issue, actor); err != nil {
+//	        return err // Triggers rollback
+//	    }
+//	    if err := tx.AddDependency(ctx, dep, actor); err != nil {
+//	        return err // Triggers rollback
+//	    }
+//	    return nil // Triggers commit
+//	})
+//
+// vc-3hjg: Added for atomic plan approval workflow
+type VCTransaction = beads.VCTransaction
+
 // Storage defines the interface for issue storage backends
 //
 // IMPORTANT: When adding methods to this interface, you MUST update ALL mock implementations.
@@ -165,6 +186,25 @@ type Storage interface {
 
 	// ListDraftPlans retrieves all plans with status not 'approved' (for cleanup/monitoring)
 	ListDraftPlans(ctx context.Context) ([]*types.MissionPlan, error)
+
+	// Transactions
+	//
+	// RunInVCTransaction executes a function within a database transaction using VC types.
+	// All operations within the VCTransaction either succeed together (commit)
+	// or fail together (rollback). This is essential for atomic workflows
+	// like plan approval where multiple issues, dependencies, and labels
+	// must be created as a single unit.
+	//
+	// VCTransaction wraps Beads transactions to accept VC types instead of Beads types,
+	// providing a type-safe interface for VC code to use transactions.
+	//
+	// Transaction behavior:
+	//   - If fn returns nil, the transaction is committed
+	//   - If fn returns an error, the transaction is rolled back
+	//   - If fn panics, the transaction is rolled back and the panic is re-raised
+	//
+	// vc-3hjg: Added for atomic plan approval workflow
+	RunInVCTransaction(ctx context.Context, fn func(tx *VCTransaction) error) error
 
 	// Lifecycle
 	Close() error

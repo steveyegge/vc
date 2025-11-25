@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/vc/internal/events"
+	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -141,6 +142,10 @@ func (m *mockStorageIntegration) DeletePlan(ctx context.Context, missionID strin
 }
 func (m *mockStorageIntegration) ListDraftPlans(ctx context.Context) ([]*types.MissionPlan, error) {
 	return nil, nil
+}
+
+func (m *mockStorageIntegration) RunInVCTransaction(ctx context.Context, fn func(tx *storage.VCTransaction) error) error {
+	return nil // Mock does not support transactions
 }
 
 // TestConversationalFlows tests end-to-end conversation scenarios

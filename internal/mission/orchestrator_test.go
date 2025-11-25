@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/vc/internal/events"
+	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -340,6 +341,10 @@ func (m *MockStorage) DeletePlan(ctx context.Context, missionID string) error {
 }
 func (m *MockStorage) ListDraftPlans(ctx context.Context) ([]*types.MissionPlan, error) {
 	return nil, nil
+}
+
+func (m *MockStorage) RunInVCTransaction(ctx context.Context, fn func(tx *storage.VCTransaction) error) error {
+	return nil // Mock does not support transactions
 }
 
 func TestGenerateAndStorePlan_RequiresApproval(t *testing.T) {

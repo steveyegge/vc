@@ -32,16 +32,21 @@ type ApprovalResult struct {
 //  2. Creates all child issues (phases and tasks) in a single transaction
 //  3. Sets up dependency graph (phases block mission, tasks block phases)
 //  4. Applies labels (generated:plan) to all created issues
-//  5. Transitions mission status: draft → planned
+//  5. Updates mission approval metadata
 //  6. Cleans up ephemeral plan from storage
 //
 // Atomicity Guarantee:
-// All operations occur in a single database transaction. If ANY step fails,
-// the entire operation rolls back, leaving no partial state in the issue tracker.
+// All Beads operations (issue creation, dependencies, labels) occur in a single
+// database transaction. If ANY step fails, the entire operation rolls back,
+// leaving no partial state in the issue tracker.
+//
+// Note: Mission state update and plan deletion are VC-specific operations that
+// run after the transaction commits. These are "finalization" steps that occur
+// after the core atomic work is complete.
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeouts
-//   - store: Storage interface (must support GetDB() to access underlying DB)
+//   - store: Storage interface with transaction support
 //   - plan: The validated plan to approve and create issues from
 //   - actor: Who is approving the plan (e.g., "user@example.com" or "ai-supervisor")
 //
@@ -55,7 +60,13 @@ type ApprovalResult struct {
 //   - Mission issue doesn't exist or is not an epic
 //   - Any database operation fails (constraint violation, etc.)
 //   - Transaction commit fails
+//
+// vc-3hjg: Added transaction support for atomic issue creation
 func ApproveAndCreateIssues(ctx context.Context, store storage.Storage, plan *MissionPlan, actor string) (*ApprovalResult, error) {
+	// ==========================================================================
+	// Phase 1: Pre-validation (outside transaction)
+	// ==========================================================================
+
 	// Validate inputs
 	if plan == nil {
 		return nil, fmt.Errorf("plan cannot be nil")
@@ -72,20 +83,7 @@ func ApproveAndCreateIssues(ctx context.Context, store storage.Storage, plan *Mi
 		return nil, fmt.Errorf("plan status must be 'validated' to approve (current: %s)", plan.Status)
 	}
 
-	// TODO(vc-kkmz): Implement true atomic transaction support
-	// Currently, operations are NOT atomic - if any step fails partway through,
-	// some issues may be created while others are not. To fix this, we need:
-	// 1. Beads to expose a transaction-aware API (RunInTransaction or similar)
-	// 2. All storage methods to accept an optional transaction parameter
-	// For now, we rely on validation to catch errors early and minimize risk.
-
-	// Initialize result
-	result := &ApprovalResult{
-		MissionID: plan.MissionID,
-		TaskIDs:   make(map[string][]string),
-	}
-
-	// Verify mission exists and is an epic
+	// Verify mission exists and is an epic (pre-validation before transaction)
 	mission, err := store.GetMission(ctx, plan.MissionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mission: %w", err)
@@ -98,120 +96,149 @@ func ApproveAndCreateIssues(ctx context.Context, store storage.Storage, plan *Mi
 	}
 
 	// Check if mission was already approved (idempotency check)
-	// After approval, the plan is deleted, so check the mission's approval status instead
 	if mission.ApprovedAt != nil {
 		return nil, fmt.Errorf("plan for mission %s was already approved at %v", plan.MissionID, mission.ApprovedAt)
 	}
 
-	// Create phases and tasks
-	for phaseIdx, phase := range plan.Phases {
-		// Create phase issue
-		estimatedMinutes := int(phase.EstimatedHours * 60) // Convert hours to minutes
-		phaseIssue := &types.Issue{
-			Title:              phase.Title,
-			Description:        phase.Description,
-			Design:             phase.Strategy, // Map strategy to design field
-			AcceptanceCriteria: "", // Phases don't require acceptance criteria (they're chores)
-			Status:             types.StatusOpen,
-			Priority:           phase.Priority,
-			IssueType:          types.TypeChore, // Phases are chores (group tasks without requiring AC)
-			IssueSubtype:       types.SubtypeNormal,
-			EstimatedMinutes:   &estimatedMinutes,
-			CreatedAt:          time.Now(),
-			UpdatedAt:          time.Now(),
-		}
+	// ==========================================================================
+	// Phase 2: Atomic issue creation (inside transaction)
+	// ==========================================================================
 
-		// Create phase in database (generates ID)
-		if err := store.CreateIssue(ctx, phaseIssue, actor); err != nil {
-			return nil, fmt.Errorf("failed to create phase %d: %w", phaseIdx+1, err)
-		}
+	// Initialize result
+	result := &ApprovalResult{
+		MissionID: plan.MissionID,
+		TaskIDs:   make(map[string][]string),
+	}
 
-		result.PhaseIDs = append(result.PhaseIDs, phaseIssue.ID)
-		result.TotalIssues++
-
-		// Apply label: generated:plan
-		if err := store.AddLabel(ctx, phaseIssue.ID, "generated:plan", actor); err != nil {
-			return nil, fmt.Errorf("failed to label phase %s: %w", phaseIssue.ID, err)
-		}
-
-		// Create dependency: phase blocks mission
-		phaseDep := &types.Dependency{
-			IssueID:    plan.MissionID,
-			DependsOnID: phaseIssue.ID,
-			Type:        types.DepBlocks,
-			CreatedAt:   time.Now(),
-		}
-		if err := store.AddDependency(ctx, phaseDep, actor); err != nil {
-			return nil, fmt.Errorf("failed to add phase dependency: %w", err)
-		}
-
-		// Create tasks for this phase
-		var taskIDs []string
-		for taskIdx, task := range phase.Tasks {
-			// Build acceptance criteria string from array
-			acceptanceCriteria := ""
-			for i, criterion := range task.AcceptanceCriteria {
-				if i > 0 {
-					acceptanceCriteria += "\n"
-				}
-				acceptanceCriteria += criterion
-			}
-
-			taskEstimatedMinutes := task.EstimatedMinutes
-			taskIssue := &types.Issue{
-				Title:              task.Title,
-				Description:        task.Description,
-				AcceptanceCriteria: acceptanceCriteria,
+	// Run all Beads operations in a transaction
+	// If any operation fails, the entire transaction is rolled back
+	err = store.RunInVCTransaction(ctx, func(tx *storage.VCTransaction) error {
+		// Create phases and tasks atomically
+		for phaseIdx, phase := range plan.Phases {
+			// Create phase issue
+			estimatedMinutes := int(phase.EstimatedHours * 60) // Convert hours to minutes
+			phaseIssue := &types.Issue{
+				Title:              phase.Title,
+				Description:        phase.Description,
+				Design:             phase.Strategy, // Map strategy to design field
+				AcceptanceCriteria: "",             // Phases don't require acceptance criteria (they're chores)
 				Status:             types.StatusOpen,
-				Priority:           task.Priority,
-				IssueType:          types.TypeTask,
-				IssueSubtype:       types.SubtypeNormal, // Tasks are normal issues
-				EstimatedMinutes:   &taskEstimatedMinutes,
+				Priority:           phase.Priority,
+				IssueType:          types.TypeChore, // Phases are chores (group tasks without requiring AC)
+				IssueSubtype:       types.SubtypeNormal,
+				EstimatedMinutes:   &estimatedMinutes,
 				CreatedAt:          time.Now(),
 				UpdatedAt:          time.Now(),
 			}
 
-			// Create task in database (generates ID)
-			if err := store.CreateIssue(ctx, taskIssue, actor); err != nil {
-				return nil, fmt.Errorf("failed to create task %d in phase %d: %w", taskIdx+1, phaseIdx+1, err)
+			// Create phase in database (generates ID)
+			if err := tx.CreateIssue(ctx, phaseIssue, actor); err != nil {
+				return fmt.Errorf("failed to create phase %d: %w", phaseIdx+1, err)
 			}
 
-			taskIDs = append(taskIDs, taskIssue.ID)
+			result.PhaseIDs = append(result.PhaseIDs, phaseIssue.ID)
 			result.TotalIssues++
 
 			// Apply label: generated:plan
-			if err := store.AddLabel(ctx, taskIssue.ID, "generated:plan", actor); err != nil {
-				return nil, fmt.Errorf("failed to label task %s: %w", taskIssue.ID, err)
+			if err := tx.AddLabel(ctx, phaseIssue.ID, "generated:plan", actor); err != nil {
+				return fmt.Errorf("failed to label phase %s: %w", phaseIssue.ID, err)
 			}
 
-			// Create dependency: task blocks phase
-			taskDep := &types.Dependency{
-				IssueID:    phaseIssue.ID,
-				DependsOnID: taskIssue.ID,
+			// Create dependency: phase blocks mission
+			phaseDep := &types.Dependency{
+				IssueID:     plan.MissionID,
+				DependsOnID: phaseIssue.ID,
 				Type:        types.DepBlocks,
 				CreatedAt:   time.Now(),
 			}
-			if err := store.AddDependency(ctx, taskDep, actor); err != nil {
-				return nil, fmt.Errorf("failed to add task dependency: %w", err)
+			if err := tx.AddDependency(ctx, phaseDep, actor); err != nil {
+				return fmt.Errorf("failed to add phase dependency: %w", err)
 			}
+
+			// Create tasks for this phase
+			var taskIDs []string
+			for taskIdx, task := range phase.Tasks {
+				// Build acceptance criteria string from array
+				acceptanceCriteria := ""
+				for i, criterion := range task.AcceptanceCriteria {
+					if i > 0 {
+						acceptanceCriteria += "\n"
+					}
+					acceptanceCriteria += criterion
+				}
+
+				taskEstimatedMinutes := task.EstimatedMinutes
+				taskIssue := &types.Issue{
+					Title:              task.Title,
+					Description:        task.Description,
+					AcceptanceCriteria: acceptanceCriteria,
+					Status:             types.StatusOpen,
+					Priority:           task.Priority,
+					IssueType:          types.TypeTask,
+					IssueSubtype:       types.SubtypeNormal, // Tasks are normal issues
+					EstimatedMinutes:   &taskEstimatedMinutes,
+					CreatedAt:          time.Now(),
+					UpdatedAt:          time.Now(),
+				}
+
+				// Create task in database (generates ID)
+				if err := tx.CreateIssue(ctx, taskIssue, actor); err != nil {
+					return fmt.Errorf("failed to create task %d in phase %d: %w", taskIdx+1, phaseIdx+1, err)
+				}
+
+				taskIDs = append(taskIDs, taskIssue.ID)
+				result.TotalIssues++
+
+				// Apply label: generated:plan
+				if err := tx.AddLabel(ctx, taskIssue.ID, "generated:plan", actor); err != nil {
+					return fmt.Errorf("failed to label task %s: %w", taskIssue.ID, err)
+				}
+
+				// Create dependency: task blocks phase
+				taskDep := &types.Dependency{
+					IssueID:     phaseIssue.ID,
+					DependsOnID: taskIssue.ID,
+					Type:        types.DepBlocks,
+					CreatedAt:   time.Now(),
+				}
+				if err := tx.AddDependency(ctx, taskDep, actor); err != nil {
+					return fmt.Errorf("failed to add task dependency: %w", err)
+				}
+			}
+
+			result.TaskIDs[phaseIssue.ID] = taskIDs
 		}
 
-		result.TaskIDs[phaseIssue.ID] = taskIDs
+		return nil // Commit transaction
+	})
+
+	if err != nil {
+		// Transaction rolled back - no issues were created
+		return nil, fmt.Errorf("transaction failed: %w", err)
 	}
 
-	// Update mission approval metadata (status remains "open" until work begins)
+	// ==========================================================================
+	// Phase 3: Finalization (outside transaction, after commit)
+	// ==========================================================================
+
+	// Update mission approval metadata (VC-specific operation)
+	// This runs after the transaction commits, so issues are already created
 	now := time.Now()
 	missionUpdates := map[string]interface{}{
 		"approved_at": now,
 		"approved_by": actor,
 	}
 	if err := store.UpdateMission(ctx, plan.MissionID, missionUpdates, actor); err != nil {
-		return nil, fmt.Errorf("failed to update mission: %w", err)
+		// Note: Issues were already created. This is a "finalization" failure.
+		// The caller should be aware that issues exist but mission state wasn't updated.
+		return result, fmt.Errorf("issues created but failed to update mission: %w", err)
 	}
 
-	// Delete ephemeral plan from storage
+	// Delete ephemeral plan from storage (VC-specific operation)
 	if err := store.DeletePlan(ctx, plan.MissionID); err != nil {
-		return nil, fmt.Errorf("failed to delete ephemeral plan: %w", err)
+		// Note: Issues were created and mission was updated. Only plan cleanup failed.
+		// This is non-critical - the plan is ephemeral and can be cleaned up later.
+		return result, fmt.Errorf("issues created but failed to delete ephemeral plan: %w", err)
 	}
 
 	return result, nil
