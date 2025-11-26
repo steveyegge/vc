@@ -110,9 +110,8 @@ func runExecutor(cmd *cobra.Command) error {
 			}
 		}
 
-		// Polecat execution is not yet fully implemented
-		// For now, just acknowledge the task was received
-		return fmt.Errorf("polecat mode execution not yet implemented (task received from %s: %q, see vc-k0c7)", task.Source, truncateString(task.Description, 100))
+		// Run polecat execution (vc-k0c7)
+		return runPolecatExecution(task)
 	}
 
 	// Check environment variable as fallback for auto-commit (vc-142)
@@ -288,6 +287,48 @@ func formatIssueAsTask(issue *types.Issue) string {
 	}
 
 	return strings.Join(parts, "\n")
+}
+
+// runPolecatExecution executes a single task in polecat mode (vc-k0c7)
+// This is the main entry point for Gastown integration
+func runPolecatExecution(task *types.PolecatTask) error {
+	// Get current working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	// Create polecat executor with current directory as working dir
+	// Store is optional in polecat mode - we pass nil since we're not writing to beads
+	polecatConfig := executor.DefaultPolecatConfig()
+	polecatConfig.WorkingDir = cwd
+	polecatConfig.Store = nil // No database writes in polecat mode
+
+	pe, err := executor.NewPolecatExecutor(polecatConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create polecat executor: %w", err)
+	}
+
+	// Execute the task
+	ctx := context.Background()
+	result := pe.Execute(ctx, task)
+
+	// Output JSON result to stdout
+	if err := pe.OutputJSON(result); err != nil {
+		return fmt.Errorf("failed to write JSON output: %w", err)
+	}
+
+	// Return error if execution failed (non-zero exit code)
+	if !result.Success {
+		// Don't return error - JSON output already contains the failure details
+		// Return nil so caller can parse JSON for details
+		// But set exit code based on status
+		if result.Status == types.PolecatStatusFailed {
+			os.Exit(1)
+		}
+	}
+
+	return nil
 }
 
 func init() {
