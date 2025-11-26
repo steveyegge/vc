@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/steveyegge/vc/internal/deduplication"
 	"github.com/steveyegge/vc/internal/executor"
 	"github.com/steveyegge/vc/internal/storage"
+	"github.com/steveyegge/vc/internal/types"
 )
 
 var executeCmd = &cobra.Command{
@@ -27,7 +29,15 @@ The executor will:
 3. Atomically claim available issues
 4. Spawn coding agents (Claude Code) to execute the work
 5. Update issue status based on agent results
-6. Continue until stopped with Ctrl+C`,
+6. Continue until stopped with Ctrl+C
+
+Polecat Mode (--polecat-mode):
+When running inside a Gastown polecat, use --polecat-mode for single-task execution.
+In this mode, VC accepts a task via --task, --issue, or --stdin, executes once
+with quality gates, outputs JSON to stdout, and exits. This mode skips issue
+claiming and polling since Gastown handles coordination.
+
+See docs/design/GASTOWN_INTEGRATION.md for details.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := runExecutor(cmd); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -47,6 +57,63 @@ func runExecutor(cmd *cobra.Command) error {
 	parentRepo, _ := cmd.Flags().GetString("parent-repo")
 	enableAutoCommit, _ := cmd.Flags().GetBool("enable-auto-commit")
 	enableAutoPR, _ := cmd.Flags().GetBool("enable-auto-pr")
+	polecatMode, _ := cmd.Flags().GetBool("polecat-mode")
+	taskDesc, _ := cmd.Flags().GetString("task")
+	issueID, _ := cmd.Flags().GetString("issue")
+
+	// Determine execution mode
+	var mode types.ExecutionMode
+	if polecatMode {
+		mode = types.ModePolecat
+	} else {
+		mode = types.ModeExecutor
+	}
+
+	// Validate polecat mode input requirements (vc-plr3, vc-5fxi)
+	// In polecat mode, one of --task, --issue, or --stdin must be provided
+	if mode.IsPolecat() {
+		if taskDesc == "" && issueID == "" {
+			// TODO: Also check --stdin when implemented
+			return fmt.Errorf("polecat mode requires --task or --issue (or --stdin when implemented)")
+		}
+
+		// Validate mutually exclusive inputs
+		if taskDesc != "" && issueID != "" {
+			return fmt.Errorf("--task and --issue are mutually exclusive")
+		}
+
+		// Build polecat task from input source
+		var task *types.PolecatTask
+		if taskDesc != "" {
+			// Task from CLI argument
+			task = &types.PolecatTask{
+				Description: taskDesc,
+				Source:      types.TaskSourceCLI,
+			}
+		} else if issueID != "" {
+			// Task from beads issue - load issue details
+			issue, err := store.GetIssue(context.Background(), issueID)
+			if err != nil {
+				return fmt.Errorf("failed to load issue %s: %w", issueID, err)
+			}
+			if issue == nil {
+				return fmt.Errorf("issue %s not found", issueID)
+			}
+
+			// Construct task description from issue fields
+			description := formatIssueAsTask(issue)
+			task = &types.PolecatTask{
+				Description:        description,
+				Source:             types.TaskSourceIssue,
+				IssueID:            issueID,
+				AcceptanceCriteria: issue.AcceptanceCriteria,
+			}
+		}
+
+		// Polecat execution is not yet fully implemented
+		// For now, just acknowledge the task was received
+		return fmt.Errorf("polecat mode execution not yet implemented (task received from %s: %q, see vc-k0c7)", task.Source, truncateString(task.Description, 100))
+	}
 
 	// Check environment variable as fallback for auto-commit (vc-142)
 	if !enableAutoCommit {
@@ -192,6 +259,37 @@ func runExecutor(cmd *cobra.Command) error {
 	return nil
 }
 
+// formatIssueAsTask formats a beads issue as a natural language task description
+// for the polecat mode executor (vc-5fxi)
+func formatIssueAsTask(issue *types.Issue) string {
+	var parts []string
+
+	// Start with the title as the main task
+	parts = append(parts, fmt.Sprintf("Task: %s", issue.Title))
+
+	// Add description if present
+	if issue.Description != "" {
+		parts = append(parts, fmt.Sprintf("\nDescription:\n%s", issue.Description))
+	}
+
+	// Add design notes if present
+	if issue.Design != "" {
+		parts = append(parts, fmt.Sprintf("\nDesign:\n%s", issue.Design))
+	}
+
+	// Add acceptance criteria if present
+	if issue.AcceptanceCriteria != "" {
+		parts = append(parts, fmt.Sprintf("\nAcceptance Criteria:\n%s", issue.AcceptanceCriteria))
+	}
+
+	// Add any notes
+	if issue.Notes != "" {
+		parts = append(parts, fmt.Sprintf("\nNotes:\n%s", issue.Notes))
+	}
+
+	return strings.Join(parts, "\n")
+}
+
 func init() {
 	executeCmd.Flags().String("version", "0.1.0", "Executor version")
 	executeCmd.Flags().IntP("poll-interval", "i", 5, "Poll interval in seconds")
@@ -200,5 +298,11 @@ func init() {
 	executeCmd.Flags().String("parent-repo", ".", "Parent repository path")
 	executeCmd.Flags().Bool("enable-auto-commit", false, "Enable automatic git commits after successful execution (can also use VC_ENABLE_AUTO_COMMIT=true)")
 	executeCmd.Flags().Bool("enable-auto-pr", false, "Enable automatic PR creation after successful commit (requires --enable-auto-commit, can also use VC_ENABLE_AUTO_PR=true)")
+
+	// Polecat mode flags (vc-m5qr, vc-plr3, vc-5fxi: Gastown integration)
+	executeCmd.Flags().Bool("polecat-mode", false, "Enable polecat mode for single-task execution inside Gastown")
+	executeCmd.Flags().String("task", "", "Task description for polecat mode (natural language)")
+	executeCmd.Flags().String("issue", "", "Beads issue ID to load as task for polecat mode")
+
 	rootCmd.AddCommand(executeCmd)
 }

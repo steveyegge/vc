@@ -295,6 +295,21 @@ func (e *Executor) transitionToEscalated(ctx context.Context, reason string) {
 
 // Config holds executor configuration
 //
+// Execution Modes (vc-m5qr):
+// The executor supports two execution modes:
+//
+// 1. Executor Mode (default): Full autonomous loop
+//    - Polls beads for ready issues
+//    - Creates sandbox worktrees for isolation
+//    - Tracks executor instances
+//    - Continuous operation until stopped
+//
+// 2. Polecat Mode: Single-task execution for Gastown integration
+//    - Accepts task from CLI args or stdin
+//    - Uses polecat's existing clone/branch (no sandboxes)
+//    - Single execution, then exits
+//    - JSON output to stdout
+//
 // Supported Degraded Modes (vc-q5ve):
 // The executor supports several degraded operating modes when optional components fail to initialize:
 //
@@ -334,6 +349,8 @@ func (e *Executor) transitionToEscalated(ctx context.Context, reason string) {
 // with reduced functionality. Use Validate() to check for configuration errors
 // before calling New().
 type Config struct {
+	// Execution mode (vc-m5qr: Gastown integration)
+	Mode types.ExecutionMode
 	Store                   storage.Storage
 	Version                 string
 	PollInterval            time.Duration
