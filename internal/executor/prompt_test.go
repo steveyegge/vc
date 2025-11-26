@@ -636,7 +636,7 @@ func TestBuildPrompt_BaselineTestIssue(t *testing.T) {
 	}
 }
 
-// TestBuildPrompt_BaselineLintIssue tests self-healing prompt for baseline lint failures (vc-210)
+// TestBuildPrompt_BaselineLintIssue tests self-healing prompt for baseline lint failures (vc-211)
 func TestBuildPrompt_BaselineLintIssue(t *testing.T) {
 	pb, err := NewPromptBuilder()
 	if err != nil {
@@ -658,9 +658,26 @@ func TestBuildPrompt_BaselineLintIssue(t *testing.T) {
 		t.Fatalf("BuildPrompt() failed: %v", err)
 	}
 
-	// Verify baseline section is present for any vc-baseline-* issue
-	if !strings.Contains(prompt, "# BASELINE TEST FAILURE SELF-HEALING DIRECTIVE") {
-		t.Error("Prompt missing baseline self-healing section for lint issue")
+	// vc-211: Verify lint-specific self-healing section is present
+	if !strings.Contains(prompt, "# BASELINE LINT FAILURE SELF-HEALING DIRECTIVE") {
+		t.Error("Prompt missing lint-specific self-healing section for lint issue")
+	}
+
+	// vc-211: Verify lint-specific guidance is present
+	if !strings.Contains(prompt, "## Lint Error Categories") {
+		t.Error("Prompt missing lint error categories")
+	}
+	if !strings.Contains(prompt, "AUTO-FIX") {
+		t.Error("Prompt missing AUTO-FIX category")
+	}
+	if !strings.Contains(prompt, "NEEDS-REVIEW") {
+		t.Error("Prompt missing NEEDS-REVIEW category")
+	}
+	if !strings.Contains(prompt, "gofmt") {
+		t.Error("Prompt missing gofmt guidance")
+	}
+	if !strings.Contains(prompt, "goimports") {
+		t.Error("Prompt missing goimports guidance")
 	}
 }
 
@@ -685,12 +702,54 @@ func TestBuildPrompt_RegularIssue_NoBaseline(t *testing.T) {
 		t.Fatalf("BuildPrompt() failed: %v", err)
 	}
 
-	// Verify baseline section is NOT present for regular issues
+	// Verify baseline sections are NOT present for regular issues (vc-211: check all gate types)
 	if strings.Contains(prompt, "# BASELINE TEST FAILURE SELF-HEALING DIRECTIVE") {
-		t.Error("Prompt should not have baseline section for regular issues")
+		t.Error("Prompt should not have test baseline section for regular issues")
+	}
+	if strings.Contains(prompt, "# BASELINE LINT FAILURE SELF-HEALING DIRECTIVE") {
+		t.Error("Prompt should not have lint baseline section for regular issues")
+	}
+	if strings.Contains(prompt, "# BASELINE BUILD FAILURE SELF-HEALING DIRECTIVE") {
+		t.Error("Prompt should not have build baseline section for regular issues")
 	}
 	if strings.Contains(prompt, "## Test Failure Analysis Framework") {
 		t.Error("Prompt should not have test failure analysis framework for regular issues")
+	}
+}
+
+// TestBuildPrompt_BaselineBuildIssue tests self-healing prompt for baseline build failures (vc-211)
+func TestBuildPrompt_BaselineBuildIssue(t *testing.T) {
+	pb, err := NewPromptBuilder()
+	if err != nil {
+		t.Fatalf("NewPromptBuilder() failed: %v", err)
+	}
+
+	ctx := &PromptContext{
+		Issue: &types.Issue{
+			ID:    "vc-baseline-build",
+			Title: "Baseline quality gate failure: build",
+			Description: "The build quality gate is failing on the baseline (main branch).\n\n" +
+				"Error: go build failed\n\n" +
+				"Output:\n```\ninternal/executor/prompt.go:10: undefined: SomeType\n```",
+		},
+	}
+
+	prompt, err := pb.BuildPrompt(ctx)
+	if err != nil {
+		t.Fatalf("BuildPrompt() failed: %v", err)
+	}
+
+	// vc-211: Verify build-specific self-healing section is present
+	if !strings.Contains(prompt, "# BASELINE BUILD FAILURE SELF-HEALING DIRECTIVE") {
+		t.Error("Prompt missing build-specific self-healing section for build issue")
+	}
+
+	// vc-211: Verify build-specific guidance is present
+	if !strings.Contains(prompt, "## Build Error Categories") {
+		t.Error("Prompt missing build error categories")
+	}
+	if !strings.Contains(prompt, "go build ./...") {
+		t.Error("Prompt missing go build verification command")
 	}
 }
 
@@ -772,7 +831,10 @@ func TestBuildPrompt_BaselineEdgeCases(t *testing.T) {
 				t.Fatalf("BuildPrompt() failed: %v", err)
 			}
 
-			hasBaseline := strings.Contains(prompt, "# BASELINE TEST FAILURE SELF-HEALING DIRECTIVE")
+			// vc-211: Check for any baseline directive (test, lint, or build)
+			hasBaseline := strings.Contains(prompt, "# BASELINE TEST FAILURE SELF-HEALING DIRECTIVE") ||
+				strings.Contains(prompt, "# BASELINE LINT FAILURE SELF-HEALING DIRECTIVE") ||
+				strings.Contains(prompt, "# BASELINE BUILD FAILURE SELF-HEALING DIRECTIVE")
 
 			if hasBaseline != tt.shouldHaveBaseline {
 				if tt.shouldHaveBaseline {

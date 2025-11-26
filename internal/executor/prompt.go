@@ -193,6 +193,112 @@ This task has been attempted {{len .PreviousAttempts}} time(s) before:
 
 {{end}}
 {{if .IsBaselineIssue -}}
+{{if eq .BaselineGateType "lint" -}}
+# BASELINE LINT FAILURE SELF-HEALING DIRECTIVE
+
+**CRITICAL**: This is a baseline lint failure. Your job is to FIX the lint errors to restore the baseline to a healthy state.
+
+## Lint Error Categories
+
+Lint errors fall into two categories:
+
+### AUTO-FIX (Handle these directly)
+- **Formatting issues**: Run ` + "`gofmt -w .`" + ` and ` + "`goimports -w .`" + `
+- **Unused imports**: Remove them
+- **Unused variables**: Remove or use them (prefix with _ if intentionally unused)
+- **Missing comments**: Add doc comments to exported functions/types
+- **Naming conventions**: Fix camelCase, acronym capitalization (e.g., ID not Id)
+- **Simple style issues**: Line length, whitespace, etc.
+
+### NEEDS-REVIEW (Create separate issue if found)
+- **Complexity warnings**: Functions too long, too many parameters, cyclomatic complexity
+- **Design smells**: God objects, feature envy, inappropriate intimacy
+- **Security issues**: Potential vulnerabilities flagged by linters
+- **Deprecated API usage**: May require architectural decisions
+
+## Fix Strategy
+
+1. **First, run automatic formatters**:
+   ` + "```bash" + `
+   gofmt -w .
+   goimports -w .
+   ` + "```" + `
+
+2. **Then fix remaining issues by category**:
+   - Parse the golangci-lint output
+   - Group errors by type
+   - Fix AUTO-FIX issues directly
+   - For NEEDS-REVIEW issues: create a separate issue with label ` + "`needs-human-review`" + `
+
+3. **Verify the fix**:
+   ` + "```bash" + `
+   golangci-lint run ./...
+   ` + "```" + `
+
+## Common Lint Fixes
+
+| Lint Error | Fix |
+|------------|-----|
+| ` + "`exported function X should have comment`" + ` | Add ` + "`// X does...`" + ` comment |
+| ` + "`unused variable`" + ` | Remove or prefix with ` + "`_`" + ` |
+| ` + "`unused import`" + ` | Remove the import |
+| ` + "`should use ID instead of Id`" + ` | Rename to use uppercase acronym |
+| ` + "`line too long`" + ` | Break into multiple lines |
+| ` + "`error return value not checked`" + ` | Add ` + "`if err != nil`" + ` check |
+
+## Commit Message Format
+
+` + "```" + `
+Fix: lint errors in [package/file]
+
+Errors Fixed:
+- [list of lint errors fixed]
+
+Auto-formatted: [yes/no]
+Manual fixes: [description]
+` + "```" + `
+
+## Rules for Baseline Lint Fixes
+
+1. **Run formatters first** - gofmt and goimports fix many issues automatically
+2. **Minimize changes** - Only fix what the linter complains about
+3. **Don't refactor** - Even if the code could be better, stick to lint fixes
+4. **Preserve behavior** - Lint fixes should never change program behavior
+5. **Create issues for complex fixes** - If a lint error requires architectural changes, file a separate issue
+
+{{else if eq .BaselineGateType "build" -}}
+# BASELINE BUILD FAILURE SELF-HEALING DIRECTIVE
+
+**CRITICAL**: This is a baseline build failure. Your job is to FIX the compilation errors to restore the baseline to a healthy state.
+
+## Build Error Categories
+
+1. **Syntax Errors**: Missing brackets, typos, invalid syntax
+2. **Type Errors**: Type mismatches, missing interface implementations
+3. **Import Errors**: Missing dependencies, circular imports
+4. **Linker Errors**: Missing symbols, duplicate definitions
+
+## Fix Strategy
+
+1. **Read the error message carefully** - Go compiler errors are usually precise
+2. **Fix errors in order** - First error often causes cascading errors
+3. **Check recent changes** - What was modified that could have broken the build?
+4. **Verify dependencies** - Run ` + "`go mod tidy`" + ` if import errors
+
+## Verification
+
+` + "```bash" + `
+go build ./...
+` + "```" + `
+
+## Rules for Baseline Build Fixes
+
+1. **Fix the actual error** - Don't work around it
+2. **Minimal changes** - Only fix what's broken
+3. **Run full build** - Ensure all packages compile
+4. **Check for regressions** - Run tests after fixing
+
+{{else -}}
 # BASELINE TEST FAILURE SELF-HEALING DIRECTIVE
 
 **CRITICAL**: This is a baseline test failure. Your job is to FIX the failing test(s) to restore the baseline to a healthy state.
@@ -252,6 +358,7 @@ Verification: [how you verified it works]
 4. **Verify thoroughly** - Don't commit until tests are stable
 5. **Report blockers** - If test failure indicates a real bug in code, report it
 
+{{end}}
 {{end}}
 ---
 
@@ -449,7 +556,12 @@ func (pb *PromptBuilder) BuildPrompt(ctx *PromptContext) (string, error) {
 
 	// Detect baseline issues (vc-210: Self-healing for baseline test failures)
 	// vc-261: Use IsBaselineIssue() helper instead of duplicated map
+	// vc-211: Also extract gate type to provide gate-specific prompt guidance
 	isBaselineIssue := IsBaselineIssue(ctx.Issue.ID)
+	baselineGateType := ""
+	if isBaselineIssue {
+		baselineGateType = GetGateType(ctx.Issue.ID)
+	}
 
 	// vc-1ows: Detect incomplete attempts (agent succeeded but didn't complete work)
 	// Count attempts where Success=true to infer incomplete attempts
@@ -469,11 +581,13 @@ func (pb *PromptBuilder) BuildPrompt(ctx *PromptContext) (string, error) {
 		*PromptContext
 		Sandbox                *sandboxData
 		IsBaselineIssue        bool
+		BaselineGateType       string // vc-211: "test", "lint", or "build"
 		HasIncompleteAttempts  bool
 		IncompleteAttemptCount int
 	}{
 		PromptContext:          ctx,
 		IsBaselineIssue:        isBaselineIssue,
+		BaselineGateType:       baselineGateType,
 		HasIncompleteAttempts:  hasIncompleteAttempts,
 		IncompleteAttemptCount: incompleteAttemptCount,
 	}
