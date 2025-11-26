@@ -895,47 +895,16 @@ func (s *Supervisor) buildConvergencePrompt(previous, current *types.MissionPlan
 }`, len(current.Phases), currTasks, current.EstimatedEffort, current.Confidence,
 		formatPhaseTitles(current.Phases))
 
-	return fmt.Sprintf(`You are assessing whether a mission plan has converged to a stable, high-quality state.
+	return fmt.Sprintf(`Check if this plan has converged (stabilized). Compare summaries:
 
-PREVIOUS PLAN:
-%s
+PREVIOUS: %s
+CURRENT: %s
 
-CURRENT PLAN:
-%s
+CONVERGENCE = TRUE when structure is stable (same phase count, task count, similar effort).
+Minor confidence changes (+/- 0.1) are normal polish, NOT major changes.
 
-TASK:
-Determine if the plan has converged. A plan is converged when:
-1. Structural changes are minimal (< 5%% diff in phase count, task count)
-2. The plan is complete and addresses all requirements
-3. Further iteration would provide minimal marginal value
-
-CONVERGENCE CRITERIA:
-- Diff < 5%% AND completeness high → converged
-- Diff > 20%% OR major structural changes → not converged
-- 5-20%% diff → requires judgment (is it just polishing or substantive improvement?)
-
-Assess:
-1. **Diff Percentage**: How much changed between iterations? (0-100%%)
-2. **Completeness**: Does the current plan feel thorough and complete?
-3. **Marginal Value**: Would another iteration add meaningful value?
-4. **Stability**: Are changes stabilizing (small tweaks) or still evolving (major shifts)?
-
-Return JSON:
-{
-  "converged": true/false,
-  "confidence": 0.0-1.0,
-  "reasoning": "Clear explanation of convergence assessment",
-  "diff_percentage": 0.0-100.0,
-  "major_changes": ["list of significant changes from previous to current"]
-}
-
-Guidelines:
-- Be pragmatic: some missions converge quickly, others need many iterations
-- Focus on marginal value: is the plan good enough, or will iteration improve it significantly?
-- Consider completeness, not just diff: a 3%% diff could mean incomplete if gaps remain
-- Major changes: new phases, removed phases, significant strategy shifts, reordering
-
-IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences. Just the JSON object.`,
+Return ONLY compact JSON:
+{"converged":true/false,"confidence":0.9,"reasoning":"brief","diff_percentage":5.0,"major_changes":[]}`,
 		prevJSON, currJSON)
 }
 

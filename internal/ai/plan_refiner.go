@@ -96,8 +96,9 @@ func (r *PlanRefiner) Refine(ctx context.Context, artifact *iterative.Artifact) 
 	var response *anthropic.Message
 	err := r.supervisor.retryWithBackoff(ctx, "plan-refinement", func(attemptCtx context.Context) error {
 		resp, apiErr := r.supervisor.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
-			Model:     anthropic.Model(r.supervisor.model),
-			MaxTokens: 8192,
+			Model:       anthropic.Model(r.supervisor.model),
+			MaxTokens:   4096,
+			Temperature: anthropic.Float(0), // Deterministic output
 			Messages: []anthropic.MessageParam{
 				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
 			},
@@ -172,8 +173,9 @@ func (r *PlanRefiner) CheckConvergence(ctx context.Context, current, previous *i
 	var response *anthropic.Message
 	err := r.supervisor.retryWithBackoff(ctx, "convergence-check", func(attemptCtx context.Context) error {
 		resp, apiErr := r.supervisor.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
-			Model:     anthropic.Model(r.supervisor.model),
-			MaxTokens: 2048,
+			Model:       anthropic.Model(r.supervisor.model),
+			MaxTokens:   1024,
+			Temperature: anthropic.Float(0), // Deterministic output
 			Messages: []anthropic.MessageParam{
 				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
 			},
@@ -237,8 +239,9 @@ func (r *PlanRefiner) IncorporateFeedback(ctx context.Context, currentPlan *type
 	var response *anthropic.Message
 	err := r.supervisor.retryWithBackoff(ctx, "feedback-incorporation", func(attemptCtx context.Context) error {
 		resp, apiErr := r.supervisor.client.Messages.New(attemptCtx, anthropic.MessageNewParams{
-			Model:     anthropic.Model(r.supervisor.model),
-			MaxTokens: 8192,
+			Model:       anthropic.Model(r.supervisor.model),
+			MaxTokens:   4096,
+			Temperature: anthropic.Float(0), // Deterministic output
 			Messages: []anthropic.MessageParam{
 				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
 			},
@@ -285,103 +288,35 @@ func (r *PlanRefiner) IncorporateFeedback(ctx context.Context, currentPlan *type
 
 // buildFeedbackPrompt builds the prompt for incorporating human feedback
 func (r *PlanRefiner) buildFeedbackPrompt(currentPlan *types.MissionPlan, feedback string) string {
-	// Serialize current plan for the prompt
-	planJSON, _ := json.MarshalIndent(currentPlan, "", "  ")
+	// Serialize current plan compactly
+	planJSON, _ := json.Marshal(currentPlan)
 
-	return fmt.Sprintf(`You are incorporating human feedback into a mission plan.
+	return fmt.Sprintf(`Update this plan based on feedback. Be concise.
 
-CURRENT PLAN:
-%s
+PLAN: %s
 
-HUMAN FEEDBACK:
-%s
+FEEDBACK: %s
 
-YOUR TASK:
-Update the plan to address all points in the human feedback while maintaining coherence.
-
-REQUIREMENTS:
-1. **Address All Feedback**: Ensure every point raised is addressed in the updated plan
-2. **Maintain Coherence**: Keep the plan logically consistent and well-structured
-3. **Preserve Good Parts**: Don't change aspects that weren't criticized
-4. **Explain Changes**: Update descriptions/strategy to reflect changes made
-5. **Keep WHEN...THEN... Format**: All acceptance criteria must use scenario format
-
-Return the updated plan as a JSON object matching the same structure:
-{
-  "mission_id": "...",
-  "phases": [...],
-  "strategy": "...",
-  "risks": [...],
-  "estimated_effort": "...",
-  "confidence": 0.0-1.0,
-  "generated_at": "...",
-  "generated_by": "ai-planner",
-  "status": "refining"
-}
-
-IMPORTANT GUIDELINES:
-- Make substantive changes to address feedback, not just cosmetic tweaks
-- If feedback conflicts with plan requirements, prioritize requirements
-- Update confidence based on uncertainty after changes
-- Status should be "refining" after feedback incorporation
-
-IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences. Just the JSON object.`,
+Return ONLY a compact JSON object (no markdown, no explanation):
+{"mission_id":"...","phases":[{"phase_number":1,"title":"...","description":"...","strategy":"...","tasks":["..."],"estimated_effort":"..."}],"strategy":"...","risks":["..."],"estimated_effort":"...","confidence":0.8,"generated_at":"2025-01-01T00:00:00Z","generated_by":"ai-planner","status":"refining"}`,
 		string(planJSON), feedback)
 }
 
 // buildRefinementPrompt builds the prompt for refining a plan
 func (r *PlanRefiner) buildRefinementPrompt(currentPlan *types.MissionPlan, context string) string {
-	// Serialize current plan for the prompt
-	planJSON, _ := json.MarshalIndent(currentPlan, "", "  ")
+	// Serialize current plan compactly
+	planJSON, _ := json.Marshal(currentPlan)
 
 	feedbackSection := ""
 	if context != "" {
-		feedbackSection = fmt.Sprintf("\n\nFEEDBACK FROM PREVIOUS ITERATION:\n%s\n", context)
+		feedbackSection = fmt.Sprintf(" FEEDBACK: %s", context)
 	}
 
-	return fmt.Sprintf(`You are refining a mission plan to improve its quality and completeness.
+	return fmt.Sprintf(`Refine this plan (iteration %d). Fix gaps, improve clarity, balance phases. Be concise.
 
-CURRENT PLAN (iteration %d):
-%s%s
+PLAN: %s%s
 
-YOUR TASK:
-Review the current plan and refine it to address any gaps or weaknesses. Consider:
-
-1. **Completeness**: Are all necessary phases included? Any missing edge cases?
-2. **Balance**: Are phases roughly equal in size/complexity?
-3. **Dependencies**: Are phase dependencies correct and complete?
-4. **Clarity**: Are titles and descriptions clear and specific?
-5. **Estimates**: Are effort estimates realistic?
-6. **Acceptance Criteria**: Do tasks have clear, testable WHEN...THEN... criteria?
-
-REFINEMENT GOALS:
-- Fill gaps in coverage (missing phases, edge cases)
-- Balance phase sizes (split large phases, merge tiny ones)
-- Clarify vague descriptions
-- Add missing dependencies
-- Improve estimates based on complexity
-- Ensure all acceptance criteria use WHEN...THEN... format
-
-Return the refined plan as a JSON object matching the same structure:
-{
-  "mission_id": "...",
-  "phases": [...],
-  "strategy": "...",
-  "risks": [...],
-  "estimated_effort": "...",
-  "confidence": 0.0-1.0,
-  "generated_at": "...",
-  "generated_by": "ai-planner",
-  "status": "refining"
-}
-
-IMPORTANT GUIDELINES:
-- Preserve good parts of the current plan (don't change things arbitrarily)
-- Make substantive improvements, not just cosmetic changes
-- Ensure all acceptance criteria use WHEN...THEN... format
-- Confidence should reflect uncertainty (0.0-1.0)
-- Status should be "refining" during iteration
-
-IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences. Just the JSON object.`,
+Return ONLY a compact JSON object (no markdown, no explanation):
+{"mission_id":"...","phases":[{"phase_number":1,"title":"...","description":"...","strategy":"...","tasks":["..."],"estimated_effort":"..."}],"strategy":"...","risks":["..."],"estimated_effort":"...","confidence":0.8,"generated_at":"2025-01-01T00:00:00Z","generated_by":"ai-planner","status":"refining"}`,
 		r.currentIter, string(planJSON), feedbackSection)
 }
