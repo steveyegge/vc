@@ -33,6 +33,9 @@ func (m *mockStorage) GetRecentAgentEvents(ctx context.Context, limit int) ([]*e
 func (m *mockStorage) CreateIssue(ctx context.Context, issue *types.Issue, actor string) error {
 	return nil
 }
+func (m *mockStorage) CreateIssues(ctx context.Context, issues []*types.Issue, actor string) error {
+	return nil
+}
 func (m *mockStorage) CreateMission(ctx context.Context, mission *types.Mission, actor string) error {
 	return nil
 }

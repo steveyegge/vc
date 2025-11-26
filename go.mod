@@ -12,7 +12,7 @@ require (
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/ncruces/go-sqlite3 v0.30.1
 	github.com/spf13/cobra v1.10.1
-	github.com/steveyegge/beads v0.24.5
+	github.com/steveyegge/beads v0.25.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/mod v0.30.0
 	golang.org/x/sync v0.17.0

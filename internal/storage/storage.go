@@ -59,6 +59,7 @@ type Storage interface {
 
 	// Issues
 	CreateIssue(ctx context.Context, issue *types.Issue, actor string) error
+	CreateIssues(ctx context.Context, issues []*types.Issue, actor string) error // vc-3hjg: Bulk create for performance
 	GetIssue(ctx context.Context, id string) (*types.Issue, error)
 	GetIssues(ctx context.Context, ids []string) (map[string]*types.Issue, error) // vc-58: Batch fetch to avoid N+1 queries. vc-4573: Max batch size 500
 	CreateMission(ctx context.Context, mission *types.Mission, actor string) error

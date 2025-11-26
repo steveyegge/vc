@@ -36,6 +36,15 @@ func (m *mockStorageIntegration) CreateIssue(ctx context.Context, issue *types.I
 	return nil
 }
 
+func (m *mockStorageIntegration) CreateIssues(ctx context.Context, issues []*types.Issue, actor string) error {
+	for _, issue := range issues {
+		if err := m.CreateIssue(ctx, issue, actor); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *mockStorageIntegration) CreateMission(ctx context.Context, mission *types.Mission, actor string) error {
 	// Generate a simple ID for mission-based issues
 	return m.CreateIssue(ctx, &mission.Issue, actor)
