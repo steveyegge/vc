@@ -1,3 +1,5 @@
+//go:build integration
+
 package ai
 
 import (
@@ -13,7 +15,7 @@ import (
 // Integration tests for PlanRefiner.
 // These tests require ANTHROPIC_API_KEY to be set in the environment.
 //
-// Run with: go test -v ./internal/ai -run TestPlanRefiner
+// Run with: go test -v -tags=integration ./internal/ai -run TestPlanRefiner
 
 // createTestMission creates a Mission for testing
 func createTestMission(id, title, goal string) *types.Mission {
