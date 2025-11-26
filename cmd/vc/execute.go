@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -60,6 +62,8 @@ func runExecutor(cmd *cobra.Command) error {
 	polecatMode, _ := cmd.Flags().GetBool("polecat-mode")
 	taskDesc, _ := cmd.Flags().GetString("task")
 	issueID, _ := cmd.Flags().GetString("issue")
+	stdinFlag, _ := cmd.Flags().GetBool("stdin")
+	liteMode, _ := cmd.Flags().GetBool("lite")
 
 	// Determine execution mode
 	var mode types.ExecutionMode
@@ -69,17 +73,31 @@ func runExecutor(cmd *cobra.Command) error {
 		mode = types.ModeExecutor
 	}
 
-	// Validate polecat mode input requirements (vc-plr3, vc-5fxi)
+	// Validate --lite requires --polecat-mode (vc-5vod)
+	if liteMode && !polecatMode {
+		return fmt.Errorf("--lite requires --polecat-mode")
+	}
+
+	// Validate polecat mode input requirements (vc-plr3, vc-5fxi, vc-d1l9)
 	// In polecat mode, one of --task, --issue, or --stdin must be provided
 	if mode.IsPolecat() {
-		if taskDesc == "" && issueID == "" {
-			// TODO: Also check --stdin when implemented
-			return fmt.Errorf("polecat mode requires --task or --issue (or --stdin when implemented)")
+		if taskDesc == "" && issueID == "" && !stdinFlag {
+			return fmt.Errorf("polecat mode requires --task, --issue, or --stdin")
 		}
 
-		// Validate mutually exclusive inputs
-		if taskDesc != "" && issueID != "" {
-			return fmt.Errorf("--task and --issue are mutually exclusive")
+		// Validate mutually exclusive inputs (vc-d1l9)
+		inputCount := 0
+		if taskDesc != "" {
+			inputCount++
+		}
+		if issueID != "" {
+			inputCount++
+		}
+		if stdinFlag {
+			inputCount++
+		}
+		if inputCount > 1 {
+			return fmt.Errorf("--task, --issue, and --stdin are mutually exclusive")
 		}
 
 		// Build polecat task from input source
@@ -108,10 +126,17 @@ func runExecutor(cmd *cobra.Command) error {
 				IssueID:            issueID,
 				AcceptanceCriteria: issue.AcceptanceCriteria,
 			}
+		} else if stdinFlag {
+			// Task from stdin (vc-d1l9)
+			stdinTask, err := readTaskFromStdin()
+			if err != nil {
+				return fmt.Errorf("failed to read task from stdin: %w", err)
+			}
+			task = stdinTask
 		}
 
-		// Run polecat execution (vc-k0c7)
-		return runPolecatExecution(task)
+		// Run polecat execution (vc-k0c7, vc-5vod)
+		return runPolecatExecution(task, liteMode)
 	}
 
 	// Check environment variable as fallback for auto-commit (vc-142)
@@ -258,6 +283,47 @@ func runExecutor(cmd *cobra.Command) error {
 	return nil
 }
 
+// readTaskFromStdin reads a task description from stdin (vc-d1l9)
+// Supports piped input and heredocs for multi-line task specifications
+func readTaskFromStdin() (*types.PolecatTask, error) {
+	// Check if stdin is a terminal (no piped input)
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat stdin: %w", err)
+	}
+
+	// If stdin is a terminal with no data piped in, that's an error
+	if (stat.Mode() & os.ModeCharDevice) != 0 {
+		return nil, fmt.Errorf("no input provided on stdin (use piping or heredoc)")
+	}
+
+	// Read all input from stdin
+	reader := bufio.NewReader(os.Stdin)
+	var content strings.Builder
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				// Write any remaining content before EOF
+				content.WriteString(line)
+				break
+			}
+			return nil, fmt.Errorf("error reading stdin: %w", err)
+		}
+		content.WriteString(line)
+	}
+
+	description := strings.TrimSpace(content.String())
+	if description == "" {
+		return nil, fmt.Errorf("empty task description from stdin")
+	}
+
+	return &types.PolecatTask{
+		Description: description,
+		Source:      types.TaskSourceStdin,
+	}, nil
+}
+
 // formatIssueAsTask formats a beads issue as a natural language task description
 // for the polecat mode executor (vc-5fxi)
 func formatIssueAsTask(issue *types.Issue) string {
@@ -289,9 +355,10 @@ func formatIssueAsTask(issue *types.Issue) string {
 	return strings.Join(parts, "\n")
 }
 
-// runPolecatExecution executes a single task in polecat mode (vc-k0c7)
+// runPolecatExecution executes a single task in polecat mode (vc-k0c7, vc-5vod)
 // This is the main entry point for Gastown integration
-func runPolecatExecution(task *types.PolecatTask) error {
+// liteMode skips preflight checks and AI assessment for fast trivial task execution
+func runPolecatExecution(task *types.PolecatTask, liteMode bool) error {
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -303,6 +370,12 @@ func runPolecatExecution(task *types.PolecatTask) error {
 	polecatConfig := executor.DefaultPolecatConfig()
 	polecatConfig.WorkingDir = cwd
 	polecatConfig.Store = nil // No database writes in polecat mode
+
+	// In lite mode, skip preflight and assessment (vc-5vod)
+	if liteMode {
+		polecatConfig.EnablePreflight = false
+		polecatConfig.EnableAssessment = false
+	}
 
 	pe, err := executor.NewPolecatExecutor(polecatConfig)
 	if err != nil {
@@ -340,10 +413,12 @@ func init() {
 	executeCmd.Flags().Bool("enable-auto-commit", false, "Enable automatic git commits after successful execution (can also use VC_ENABLE_AUTO_COMMIT=true)")
 	executeCmd.Flags().Bool("enable-auto-pr", false, "Enable automatic PR creation after successful commit (requires --enable-auto-commit, can also use VC_ENABLE_AUTO_PR=true)")
 
-	// Polecat mode flags (vc-m5qr, vc-plr3, vc-5fxi: Gastown integration)
+	// Polecat mode flags (vc-m5qr, vc-plr3, vc-5fxi, vc-d1l9, vc-5vod: Gastown integration)
 	executeCmd.Flags().Bool("polecat-mode", false, "Enable polecat mode for single-task execution inside Gastown")
 	executeCmd.Flags().String("task", "", "Task description for polecat mode (natural language)")
 	executeCmd.Flags().String("issue", "", "Beads issue ID to load as task for polecat mode")
+	executeCmd.Flags().Bool("stdin", false, "Read task description from stdin (supports piping and heredocs)")
+	executeCmd.Flags().Bool("lite", false, "Skip preflight and assessment for fast trivial tasks (requires --polecat-mode)")
 
 	rootCmd.AddCommand(executeCmd)
 }
