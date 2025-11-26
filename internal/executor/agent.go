@@ -650,12 +650,15 @@ func (a *Agent) parseAndStoreEvents(line string) {
 		}
 
 		// Store event asynchronously to avoid blocking output capture
-		go func(evt *events.AgentEvent) {
-			if err := a.config.Store.StoreAgentEvent(a.ctx, evt); err != nil {
-				// Log error but don't fail - event storage is best-effort
-				fmt.Fprintf(os.Stderr, "warning: failed to store agent event: %v\n", err)
-			}
-		}(event)
+		// Skip storage if Store is nil (polecat mode has no database, vc-4bql)
+		if a.config.Store != nil {
+			go func(evt *events.AgentEvent) {
+				if err := a.config.Store.StoreAgentEvent(a.ctx, evt); err != nil {
+					// Log error but don't fail - event storage is best-effort
+					fmt.Fprintf(os.Stderr, "warning: failed to store agent event: %v\n", err)
+				}
+			}(event)
+		}
 	}
 }
 

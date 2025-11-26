@@ -357,7 +357,7 @@ func (pe *PolecatExecutor) executeAgent(ctx context.Context, task *types.Polecat
 		Issue:      issue,
 		StreamJSON: true,
 		Timeout:    pe.config.AgentTimeout,
-		Store:      pe.store, // Can be nil
+		Store:      nil, // Explicitly nil - polecat mode makes no database writes (vc-4bql)
 		ExecutorID: "polecat",
 		AgentID:    uuid.New().String(),
 	}
