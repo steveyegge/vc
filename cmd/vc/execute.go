@@ -371,10 +371,11 @@ func runPolecatExecution(task *types.PolecatTask, liteMode bool) error {
 	polecatConfig.WorkingDir = cwd
 	polecatConfig.Store = nil // No database writes in polecat mode
 
-	// In lite mode, skip preflight and assessment (vc-5vod)
+	// In lite mode, skip preflight and assessment, enforce single iteration (vc-5vod, vc-sbbd)
 	if liteMode {
 		polecatConfig.EnablePreflight = false
 		polecatConfig.EnableAssessment = false
+		polecatConfig.LiteMode = true // Enforces MaxIterations=1, skips convergence loop
 	}
 
 	pe, err := executor.NewPolecatExecutor(polecatConfig)

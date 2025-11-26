@@ -26,11 +26,13 @@ import (
 // - Single execution then exit - no continuous loop
 // - JSON output to stdout - structured result for polecat wrapper
 // - No database writes - polecat wrapper handles beads updates
+// - Activity events to stderr as JSON lines (vc-jlcg)
 //
 // See docs/design/GASTOWN_INTEGRATION.md for full specification.
 type PolecatExecutor struct {
-	store      storage.Storage    // Optional: for loading issues, not for writes
-	supervisor *ai.Supervisor     // AI supervisor for assessment and analysis
+	store      storage.Storage        // Optional: for loading issues, not for writes
+	supervisor *ai.Supervisor         // AI supervisor for assessment and analysis
+	events     *PolecatEventEmitter   // Event emitter for stderr JSON lines (vc-jlcg)
 	config     *PolecatConfig
 }
 
@@ -51,10 +53,18 @@ type PolecatConfig struct {
 	// EnableQualityGates enables quality gates after execution (default: true)
 	EnableQualityGates bool
 
+	// LiteMode enables fast execution for trivial tasks (vc-sbbd)
+	// When true: single iteration, no convergence loop, quality gates still run
+	LiteMode bool
+
+	// EnableEvents enables JSON event emission to stderr (vc-jlcg)
+	// When true: progress events written as JSON lines to stderr
+	EnableEvents bool
+
 	// GatesTimeout is the timeout for quality gate execution (default: 5m)
 	GatesTimeout time.Duration
 
-	// MaxIterations is the maximum refinement iterations (default: 7)
+	// MaxIterations is the maximum refinement iterations (default: 7, lite mode: 1)
 	MaxIterations int
 
 	// MinIterations is the minimum iterations before checking convergence (default: 1)
@@ -71,6 +81,7 @@ func DefaultPolecatConfig() *PolecatConfig {
 		EnablePreflight:    true,
 		EnableAssessment:   true,
 		EnableQualityGates: true,
+		EnableEvents:       true, // Enable event emission by default (vc-jlcg)
 		GatesTimeout:       5 * time.Minute,
 		MaxIterations:      7,
 		MinIterations:      1,
@@ -98,8 +109,14 @@ func NewPolecatExecutor(cfg *PolecatConfig) (*PolecatExecutor, error) {
 		cfg.AgentTimeout = 30 * time.Minute
 	}
 
+	// Lite mode enforces single iteration (vc-sbbd)
+	if cfg.LiteMode {
+		cfg.MaxIterations = 1
+	}
+
 	pe := &PolecatExecutor{
 		store:  cfg.Store,
+		events: NewPolecatEventEmitter(cfg.EnableEvents), // vc-jlcg: stderr JSON events
 		config: cfg,
 	}
 
@@ -151,15 +168,30 @@ func (pe *PolecatExecutor) Execute(ctx context.Context, task *types.PolecatTask)
 	if task.IssueID != "" {
 		fmt.Fprintf(os.Stderr, "Issue: %s\n", task.IssueID)
 	}
+	if pe.config.LiteMode {
+		fmt.Fprintf(os.Stderr, "Mode: lite (single iteration, no convergence loop)\n")
+	}
+
+	// Emit start event (vc-jlcg)
+	pe.events.EmitStart(task.Description, string(task.Source), pe.config.LiteMode)
 
 	// Step 1: Preflight check (if enabled)
 	if pe.config.EnablePreflight {
 		fmt.Fprintf(os.Stderr, "\n--- Preflight Check ---\n")
 		preflightPassed, preflightResults := pe.runPreflight(ctx)
+
+		// Emit preflight event (vc-jlcg)
+		gateResults := make(map[string]bool)
+		for name, res := range preflightResults {
+			gateResults[name] = res.Passed
+		}
+		pe.events.EmitPreflight(preflightPassed, gateResults)
+
 		if !preflightPassed {
 			result.SetBlocked("baseline quality gates failing", "Fix baseline failures before running VC")
 			result.PreflightResult = preflightResults
 			result.DurationSeconds = time.Since(startTime).Seconds()
+			pe.events.EmitComplete(string(result.Status), result.Success, result.DurationSeconds)
 			return result
 		}
 		fmt.Fprintf(os.Stderr, "✓ Baseline healthy\n")
@@ -173,9 +205,13 @@ func (pe *PolecatExecutor) Execute(ctx context.Context, task *types.PolecatTask)
 		assessment, err = pe.assessTask(ctx, task)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: assessment failed: %v (continuing without assessment)\n", err)
+			pe.events.EmitWarning(fmt.Sprintf("Assessment failed: %v", err))
 		} else if assessment != nil {
 			fmt.Fprintf(os.Stderr, "Strategy: %s\n", assessment.Strategy)
 			fmt.Fprintf(os.Stderr, "Confidence: %.0f%%\n", assessment.Confidence*100)
+
+			// Emit assessment event (vc-jlcg)
+			pe.events.EmitAssessment(assessment.Strategy, assessment.Confidence, assessment.ShouldDecompose)
 
 			// Check for decomposition recommendation
 			if assessment.ShouldDecompose && assessment.DecompositionPlan != nil {
@@ -186,6 +222,7 @@ func (pe *PolecatExecutor) Execute(ctx context.Context, task *types.PolecatTask)
 				)
 				result.DurationSeconds = time.Since(startTime).Seconds()
 				result.Message = fmt.Sprintf("Task decomposed into %d subtasks", len(result.Decomposition.Subtasks))
+				pe.events.EmitComplete(string(result.Status), result.Success, result.DurationSeconds)
 				return result
 			}
 		}
@@ -193,15 +230,21 @@ func (pe *PolecatExecutor) Execute(ctx context.Context, task *types.PolecatTask)
 
 	// Step 3: Execute agent
 	fmt.Fprintf(os.Stderr, "\n--- Agent Execution ---\n")
+	pe.events.EmitAgentStart(1) // vc-jlcg
 	agentResult, filesModified, err := pe.executeAgent(ctx, task, assessment)
 	if err != nil {
+		pe.events.EmitError(fmt.Sprintf("agent execution failed: %v", err))
 		result.SetFailed(fmt.Sprintf("agent execution failed: %v", err))
 		result.DurationSeconds = time.Since(startTime).Seconds()
+		pe.events.EmitComplete(string(result.Status), result.Success, result.DurationSeconds)
 		return result
 	}
 
 	result.FilesModified = filesModified
 	result.Iterations = 1 // Initial execution counts as iteration 1
+
+	// Emit agent completion event (vc-jlcg)
+	pe.events.EmitAgentComplete(1, agentResult.Success, filesModified)
 
 	// Check if agent succeeded
 	if !agentResult.Success {
@@ -217,12 +260,15 @@ func (pe *PolecatExecutor) Execute(ctx context.Context, task *types.PolecatTask)
 		analysis, err = pe.analyzeResult(ctx, task, agentResult)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: analysis failed: %v\n", err)
+			pe.events.EmitWarning(fmt.Sprintf("Analysis failed: %v", err))
 		} else if analysis != nil {
 			// Extract discovered issues
 			for _, di := range analysis.DiscoveredIssues {
 				// Parse priority string to int (P0=0, P1=1, etc.)
 				priority := parsePriorityString(di.Priority)
 				result.AddDiscoveredIssue(di.Title, di.Description, di.Type, priority)
+				// Emit discovered issue event (vc-jlcg)
+				pe.events.EmitDiscovered(di.Title, di.Type, priority)
 			}
 			// Extract punted items
 			result.PuntedItems = analysis.PuntedItems
@@ -232,6 +278,9 @@ func (pe *PolecatExecutor) Execute(ctx context.Context, task *types.PolecatTask)
 
 			fmt.Fprintf(os.Stderr, "Completed: %v\n", analysis.Completed)
 			fmt.Fprintf(os.Stderr, "Discovered issues: %d\n", len(analysis.DiscoveredIssues))
+
+			// Emit analysis event (vc-jlcg)
+			pe.events.EmitAnalysis(analysis.Completed, len(analysis.DiscoveredIssues), len(analysis.PuntedItems))
 		}
 	}
 
@@ -241,11 +290,17 @@ func (pe *PolecatExecutor) Execute(ctx context.Context, task *types.PolecatTask)
 		gatesPassed, gateResults := pe.runQualityGates(ctx)
 		result.QualityGates = gateResults
 
+		// Emit gate events (vc-jlcg)
+		for gateName, gateResult := range gateResults {
+			pe.events.EmitGate(gateName, gateResult.Passed, gateResult.Output)
+		}
+
 		if !gatesPassed {
 			result.Status = types.PolecatStatusFailed
 			result.Success = false
 			result.Message = "Quality gates failed"
 			result.DurationSeconds = time.Since(startTime).Seconds()
+			pe.events.EmitComplete(string(result.Status), result.Success, result.DurationSeconds)
 			return result
 		}
 		fmt.Fprintf(os.Stderr, "✓ All quality gates passed\n")
@@ -270,6 +325,9 @@ func (pe *PolecatExecutor) Execute(ctx context.Context, task *types.PolecatTask)
 	fmt.Fprintf(os.Stderr, "\n=== Execution Complete ===\n")
 	fmt.Fprintf(os.Stderr, "Status: %s\n", result.Status)
 	fmt.Fprintf(os.Stderr, "Duration: %.1fs\n", result.DurationSeconds)
+
+	// Emit completion event (vc-jlcg)
+	pe.events.EmitComplete(string(result.Status), result.Success, result.DurationSeconds)
 
 	return result
 }

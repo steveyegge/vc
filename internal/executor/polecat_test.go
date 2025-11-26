@@ -81,6 +81,30 @@ func TestNewPolecatExecutor_WithConfig(t *testing.T) {
 	}
 }
 
+// TestNewPolecatExecutor_LiteMode verifies that lite mode enforces single iteration (vc-sbbd)
+func TestNewPolecatExecutor_LiteMode(t *testing.T) {
+	cfg := &PolecatConfig{
+		WorkingDir:    "/tmp/test",
+		LiteMode:      true,
+		MaxIterations: 10, // Should be overridden to 1
+	}
+
+	pe, err := NewPolecatExecutor(cfg)
+	if err != nil {
+		t.Fatalf("NewPolecatExecutor should succeed: %v", err)
+	}
+
+	// Lite mode should force MaxIterations to 1
+	if pe.config.MaxIterations != 1 {
+		t.Errorf("expected MaxIterations=1 in lite mode, got %d", pe.config.MaxIterations)
+	}
+
+	// LiteMode flag should be preserved
+	if !pe.config.LiteMode {
+		t.Error("expected LiteMode=true")
+	}
+}
+
 func TestPolecatExecute_NilTask(t *testing.T) {
 	pe, _ := NewPolecatExecutor(nil)
 	ctx := context.Background()
@@ -362,6 +386,27 @@ func TestSummarizeAgentOutput(t *testing.T) {
 	}
 	_ = expectedLineCount
 	_ = actualLineCount
+}
+
+// TestPolecatEventEmitter verifies event emission behavior (vc-jlcg)
+func TestPolecatEventEmitter(t *testing.T) {
+	// Test disabled emitter does nothing
+	disabled := NewPolecatEventEmitter(false)
+	// These should not panic
+	disabled.EmitStart("test task", "cli", false)
+	disabled.EmitPreflight(true, map[string]bool{"build": true})
+	disabled.EmitComplete("completed", true, 1.5)
+
+	// Test enabled emitter creates events
+	enabled := NewPolecatEventEmitter(true)
+	// Verify it was created
+	if enabled == nil {
+		t.Fatal("expected non-nil emitter")
+	}
+	// These should write to stderr but not panic
+	enabled.EmitStart("test task", "cli", false)
+	enabled.EmitError("test error")
+	enabled.EmitWarning("test warning")
 }
 
 // TestPolecatExecutor_NoDatabaseWrites verifies that polecat mode doesn't pass
