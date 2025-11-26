@@ -949,9 +949,80 @@ ORDER BY count DESC;
 
 Planned health monitor improvements:
 - **Test Coverage Monitor**: Detect untested code paths
-- **Dependency Audit Monitor**: Check for outdated/vulnerable dependencies  
+- **Dependency Audit Monitor**: Check for outdated/vulnerable dependencies
 - **Dead Code Monitor**: Find unused functions, imports, variables
 - **Documentation Monitor**: Detect missing/stale docs
 - **Performance Monitor**: Identify performance regressions
+
+---
+
+## 🦨 Polecat Mode (vc-jt58)
+
+Polecat mode enables VC to run as a single-task executor inside Gastown polecats. Instead of polling for work, it executes one task and outputs structured JSON.
+
+### Key Features
+
+- **Single-task execution**: Accept task from args/stdin, execute once, exit
+- **JSON output**: Structured result to stdout for wrapper parsing
+- **No database mutations**: All state changes handled by wrapper
+- **Lite mode**: Skip preflight/assessment for trivial tasks
+- **Activity events**: JSON event stream to stderr for monitoring
+
+### Usage
+
+```bash
+# Execute a task
+vc exec --polecat-mode --task "Implement user authentication"
+
+# Use lite mode for simple tasks
+vc exec --polecat-mode --lite --task "Fix typo in README"
+
+# Execute from beads issue
+vc exec --polecat-mode --issue vc-abc
+```
+
+### JSON Output
+
+```json
+{
+  "status": "completed",
+  "success": true,
+  "iterations": 3,
+  "converged": true,
+  "duration_seconds": 245.5,
+  "files_modified": ["internal/auth/oauth.go"],
+  "quality_gates": {
+    "test": {"passed": true, "output": "ok ./..."},
+    "lint": {"passed": true},
+    "build": {"passed": true}
+  },
+  "discovered_issues": [
+    {"title": "Add rate limiting", "type": "task", "priority": 2}
+  ],
+  "summary": "Implemented OAuth2 login"
+}
+```
+
+### Lite Mode
+
+Lite mode skips preflight, assessment, and multi-iteration refinement. Quality gates still run.
+
+Use for:
+- Typo fixes
+- Documentation updates
+- Single-file changes with clear scope
+
+### Gastown Integration
+
+See `examples/gastown/` for wrapper scripts that:
+1. Invoke VC in polecat mode
+2. Parse JSON result
+3. Create discovered issues in beads
+4. Commit/merge if successful
+5. Reply via Gastown Mail
+
+### Full Documentation
+
+See [POLECAT_MODE.md](POLECAT_MODE.md) for complete CLI reference, JSON schema, and configuration options.
 
 ---
