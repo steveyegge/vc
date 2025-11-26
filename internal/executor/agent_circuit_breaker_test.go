@@ -636,3 +636,205 @@ func TestToolCallLimit(t *testing.T) {
 		}
 	})
 }
+
+// TestGrepCircuitBreaker verifies pattern-level Grep loop detection (vc-139)
+func TestGrepCircuitBreaker(t *testing.T) {
+	ctx := context.Background()
+
+	// Test 1: Same pattern repeated should trigger circuit breaker
+	t.Run("SamePatternLimit", func(t *testing.T) {
+		agent := &Agent{
+			config: AgentConfig{
+				Issue: &types.Issue{
+					ID:    "vc-test-grep-pattern",
+					Title: "Test Grep Pattern Limit",
+				},
+			},
+			ctx:               ctx,
+			grepPatternCounts: make(map[string]int),
+			totalGrepCount:    0,
+		}
+
+		pattern := "TODO.*fix"
+		var firstErr error
+		for i := 0; i < maxSamePatternGreps+5; i++ {
+			err := agent.checkGrepCircuitBreaker(pattern)
+			if err != nil && firstErr == nil {
+				firstErr = err
+				t.Logf("Circuit breaker triggered after %d same-pattern greps: %v", i+1, err)
+				break
+			}
+		}
+
+		if firstErr == nil {
+			t.Errorf("Expected circuit breaker to trigger for repeated same-pattern greps")
+		}
+		if !agent.loopDetected.Load() {
+			t.Errorf("Expected loopDetected flag to be set")
+		}
+	})
+
+	// Test 2: Total Grep limit should trigger
+	t.Run("TotalGrepLimit", func(t *testing.T) {
+		agent := &Agent{
+			config: AgentConfig{
+				Issue: &types.Issue{
+					ID:    "vc-test-grep-total",
+					Title: "Test Total Grep Limit",
+				},
+			},
+			ctx:               ctx,
+			grepPatternCounts: make(map[string]int),
+			totalGrepCount:    0,
+		}
+
+		var firstErr error
+		for i := 0; i < maxGreps+5; i++ {
+			// Use different patterns to avoid per-pattern limit
+			pattern := fmt.Sprintf("pattern-%d", i)
+			err := agent.checkGrepCircuitBreaker(pattern)
+			if err != nil && firstErr == nil {
+				firstErr = err
+				t.Logf("Circuit breaker triggered after %d total greps: %v", i+1, err)
+				break
+			}
+		}
+
+		if firstErr == nil {
+			t.Errorf("Expected circuit breaker to trigger for excessive total greps")
+		}
+		if !agent.loopDetected.Load() {
+			t.Errorf("Expected loopDetected flag to be set")
+		}
+	})
+
+	// Test 3: Normal usage should not trigger
+	t.Run("NormalGrepUsage", func(t *testing.T) {
+		agent := &Agent{
+			config: AgentConfig{
+				Issue: &types.Issue{
+					ID:    "vc-test-grep-normal",
+					Title: "Test Normal Grep Usage",
+				},
+			},
+			ctx:               ctx,
+			grepPatternCounts: make(map[string]int),
+			totalGrepCount:    0,
+		}
+
+		// 20 greps with different patterns should be fine
+		for i := 0; i < 20; i++ {
+			pattern := fmt.Sprintf("pattern-%d", i%5) // Some repeat, but not exceeding limit
+			err := agent.checkGrepCircuitBreaker(pattern)
+			if err != nil {
+				t.Errorf("Circuit breaker triggered unexpectedly on normal grep usage: %v", err)
+				break
+			}
+		}
+
+		if agent.loopDetected.Load() {
+			t.Errorf("Circuit breaker should not trigger on normal grep usage")
+		}
+	})
+}
+
+// TestGlobCircuitBreaker verifies pattern-level Glob loop detection (vc-139)
+func TestGlobCircuitBreaker(t *testing.T) {
+	ctx := context.Background()
+
+	// Test 1: Same pattern repeated should trigger circuit breaker
+	t.Run("SamePatternLimit", func(t *testing.T) {
+		agent := &Agent{
+			config: AgentConfig{
+				Issue: &types.Issue{
+					ID:    "vc-test-glob-pattern",
+					Title: "Test Glob Pattern Limit",
+				},
+			},
+			ctx:               ctx,
+			globPatternCounts: make(map[string]int),
+			totalGlobCount:    0,
+		}
+
+		pattern := "**/*.go"
+		var firstErr error
+		for i := 0; i < maxSamePatternGlobs+5; i++ {
+			err := agent.checkGlobCircuitBreaker(pattern)
+			if err != nil && firstErr == nil {
+				firstErr = err
+				t.Logf("Circuit breaker triggered after %d same-pattern globs: %v", i+1, err)
+				break
+			}
+		}
+
+		if firstErr == nil {
+			t.Errorf("Expected circuit breaker to trigger for repeated same-pattern globs")
+		}
+		if !agent.loopDetected.Load() {
+			t.Errorf("Expected loopDetected flag to be set")
+		}
+	})
+
+	// Test 2: Total Glob limit should trigger
+	t.Run("TotalGlobLimit", func(t *testing.T) {
+		agent := &Agent{
+			config: AgentConfig{
+				Issue: &types.Issue{
+					ID:    "vc-test-glob-total",
+					Title: "Test Total Glob Limit",
+				},
+			},
+			ctx:               ctx,
+			globPatternCounts: make(map[string]int),
+			totalGlobCount:    0,
+		}
+
+		var firstErr error
+		for i := 0; i < maxGlobs+5; i++ {
+			// Use different patterns to avoid per-pattern limit
+			pattern := fmt.Sprintf("src/%d/**/*.go", i)
+			err := agent.checkGlobCircuitBreaker(pattern)
+			if err != nil && firstErr == nil {
+				firstErr = err
+				t.Logf("Circuit breaker triggered after %d total globs: %v", i+1, err)
+				break
+			}
+		}
+
+		if firstErr == nil {
+			t.Errorf("Expected circuit breaker to trigger for excessive total globs")
+		}
+		if !agent.loopDetected.Load() {
+			t.Errorf("Expected loopDetected flag to be set")
+		}
+	})
+
+	// Test 3: Normal usage should not trigger
+	t.Run("NormalGlobUsage", func(t *testing.T) {
+		agent := &Agent{
+			config: AgentConfig{
+				Issue: &types.Issue{
+					ID:    "vc-test-glob-normal",
+					Title: "Test Normal Glob Usage",
+				},
+			},
+			ctx:               ctx,
+			globPatternCounts: make(map[string]int),
+			totalGlobCount:    0,
+		}
+
+		// 15 globs with different patterns should be fine
+		for i := 0; i < 15; i++ {
+			pattern := fmt.Sprintf("src/%d/**/*.go", i%5) // Some repeat, but not exceeding limit
+			err := agent.checkGlobCircuitBreaker(pattern)
+			if err != nil {
+				t.Errorf("Circuit breaker triggered unexpectedly on normal glob usage: %v", err)
+				break
+			}
+		}
+
+		if agent.loopDetected.Load() {
+			t.Errorf("Circuit breaker should not trigger on normal glob usage")
+		}
+	})
+}

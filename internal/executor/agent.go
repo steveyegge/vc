@@ -70,6 +70,22 @@ const (
 	// Set high enough for legitimate exploration but catches pathological repetition
 	maxSameToolCalls = 100
 
+	// maxGreps is the maximum number of Grep tool invocations per execution (vc-139)
+	// Catches agents stuck in search loops - should be lower than Read since searches are broader
+	maxGreps = 100
+
+	// maxSamePatternGreps is the maximum number of times the same grep pattern can be searched (vc-139)
+	// Detects agents repeatedly searching for the same thing
+	maxSamePatternGreps = 10
+
+	// maxGlobs is the maximum number of Glob tool invocations per execution (vc-139)
+	// Catches agents stuck in file listing loops
+	maxGlobs = 50
+
+	// maxSamePatternGlobs is the maximum number of times the same glob pattern can be used (vc-139)
+	// Detects agents repeatedly globbing for the same pattern
+	maxSamePatternGlobs = 10
+
 	// aiLoopCheckInterval is how often to ask AI if agent is stuck (vc-34cz)
 	// Every 50 tool calls, Haiku checks if we're making progress or looping
 	// This is ZFC-compliant: AI judges stuckness, not arbitrary limits
@@ -205,7 +221,7 @@ type Agent struct {
 	result AgentResult
 	parser *events.OutputParser // Parser for extracting events from output
 
-	// Circuit breaker state for detecting infinite loops (vc-117, vc-34cz)
+	// Circuit breaker state for detecting infinite loops (vc-117, vc-34cz, vc-139)
 	totalReadCount  int            // Total number of Read tool invocations
 	fileReadCounts  map[string]int // Number of times each file has been read
 	toolCallCounts  map[string]int // Number of times each tool has been called (vc-34cz)
@@ -213,6 +229,12 @@ type Agent struct {
 	recentToolCalls []string       // Recent tool calls for AI loop detection (vc-34cz)
 	loopDetected    atomic.Bool    // Whether an infinite loop was detected (lock-free for monitoring goroutine)
 	loopReason      string         // Reason for loop detection (for error messages)
+
+	// Grep/Glob tracking for search loop detection (vc-139)
+	totalGrepCount    int            // Total number of Grep tool invocations
+	grepPatternCounts map[string]int // Number of times each grep pattern has been searched
+	totalGlobCount    int            // Total number of Glob tool invocations
+	globPatternCounts map[string]int // Number of times each glob pattern has been used
 
 	// Interrupt state for graceful pause/resume (vc-d25s)
 	interruptDetected atomic.Bool // Whether an interrupt was detected (lock-free for monitoring goroutine)
@@ -712,6 +734,36 @@ func (a *Agent) convertJSONToEvent(msg AgentMessage) *events.AgentEvent {
 			}
 		}
 
+		// Grep-specific tracking for pattern-level granularity (vc-139)
+		if toolName == "grep" {
+			var grepPattern string
+			if content.Input != nil {
+				if patternVal, ok := content.Input["pattern"].(string); ok {
+					grepPattern = patternVal
+				}
+			}
+
+			if err := a.checkGrepCircuitBreaker(grepPattern); err != nil {
+				fmt.Fprintf(os.Stderr, "\n!!! CIRCUIT BREAKER TRIGGERED !!!\n%v\n", err)
+				return nil
+			}
+		}
+
+		// Glob-specific tracking for pattern-level granularity (vc-139)
+		if toolName == "glob" {
+			var globPattern string
+			if content.Input != nil {
+				if patternVal, ok := content.Input["pattern"].(string); ok {
+					globPattern = patternVal
+				}
+			}
+
+			if err := a.checkGlobCircuitBreaker(globPattern); err != nil {
+				fmt.Fprintf(os.Stderr, "\n!!! CIRCUIT BREAKER TRIGGERED !!!\n%v\n", err)
+				return nil
+			}
+		}
+
 		// Extract parameters from the input map
 		var targetFile, command, pattern string
 		if content.Input != nil {
@@ -944,6 +996,70 @@ func (a *Agent) checkCircuitBreaker(filePath string) error {
 	if a.totalReadCount > maxFileReads {
 		a.loopReason = fmt.Sprintf("Total Read operations: %d (limit: %d)", a.totalReadCount, maxFileReads)
 		a.loopDetected.Store(true) // Atomic write for lock-free monitoring
+		return fmt.Errorf("infinite loop detected: %s", a.loopReason)
+	}
+
+	return nil
+}
+
+// checkGrepCircuitBreaker checks if the agent is stuck in a grep loop (vc-139)
+// Tracks both total greps and per-pattern grep counts
+func (a *Agent) checkGrepCircuitBreaker(pattern string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Initialize map if needed
+	if a.grepPatternCounts == nil {
+		a.grepPatternCounts = make(map[string]int)
+	}
+
+	// Track per-pattern grep count and check limit BEFORE incrementing
+	if pattern != "" {
+		if a.grepPatternCounts[pattern] >= maxSamePatternGreps {
+			a.loopReason = fmt.Sprintf("Grep pattern '%s' searched %d times (limit: %d)", pattern, maxSamePatternGreps, maxSamePatternGreps)
+			a.loopDetected.Store(true)
+			return fmt.Errorf("infinite loop detected: %s", a.loopReason)
+		}
+		a.grepPatternCounts[pattern]++
+	}
+
+	// Increment total grep count and check limit
+	a.totalGrepCount++
+	if a.totalGrepCount > maxGreps {
+		a.loopReason = fmt.Sprintf("Total Grep operations: %d (limit: %d)", a.totalGrepCount, maxGreps)
+		a.loopDetected.Store(true)
+		return fmt.Errorf("infinite loop detected: %s", a.loopReason)
+	}
+
+	return nil
+}
+
+// checkGlobCircuitBreaker checks if the agent is stuck in a glob loop (vc-139)
+// Tracks both total globs and per-pattern glob counts
+func (a *Agent) checkGlobCircuitBreaker(pattern string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Initialize map if needed
+	if a.globPatternCounts == nil {
+		a.globPatternCounts = make(map[string]int)
+	}
+
+	// Track per-pattern glob count and check limit BEFORE incrementing
+	if pattern != "" {
+		if a.globPatternCounts[pattern] >= maxSamePatternGlobs {
+			a.loopReason = fmt.Sprintf("Glob pattern '%s' used %d times (limit: %d)", pattern, maxSamePatternGlobs, maxSamePatternGlobs)
+			a.loopDetected.Store(true)
+			return fmt.Errorf("infinite loop detected: %s", a.loopReason)
+		}
+		a.globPatternCounts[pattern]++
+	}
+
+	// Increment total glob count and check limit
+	a.totalGlobCount++
+	if a.totalGlobCount > maxGlobs {
+		a.loopReason = fmt.Sprintf("Total Glob operations: %d (limit: %d)", a.totalGlobCount, maxGlobs)
+		a.loopDetected.Store(true)
 		return fmt.Errorf("infinite loop detected: %s", a.loopReason)
 	}
 
