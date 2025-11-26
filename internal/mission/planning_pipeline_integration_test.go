@@ -349,7 +349,7 @@ func setupInMemoryStorage(t *testing.T, ctx context.Context) storage.Storage {
 	return store
 }
 
-func cleanupStorage(t *testing.T, ctx context.Context, store storage.Storage) {
+func cleanupStorage(t *testing.T, _ context.Context, store storage.Storage) {
 	t.Helper()
 	if err := store.Close(); err != nil {
 		t.Logf("Warning: failed to close storage: %v", err)

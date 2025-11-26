@@ -1035,7 +1035,7 @@ func (t *VCTransaction) RemoveDependency(ctx context.Context, issueID, dependsOn
 //
 // vc-3hjg: Added for atomic plan approval workflow
 func (s *VCStorage) RunInVCTransaction(ctx context.Context, fn func(tx *VCTransaction) error) error {
-	return s.Storage.RunInTransaction(ctx, func(beadsTx beadsLib.Transaction) error {
+	return s.RunInTransaction(ctx, func(beadsTx beadsLib.Transaction) error {
 		vcTx := &VCTransaction{tx: beadsTx}
 		return fn(vcTx)
 	})

@@ -137,7 +137,7 @@ func (s *Server) acceptLoop(ctx context.Context) {
 }
 
 // handleConnection processes a single control connection
-func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
+func (s *Server) handleConnection(_ context.Context, conn net.Conn) {
 	defer conn.Close()
 
 	// Set read deadline to prevent hanging on bad clients

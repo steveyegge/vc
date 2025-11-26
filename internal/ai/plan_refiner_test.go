@@ -55,7 +55,7 @@ func TestNewPlanRefiner(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			refiner := NewPlanRefiner(tt.supervisor, tt.planningCtx)
 			if refiner == nil {
-				t.Error("NewPlanRefiner() returned nil")
+				t.Fatal("NewPlanRefiner() returned nil")
 			}
 			if refiner.supervisor != tt.supervisor {
 				t.Error("Refiner supervisor not set correctly")
