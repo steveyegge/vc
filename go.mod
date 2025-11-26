@@ -49,4 +49,3 @@ require (
 )
 
 // Local development: use local beads for testing changes
-replace github.com/steveyegge/beads => /Users/stevey/src/beads
