@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/storage"
 )
 
@@ -37,7 +37,7 @@ func NewConversationHandler(store storage.Storage, actor string) (*ConversationH
 		actor = "user"
 	}
 
-	client := anthropic.NewClient(option.WithAPIKey(apiKey))
+	client := ai.NewAnthropicClient(apiKey)
 
 	return &ConversationHandler{
 		client:  &client,

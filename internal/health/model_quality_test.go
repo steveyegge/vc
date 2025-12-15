@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,7 +55,7 @@ func TestModelQuality_CruftDetector(t *testing.T) {
 	for _, model := range []string{ai.ModelSonnet, ai.ModelHaiku} {
 		t.Run(model, func(t *testing.T) {
 			// Create supervisor with specific model
-			client := anthropic.NewClient(option.WithAPIKey(apiKey))
+			client := ai.NewAnthropicClient(apiKey)
 			supervisor := &realAISupervisor{
 				client: &client,
 				model:  model,
@@ -165,7 +164,7 @@ func TestModelQuality_FileSizeMonitor(t *testing.T) {
 
 	for _, model := range []string{ai.ModelSonnet, ai.ModelHaiku} {
 		t.Run(model, func(t *testing.T) {
-			client := anthropic.NewClient(option.WithAPIKey(apiKey))
+			client := ai.NewAnthropicClient(apiKey)
 			supervisor := &realAISupervisor{
 				client: &client,
 				model:  model,
@@ -298,7 +297,7 @@ func TestModelQuality_GitignoreDetector(t *testing.T) {
 
 	for _, model := range []string{ai.ModelSonnet, ai.ModelHaiku} {
 		t.Run(model, func(t *testing.T) {
-			client := anthropic.NewClient(option.WithAPIKey(apiKey))
+			client := ai.NewAnthropicClient(apiKey)
 			supervisor := &realAISupervisor{
 				client: &client,
 				model:  model,

@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/steveyegge/vc/internal/ai"
 )
 
 // AIRequest represents a request to the AI supervisor.
@@ -79,7 +79,7 @@ func CallAI(ctx context.Context, req AIRequest) (*AIResponse, error) {
 	}
 
 	// Create client
-	client := anthropic.NewClient(option.WithAPIKey(apiKey))
+	client := ai.NewAnthropicClient(apiKey)
 
 	// Build messages
 	messages := []anthropic.MessageParam{

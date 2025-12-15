@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/google/uuid"
 	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/config"
@@ -658,7 +656,7 @@ func New(cfg *Config) (*Executor, error) {
 		apiKey := os.Getenv("ANTHROPIC_API_KEY")
 		if apiKey != "" {
 			// Create Anthropic client for message generation (vc-35: using Haiku for cost efficiency)
-			client := anthropic.NewClient(option.WithAPIKey(apiKey))
+			client := ai.NewAnthropicClient(apiKey)
 			e.messageGen = git.NewMessageGenerator(&client, ai.GetSimpleTaskModel())
 		} else {
 			fmt.Fprintf(os.Stderr, "Warning: ANTHROPIC_API_KEY not set (auto-commit message generation disabled)\n")

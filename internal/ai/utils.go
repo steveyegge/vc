@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -328,4 +329,21 @@ func safeTruncateString(s string, maxLen int) string {
 	// If we still don't have valid UTF-8 after 4 bytes, something is very wrong
 	// Return empty string rather than corrupted data
 	return ""
+}
+
+// NewAnthropicClient creates an Anthropic client with support for ANTHROPIC_BASE_URL
+// It uses the ANTHROPIC_API_KEY environment variable for authentication
+// and optionally ANTHROPIC_BASE_URL environment variable for custom endpoint
+func NewAnthropicClient(apiKey string) anthropic.Client {
+	// Prepare client options
+	opts := []option.RequestOption{
+		option.WithAPIKey(apiKey),
+	}
+
+	// Add base URL if provided
+	if baseURL := os.Getenv("ANTHROPIC_BASE_URL"); baseURL != "" {
+		opts = append(opts, option.WithBaseURL(baseURL))
+	}
+
+	return anthropic.NewClient(opts...)
 }
