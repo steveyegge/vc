@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 	"golang.org/x/sync/semaphore"
@@ -122,7 +121,7 @@ func NewSupervisor(cfg *Config) (*Supervisor, error) {
 		retry = DefaultRetryConfig()
 	}
 
-	client := anthropic.NewClient(option.WithAPIKey(apiKey))
+	client := NewAnthropicClient(apiKey)
 
 	// Initialize circuit breaker if enabled
 	var circuitBreaker *CircuitBreaker

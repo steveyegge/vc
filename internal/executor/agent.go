@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/google/uuid"
+	"github.com/steveyegge/vc/internal/ai"
 	"github.com/steveyegge/vc/internal/events"
 	"github.com/steveyegge/vc/internal/sandbox"
 	"github.com/steveyegge/vc/internal/storage"
@@ -1180,7 +1180,7 @@ Only say stuck=true if you're confident (>0.8) this is a loop.`, summary)
 	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	client := anthropic.NewClient(option.WithAPIKey(apiKey))
+	client := ai.NewAnthropicClient(apiKey)
 
 	resp, err := client.Messages.New(checkCtx, anthropic.MessageNewParams{
 		Model:     anthropic.Model("claude-3-5-haiku-20241022"), // Haiku for speed/cost
