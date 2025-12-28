@@ -40,12 +40,12 @@ func (s *Supervisor) recordAIUsage(ctx context.Context, issueID, activity string
 		// Record operation-level details for quota monitoring (vc-7e21)
 		// We create a map instead of importing cost.QuotaOperation to avoid circular dependency
 		op := map[string]interface{}{
-			"issue_id":        issueID,
-			"operation_type":  activity,
-			"model":           s.model,
-			"input_tokens":    inputTokens,
-			"output_tokens":   outputTokens,
-			"duration_ms":     duration.Milliseconds(),
+			"issue_id":       issueID,
+			"operation_type": activity,
+			"model":          s.model,
+			"input_tokens":   inputTokens,
+			"output_tokens":  outputTokens,
+			"duration_ms":    duration.Milliseconds(),
 		}
 		if err := s.costTracker.RecordOperation(ctx, op); err != nil {
 			// Log warning but don't fail (operation tracking is best-effort)
@@ -271,8 +271,8 @@ func truncateString(s string, maxLen int) string {
 	}
 
 	// Calculate chunk sizes proportionally
-	firstChunk := maxLen / 8     // ~12.5% for context
-	middleChunk := maxLen / 4    // ~25% for work sample
+	firstChunk := maxLen / 8                             // ~12.5% for context
+	middleChunk := maxLen / 4                            // ~25% for work sample
 	lastChunk := maxLen - firstChunk - middleChunk - 100 // Rest for results (minus markers)
 
 	// Extract chunks with bounds checking

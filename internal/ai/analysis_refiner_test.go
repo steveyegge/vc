@@ -13,9 +13,9 @@ import (
 func TestNewAnalysisRefiner(t *testing.T) {
 	// Create test issue
 	issue := &types.Issue{
-		ID:    "test-1",
-		Title: "Test Issue",
-		Description: "Test description",
+		ID:                 "test-1",
+		Title:              "Test Issue",
+		Description:        "Test description",
 		AcceptanceCriteria: "1. Should work\n2. Should be tested",
 	}
 
@@ -81,9 +81,9 @@ func TestNewAnalysisRefiner(t *testing.T) {
 // TestSerializeAnalysis tests analysis serialization
 func TestSerializeAnalysis(t *testing.T) {
 	analysis := &Analysis{
-		Completed:  true,
-		Confidence: 0.95,
-		Summary:    "Test summary",
+		Completed:   true,
+		Confidence:  0.95,
+		Summary:     "Test summary",
 		PuntedItems: []string{"Item 1", "Item 2"},
 		DiscoveredIssues: []DiscoveredIssue{
 			{
@@ -363,9 +363,9 @@ func TestDeserializeAnalysis(t *testing.T) {
 // TestSerializeAnalysisEdgeCases tests serialization edge cases
 func TestSerializeAnalysisEdgeCases(t *testing.T) {
 	tests := []struct {
-		name     string
-		analysis *Analysis
-		expected []string
+		name        string
+		analysis    *Analysis
+		expected    []string
 		notExpected []string
 	}{
 		{

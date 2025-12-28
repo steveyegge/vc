@@ -14,18 +14,18 @@ import (
 
 // Assessment represents an AI assessment of an issue before execution
 type Assessment struct {
-	Strategy         string            `json:"strategy"`           // High-level strategy for completing the issue
-	Steps            []string          `json:"steps"`              // Specific steps to take
-	Risks            []string          `json:"risks"`              // Potential risks or challenges
-	Confidence       float64           `json:"confidence"`         // Confidence score (0.0-1.0)
-	Reasoning        string            `json:"reasoning"`          // Detailed reasoning
-	ShouldDecompose  bool              `json:"should_decompose"`   // Whether this issue should be split into child issues (vc-rzqe)
+	Strategy          string             `json:"strategy"`                     // High-level strategy for completing the issue
+	Steps             []string           `json:"steps"`                        // Specific steps to take
+	Risks             []string           `json:"risks"`                        // Potential risks or challenges
+	Confidence        float64            `json:"confidence"`                   // Confidence score (0.0-1.0)
+	Reasoning         string             `json:"reasoning"`                    // Detailed reasoning
+	ShouldDecompose   bool               `json:"should_decompose"`             // Whether this issue should be split into child issues (vc-rzqe)
 	DecompositionPlan *DecompositionPlan `json:"decomposition_plan,omitempty"` // Plan for decomposing into child issues (vc-rzqe)
 }
 
 // DecompositionPlan describes how to break an issue into child issues (vc-rzqe)
 type DecompositionPlan struct {
-	Reasoning  string      `json:"reasoning"`   // Why decomposition is recommended
+	Reasoning   string       `json:"reasoning"`    // Why decomposition is recommended
 	ChildIssues []ChildIssue `json:"child_issues"` // Proposed child issues
 }
 
@@ -137,14 +137,14 @@ func (s *Supervisor) AssessIssueStateWithRefinement(ctx context.Context, issue *
 		// Record metrics for skipped iteration (vc-642z)
 		if collector != nil {
 			metrics := &iterative.ArtifactMetrics{
-				ArtifactType:     "assessment",
-				Priority:         fmt.Sprintf("P%d", issue.Priority),
-				TotalIterations:  0,
-				Converged:        true,
+				ArtifactType:      "assessment",
+				Priority:          fmt.Sprintf("P%d", issue.Priority),
+				TotalIterations:   0,
+				Converged:         true,
 				ConvergenceReason: "selectivity skip",
-				TotalDuration:    time.Since(startTime),
-				IterationSkipped: true,
-				SkipReason:       skipReason,
+				TotalDuration:     time.Since(startTime),
+				IterationSkipped:  true,
+				SkipReason:        skipReason,
 			}
 			collector.RecordArtifactComplete(&iterative.ConvergenceResult{
 				Iterations:  0,

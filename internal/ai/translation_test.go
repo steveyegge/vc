@@ -31,11 +31,11 @@ func TestMetaIssueRecursionPrevention(t *testing.T) {
 	t.Run("circular_meta_issue_detection", func(t *testing.T) {
 		// Create parent meta-issue (represents vc-9yhu: adds criteria to vc-hpcl)
 		parentIssue := &types.Issue{
-			Title:       "Add acceptance criteria to vc-hpcl",
-			Description: "vc-hpcl needs acceptance criteria",
-			IssueType:   types.TypeTask,
-			Status:      types.StatusOpen,
-			Priority:    1,
+			Title:              "Add acceptance criteria to vc-hpcl",
+			Description:        "vc-hpcl needs acceptance criteria",
+			IssueType:          types.TypeTask,
+			Status:             types.StatusOpen,
+			Priority:           1,
 			AcceptanceCriteria: "1. Add criteria to vc-hpcl\n2. Ensure criteria are clear",
 		}
 		if err := store.CreateIssue(ctx, parentIssue, "test"); err != nil {

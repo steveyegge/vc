@@ -47,11 +47,11 @@ import (
 type DiscoveredIssue struct {
 	Title              string   `json:"title"`
 	Description        string   `json:"description"`
-	Type               string   `json:"type"`               // bug, task, enhancement, etc.
-	Priority           string   `json:"priority"`           // P0, P1, P2, P3
-	DiscoveryType      string   `json:"discovery_type"`     // blocker, related, background (vc-151)
+	Type               string   `json:"type"`                          // bug, task, enhancement, etc.
+	Priority           string   `json:"priority"`                      // P0, P1, P2, P3
+	DiscoveryType      string   `json:"discovery_type"`                // blocker, related, background (vc-151)
 	AcceptanceCriteria string   `json:"acceptance_criteria,omitempty"` // vc-4vot: Required for meta-issues
-	Labels             []string `json:"labels,omitempty"`   // vc-4vot: AI-set labels (e.g., "meta-issue")
+	Labels             []string `json:"labels,omitempty"`              // vc-4vot: AI-set labels (e.g., "meta-issue")
 }
 
 // No heuristic pattern matching - we'll rely on AI to set labels
@@ -242,23 +242,23 @@ func (s *Supervisor) verifyMetaIssueStillNeeded(ctx context.Context, parentIssue
 // Recursion Prevention (vc-4vot, vc-o87x):
 // This function implements multiple layers of protection against infinite meta-issue recursion:
 //
-// 1. State Verification (vc-o87x): Before creating a meta-issue, re-fetch the parent issue from
-//    the database to verify the problem still exists. This prevents creating obsolete meta-issues
-//    when the parent was updated between analysis time and creation time.
-//    Example: AI sees "missing acceptance criteria" at T0, but criteria were added at T1.
+//  1. State Verification (vc-o87x): Before creating a meta-issue, re-fetch the parent issue from
+//     the database to verify the problem still exists. This prevents creating obsolete meta-issues
+//     when the parent was updated between analysis time and creation time.
+//     Example: AI sees "missing acceptance criteria" at T0, but criteria were added at T1.
 //
-// 2. Circular Meta-Issue Detection (vc-4vot): Prevent meta-issues about meta-issues.
-//    If parent has "meta-issue" label AND child has "meta-issue" label, skip creation.
-//    Example: vc-hpcl → vc-9yhu (meta) → vc-qo2u (meta) is blocked at vc-qo2u.
+//  2. Circular Meta-Issue Detection (vc-4vot): Prevent meta-issues about meta-issues.
+//     If parent has "meta-issue" label AND child has "meta-issue" label, skip creation.
+//     Example: vc-hpcl → vc-9yhu (meta) → vc-qo2u (meta) is blocked at vc-qo2u.
 //
-// 3. Meta-Issue Acceptance Criteria (vc-4vot): Meta-issues MUST have acceptance criteria.
-//    Without criteria, meta-issues themselves trigger more meta-issues, creating infinite recursion.
+//  3. Meta-Issue Acceptance Criteria (vc-4vot): Meta-issues MUST have acceptance criteria.
+//     Without criteria, meta-issues themselves trigger more meta-issues, creating infinite recursion.
 //
-// 4. Blocker Depth Limit (vc-4vot): Maximum 2 levels of discovered:blocker chains.
-//    This prevents blocker → blocker → blocker → ... chains that clog the tracker.
+//  4. Blocker Depth Limit (vc-4vot): Maximum 2 levels of discovered:blocker chains.
+//     This prevents blocker → blocker → blocker → ... chains that clog the tracker.
 //
-// 5. Circuit Breaker (vc-4vot): If >5 blockers discovered at once, create a single
-//    escalation issue instead. This catches systemic problems and runaway recursion.
+//  5. Circuit Breaker (vc-4vot): If >5 blockers discovered at once, create a single
+//     escalation issue instead. This catches systemic problems and runaway recursion.
 func (s *Supervisor) CreateDiscoveredIssues(ctx context.Context, parentIssue *types.Issue, discovered []DiscoveredIssue) ([]string, error) {
 	var createdIDs []string
 	var skipped []string
@@ -277,11 +277,11 @@ func (s *Supervisor) CreateDiscoveredIssues(ctx context.Context, parentIssue *ty
 
 		// Create a single escalation issue instead of creating all blockers
 		escalationIssue := &types.Issue{
-			Title:       fmt.Sprintf("Excessive blocker discovery in %s - needs human review", parentIssue.ID),
-			Description: fmt.Sprintf("The AI analysis discovered %d blocking issues for %s, which suggests a systemic problem or infinite recursion.\n\nParent Issue: %s\nParent Title: %s\n\nPlease review the parent issue and address the root cause.\n\n_Discovered during execution of %s_", blockerCount, parentIssue.ID, parentIssue.ID, parentIssue.Title, parentIssue.ID),
-			IssueType:   types.TypeTask,
-			Status:      types.StatusOpen,
-			Priority:    0, // P0 - critical
+			Title:              fmt.Sprintf("Excessive blocker discovery in %s - needs human review", parentIssue.ID),
+			Description:        fmt.Sprintf("The AI analysis discovered %d blocking issues for %s, which suggests a systemic problem or infinite recursion.\n\nParent Issue: %s\nParent Title: %s\n\nPlease review the parent issue and address the root cause.\n\n_Discovered during execution of %s_", blockerCount, parentIssue.ID, parentIssue.ID, parentIssue.Title, parentIssue.ID),
+			IssueType:          types.TypeTask,
+			Status:             types.StatusOpen,
+			Priority:           0, // P0 - critical
 			AcceptanceCriteria: "1. Review parent issue and discovered blockers list\n2. Identify root cause of excessive blocker discovery\n3. Resolve underlying issue or reconfigure AI analysis\n4. Ensure parent issue has clear acceptance criteria",
 		}
 
@@ -391,7 +391,7 @@ func (s *Supervisor) CreateDiscoveredIssues(ctx context.Context, parentIssue *ty
 			Description:        disc.Description + fmt.Sprintf("\n\n_Discovered during execution of %s_", parentIssue.ID),
 			IssueType:          issueType,
 			Status:             types.StatusOpen,
-			Priority:           priority, // Use calculated priority (vc-152)
+			Priority:           priority,           // Use calculated priority (vc-152)
 			AcceptanceCriteria: acceptanceCriteria, // vc-4vot: Include acceptance criteria from AI
 		}
 

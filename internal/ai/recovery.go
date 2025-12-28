@@ -13,14 +13,14 @@ import (
 
 // RecoveryStrategy represents AI-generated strategy for recovering from quality gate failures
 type RecoveryStrategy struct {
-	Action           string            `json:"action"`             // "fix_in_place", "acceptable_failure", "split_work", "escalate", "retry"
-	Reasoning        string            `json:"reasoning"`          // Detailed reasoning for the recommended action
-	Confidence       float64           `json:"confidence"`         // Confidence in the recommendation (0.0-1.0)
-	CreateIssues     []DiscoveredIssue `json:"create_issues"`      // Issues to create for fixes
-	MarkAsBlocked    bool              `json:"mark_as_blocked"`    // Whether to mark original issue as blocked
-	CloseOriginal    bool              `json:"close_original"`     // Whether to close the original issue (acceptable failure)
-	AddComment       string            `json:"add_comment"`        // Comment to add to original issue
-	RequiresApproval bool              `json:"requires_approval"`  // Whether human approval is needed
+	Action           string            `json:"action"`            // "fix_in_place", "acceptable_failure", "split_work", "escalate", "retry"
+	Reasoning        string            `json:"reasoning"`         // Detailed reasoning for the recommended action
+	Confidence       float64           `json:"confidence"`        // Confidence in the recommendation (0.0-1.0)
+	CreateIssues     []DiscoveredIssue `json:"create_issues"`     // Issues to create for fixes
+	MarkAsBlocked    bool              `json:"mark_as_blocked"`   // Whether to mark original issue as blocked
+	CloseOriginal    bool              `json:"close_original"`    // Whether to close the original issue (acceptable failure)
+	AddComment       string            `json:"add_comment"`       // Comment to add to original issue
+	RequiresApproval bool              `json:"requires_approval"` // Whether human approval is needed
 }
 
 // GateFailure represents a failed quality gate with details

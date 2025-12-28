@@ -28,10 +28,10 @@ type ErrorType int
 
 const (
 	ErrorTransient ErrorType = iota // Network hiccup, server error (5xx) - retry with backoff
-	ErrorQuota                       // 429 quota/rate limit exceeded - wait for reset
-	ErrorInvalid                     // 400 bad request - don't retry
-	ErrorAuth                        // 401/403 auth error - don't retry
-	ErrorUnknown                     // Catch-all - retry with backoff
+	ErrorQuota                      // 429 quota/rate limit exceeded - wait for reset
+	ErrorInvalid                    // 400 bad request - don't retry
+	ErrorAuth                       // 401/403 auth error - don't retry
+	ErrorUnknown                    // Catch-all - retry with backoff
 )
 
 func (e ErrorType) String() string {
@@ -74,9 +74,9 @@ type RetryConfig struct {
 type CircuitState int
 
 const (
-	CircuitClosed CircuitState = iota // Normal operation, requests pass through
-	CircuitOpen                        // Too many failures, block requests (fail fast)
-	CircuitHalfOpen                    // Testing recovery, allow limited requests
+	CircuitClosed   CircuitState = iota // Normal operation, requests pass through
+	CircuitOpen                         // Too many failures, block requests (fail fast)
+	CircuitHalfOpen                     // Testing recovery, allow limited requests
 )
 
 func (s CircuitState) String() string {
@@ -140,7 +140,7 @@ func DefaultRetryConfig() RetryConfig {
 		FailureThreshold:      5,
 		SuccessThreshold:      2,
 		OpenTimeout:           30 * time.Second,
-		MaxConcurrentCalls:    3, // Limit concurrent AI calls to prevent rate limiting (vc-220)
+		MaxConcurrentCalls:    3,            // Limit concurrent AI calls to prevent rate limiting (vc-220)
 		MaxQuotaWait:          maxQuotaWait, // Maximum wait for quota reset (vc-5b22)
 	}
 }

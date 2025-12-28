@@ -80,15 +80,15 @@ func TestParse_WithCodeFences(t *testing.T) {
 				"```",
 		},
 		{
-			name: "json fence without newlines (vc-226 edge case)",
+			name:  "json fence without newlines (vc-226 edge case)",
 			input: "```json" + `{"success": true, "message": "no newlines"}` + "```",
 		},
 		{
-			name: "json fence with space but no newline",
+			name:  "json fence with space but no newline",
 			input: "```json " + `{"success": true, "message": "space no newline"}` + "```",
 		},
 		{
-			name: "fence without language or newlines",
+			name:  "fence without language or newlines",
 			input: "```" + `{"success": true, "message": "minimal"}` + "```",
 		},
 	}
@@ -497,8 +497,8 @@ func TestRemoveCodeFences(t *testing.T) {
 
 func TestCleanupJSON(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
+		name        string
+		input       string
 		shouldParse bool
 	}{
 		{
