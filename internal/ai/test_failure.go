@@ -150,6 +150,6 @@ RULES:
 4. For real failures, trace through the logic to find the bug
 5. Include concrete verification steps
 
-IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (` + "`" + `). Just the JSON object.`,
+IMPORTANT: Respond with ONLY raw JSON. Do NOT wrap it in markdown code fences (`+"`"+`). Just the JSON object.`,
 		issue.ID, issue.Title, issue.Description, truncateString(testOutput, 8000))
 }

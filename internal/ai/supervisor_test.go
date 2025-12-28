@@ -19,8 +19,8 @@ type mockStorage struct {
 	issues       map[string]*types.Issue
 	comments     []string
 	dependencies []types.Dependency
-	labels       map[string][]string                                                // issueID -> labels (vc-151)
-	createError  error                                                              // Inject errors for testing
+	labels       map[string][]string // issueID -> labels (vc-151)
+	createError  error               // Inject errors for testing
 	depError     error
 	createFunc   func(ctx context.Context, issue *types.Issue, actor string) error // Allow overriding
 }
@@ -517,24 +517,24 @@ func TestCreateDiscoveredIssues(t *testing.T) {
 			name: "discovery type labels (vc-151/vc-152)",
 			discovered: []DiscoveredIssue{
 				{
-					Title:        "Fix lint errors",
-					Description:  "Pre-existing lint errors block quality gates",
-					Type:         "bug",
-					Priority:     "P1", // AI suggests P1, but calculated as P0 (blocker from P2 parent)
+					Title:         "Fix lint errors",
+					Description:   "Pre-existing lint errors block quality gates",
+					Type:          "bug",
+					Priority:      "P1", // AI suggests P1, but calculated as P0 (blocker from P2 parent)
 					DiscoveryType: "blocker",
 				},
 				{
-					Title:        "Add logging",
-					Description:  "Would help debugging similar issues",
-					Type:         "task",
-					Priority:     "P2", // AI suggests P2, but calculated as P3 (related from P2 parent)
+					Title:         "Add logging",
+					Description:   "Would help debugging similar issues",
+					Type:          "task",
+					Priority:      "P2", // AI suggests P2, but calculated as P3 (related from P2 parent)
 					DiscoveryType: "related",
 				},
 				{
-					Title:        "Refactor utils",
-					Description:  "Noticed during work but unrelated",
-					Type:         "chore",
-					Priority:     "P3", // AI suggests P3, but calculated as P2 (background always P2)
+					Title:         "Refactor utils",
+					Description:   "Noticed during work but unrelated",
+					Type:          "chore",
+					Priority:      "P3", // AI suggests P3, but calculated as P2 (background always P2)
 					DiscoveryType: "background",
 				},
 			},
@@ -804,17 +804,17 @@ func generateTestOutput(length int) string {
 // issues inherit the parent's priority.
 func TestPriorityMapping(t *testing.T) {
 	tests := []struct {
-		input        string
+		input          string
 		parentPriority int
-		want         int
+		want           int
 	}{
-		{"P0", 0, 0}, // Inherits parent P0
-		{"P1", 1, 1}, // Inherits parent P1
-		{"P2", 2, 2}, // Inherits parent P2
-		{"P3", 3, 3}, // Inherits parent P3
-		{"P4", 2, 2}, // Unknown AI priority, inherits parent P2
+		{"P0", 0, 0},      // Inherits parent P0
+		{"P1", 1, 1},      // Inherits parent P1
+		{"P2", 2, 2},      // Inherits parent P2
+		{"P3", 3, 3},      // Inherits parent P3
+		{"P4", 2, 2},      // Unknown AI priority, inherits parent P2
 		{"invalid", 2, 2}, // Invalid AI priority, inherits parent P2
-		{"", 2, 2},   // Empty AI priority, inherits parent P2
+		{"", 2, 2},        // Empty AI priority, inherits parent P2
 	}
 
 	store := newMockStorage()
@@ -1179,7 +1179,8 @@ func TestCircuitBreakerWithRetry(t *testing.T) {
 	t.Run("circuit breaker blocks retries when open", func(t *testing.T) {
 		store := newMockStorage()
 		cfg := &Config{
-			Store: store,
+			APIKey: "test-key",
+			Store:  store,
 			Retry: RetryConfig{
 				MaxRetries:            3,
 				InitialBackoff:        10 * time.Millisecond,
@@ -1238,7 +1239,8 @@ func TestCircuitBreakerWithRetry(t *testing.T) {
 	t.Run("successful request records success with circuit breaker", func(t *testing.T) {
 		store := newMockStorage()
 		cfg := &Config{
-			Store: store,
+			APIKey: "test-key",
+			Store:  store,
 			Retry: RetryConfig{
 				MaxRetries:            3,
 				InitialBackoff:        10 * time.Millisecond,
@@ -1284,7 +1286,8 @@ func TestCircuitBreakerWithRetry(t *testing.T) {
 	t.Run("non-retriable errors don't affect circuit breaker", func(t *testing.T) {
 		store := newMockStorage()
 		cfg := &Config{
-			Store: store,
+			APIKey: "test-key",
+			Store:  store,
 			Retry: RetryConfig{
 				MaxRetries:            3,
 				InitialBackoff:        10 * time.Millisecond,
@@ -1364,7 +1367,8 @@ func TestCircuitBreakerStateTransitions(t *testing.T) {
 func TestCircuitBreakerDisabled(t *testing.T) {
 	store := newMockStorage()
 	cfg := &Config{
-		Store: store,
+		APIKey: "test-key",
+		Store:  store,
 		Retry: RetryConfig{
 			MaxRetries:            3,
 			InitialBackoff:        10 * time.Millisecond,

@@ -86,99 +86,99 @@ func TestParseRetryAfterFromMessage(t *testing.T) {
 // TestClassifyError tests error type classification
 func TestClassifyError(t *testing.T) {
 	tests := []struct {
-		name              string
-		err               error
-		expectedType      ErrorType
-		expectWaitTime    bool
-		minWait           time.Duration
-		maxWait           time.Duration
+		name           string
+		err            error
+		expectedType   ErrorType
+		expectWaitTime bool
+		minWait        time.Duration
+		maxWait        time.Duration
 	}{
 		{
-			name:         "nil error",
-			err:          nil,
-			expectedType: ErrorUnknown,
+			name:           "nil error",
+			err:            nil,
+			expectedType:   ErrorUnknown,
 			expectWaitTime: false,
 		},
 		{
-			name:         "generic error",
-			err:          errors.New("something went wrong"),
-			expectedType: ErrorUnknown,
+			name:           "generic error",
+			err:            errors.New("something went wrong"),
+			expectedType:   ErrorUnknown,
 			expectWaitTime: false,
 		},
 		{
-			name:         "429 rate limit in message",
-			err:          errors.New("HTTP 429: rate limit exceeded, try again in 12 minutes"),
-			expectedType: ErrorQuota,
+			name:           "429 rate limit in message",
+			err:            errors.New("HTTP 429: rate limit exceeded, try again in 12 minutes"),
+			expectedType:   ErrorQuota,
 			expectWaitTime: true,
-			minWait:      12 * time.Minute,
-			maxWait:      12 * time.Minute,
+			minWait:        12 * time.Minute,
+			maxWait:        12 * time.Minute,
 		},
 		{
-			name:         "quota in message",
-			err:          errors.New("quota exceeded, wait 720 seconds"),
-			expectedType: ErrorQuota,
+			name:           "quota in message",
+			err:            errors.New("quota exceeded, wait 720 seconds"),
+			expectedType:   ErrorQuota,
 			expectWaitTime: true,
-			minWait:      720 * time.Second,
-			maxWait:      720 * time.Second,
+			minWait:        720 * time.Second,
+			maxWait:        720 * time.Second,
 		},
 		{
-			name:         "500 internal server error",
-			err:          errors.New("HTTP 500: internal server error"),
-			expectedType: ErrorTransient,
+			name:           "500 internal server error",
+			err:            errors.New("HTTP 500: internal server error"),
+			expectedType:   ErrorTransient,
 			expectWaitTime: false,
 		},
 		{
-			name:         "502 bad gateway",
-			err:          errors.New("502 bad gateway"),
-			expectedType: ErrorTransient,
+			name:           "502 bad gateway",
+			err:            errors.New("502 bad gateway"),
+			expectedType:   ErrorTransient,
 			expectWaitTime: false,
 		},
 		{
-			name:         "503 service unavailable",
-			err:          errors.New("service unavailable (503)"),
-			expectedType: ErrorTransient,
+			name:           "503 service unavailable",
+			err:            errors.New("service unavailable (503)"),
+			expectedType:   ErrorTransient,
 			expectWaitTime: false,
 		},
 		{
-			name:         "504 gateway timeout",
-			err:          errors.New("504 gateway timeout"),
-			expectedType: ErrorTransient,
+			name:           "504 gateway timeout",
+			err:            errors.New("504 gateway timeout"),
+			expectedType:   ErrorTransient,
 			expectWaitTime: false,
 		},
 		{
-			name:         "connection refused",
-			err:          errors.New("connection refused"),
-			expectedType: ErrorTransient,
+			name:           "connection refused",
+			err:            errors.New("connection refused"),
+			expectedType:   ErrorTransient,
 			expectWaitTime: false,
 		},
 		{
-			name:         "network timeout",
-			err:          errors.New("network timeout"),
-			expectedType: ErrorTransient,
+			name:           "network timeout",
+			err:            errors.New("network timeout"),
+			expectedType:   ErrorTransient,
 			expectWaitTime: false,
 		},
 		{
-			name:         "400 bad request",
-			err:          errors.New("HTTP 400: bad request"),
-			expectedType: ErrorInvalid,
+			name:           "400 bad request",
+			err:            errors.New("HTTP 400: bad request"),
+			expectedType:   ErrorInvalid,
 			expectWaitTime: false,
 		},
 		{
-			name:         "404 not found",
-			err:          errors.New("404 not found"),
-			expectedType: ErrorInvalid,
+			name:           "404 not found",
+			err:            errors.New("404 not found"),
+			expectedType:   ErrorInvalid,
 			expectWaitTime: false,
 		},
 		{
-			name:         "401 unauthorized",
-			err:          errors.New("401 unauthorized"),
-			expectedType: ErrorAuth,
+			name:           "401 unauthorized",
+			err:            errors.New("401 unauthorized"),
+			expectedType:   ErrorAuth,
 			expectWaitTime: false,
 		},
 		{
-			name:         "403 forbidden",
-			err:          errors.New("HTTP 403: forbidden"),
-			expectedType: ErrorAuth,
+			name:           "403 forbidden",
+			err:            errors.New("HTTP 403: forbidden"),
+			expectedType:   ErrorAuth,
 			expectWaitTime: false,
 		},
 	}
@@ -206,11 +206,11 @@ func TestClassifyError(t *testing.T) {
 // TestClassifyErrorWithAnthropicSDKError tests classification with actual SDK error types
 func TestClassifyErrorWithAnthropicSDKError(t *testing.T) {
 	tests := []struct {
-		name          string
-		statusCode    int
-		retryAfter    string
-		expectedType  ErrorType
-		expectWait    bool
+		name         string
+		statusCode   int
+		retryAfter   string
+		expectedType ErrorType
+		expectWait   bool
 	}{
 		{
 			name:         "429 with Retry-After header (seconds)",
@@ -296,11 +296,11 @@ func TestClassifyErrorWithAnthropicSDKError(t *testing.T) {
 // TestParseRetryAfterWithHeaders tests parsing retry-after from HTTP headers
 func TestParseRetryAfterWithHeaders(t *testing.T) {
 	tests := []struct {
-		name         string
-		retryAfter   string
+		name           string
+		retryAfter     string
 		rateLimitReset string
-		expectedMin  time.Duration
-		expectedMax  time.Duration
+		expectedMin    time.Duration
+		expectedMax    time.Duration
 	}{
 		{
 			name:        "Retry-After in seconds",
@@ -356,38 +356,38 @@ func TestParseRetryAfterWithHeaders(t *testing.T) {
 // TestIsRetriableErrorBackwardsCompatibility tests that isRetriableError still works
 func TestIsRetriableErrorBackwardsCompatibility(t *testing.T) {
 	tests := []struct {
-		name       string
-		err        error
+		name        string
+		err         error
 		shouldRetry bool
 	}{
 		{
-			name:       "nil error",
-			err:        nil,
+			name:        "nil error",
+			err:         nil,
 			shouldRetry: false,
 		},
 		{
-			name:       "quota error - should retry",
-			err:        errors.New("429 rate limit exceeded"),
+			name:        "quota error - should retry",
+			err:         errors.New("429 rate limit exceeded"),
 			shouldRetry: true,
 		},
 		{
-			name:       "transient error - should retry",
-			err:        errors.New("500 internal server error"),
+			name:        "transient error - should retry",
+			err:         errors.New("500 internal server error"),
 			shouldRetry: true,
 		},
 		{
-			name:       "auth error - should NOT retry",
-			err:        errors.New("401 unauthorized"),
+			name:        "auth error - should NOT retry",
+			err:         errors.New("401 unauthorized"),
 			shouldRetry: false,
 		},
 		{
-			name:       "invalid request - should NOT retry",
-			err:        errors.New("400 bad request"),
+			name:        "invalid request - should NOT retry",
+			err:         errors.New("400 bad request"),
 			shouldRetry: false,
 		},
 		{
-			name:       "unknown error - should retry (conservative)",
-			err:        errors.New("mysterious error"),
+			name:        "unknown error - should retry (conservative)",
+			err:         errors.New("mysterious error"),
 			shouldRetry: true,
 		},
 	}

@@ -9,14 +9,14 @@ import (
 
 // mockStore implements IssueStore interface for testing
 type mockStore struct {
-	createdIssues    []*types.Issue
-	dependencies     []*types.Dependency
-	labels           map[string][]string // issueID -> labels
-	updates          map[string]map[string]interface{} // issueID -> updates
-	createError      error
-	dependencyError  error
-	labelError       error
-	updateError      error
+	createdIssues   []*types.Issue
+	dependencies    []*types.Dependency
+	labels          map[string][]string               // issueID -> labels
+	updates         map[string]map[string]interface{} // issueID -> updates
+	createError     error
+	dependencyError error
+	labelError      error
+	updateError     error
 }
 
 func newMockStore() *mockStore {
@@ -66,10 +66,10 @@ func TestDecomposeIssue(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name          string
-		parentIssue   *types.Issue
-		plan          *DecompositionPlan
-		wantErr       bool
+		name           string
+		parentIssue    *types.Issue
+		plan           *DecompositionPlan
+		wantErr        bool
 		wantChildCount int
 	}{
 		{
@@ -97,7 +97,7 @@ func TestDecomposeIssue(t *testing.T) {
 					},
 				},
 			},
-			wantErr:       false,
+			wantErr:        false,
 			wantChildCount: 2,
 		},
 		{
@@ -106,8 +106,8 @@ func TestDecomposeIssue(t *testing.T) {
 				ID:    "test-parent",
 				Title: "Parent issue",
 			},
-			plan:          nil,
-			wantErr:       true,
+			plan:           nil,
+			wantErr:        true,
 			wantChildCount: 0,
 		},
 		{
@@ -120,7 +120,7 @@ func TestDecomposeIssue(t *testing.T) {
 				Reasoning:   "Empty",
 				ChildIssues: []ChildIssue{},
 			},
-			wantErr:       true,
+			wantErr:        true,
 			wantChildCount: 0,
 		},
 	}

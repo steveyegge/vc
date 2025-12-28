@@ -269,14 +269,14 @@ func TestBuildPlanningPrompt(t *testing.T) {
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		},
-		Goal:       "Build a working feature X",
-		Context:    "This is a critical feature",
+		Goal:    "Build a working feature X",
+		Context: "This is a critical feature",
 	}
 
 	tests := []struct {
-		name           string
-		ctx            *types.PlanningContext
-		wantInPrompt   []string
+		name            string
+		ctx             *types.PlanningContext
+		wantInPrompt    []string
 		wantNotInPrompt []string
 	}{
 		{
@@ -767,4 +767,3 @@ func TestGetEnvInt(t *testing.T) {
 		})
 	}
 }
-

@@ -15,19 +15,19 @@ import (
 // allowing plans to be refined through multiple AI iterations until they
 // converge to a stable, high-quality state.
 type PlanRefiner struct {
-	supervisor    *Supervisor
-	planningCtx   *types.PlanningContext
-	currentIter   int
+	supervisor  *Supervisor
+	planningCtx *types.PlanningContext
+	currentIter int
 }
 
 // PlanningCostMetrics tracks cost and performance metrics for a planning cycle
 type PlanningCostMetrics struct {
-	Iterations      int
-	TotalTokens     int
-	InputTokens     int
-	OutputTokens    int
+	Iterations       int
+	TotalTokens      int
+	InputTokens      int
+	OutputTokens     int
 	EstimatedCostUSD float64
-	TotalDuration   int64 // milliseconds
+	TotalDuration    int64 // milliseconds
 }
 
 // NewPlanRefiner creates a new plan refiner.
@@ -201,11 +201,11 @@ func (r *PlanRefiner) CheckConvergence(ctx context.Context, current, previous *i
 
 	// Parse the convergence decision
 	type convergenceResponse struct {
-		Converged     bool     `json:"converged"`
-		Confidence    float64  `json:"confidence"`
-		Reasoning     string   `json:"reasoning"`
-		DiffPercent   float64  `json:"diff_percentage"`
-		MajorChanges  []string `json:"major_changes"`
+		Converged    bool     `json:"converged"`
+		Confidence   float64  `json:"confidence"`
+		Reasoning    string   `json:"reasoning"`
+		DiffPercent  float64  `json:"diff_percentage"`
+		MajorChanges []string `json:"major_changes"`
 	}
 
 	parseResult := Parse[convergenceResponse](responseText, ParseOptions{

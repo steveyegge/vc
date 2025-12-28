@@ -54,13 +54,13 @@ func TestMetaIssueWorkflowIntegration(t *testing.T) {
 		// The AI would detect: "This issue has no clear completion criteria"
 		discoveredIssues := []DiscoveredIssue{
 			{
-				Title:       "Add acceptance criteria to " + parentIssue.ID,
-				Description: "Issue " + parentIssue.ID + " lacks specific acceptance criteria. Without clear criteria, it's impossible to determine when the work is complete.",
-				Type:        "task",
-				Priority:    "P1", // AI suggests P1, but will be calculated based on discovery_type
-				DiscoveryType: "blocker", // This blocks the parent from being properly executed
+				Title:              "Add acceptance criteria to " + parentIssue.ID,
+				Description:        "Issue " + parentIssue.ID + " lacks specific acceptance criteria. Without clear criteria, it's impossible to determine when the work is complete.",
+				Type:               "task",
+				Priority:           "P1",      // AI suggests P1, but will be calculated based on discovery_type
+				DiscoveryType:      "blocker", // This blocks the parent from being properly executed
 				AcceptanceCriteria: "1. Add specific, measurable acceptance criteria to " + parentIssue.ID + "\n2. Ensure each criterion is testable\n3. Verify criteria cover all aspects of the feature",
-				Labels: []string{"meta-issue"}, // AI marks this as a meta-issue
+				Labels:             []string{"meta-issue"}, // AI marks this as a meta-issue
 			},
 		}
 

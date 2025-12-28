@@ -90,11 +90,12 @@ type CostTracker interface {
 
 // Config holds supervisor configuration
 type Config struct {
-	APIKey      string       // Anthropic API key (if empty, reads from ANTHROPIC_API_KEY env var)
-	Model       string       // Model to use (default: claude-sonnet-4-5-20250929)
+	APIKey      string // Anthropic API key (if empty, reads from ANTHROPIC_API_KEY env var)
+	Model       string // Model to use (default: claude-sonnet-4-5-20250929)
+	BaseURL     string // Custom API base URL (if empty, reads from VC_API_BASE env var)
 	Store       storage.Storage
-	Retry       RetryConfig  // Retry configuration (uses defaults if not specified)
-	CostTracker CostTracker  // Optional cost tracker for budget enforcement (vc-e3s7)
+	Retry       RetryConfig // Retry configuration (uses defaults if not specified)
+	CostTracker CostTracker // Optional cost tracker for budget enforcement (vc-e3s7)
 }
 
 // NewSupervisor creates a new AI supervisor
@@ -122,7 +123,20 @@ func NewSupervisor(cfg *Config) (*Supervisor, error) {
 		retry = DefaultRetryConfig()
 	}
 
-	client := anthropic.NewClient(option.WithAPIKey(apiKey))
+	// Check for custom API base URL (supports OpenAI-compatible wrappers)
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = os.Getenv("VC_API_BASE")
+	}
+
+	// Build client options
+	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+	if baseURL != "" {
+		opts = append(opts, option.WithBaseURL(baseURL))
+		fmt.Printf("Using custom API base URL: %s\n", baseURL)
+	}
+
+	client := anthropic.NewClient(opts...)
 
 	// Initialize circuit breaker if enabled
 	var circuitBreaker *CircuitBreaker

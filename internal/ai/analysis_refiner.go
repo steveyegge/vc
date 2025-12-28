@@ -16,10 +16,10 @@ import (
 // The refiner uses the AI supervisor to iteratively improve the analysis,
 // incorporating feedback from previous iterations to find missed work.
 type AnalysisRefiner struct {
-	supervisor *Supervisor
-	issue      *types.Issue
+	supervisor  *Supervisor
+	issue       *types.Issue
 	agentOutput string
-	success    bool
+	success     bool
 
 	// minConfidence is the minimum confidence for convergence (0.0-1.0)
 	minConfidence float64

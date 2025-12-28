@@ -67,11 +67,11 @@ func TestNewAssessmentRefiner(t *testing.T) {
 
 func TestSerializeAssessment(t *testing.T) {
 	assessment := &Assessment{
-		Strategy:   "Implement feature X",
-		Steps:      []string{"Step 1", "Step 2", "Step 3"},
-		Risks:      []string{"Risk A", "Risk B"},
-		Confidence: 0.85,
-		Reasoning:  "This is the best approach",
+		Strategy:        "Implement feature X",
+		Steps:           []string{"Step 1", "Step 2", "Step 3"},
+		Risks:           []string{"Risk A", "Risk B"},
+		Confidence:      0.85,
+		Reasoning:       "This is the best approach",
 		ShouldDecompose: false,
 	}
 
@@ -106,11 +106,11 @@ func TestSerializeAssessment(t *testing.T) {
 
 func TestSerializeAssessmentWithDecomposition(t *testing.T) {
 	assessment := &Assessment{
-		Strategy:   "Decompose into smaller tasks",
-		Steps:      []string{"Analyze", "Break down"},
-		Risks:      []string{"Complexity"},
-		Confidence: 0.70,
-		Reasoning:  "Too large for one task",
+		Strategy:        "Decompose into smaller tasks",
+		Steps:           []string{"Analyze", "Break down"},
+		Risks:           []string{"Complexity"},
+		Confidence:      0.70,
+		Reasoning:       "Too large for one task",
 		ShouldDecompose: true,
 		DecompositionPlan: &DecompositionPlan{
 			Reasoning: "Multiple independent components",
@@ -197,9 +197,9 @@ func TestShouldIterateAssessment_Mission(t *testing.T) {
 func TestShouldIterateAssessment_SimpleIssue(t *testing.T) {
 	supervisor := &Supervisor{}
 	issue := &types.Issue{
-		ID:       "vc-test",
-		Priority: 2,
-		Title:    "Simple fix",
+		ID:        "vc-test",
+		Priority:  2,
+		Title:     "Simple fix",
 		IssueType: types.TypeTask,
 	}
 
@@ -228,10 +228,10 @@ func TestBuildIterationContext(t *testing.T) {
 	}
 
 	assessment := &Assessment{
-		Strategy:   "New strategy",
-		Steps:      []string{"Step 1", "Step 2", "Step 3"},
-		Risks:      []string{"Risk A", "Risk B", "Risk C"},
-		Confidence: 0.85,
+		Strategy:        "New strategy",
+		Steps:           []string{"Step 1", "Step 2", "Step 3"},
+		Risks:           []string{"Risk A", "Risk B", "Risk C"},
+		Confidence:      0.85,
 		ShouldDecompose: false,
 	}
 
@@ -276,10 +276,10 @@ func TestBuildIterationContextEmptyRisks(t *testing.T) {
 	}
 
 	assessment := &Assessment{
-		Strategy:   "Simple strategy",
-		Steps:      []string{"Step 1"},
-		Risks:      []string{},
-		Confidence: 0.90,
+		Strategy:        "Simple strategy",
+		Steps:           []string{"Step 1"},
+		Risks:           []string{},
+		Confidence:      0.90,
 		ShouldDecompose: false,
 	}
 
@@ -414,11 +414,11 @@ func TestAssessmentRefinerRefineNilArtifact(t *testing.T) {
 // TestSerializeAssessmentMinimal tests minimal assessment serialization
 func TestSerializeAssessmentMinimal(t *testing.T) {
 	assessment := &Assessment{
-		Strategy:   "Simple strategy",
-		Steps:      []string{},
-		Risks:      []string{},
-		Confidence: 0.5,
-		Reasoning:  "Basic reasoning",
+		Strategy:        "Simple strategy",
+		Steps:           []string{},
+		Risks:           []string{},
+		Confidence:      0.5,
+		Reasoning:       "Basic reasoning",
 		ShouldDecompose: false,
 	}
 
@@ -454,18 +454,18 @@ func TestSelectivityMetrics(t *testing.T) {
 
 		// Record a skipped artifact
 		metrics := &iterative.ArtifactMetrics{
-			ArtifactType:     "assessment",
-			Priority:         "P2",
-			TotalIterations:  0,
-			Converged:        true,
+			ArtifactType:      "assessment",
+			Priority:          "P2",
+			TotalIterations:   0,
+			Converged:         true,
 			ConvergenceReason: "selectivity skip",
-			IterationSkipped: true,
-			SkipReason:       "simple issue (no complexity triggers)",
+			IterationSkipped:  true,
+			SkipReason:        "simple issue (no complexity triggers)",
 		}
 
 		collector.RecordArtifactComplete(&iterative.ConvergenceResult{
-			Iterations:  0,
-			Converged:   true,
+			Iterations: 0,
+			Converged:  true,
 		}, metrics)
 
 		agg := collector.GetAggregateMetrics()
@@ -500,8 +500,8 @@ func TestSelectivityMetrics(t *testing.T) {
 		}
 
 		collector.RecordArtifactComplete(&iterative.ConvergenceResult{
-			Iterations:  4,
-			Converged:   true,
+			Iterations: 4,
+			Converged:  true,
 		}, metrics)
 
 		agg := collector.GetAggregateMetrics()

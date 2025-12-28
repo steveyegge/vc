@@ -28,7 +28,7 @@ func TestSupervisorHealthCheck(t *testing.T) {
 		// Open the circuit
 		s.circuitBreaker.RecordFailure()
 		s.circuitBreaker.RecordFailure()
-		
+
 		// Transition to half-open by simulating timeout
 		s.circuitBreaker.mu.Lock()
 		s.circuitBreaker.transitionToHalfOpen()

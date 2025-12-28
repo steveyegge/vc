@@ -33,13 +33,13 @@ func TestParseDescription(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                string
-		description         string
-		expectGoal          bool
-		expectConstraints   bool
-		minConstraints      int
-		maxConstraints      int
-		shouldContain       []string // Keywords that should appear in goal or constraints
+		name              string
+		description       string
+		expectGoal        bool
+		expectConstraints bool
+		minConstraints    int
+		maxConstraints    int
+		shouldContain     []string // Keywords that should appear in goal or constraints
 	}{
 		{
 			name:              "simple goal without constraints",
