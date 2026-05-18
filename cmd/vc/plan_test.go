@@ -2,14 +2,62 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/steveyegge/vc/internal/iterative"
 	"github.com/steveyegge/vc/internal/storage/beads"
 	"github.com/steveyegge/vc/internal/types"
 )
+
+type testMissionPlanRefiner struct {
+	refineFunc           func(plan *types.MissionPlan) (*types.MissionPlan, error)
+	checkConvergenceFunc func(call int, current, previous *types.MissionPlan) (*iterative.ConvergenceDecision, error)
+	refineCalls          int
+}
+
+func (r *testMissionPlanRefiner) Refine(ctx context.Context, artifact *iterative.Artifact) (*iterative.Artifact, error) {
+	r.refineCalls++
+
+	var plan types.MissionPlan
+	if err := json.Unmarshal([]byte(artifact.Content), &plan); err != nil {
+		return nil, err
+	}
+
+	nextPlan, err := r.refineFunc(&plan)
+	if err != nil {
+		return nil, err
+	}
+
+	content, err := json.Marshal(nextPlan)
+	if err != nil {
+		return nil, err
+	}
+
+	return &iterative.Artifact{
+		Type:    artifact.Type,
+		Content: string(content),
+		Context: artifact.Context,
+	}, nil
+}
+
+func (r *testMissionPlanRefiner) CheckConvergence(ctx context.Context, current, previous *iterative.Artifact) (*iterative.ConvergenceDecision, error) {
+	var currentPlan types.MissionPlan
+	if err := json.Unmarshal([]byte(current.Content), &currentPlan); err != nil {
+		return nil, err
+	}
+
+	var previousPlan types.MissionPlan
+	if err := json.Unmarshal([]byte(previous.Content), &previousPlan); err != nil {
+		return nil, err
+	}
+
+	return r.checkConvergenceFunc(r.refineCalls, &currentPlan, &previousPlan)
+}
 
 // TestPlanShowCommand tests that the plan show command can display a plan (vc-25zn)
 func TestPlanShowCommand(t *testing.T) {
@@ -229,5 +277,138 @@ func TestGetStatusColor(t *testing.T) {
 				t.Error("Expected non-empty colored string")
 			}
 		})
+	}
+}
+
+func TestRefineMissionPlan(t *testing.T) {
+	initialPlan := &types.MissionPlan{
+		MissionID: "plan-1234",
+		Phases: []types.PlannedPhase{
+			{
+				PhaseNumber:     1,
+				Title:           "Draft phase",
+				Description:     "Initial draft",
+				Strategy:        "Start simple",
+				Tasks:           []string{"Add first task"},
+				EstimatedEffort: "1 day",
+			},
+		},
+		Strategy:        "Initial strategy",
+		Risks:           []string{"unknowns"},
+		EstimatedEffort: "2 days",
+		Confidence:      0.55,
+		GeneratedAt:     time.Now(),
+		GeneratedBy:     "test",
+		Status:          "draft",
+	}
+
+	refiner := &testMissionPlanRefiner{
+		refineFunc: func(plan *types.MissionPlan) (*types.MissionPlan, error) {
+			next := *plan
+			next.Confidence += 0.1
+			next.Status = "refining"
+			next.Phases = append([]types.PlannedPhase(nil), plan.Phases...)
+			next.Phases[0].Tasks = append([]string{}, plan.Phases[0].Tasks...)
+			next.Phases[0].Tasks = append(next.Phases[0].Tasks, fmt.Sprintf("Refinement pass %d", len(plan.Phases[0].Tasks)))
+			return &next, nil
+		},
+		checkConvergenceFunc: func(call int, current, previous *types.MissionPlan) (*iterative.ConvergenceDecision, error) {
+			return &iterative.ConvergenceDecision{
+				Converged:  call >= 2,
+				Confidence: 0.9,
+				Reasoning:  "test convergence",
+				Strategy:   "test",
+			}, nil
+		},
+	}
+
+	refinedPlan, result, err := refineMissionPlan(
+		context.Background(),
+		initialPlan,
+		refiner,
+		iterative.RefinementConfig{
+			MinIterations: 1,
+			MaxIterations: 3,
+		},
+		"test refinement",
+	)
+	if err != nil {
+		t.Fatalf("refineMissionPlan failed: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected convergence result")
+	}
+	if !result.Converged {
+		t.Error("Expected converged=true")
+	}
+	if result.Iterations != 2 {
+		t.Errorf("Expected 2 refinement passes, got %d", result.Iterations)
+	}
+	if refinedPlan.Status != "refining" {
+		t.Errorf("Expected status refining, got %s", refinedPlan.Status)
+	}
+	if refinedPlan.Confidence <= initialPlan.Confidence {
+		t.Errorf("Expected confidence to improve, got %.2f", refinedPlan.Confidence)
+	}
+	if got := len(refinedPlan.Phases[0].Tasks); got != 3 {
+		t.Errorf("Expected 3 tasks after refinement, got %d", got)
+	}
+}
+
+func TestRefineMissionPlanRejectsInvalidOutput(t *testing.T) {
+	initialPlan := &types.MissionPlan{
+		MissionID: "plan-bad",
+		Phases: []types.PlannedPhase{
+			{
+				PhaseNumber:     1,
+				Title:           "Draft phase",
+				Description:     "Initial draft",
+				Strategy:        "Start simple",
+				Tasks:           []string{"Add first task"},
+				EstimatedEffort: "1 day",
+			},
+		},
+		Strategy:        "Initial strategy",
+		Risks:           []string{"unknowns"},
+		EstimatedEffort: "2 days",
+		Confidence:      0.55,
+		GeneratedAt:     time.Now(),
+		GeneratedBy:     "test",
+		Status:          "draft",
+	}
+
+	refiner := &testMissionPlanRefiner{
+		refineFunc: func(plan *types.MissionPlan) (*types.MissionPlan, error) {
+			return &types.MissionPlan{
+				MissionID: plan.MissionID,
+				Status:    "refining",
+			}, nil
+		},
+		checkConvergenceFunc: func(call int, current, previous *types.MissionPlan) (*iterative.ConvergenceDecision, error) {
+			return &iterative.ConvergenceDecision{
+				Converged:  true,
+				Confidence: 1.0,
+				Reasoning:  "invalid output for test",
+				Strategy:   "test",
+			}, nil
+		},
+	}
+
+	_, _, err := refineMissionPlan(
+		context.Background(),
+		initialPlan,
+		refiner,
+		iterative.RefinementConfig{
+			MinIterations: 1,
+			MaxIterations: 1,
+		},
+		"invalid refinement",
+	)
+	if err == nil {
+		t.Fatal("Expected validation error from invalid refined plan")
+	}
+	if !strings.Contains(err.Error(), "refined plan failed validation") {
+		t.Fatalf("Expected validation error, got: %v", err)
 	}
 }

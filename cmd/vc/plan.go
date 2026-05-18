@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -12,6 +14,8 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/vc/internal/ai"
+	"github.com/steveyegge/vc/internal/iterative"
+	"github.com/steveyegge/vc/internal/storage"
 	"github.com/steveyegge/vc/internal/types"
 )
 
@@ -261,18 +265,137 @@ var planListCmd = &cobra.Command{
 
 var planRefineCmd = &cobra.Command{
 	Use:   "refine <mission-id>",
-	Short: "Refine a plan with AI feedback",
+	Short: "Refine a plan with AI-guided convergence",
 	Long: `Iteratively refine a mission plan using AI-guided convergence.
 This runs multiple refinement iterations until the plan stabilizes.`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		missionID := args[0]
+		ctx := context.Background()
 
-		// TODO: Implement plan refinement (Epic 2: vc-3yi1)
+		plan, iteration, err := store.GetPlan(ctx, missionID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to get plan: %v\n", err)
+			os.Exit(1)
+		}
+		if plan == nil {
+			fmt.Fprintf(os.Stderr, "Error: no plan found for mission %s\n", missionID)
+			os.Exit(1)
+		}
+
+		supervisor, err := ai.NewSupervisor(&ai.Config{
+			Model: ai.GetDefaultModel(),
+			Store: store,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to initialize AI supervisor: %v\n", err)
+			os.Exit(1)
+		}
+
+		refiner := ai.NewPlanRefiner(supervisor, buildPlanningContextForStoredPlan(plan))
+		config := iterative.RefinementConfig{
+			MinIterations: 3,
+			MaxIterations: 5,
+			SkipSimple:    false,
+		}
+
 		yellow := color.New(color.FgYellow).SprintFunc()
-		fmt.Printf("\n%s 'vc plan refine' not yet implemented (see vc-3yi1)\n", yellow("⚠"))
-		fmt.Printf("Mission: %s\n\n", missionID)
+		cyan := color.New(color.FgCyan).SprintFunc()
+		green := color.New(color.FgGreen).SprintFunc()
+		gray := color.New(color.FgHiBlack).SprintFunc()
+
+		fmt.Printf("\n%s Refining mission plan...\n", cyan("🤖"))
+
+		refinedPlan, result, err := refineMissionPlan(
+			ctx,
+			plan,
+			refiner,
+			config,
+			fmt.Sprintf("Refining draft for mission %s (stored iteration %d)", missionID, iteration),
+		)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to refine plan: %v\n", err)
+			os.Exit(1)
+		}
+
+		newIteration, err := store.StorePlan(ctx, refinedPlan, iteration)
+		if err != nil {
+			if errors.Is(err, storage.ErrStaleIteration) {
+				fmt.Fprintf(os.Stderr, "Error: plan changed while refining; rerun 'vc plan show %s' and retry\n", missionID)
+				os.Exit(1)
+			}
+			fmt.Fprintf(os.Stderr, "Error: failed to store refined plan: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("\n%s Plan refined successfully!\n", green("✓"))
+		fmt.Printf("%s Mission: %s\n", gray("├─"), missionID)
+		fmt.Printf("%s Stored iteration: %d → %d\n", gray("├─"), iteration, newIteration)
+		fmt.Printf("%s Refinement passes: %d\n", gray("├─"), result.Iterations)
+		fmt.Printf("%s Converged: %t\n", gray("├─"), result.Converged)
+		fmt.Printf("%s Confidence: %.0f%%\n", gray("├─"), refinedPlan.Confidence*100)
+		fmt.Printf("%s Duration: %s\n", gray("└─"), result.ElapsedTime.Round(time.Millisecond))
+
+		if !result.Converged {
+			fmt.Printf("\n%s Reached max refinement iterations; stored the latest draft anyway.\n", yellow("⚠"))
+		}
+
+		fmt.Printf("\n%s Next steps:\n", cyan("📋"))
+		fmt.Printf("  • Review: %s\n", cyan(fmt.Sprintf("vc plan show %s", missionID)))
+		fmt.Printf("  • Validate: %s\n", gray(fmt.Sprintf("vc plan validate %s", missionID)))
+		fmt.Printf("  • Approve: %s\n\n", gray(fmt.Sprintf("vc plan approve %s", missionID)))
 	},
+}
+
+func buildPlanningContextForStoredPlan(plan *types.MissionPlan) *types.PlanningContext {
+	return &types.PlanningContext{
+		Mission: &types.Mission{
+			Issue: types.Issue{
+				ID:          plan.MissionID,
+				Title:       plan.MissionID,
+				Description: plan.Strategy,
+				IssueType:   types.TypeEpic,
+				Status:      types.StatusOpen,
+				Priority:    1,
+				CreatedAt:   plan.GeneratedAt,
+				UpdatedAt:   plan.GeneratedAt,
+			},
+			Goal:    plan.Strategy,
+			Context: plan.Strategy,
+		},
+	}
+}
+
+func refineMissionPlan(
+	ctx context.Context,
+	currentPlan *types.MissionPlan,
+	refiner iterative.Refiner,
+	config iterative.RefinementConfig,
+	artifactContext string,
+) (*types.MissionPlan, *iterative.ConvergenceResult, error) {
+	planJSON, err := json.Marshal(currentPlan)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to serialize current plan: %w", err)
+	}
+
+	result, err := iterative.Converge(ctx, &iterative.Artifact{
+		Type:    "mission_plan",
+		Content: string(planJSON),
+		Context: artifactContext,
+	}, refiner, config, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var refinedPlan types.MissionPlan
+	if err := json.Unmarshal([]byte(result.FinalArtifact.Content), &refinedPlan); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse refined plan: %w", err)
+	}
+	if err := refinedPlan.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("refined plan failed validation: %w", err)
+	}
+
+	return &refinedPlan, result, nil
 }
 
 var planValidateCmd = &cobra.Command{
