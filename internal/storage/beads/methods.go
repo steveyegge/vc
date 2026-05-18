@@ -507,10 +507,10 @@ func (s *VCStorage) UpdateMission(ctx context.Context, id string, updates map[st
 			Severity:  events.SeverityInfo,
 			Message:   fmt.Sprintf("Mission metadata updated: %s (fields: %v)", id, updatedFields),
 			Data: map[string]interface{}{
-				"mission_id":      eventData.MissionID,
-				"updated_fields":  eventData.UpdatedFields,
-				"changes":         changesMap,
-				"actor":           eventData.Actor,
+				"mission_id":     eventData.MissionID,
+				"updated_fields": eventData.UpdatedFields,
+				"changes":        changesMap,
+				"actor":          eventData.Actor,
 			},
 		}
 
@@ -1781,7 +1781,7 @@ func (s *VCStorage) GetMissionForTask(ctx context.Context, taskID string) (*type
 	var missionID, issueType, subtype, sandboxPath, branchName string
 	err := s.db.QueryRowContext(ctx, query,
 		taskID, types.DepParentChild, // Base case parameters
-		types.DepParentChild, // Recursive case parameter
+		types.DepParentChild,                 // Recursive case parameter
 		types.TypeEpic, types.SubtypeMission, // WHERE clause parameters
 	).Scan(&missionID, &issueType, &subtype, &sandboxPath, &branchName)
 
@@ -1930,18 +1930,22 @@ func (s *VCStorage) VacuumDatabase(ctx context.Context) error {
 // GetLastReviewCheckpoint retrieves the most recent code review checkpoint
 func (s *VCStorage) GetLastReviewCheckpoint(ctx context.Context) (*types.ReviewCheckpoint, error) {
 	var checkpoint types.ReviewCheckpoint
+	var reviewIssueID sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT commit_sha, timestamp, review_scope
+		SELECT commit_sha, timestamp, review_scope, review_issue_id
 		FROM vc_review_checkpoints
 		ORDER BY timestamp DESC
 		LIMIT 1
-	`).Scan(&checkpoint.CommitSHA, &checkpoint.Timestamp, &checkpoint.ReviewScope)
+	`).Scan(&checkpoint.CommitSHA, &checkpoint.Timestamp, &checkpoint.ReviewScope, &reviewIssueID)
 
 	if err == sql.ErrNoRows {
 		return nil, nil // No checkpoint yet
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query last review checkpoint: %w", err)
+	}
+	if reviewIssueID.Valid {
+		checkpoint.ReviewIssueID = reviewIssueID.String
 	}
 
 	return &checkpoint, nil

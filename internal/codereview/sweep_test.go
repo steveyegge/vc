@@ -2,8 +2,15 @@ package codereview
 
 import (
 	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/steveyegge/vc/internal/storage/beads"
+	"github.com/steveyegge/vc/internal/types"
 )
 
 // TestGetTotalLOCCaching tests that getTotalLOC() uses cache correctly
@@ -143,4 +150,143 @@ func TestGetTotalLOCContextCancellation(t *testing.T) {
 	}
 
 	t.Logf("Canceled call duration: %v", duration)
+}
+
+func TestGetDiffMetricsIncludesLastReviewSummary(t *testing.T) {
+	ctx := context.Background()
+	repoDir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+
+	initTestRepo(t, repoDir)
+	baseSHA := commitFile(t, repoDir, "main.go", "package main\n\nfunc main() {}\n", "initial commit")
+
+	store, err := beads.NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	reviewIssue := &types.Issue{
+		Title: "Code Review Sweep: quick",
+		Description: `Perform quick code review sweep based on accumulated activity.
+
+**AI Reasoning:**
+Focus on executor concurrency and error handling.
+
+**Scope:** quick`,
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Review the target files",
+	}
+	if err := store.CreateIssue(ctx, reviewIssue, "test"); err != nil {
+		t.Fatalf("Failed to create review issue: %v", err)
+	}
+
+	checkpoint := &types.ReviewCheckpoint{
+		CommitSHA:   baseSHA,
+		Timestamp:   time.Now().Add(-48 * time.Hour).UTC(),
+		ReviewScope: "quick",
+	}
+	if err := store.SaveReviewCheckpoint(ctx, checkpoint, reviewIssue.ID); err != nil {
+		t.Fatalf("Failed to save review checkpoint: %v", err)
+	}
+
+	commitFile(t, repoDir, "main.go", "package main\n\nfunc main() {\n\tprintln(\"hi\")\n}\n", "add change")
+
+	resetLOCCache()
+	t.Chdir(repoDir)
+
+	result, err := NewSweeper(store).GetDiffMetrics(ctx)
+	if err != nil {
+		t.Fatalf("GetDiffMetrics returned error: %v", err)
+	}
+
+	want := "Code Review Sweep: quick - Focus on executor concurrency and error handling."
+	if result.Metrics.LastReviewSummary != want {
+		t.Fatalf("Expected LastReviewSummary %q, got %q", want, result.Metrics.LastReviewSummary)
+	}
+}
+
+func TestGetDiffMetricsLeavesLastReviewSummaryEmptyWithoutReviewIssue(t *testing.T) {
+	ctx := context.Background()
+	repoDir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+
+	initTestRepo(t, repoDir)
+	baseSHA := commitFile(t, repoDir, "main.go", "package main\n\nfunc main() {}\n", "initial commit")
+
+	store, err := beads.NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	checkpoint := &types.ReviewCheckpoint{
+		CommitSHA:   baseSHA,
+		Timestamp:   time.Now().Add(-24 * time.Hour).UTC(),
+		ReviewScope: "quick",
+	}
+	if err := store.SaveReviewCheckpoint(ctx, checkpoint, ""); err != nil {
+		t.Fatalf("Failed to save review checkpoint: %v", err)
+	}
+
+	commitFile(t, repoDir, "main.go", "package main\n\nfunc main() {\n\tprintln(\"bye\")\n}\n", "add change")
+
+	resetLOCCache()
+	t.Chdir(repoDir)
+
+	result, err := NewSweeper(store).GetDiffMetrics(ctx)
+	if err != nil {
+		t.Fatalf("GetDiffMetrics returned error: %v", err)
+	}
+	if result.Metrics.LastReviewSummary != "" {
+		t.Fatalf("Expected empty LastReviewSummary, got %q", result.Metrics.LastReviewSummary)
+	}
+}
+
+func resetLOCCache() {
+	cachedLOCMutex.Lock()
+	cachedLOC = 0
+	cachedLOCTime = time.Time{}
+	cachedLOCMutex.Unlock()
+}
+
+func initTestRepo(t *testing.T, repoDir string) {
+	t.Helper()
+
+	runGit(t, repoDir, "init", "--initial-branch=main")
+	runGit(t, repoDir, "config", "user.name", "Test User")
+	runGit(t, repoDir, "config", "user.email", "test@example.com")
+	hooksDir := filepath.Join(repoDir, ".git", "empty-hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		t.Fatalf("Failed to create empty hooks dir: %v", err)
+	}
+	runGit(t, repoDir, "config", "core.hooksPath", hooksDir)
+	runGit(t, repoDir, "checkout", "-b", "feature/test-review-summary")
+}
+
+func commitFile(t *testing.T, repoDir, path, content, message string) string {
+	t.Helper()
+
+	fullPath := filepath.Join(repoDir, path)
+	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write %s: %v", path, err)
+	}
+	runGit(t, repoDir, "add", path)
+	runGit(t, repoDir, "commit", "-m", message)
+
+	return strings.TrimSpace(runGit(t, repoDir, "rev-parse", "HEAD"))
+}
+
+func runGit(t *testing.T, repoDir string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = repoDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, output)
+	}
+	return string(output)
 }

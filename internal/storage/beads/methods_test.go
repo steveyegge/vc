@@ -447,6 +447,51 @@ func TestHealthMetricsTimeFiltering(t *testing.T) {
 	}
 }
 
+func TestGetLastReviewCheckpointIncludesReviewIssueID(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	store, err := NewVCStorage(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create VC storage: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	reviewIssue := &types.Issue{
+		Title:              "Code Review Sweep: quick",
+		Description:        "Existing review findings",
+		Status:             types.StatusOpen,
+		Priority:           1,
+		IssueType:          types.TypeTask,
+		AcceptanceCriteria: "Capture review findings",
+	}
+	if err := store.CreateIssue(ctx, reviewIssue, "test"); err != nil {
+		t.Fatalf("Failed to create review issue: %v", err)
+	}
+
+	checkpoint := &types.ReviewCheckpoint{
+		CommitSHA:   "abc1234",
+		Timestamp:   time.Now().Add(-24 * time.Hour).UTC(),
+		ReviewScope: "quick",
+	}
+	if err := store.SaveReviewCheckpoint(ctx, checkpoint, reviewIssue.ID); err != nil {
+		t.Fatalf("Failed to save review checkpoint: %v", err)
+	}
+
+	lastCheckpoint, err := store.GetLastReviewCheckpoint(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get last review checkpoint: %v", err)
+	}
+	if lastCheckpoint == nil {
+		t.Fatal("Expected checkpoint, got nil")
+	}
+	if lastCheckpoint.ReviewIssueID != reviewIssue.ID {
+		t.Fatalf("Expected review_issue_id %q, got %q", reviewIssue.ID, lastCheckpoint.ReviewIssueID)
+	}
+}
+
 // TestHealthMetricsRetention verifies that the 30-day retention policy works correctly
 // Tests automatic cleanup and manual CleanupOldMetrics (vc-2px0)
 func TestHealthMetricsRetention(t *testing.T) {

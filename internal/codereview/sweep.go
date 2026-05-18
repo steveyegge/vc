@@ -138,8 +138,7 @@ func (s *Sweeper) GetDiffMetrics(ctx context.Context) (*types.ReviewMetricsResul
 	totalLOC := getTotalLOC(ctx)
 
 	// Get last review summary (if available)
-	lastReviewSummary := ""
-	// TODO: Retrieve summary from last review issue when implemented
+	lastReviewSummary := s.getLastReviewSummary(ctx, checkpoint)
 
 	return &types.ReviewMetricsResult{
 		Metrics: &types.ReviewDecisionRequest{
@@ -153,6 +152,54 @@ func (s *Sweeper) GetDiffMetrics(ctx context.Context) (*types.ReviewMetricsResul
 		},
 		CommitSHA: currentCommitSHA, // Return actual SHA used for diff calculation
 	}, nil
+}
+
+func (s *Sweeper) getLastReviewSummary(ctx context.Context, checkpoint *types.ReviewCheckpoint) string {
+	if checkpoint == nil || checkpoint.ReviewIssueID == "" {
+		return ""
+	}
+
+	issue, err := s.store.GetIssue(ctx, checkpoint.ReviewIssueID)
+	if err != nil || issue == nil {
+		return ""
+	}
+
+	title := strings.TrimSpace(issue.Title)
+	reasoning := extractReviewReasoning(issue.Description)
+
+	if title == "" {
+		return reasoning
+	}
+	if reasoning == "" {
+		return title
+	}
+
+	return title + " - " + reasoning
+}
+
+func extractReviewReasoning(description string) string {
+	const marker = "**AI Reasoning:**"
+
+	idx := strings.Index(description, marker)
+	if idx == -1 {
+		return ""
+	}
+
+	lines := strings.Split(description[idx+len(marker):], "\n")
+	parts := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "**") {
+			break
+		}
+		parts = append(parts, line)
+	}
+
+	return strings.Join(parts, " ")
 }
 
 // parseDiffStats parses git diff --shortstat output

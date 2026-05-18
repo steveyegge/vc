@@ -5,9 +5,10 @@ import "time"
 // ReviewCheckpoint tracks when the last code review sweep occurred
 // Used to calculate git diff metrics since last review
 type ReviewCheckpoint struct {
-	CommitSHA   string    // Last reviewed commit
-	Timestamp   time.Time // When the review was performed
-	ReviewScope string    // "quick" | "thorough" | "targeted:path/to/dir"
+	CommitSHA     string    // Last reviewed commit
+	Timestamp     time.Time // When the review was performed
+	ReviewScope   string    // "quick" | "thorough" | "targeted:path/to/dir"
+	ReviewIssueID string    // Review issue created for the checkpoint, if any
 }
 
 // ReviewDecisionRequest contains git metrics for AI to decide if review is needed
@@ -35,18 +36,18 @@ type ReviewMetricsResult struct {
 
 // ReviewDecision represents AI decision about triggering a code review sweep
 type ReviewDecision struct {
-	ShouldReview    bool     `json:"should_review"`    // Should we trigger a code review now?
-	Reasoning       string   `json:"reasoning"`        // Detailed reasoning for the decision
-	Scope           string   `json:"scope"`            // "quick" | "thorough" | "targeted"
-	TargetAreas     []string `json:"target_areas"`     // Specific directories/packages to review (null = broad)
-	EstimatedFiles  int      `json:"estimated_files"`  // Estimated number of files to review (5-15)
-	EstimatedCost   string   `json:"estimated_cost"`   // Estimated cost (e.g., "$1-5")
+	ShouldReview   bool     `json:"should_review"`   // Should we trigger a code review now?
+	Reasoning      string   `json:"reasoning"`       // Detailed reasoning for the decision
+	Scope          string   `json:"scope"`           // "quick" | "thorough" | "targeted"
+	TargetAreas    []string `json:"target_areas"`    // Specific directories/packages to review (null = broad)
+	EstimatedFiles int      `json:"estimated_files"` // Estimated number of files to review (5-15)
+	EstimatedCost  string   `json:"estimated_cost"`  // Estimated cost (e.g., "$1-5")
 }
 
 // FileReviewResult represents the AI review of a single file
 type FileReviewResult struct {
-	FilePath string              `json:"file_path"` // Path to reviewed file
-	Issues   []FileReviewIssue   `json:"issues"`    // Issues found (0-3 per file)
+	FilePath string            `json:"file_path"` // Path to reviewed file
+	Issues   []FileReviewIssue `json:"issues"`    // Issues found (0-3 per file)
 }
 
 // FileReviewIssue represents a single issue found during file review
