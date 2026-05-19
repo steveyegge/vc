@@ -4,10 +4,16 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	vcai "github.com/steveyegge/vc/internal/ai"
 )
+
+var callAI = CallAI
+
+const assessmentSystemPrompt = "You are an expert code reviewer. Analyze the provided code and identify specific, actionable issues. Focus on real problems, not nitpicks."
 
 // AIRequest represents a request to the AI supervisor.
 type AIRequest struct {
@@ -135,29 +141,31 @@ func CallAI(ctx context.Context, req AIRequest) (*AIResponse, error) {
 func AssessCode(ctx context.Context, code string, category string, opts AssessmentOptions) (*CodeAssessment, error) {
 	prompt := buildAssessmentPrompt(code, category, opts)
 
-	response, err := CallAI(ctx, AIRequest{
-		Prompt:      prompt,
-		Model:       opts.Model,
-		MaxTokens:   opts.MaxTokens,
-		Temperature: opts.Temperature,
-		SystemPrompt: "You are an expert code reviewer. Analyze the provided code and identify specific, actionable issues. Focus on real problems, not nitpicks.",
+	response, err := callAI(ctx, AIRequest{
+		Prompt:       prompt,
+		Model:        opts.Model,
+		MaxTokens:    opts.MaxTokens,
+		Temperature:  opts.Temperature,
+		SystemPrompt: assessmentSystemPrompt,
 	})
 
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse response into structured assessment
-	// For now, we return a simple structure
-	// A more sophisticated implementation would parse the AI's response
+	parsed, err := parseAssessmentResponse(response.Text)
+	if err != nil {
+		return nil, err
+	}
+
 	return &CodeAssessment{
-		Category:      category,
-		Summary:       response.Text,
-		Issues:        []string{}, // TODO: Parse issues from response
-		Recommendations: []string{}, // TODO: Parse recommendations
-		Confidence:    0.7, // Default confidence
-		TokensUsed:    response.TokensUsed,
-		EstimatedCost: response.EstimatedCost,
+		Category:        category,
+		Summary:         parsed.Summary,
+		Issues:          normalizeStrings(parsed.Issues),
+		Recommendations: normalizeStrings(parsed.Recommendations),
+		Confidence:      parsed.Confidence,
+		TokensUsed:      response.TokensUsed,
+		EstimatedCost:   response.EstimatedCost,
 	}, nil
 }
 
@@ -190,22 +198,51 @@ type CodeAssessment struct {
 	EstimatedCost   float64
 }
 
+type codeAssessmentPayload struct {
+	Summary         string   `json:"summary"`
+	Issues          []string `json:"issues"`
+	Recommendations []string `json:"recommendations"`
+	Confidence      float64  `json:"confidence"`
+}
+
+type batchAssessmentPayload struct {
+	Assessments []identifiedAssessmentPayload `json:"assessments"`
+}
+
+type identifiedAssessmentPayload struct {
+	ID string `json:"id"`
+	codeAssessmentPayload
+}
+
 // buildAssessmentPrompt constructs a prompt for code assessment.
 func buildAssessmentPrompt(code string, category string, opts AssessmentOptions) string {
-	prompt := fmt.Sprintf("Analyze the following code for %s issues:\n\n", category)
+	var prompt strings.Builder
+	prompt.WriteString(fmt.Sprintf("Analyze the following code for %s issues.\n\n", category))
 
 	if opts.Focus != "" {
-		prompt += fmt.Sprintf("Focus: %s\n\n", opts.Focus)
+		prompt.WriteString(fmt.Sprintf("Focus: %s\n\n", opts.Focus))
 	}
 
 	if opts.Context != "" {
-		prompt += fmt.Sprintf("Context: %s\n\n", opts.Context)
+		prompt.WriteString(fmt.Sprintf("Context: %s\n\n", opts.Context))
 	}
 
-	prompt += "```\n" + code + "\n```\n\n"
-	prompt += "Provide a summary of issues found, if any. Be specific and actionable."
+	prompt.WriteString("Respond with ONLY raw JSON in this shape:\n")
+	prompt.WriteString("{\n")
+	prompt.WriteString(`  "summary": "short overall assessment",` + "\n")
+	prompt.WriteString(`  "issues": ["specific issue 1"],` + "\n")
+	prompt.WriteString(`  "recommendations": ["specific recommendation 1"],` + "\n")
+	prompt.WriteString(`  "confidence": 0.85` + "\n")
+	prompt.WriteString("}\n\n")
+	prompt.WriteString("Rules:\n")
+	prompt.WriteString("- Use [] for `issues` or `recommendations` when there are none.\n")
+	prompt.WriteString("- Keep `confidence` between 0.0 and 1.0.\n")
+	prompt.WriteString("- Do not include markdown fences or extra prose.\n\n")
+	prompt.WriteString("Code:\n```\n")
+	prompt.WriteString(code)
+	prompt.WriteString("\n```\n")
 
-	return prompt
+	return prompt.String()
 }
 
 // BatchAssessCode assesses multiple code snippets in a single AI call.
@@ -220,46 +257,41 @@ func buildAssessmentPrompt(code string, category string, opts AssessmentOptions)
 //
 //	assessments, err := sdk.BatchAssessCode(ctx, snippets, "security", sdk.AssessmentOptions{})
 func BatchAssessCode(ctx context.Context, snippets []CodeSnippet, category string, opts AssessmentOptions) (map[string]*CodeAssessment, error) {
-	// Build batch prompt
-	prompt := fmt.Sprintf("Analyze the following code snippets for %s issues:\n\n", category)
-
-	if opts.Focus != "" {
-		prompt += fmt.Sprintf("Focus: %s\n\n", opts.Focus)
+	if len(snippets) == 0 {
+		return map[string]*CodeAssessment{}, nil
 	}
 
-	for i, snippet := range snippets {
-		prompt += fmt.Sprintf("## Snippet %d: %s\n", i+1, snippet.ID)
-		if snippet.Context != "" {
-			prompt += fmt.Sprintf("Context: %s\n", snippet.Context)
-		}
-		prompt += "```\n" + snippet.Code + "\n```\n\n"
-	}
+	prompt := buildBatchAssessmentPrompt(snippets, category, opts)
 
-	prompt += "For each snippet, provide:\n"
-	prompt += "1. A summary of issues found (or 'No issues' if clean)\n"
-	prompt += "2. Specific recommendations if needed\n\n"
-	prompt += "Format your response clearly for each snippet."
-
-	response, err := CallAI(ctx, AIRequest{
-		Prompt:      prompt,
-		Model:       opts.Model,
-		MaxTokens:   opts.MaxTokens,
-		Temperature: opts.Temperature,
+	response, err := callAI(ctx, AIRequest{
+		Prompt:       prompt,
+		Model:        opts.Model,
+		MaxTokens:    opts.MaxTokens,
+		Temperature:  opts.Temperature,
+		SystemPrompt: assessmentSystemPrompt,
 	})
 
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse response
-	// This is a simplified implementation - a real parser would extract structured data
-	assessments := make(map[string]*CodeAssessment)
-	for _, snippet := range snippets {
-		assessments[snippet.ID] = &CodeAssessment{
-			Category:      category,
-			Summary:       response.Text,
-			TokensUsed:    response.TokensUsed / len(snippets), // Approximate
-			EstimatedCost: response.EstimatedCost / float64(len(snippets)),
+	parsedAssessments, err := parseBatchAssessmentResponse(response.Text, snippets)
+	if err != nil {
+		return nil, err
+	}
+
+	perSnippetTokens := response.TokensUsed / len(snippets)
+	perSnippetCost := response.EstimatedCost / float64(len(snippets))
+	assessments := make(map[string]*CodeAssessment, len(snippets))
+	for _, parsed := range parsedAssessments {
+		assessments[parsed.ID] = &CodeAssessment{
+			Category:        category,
+			Summary:         parsed.Summary,
+			Issues:          normalizeStrings(parsed.Issues),
+			Recommendations: normalizeStrings(parsed.Recommendations),
+			Confidence:      parsed.Confidence,
+			TokensUsed:      perSnippetTokens,
+			EstimatedCost:   perSnippetCost,
 		}
 	}
 
@@ -271,4 +303,109 @@ type CodeSnippet struct {
 	ID      string // Unique identifier
 	Code    string // Code to assess
 	Context string // Optional context
+}
+
+func buildBatchAssessmentPrompt(snippets []CodeSnippet, category string, opts AssessmentOptions) string {
+	var prompt strings.Builder
+	prompt.WriteString(fmt.Sprintf("Analyze the following code snippets for %s issues.\n\n", category))
+
+	if opts.Focus != "" {
+		prompt.WriteString(fmt.Sprintf("Focus: %s\n\n", opts.Focus))
+	}
+
+	if opts.Context != "" {
+		prompt.WriteString(fmt.Sprintf("Context: %s\n\n", opts.Context))
+	}
+
+	prompt.WriteString("Respond with ONLY raw JSON in this shape:\n")
+	prompt.WriteString("{\n")
+	prompt.WriteString(`  "assessments": [` + "\n")
+	prompt.WriteString("    {\n")
+	prompt.WriteString(`      "id": "snippet-id",` + "\n")
+	prompt.WriteString(`      "summary": "short overall assessment",` + "\n")
+	prompt.WriteString(`      "issues": ["specific issue 1"],` + "\n")
+	prompt.WriteString(`      "recommendations": ["specific recommendation 1"],` + "\n")
+	prompt.WriteString(`      "confidence": 0.85` + "\n")
+	prompt.WriteString("    }\n")
+	prompt.WriteString("  ]\n")
+	prompt.WriteString("}\n\n")
+	prompt.WriteString("Rules:\n")
+	prompt.WriteString("- Include exactly one assessment per snippet.\n")
+	prompt.WriteString("- Copy each snippet `id` exactly.\n")
+	prompt.WriteString("- Use [] for `issues` or `recommendations` when there are none.\n")
+	prompt.WriteString("- Keep `confidence` between 0.0 and 1.0.\n")
+	prompt.WriteString("- Do not include markdown fences or extra prose.\n\n")
+
+	for i, snippet := range snippets {
+		prompt.WriteString(fmt.Sprintf("## Snippet %d\n", i+1))
+		prompt.WriteString(fmt.Sprintf("id: %s\n", snippet.ID))
+		if snippet.Context != "" {
+			prompt.WriteString(fmt.Sprintf("context: %s\n", snippet.Context))
+		}
+		prompt.WriteString("code:\n```\n")
+		prompt.WriteString(snippet.Code)
+		prompt.WriteString("\n```\n\n")
+	}
+
+	return prompt.String()
+}
+
+func parseAssessmentResponse(text string) (*codeAssessmentPayload, error) {
+	parseResult := vcai.Parse[codeAssessmentPayload](text, vcai.ParseOptions{
+		Context:   "sdk code assessment response",
+		LogErrors: vcai.BoolPtr(false),
+	})
+	if !parseResult.Success {
+		return nil, fmt.Errorf("failed to parse structured code assessment: %s", parseResult.Error)
+	}
+
+	parsed := parseResult.Data
+	parsed.Issues = normalizeStrings(parsed.Issues)
+	parsed.Recommendations = normalizeStrings(parsed.Recommendations)
+	return &parsed, nil
+}
+
+func parseBatchAssessmentResponse(text string, snippets []CodeSnippet) ([]identifiedAssessmentPayload, error) {
+	parseResult := vcai.Parse[batchAssessmentPayload](text, vcai.ParseOptions{
+		Context:   "sdk batch code assessment response",
+		LogErrors: vcai.BoolPtr(false),
+	})
+	if !parseResult.Success {
+		return nil, fmt.Errorf("failed to parse structured batch code assessment: %s", parseResult.Error)
+	}
+
+	expected := make(map[string]struct{}, len(snippets))
+	for _, snippet := range snippets {
+		expected[snippet.ID] = struct{}{}
+	}
+
+	seen := make(map[string]struct{}, len(snippets))
+	for i := range parseResult.Data.Assessments {
+		assessment := &parseResult.Data.Assessments[i]
+		if _, ok := expected[assessment.ID]; !ok {
+			return nil, fmt.Errorf("AI returned assessment for unknown snippet %q", assessment.ID)
+		}
+		if _, duplicate := seen[assessment.ID]; duplicate {
+			return nil, fmt.Errorf("AI returned duplicate assessment for snippet %q", assessment.ID)
+		}
+
+		assessment.Issues = normalizeStrings(assessment.Issues)
+		assessment.Recommendations = normalizeStrings(assessment.Recommendations)
+		seen[assessment.ID] = struct{}{}
+	}
+
+	for _, snippet := range snippets {
+		if _, ok := seen[snippet.ID]; !ok {
+			return nil, fmt.Errorf("AI response missing assessment for snippet %q", snippet.ID)
+		}
+	}
+
+	return parseResult.Data.Assessments, nil
+}
+
+func normalizeStrings(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
